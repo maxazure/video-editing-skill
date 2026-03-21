@@ -14,92 +14,12 @@ import platform
 import subprocess
 import sys
 import tempfile
-import urllib.request
-import urllib.error
 
-
-# Google Fonts: Noto Sans SC Bold (variable weight TTF)
-GOOGLE_FONT_URL = "https://github.com/google/fonts/raw/main/ofl/notosanssc/NotoSansSC%5Bwght%5D.ttf"
-GOOGLE_FONT_FILENAME = "NotoSansSC[wght].ttf"
-
-
-def find_chinese_font(custom_font_path=None):
-    """Find a suitable Chinese font. Priority: custom > Google download > system default."""
-    if custom_font_path and os.path.isfile(custom_font_path):
-        print(f"Using custom font: {custom_font_path}")
-        return custom_font_path
-
-    # Try to find previously downloaded Google font in skill's fonts dir
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    skill_fonts_dir = os.path.join(os.path.dirname(script_dir), "fonts")
-    google_font_path = os.path.join(skill_fonts_dir, GOOGLE_FONT_FILENAME)
-
-    if os.path.isfile(google_font_path):
-        print(f"Using cached Google font: {google_font_path}")
-        return google_font_path
-
-    # Try downloading from Google Fonts
-    print("Attempting to download Noto Sans SC from Google Fonts...")
-    try:
-        os.makedirs(skill_fonts_dir, exist_ok=True)
-        req = urllib.request.Request(GOOGLE_FONT_URL, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            with open(google_font_path, "wb") as f:
-                f.write(resp.read())
-        print(f"Downloaded Google font: {google_font_path}")
-        return google_font_path
-    except (urllib.error.URLError, OSError, TimeoutError) as e:
-        print(f"Google Fonts download failed ({e}), falling back to system font...")
-
-    # Fall back to system font
-    system = platform.system()
-    if system == "Darwin":
-        # macOS: PingFang SC (preferred, modern) or Heiti SC
-        candidates = [
-            "/System/Library/Fonts/PingFang.ttc",
-            "/System/Library/Fonts/STHeiti Medium.ttc",
-            "/Library/Fonts/PingFang.ttc",
-        ]
-        # Also search in AssetsV2 for PingFang
-        import glob
-        candidates += glob.glob("/System/Library/AssetsV2/**/PingFang.ttc", recursive=True)
-    elif system == "Windows":
-        # Windows: Microsoft YaHei Bold
-        windir = os.environ.get("WINDIR", "C:\\Windows")
-        candidates = [
-            os.path.join(windir, "Fonts", "msyhbd.ttc"),  # YaHei Bold
-            os.path.join(windir, "Fonts", "msyh.ttc"),    # YaHei Regular
-            os.path.join(windir, "Fonts", "simhei.ttf"),  # SimHei
-        ]
-    else:
-        # Linux
-        candidates = [
-            "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
-            "/usr/share/fonts/noto-cjk/NotoSansCJK-Bold.ttc",
-            "/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc",
-            "/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf",
-        ]
-
-    for path in candidates:
-        if os.path.isfile(path):
-            print(f"Using system font: {path}")
-            return path
-
-    # Last resort: try fc-match
-    try:
-        result = subprocess.run(
-            ["fc-match", "-f", "%{file}", ":lang=zh"],
-            capture_output=True, text=True, check=True
-        )
-        font_path = result.stdout.strip()
-        if font_path and os.path.isfile(font_path):
-            print(f"Using fc-match font: {font_path}")
-            return font_path
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        pass
-
-    print("WARNING: No Chinese font found. Subtitles may show as boxes.", file=sys.stderr)
-    return None
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from utils import (
+    find_chinese_font as _find_font, detect_gpu, get_ffmpeg_encode_args,
+    escape_ffmpeg_path,
+)
 
 
 def detect_language(text):
@@ -267,25 +187,15 @@ def main():
         output_dir = clips_dir + "_subtitled"
     os.makedirs(output_dir, exist_ok=True)
 
-    # Find Chinese font
-    font_path = find_chinese_font(args.font_path)
+    # Find Chinese font (using shared utils)
+    font_path, font_name = _find_font(args.font_path)
 
-    # Determine font name for ASS
-    system = platform.system()
-    if font_path and "PingFang" in font_path:
-        font_name = "PingFang SC"
-    elif font_path and "msyh" in font_path.lower():
-        font_name = "Microsoft YaHei"
-    elif font_path and "NotoSansSC" in font_path:
-        font_name = "Noto Sans SC"
-    elif font_path and ("STHeiti" in font_path or "Heiti" in font_path):
-        font_name = "Heiti SC"
-    elif font_path and "simhei" in font_path.lower():
-        font_name = "SimHei"
-    else:
-        font_name = "PingFang SC" if system == "Darwin" else "Microsoft YaHei" if system == "Windows" else "Noto Sans SC"
+    # Detect GPU for encoding
+    gpu_info = detect_gpu()
+    encode_args = get_ffmpeg_encode_args(gpu_info)
 
-    print(f"Subtitle font: {font_name}")
+    print(f"Subtitle font: {font_name} ({font_path or 'name only'})")
+    print(f"Video encoder: {encode_args[1]}")
     print(f"Output directory: {output_dir}")
     print(f"Processing {len(segments)} clips...")
 
@@ -333,26 +243,15 @@ def main():
                 "-i", clip_path,
             ]
 
+            escaped_ass = escape_ffmpeg_path(ass_path)
             if font_path:
-                # Use subtitles filter with fontsdir pointing to the font's directory
                 font_dir = os.path.dirname(font_path)
-                # Escape path special chars for ffmpeg filter
-                escaped_ass = ass_path.replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
-                escaped_fontdir = font_dir.replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
-                cmd += [
-                    "-vf", f"ass={escaped_ass}:fontsdir={escaped_fontdir}",
-                ]
+                escaped_fontdir = escape_ffmpeg_path(font_dir)
+                cmd += ["-vf", f"ass={escaped_ass}:fontsdir={escaped_fontdir}"]
             else:
-                escaped_ass = ass_path.replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
-                cmd += [
-                    "-vf", f"ass={escaped_ass}",
-                ]
+                cmd += ["-vf", f"ass={escaped_ass}"]
 
-            cmd += [
-                "-c:v", "libx264", "-preset", "fast", "-crf", "18",
-                "-c:a", "copy",
-                output_path
-            ]
+            cmd += encode_args + ["-c:a", "copy", output_path]
 
             subprocess.run(cmd, check=True, capture_output=True, text=True)
             print(f"  clip_{seg_id:03d}.mp4  [{lang}]  {text}")

@@ -19,81 +19,15 @@ Output: <video_name>_with_cover.mp4 (in the same directory as the video)
 import argparse
 import json
 import os
-import platform
-import re
 import subprocess
 import sys
 import tempfile
 
-
-def find_chinese_font(custom_font_path=None):
-    """Find a suitable Chinese font (same logic as burn_subtitles.py)."""
-    if custom_font_path and os.path.isfile(custom_font_path):
-        return custom_font_path
-
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    skill_fonts_dir = os.path.join(os.path.dirname(script_dir), "fonts")
-    google_font_path = os.path.join(skill_fonts_dir, "NotoSansSC[wght].ttf")
-
-    if os.path.isfile(google_font_path):
-        return google_font_path
-
-    system = platform.system()
-    if system == "Darwin":
-        import glob
-        candidates = [
-            "/System/Library/Fonts/PingFang.ttc",
-            "/System/Library/Fonts/STHeiti Medium.ttc",
-            "/Library/Fonts/PingFang.ttc",
-        ]
-        candidates += glob.glob("/System/Library/AssetsV2/**/PingFang.ttc", recursive=True)
-    elif system == "Windows":
-        windir = os.environ.get("WINDIR", "C:\\Windows")
-        candidates = [
-            os.path.join(windir, "Fonts", "msyhbd.ttc"),
-            os.path.join(windir, "Fonts", "msyh.ttc"),
-            os.path.join(windir, "Fonts", "simhei.ttf"),
-        ]
-    else:
-        candidates = [
-            "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
-            "/usr/share/fonts/noto-cjk/NotoSansCJK-Bold.ttc",
-            "/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc",
-        ]
-
-    for path in candidates:
-        if os.path.isfile(path):
-            return path
-
-    try:
-        result = subprocess.run(
-            ["fc-match", "-f", "%{file}", ":lang=zh"],
-            capture_output=True, text=True, check=True
-        )
-        font_path = result.stdout.strip()
-        if font_path and os.path.isfile(font_path):
-            return font_path
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        pass
-
-    return None
-
-
-def sanitize_title(text):
-    """Remove special characters that may cause rendering issues or garbled text.
-
-    Keeps: Chinese/Japanese/Korean characters, ASCII letters, digits, common
-    punctuation (，。！？、：；· and their ASCII equivalents), spaces.
-    """
-    # Remove ASS/subtitle control characters
-    text = re.sub(r'[{}\\\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', text)
-    # Remove emojis and other non-BMP characters that fonts may not support
-    text = re.sub(r'[\U00010000-\U0010ffff]', '', text)
-    # Remove stray symbols that commonly cause garbled display
-    text = re.sub(r'[<>|@#$%^&*~`]', '', text)
-    # Collapse multiple spaces
-    text = re.sub(r'\s+', ' ', text).strip()
-    return text
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from utils import (
+    find_chinese_font as _find_font, sanitize_title,
+    detect_gpu, get_ffmpeg_encode_args, escape_ffmpeg_path,
+)
 
 
 def get_video_info(video_path):
@@ -180,7 +114,7 @@ def build_drawtext_filters(title, font_path, width, height):
     block_height = len(lines) * line_height
     start_y = int(height * 0.40) - block_height // 2
 
-    escaped_font = font_path.replace("\\", "/").replace(":", "\\:") if font_path else ""
+    escaped_font = escape_ffmpeg_path(font_path) if font_path else ""
 
     filters = []
     for i, line in enumerate(lines):
@@ -218,16 +152,18 @@ def replace_first_frame(video_path, cover_image_path, output_path, fps):
     rest_clip = os.path.join(tmp_dir, "rest.mp4")
     concat_list = os.path.join(tmp_dir, "concat.txt")
 
+    # GPU-accelerated encoding
+    encode_args = get_ffmpeg_encode_args()
+
     try:
         # Step 1: Create a 1-frame video from the cover image
-        # Match the original video's resolution and encoding
         cmd_cover = [
             "ffmpeg", "-y",
             "-loop", "1",
             "-i", cover_image_path,
             "-t", str(frame_duration),
             "-r", str(fps),
-            "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+        ] + encode_args + [
             "-pix_fmt", "yuv420p",
             "-an",
             cover_clip,
@@ -239,15 +175,13 @@ def replace_first_frame(video_path, cover_image_path, output_path, fps):
             "ffmpeg", "-y",
             "-ss", str(frame_duration),
             "-i", video_path,
-            "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+        ] + encode_args + [
             "-c:a", "aac", "-b:a", "192k",
             rest_clip,
         ]
         subprocess.run(cmd_rest, check=True, capture_output=True, text=True)
 
         # Step 3: Concatenate cover_clip + rest_clip
-        # Use concat demuxer — need to re-encode for seamless join
-        # since cover_clip has no audio
         cmd_final = [
             "ffmpeg", "-y",
             "-i", cover_clip,
@@ -256,7 +190,7 @@ def replace_first_frame(video_path, cover_image_path, output_path, fps):
             "[0:v][1:v]concat=n=2:v=1:a=0[outv]",
             "-map", "[outv]",
             "-map", "1:a?",
-            "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+        ] + encode_args + [
             "-c:a", "aac", "-b:a", "192k",
             output_path,
         ]
@@ -336,7 +270,7 @@ def main():
         extract_first_frame(video_path, frame_path)
 
         # Find font
-        font_path = find_chinese_font(args.font_path)
+        font_path, font_name = _find_font(args.font_path)
         if not font_path:
             print("WARNING: No Chinese font found, title may not render correctly.",
                   file=sys.stderr)

@@ -11,6 +11,9 @@ import os
 import subprocess
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from utils import detect_gpu, get_ffmpeg_encode_args
+
 
 def main():
     parser = argparse.ArgumentParser(description="Split video into sentence clips")
@@ -59,6 +62,11 @@ def main():
     except (subprocess.CalledProcessError, ValueError):
         video_duration = None
 
+    # Detect GPU and choose encoder
+    gpu_info = detect_gpu()
+    encode_args = get_ffmpeg_encode_args(gpu_info)
+    print(f"Video encoder: {encode_args[1]}")
+
     for seg in segments:
         seg_id = seg["id"]
         start = max(0, seg["start"] - args.padding)
@@ -77,7 +85,7 @@ def main():
             "-i", video_path,
             "-ss", str(start),
             "-t", str(clip_duration),
-            "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+        ] + encode_args + [
             "-c:a", "aac", "-b:a", "192k",
             "-avoid_negative_ts", "make_zero",
             clip_path

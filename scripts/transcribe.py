@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 """
-Transcribe audio using OpenAI Whisper and output a JSON file with per-sentence timestamps.
-Usage: python3 transcribe.py <audio_path> [--model base] [--language zh]
+Transcribe audio using Whisper and output a JSON file with per-sentence timestamps.
+
+Supports two engines (auto-detected):
+  - faster-whisper (recommended, 4x faster, less memory)
+  - openai-whisper (fallback)
+
+Usage: python3 transcribe.py <audio_path> [--model auto] [--language zh] [--engine auto]
 Output: <audio_dir>/<video_name>_transcript.json
 """
 
@@ -10,36 +15,53 @@ import json
 import os
 import sys
 
+# Allow importing utils from the same directory
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from utils import (
+    detect_gpu, detect_whisper_engine, recommend_whisper_model,
+    get_whisper_device, setup_china_env, detect_platform,
+)
 
-def main():
-    parser = argparse.ArgumentParser(description="Transcribe audio with Whisper")
-    parser.add_argument("audio_path", help="Path to the audio file (.wav)")
-    parser.add_argument("--model", default="base", choices=["tiny", "base", "small", "medium", "large"],
-                        help="Whisper model size (default: base)")
-    parser.add_argument("--language", default=None,
-                        help="Language code (e.g. zh, en, ja). Omit for auto-detection.")
-    args = parser.parse_args()
 
-    audio_path = args.audio_path
-    if not os.path.isfile(audio_path):
-        print(f"Error: File not found: {audio_path}", file=sys.stderr)
-        sys.exit(1)
+def transcribe_faster_whisper(audio_path, model_name, language, device, compute_type):
+    """Transcribe using faster-whisper engine."""
+    from faster_whisper import WhisperModel
 
-    try:
-        import whisper
-    except ImportError:
-        print("Error: openai-whisper is not installed. Run: pip install openai-whisper", file=sys.stderr)
-        sys.exit(1)
+    print(f"[faster-whisper] Loading model: {model_name} (device={device}, compute={compute_type})")
+    model = WhisperModel(model_name, device=device, compute_type=compute_type)
 
-    print(f"Loading Whisper model: {args.model}")
-    model = whisper.load_model(args.model)
+    kwargs = {}
+    if language:
+        kwargs["language"] = language
 
-    print(f"Transcribing: {audio_path}")
-    transcribe_options = {}
-    if args.language:
-        transcribe_options["language"] = args.language
+    segments_iter, info = model.transcribe(audio_path, **kwargs)
+    detected_lang = info.language
 
-    result = model.transcribe(audio_path, **transcribe_options)
+    segments = []
+    for i, seg in enumerate(segments_iter, start=1):
+        segments.append({
+            "id": i,
+            "start": round(seg.start, 2),
+            "end": round(seg.end, 2),
+            "text": seg.text.strip(),
+        })
+
+    return segments, detected_lang
+
+
+def transcribe_openai_whisper(audio_path, model_name, language):
+    """Transcribe using openai-whisper engine."""
+    import whisper
+
+    print(f"[openai-whisper] Loading model: {model_name}")
+    model = whisper.load_model(model_name)
+
+    kwargs = {}
+    if language:
+        kwargs["language"] = language
+
+    result = model.transcribe(audio_path, **kwargs)
+    detected_lang = result.get("language", "unknown")
 
     segments = []
     for i, seg in enumerate(result.get("segments", []), start=1):
@@ -47,20 +69,85 @@ def main():
             "id": i,
             "start": round(seg["start"], 2),
             "end": round(seg["end"], 2),
-            "text": seg["text"].strip()
+            "text": seg["text"].strip(),
         })
 
-    audio_dir = os.path.dirname(os.path.abspath(audio_path))
+    return segments, detected_lang
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Transcribe audio with Whisper")
+    parser.add_argument("audio_path", help="Path to the audio file (.wav)")
+    parser.add_argument("--model", default="auto",
+                        help="Whisper model size: tiny/base/small/medium/large-v3/large-v3-turbo/auto (default: auto)")
+    parser.add_argument("--language", default=None,
+                        help="Language code (e.g. zh, en, ja). Omit for auto-detection.")
+    parser.add_argument("--engine", default="auto", choices=["auto", "faster-whisper", "openai-whisper"],
+                        help="Whisper engine (default: auto-detect)")
+    parser.add_argument("--mirror", action="store_true",
+                        help="Use China mirrors for model download")
+    args = parser.parse_args()
+
+    audio_path = os.path.abspath(args.audio_path)
+    if not os.path.isfile(audio_path):
+        print(f"Error: File not found: {audio_path}", file=sys.stderr)
+        sys.exit(1)
+
+    # China mirror setup
+    if args.mirror:
+        os.environ["USE_CN_MIRROR"] = "1"
+    setup_china_env()
+
+    # Detect GPU & hardware
+    gpu_info = detect_gpu()
+
+    # Choose engine
+    if args.engine == "auto":
+        engine = detect_whisper_engine()
+        if engine == "none":
+            print("Error: No Whisper engine found.", file=sys.stderr)
+            print("Install one of:", file=sys.stderr)
+            print("  pip install faster-whisper  (recommended, 4x faster)", file=sys.stderr)
+            print("  pip install openai-whisper", file=sys.stderr)
+            sys.exit(1)
+    else:
+        engine = args.engine
+
+    # Choose model
+    if args.model == "auto":
+        model_name, reason = recommend_whisper_model(gpu_info)
+        print(f"[auto] Selected model: {model_name} ({reason})")
+    else:
+        model_name = args.model
+
+    print(f"Engine: {engine}")
+    print(f"Model: {model_name}")
+    print(f"GPU: {gpu_info['type']}")
+    print(f"Transcribing: {audio_path}")
+
+    # Run transcription
+    if engine == "faster-whisper":
+        device, compute_type = get_whisper_device(gpu_info)
+        segments, detected_lang = transcribe_faster_whisper(
+            audio_path, model_name, args.language, device, compute_type
+        )
+    else:
+        segments, detected_lang = transcribe_openai_whisper(
+            audio_path, model_name, args.language
+        )
+
+    # Build output path
+    audio_dir = os.path.dirname(audio_path)
     audio_name = os.path.splitext(os.path.basename(audio_path))[0]
-    # Remove _audio suffix if present to get video name
     video_name = audio_name.replace("_audio", "")
     output_path = os.path.join(audio_dir, f"{video_name}_transcript.json")
 
     output_data = {
         "source_audio": audio_path,
-        "model": args.model,
-        "language": result.get("language", "unknown"),
-        "segments": segments
+        "engine": engine,
+        "model": model_name,
+        "language": detected_lang,
+        "segments": segments,
     }
 
     with open(output_path, "w", encoding="utf-8") as f:

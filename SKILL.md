@@ -2,7 +2,7 @@
 name: video-editing
 description: "Automated video editing skill for talk/vlog/standup videos. Use when: cutting video, splitting video into sentences, merging video clips, extracting audio, transcribing speech, auto-editing oral presentation videos, combining selected sentence clips into a final video, generating video cover/thumbnail with title. Requires ffmpeg and whisper."
 argument-hint: "Provide the path(s) to video file(s) to process"
-metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
+metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
 ---
 
 # Auto Video Editing（自动视频剪辑）
@@ -11,30 +11,43 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux"], "requires"
 
 ## Prerequisites（前置要求）
 
-在执行任何操作之前，先检查以下工具是否可用：
+在执行任何操作之前，先运行环境检测：
 
 ```bash
-which ffmpeg && ffmpeg -version | head -1
-which whisper || pip show openai-whisper
+python3 scripts/utils.py
 ```
 
+这会自动检测平台（macOS/Linux/WSL/Windows）、GPU 类型、可用编码器、Whisper 引擎，并给出诊断报告。
+
 如果缺少依赖，提示用户安装：
-- **ffmpeg**: `brew install ffmpeg`（macOS）或 `apt install ffmpeg`（Linux）
-- **whisper**: `pip install openai-whisper`
+- **ffmpeg**: `brew install ffmpeg`（macOS）或 `apt install ffmpeg`（Linux/WSL）或下载 Windows 版本
+- **whisper**: `pip install faster-whisper`（推荐，速度快 4 倍）或 `pip install openai-whisper`
+- **中国用户**加速安装：`pip install faster-whisper -i https://pypi.tuna.tsinghua.edu.cn/simple`
 
 如果项目根目录有 `.venv` 虚拟环境，运行 Python 脚本前先激活：
 ```bash
-source .venv/bin/activate
+source .venv/bin/activate  # macOS/Linux/WSL
+# Windows: .venv\Scripts\activate
 ```
+
+### 平台说明
+
+- **macOS (Apple Silicon)**: 自动使用 VideoToolbox 硬件编码加速，Whisper 推荐 large-v3-turbo 模型
+- **macOS (Intel)**: 使用 VideoToolbox 编码，Whisper 使用 CPU 模式
+- **Linux**: 自动检测 NVIDIA GPU (NVENC)、Intel QSV、AMD AMF
+- **WSL**: 支持，自动检测 Windows 字体路径 (`/mnt/c/Windows/Fonts/`)
+- **Windows**: 建议使用 WSL2 环境运行；支持 QSV/AMF 硬件编码
+- **无独显 (集成显卡)**: Intel iGPU 使用 QSV 编码，AMD iGPU 使用 AMF 编码；Whisper 建议 medium 模型（而非 large）
+- **中国用户**: 自动检测中国区域，使用清华 pip 镜像和 HuggingFace 镜像下载模型，也可通过 `--mirror` 参数强制启用
 
 ## Workflow（工作流程）
 
 ### Phase 1: Audio Extraction（音频提取）
 
-对每个输入视频文件，使用 [extract_audio.sh](./scripts/extract_audio.sh) 提取音频：
+对每个输入视频文件，使用 [extract_audio.py](./scripts/extract_audio.py) 提取音频：
 
 ```bash
-bash scripts/extract_audio.sh "<video_path>"
+python3 scripts/extract_audio.py "<video_path>"
 ```
 
 输出：与视频同目录下的 `<video_name>_audio.wav` 文件。
@@ -44,12 +57,14 @@ bash scripts/extract_audio.sh "<video_path>"
 使用 [transcribe.py](./scripts/transcribe.py) 对音频进行语音识别，生成带时间戳的逐句文本：
 
 ```bash
-python3 scripts/transcribe.py "<audio_path>" --model large --language zh
+python3 scripts/transcribe.py "<audio_path>" --model auto --language zh
 ```
 
-支持的 `--model` 参数：`tiny`, `base`, `small`, `medium`, `large`（越大越准，但越慢）。
-**建议中文使用 `large` 模型**，`base` 模型中文识别率较低。
-支持的 `--language` 参数：`zh`（中文），`en`（英文），`ja`（日文）等，也可省略让 whisper 自动检测。
+- `--model auto`：根据硬件自动选择最佳模型（NVIDIA GPU → large-v3，Apple Silicon → large-v3-turbo，集成显卡 → medium，纯 CPU → small）
+- 也可手动指定：`tiny`, `base`, `small`, `medium`, `large-v3`, `large-v3-turbo`
+- `--engine auto`：自动检测 faster-whisper（推荐）或 openai-whisper
+- `--mirror`：中国用户使用镜像源下载模型
+- `--language`：`zh`（中文），`en`（英文），`ja`（日文）等，也可省略让 whisper 自动检测
 
 输出：与音频同目录下的 `<video_name>_transcript.json` 文件，格式如下：
 

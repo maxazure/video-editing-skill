@@ -16,6 +16,9 @@ import subprocess
 import sys
 import tempfile
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from utils import detect_gpu, get_ffmpeg_encode_args, get_ffmpeg_encoder
+
 
 def parse_selection(selection_str):
     """Parse selection string like '1-4,6,8-10' into a sorted list of integers."""
@@ -93,34 +96,40 @@ def main():
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
+    # Detect GPU for re-encode fallback
+    gpu_info = detect_gpu()
+    encode_args = get_ffmpeg_encode_args(gpu_info)
+
     print(f"Merging {len(clip_files)} clips into: {output_path}")
 
-    if args.reencode:
-        # Re-encode mode: use filter_complex for seamless joins
-        filter_inputs = ""
+    def _reencode_merge():
+        """Re-encode merge using filter_complex concat."""
         filter_concat = ""
         input_args = []
-        for i, clip_path in enumerate(clip_files):
-            input_args.extend(["-i", clip_path])
+        for i, cp in enumerate(clip_files):
+            input_args.extend(["-i", cp])
             filter_concat += f"[{i}:v:0][{i}:a:0]"
-
         filter_concat += f"concat=n={len(clip_files)}:v=1:a=1[outv][outa]"
 
         cmd = ["ffmpeg", "-y"] + input_args + [
             "-filter_complex", filter_concat,
             "-map", "[outv]", "-map", "[outa]",
-            "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+        ] + encode_args + [
             "-c:a", "aac", "-b:a", "192k",
             output_path
         ]
+        subprocess.run(cmd, check=True, capture_output=True, text=True)
+
+    if args.reencode:
+        _reencode_merge()
     else:
         # Concat demuxer mode (fast, no re-encoding)
         concat_list_fd, concat_list_path = tempfile.mkstemp(suffix=".txt", prefix="concat_")
         try:
             with os.fdopen(concat_list_fd, "w", encoding="utf-8") as f:
                 for clip_path in clip_files:
-                    # Escape single quotes in paths
-                    safe_path = clip_path.replace("'", "'\\''")
+                    # Use forward slashes for cross-platform compat
+                    safe_path = clip_path.replace("\\", "/").replace("'", "'\\''")
                     f.write(f"file '{safe_path}'\n")
 
             cmd = [
@@ -134,31 +143,12 @@ def main():
             try:
                 subprocess.run(cmd, check=True, capture_output=True, text=True)
             except subprocess.CalledProcessError:
-                # Fallback to re-encode if concat demuxer fails
                 print("  Concat copy failed, falling back to re-encode mode...")
-                filter_concat = ""
-                input_args = []
-                for i, clip_path in enumerate(clip_files):
-                    input_args.extend(["-i", clip_path])
-                    filter_concat += f"[{i}:v:0][{i}:a:0]"
-                filter_concat += f"concat=n={len(clip_files)}:v=1:a=1[outv][outa]"
-
-                cmd = ["ffmpeg", "-y"] + input_args + [
-                    "-filter_complex", filter_concat,
-                    "-map", "[outv]", "-map", "[outa]",
-                    "-c:v", "libx264", "-preset", "fast", "-crf", "18",
-                    "-c:a", "aac", "-b:a", "192k",
-                    output_path
-                ]
-                subprocess.run(cmd, check=True, capture_output=True, text=True)
+                _reencode_merge()
         finally:
             if os.path.exists(concat_list_path):
                 os.remove(concat_list_path)
 
-        print(f"\nMerge complete: {output_path}")
-        return
-
-    subprocess.run(cmd, check=True, capture_output=True, text=True)
     print(f"\nMerge complete: {output_path}")
 
 
