@@ -14,6 +14,7 @@
 - **自动字幕** — 中英文自动检测，自动折行，竖屏位置优化
 - **灵活合成** — 选择需要的片段，按任意顺序合成最终视频
 - **自动封面** — 将视频第一帧替换为带标题的封面，自动根据内容总结标题
+- **章节时间轴** — 自动分章，在视频底部/顶部叠加彩色章节进度条，横屏竖屏自适应
 - **多视频支持** — 同时处理多个视频文件，跨视频混合选择片段
 - **跨平台** — 支持 macOS / Linux / WSL / Windows
 - **中国加速** — 自动检测中国区域，使用清华 pip 镜像和 HuggingFace 镜像
@@ -144,7 +145,18 @@ python3 scripts/generate_cover.py "final.mp4" --title "你的封面标题" --tra
 # 输出: final_with_cover.mp4
 ```
 
-#### Step 7（可选）: 调整播放速度
+#### Step 7: 添加章节时间轴
+
+```bash
+python3 scripts/add_chapter_bar.py "final.mp4" --transcript "your_video_transcript.json"
+# 输出: final_chapters.mp4
+```
+
+自动根据转录内容分章，在视频上叠加彩色章节进度条。横屏视频放在底部，竖屏视频放在顶部（避开抖音/小红书底部 UI）。
+
+也可自定义章节：`--chapters chapters.json`
+
+#### Step 8（可选）: 调整播放速度
 
 ```bash
 ffmpeg -i final.mp4 \
@@ -168,7 +180,8 @@ video-editing-skill/
 │   ├── split_video.py         # 视频切分
 │   ├── burn_subtitles.py      # 字幕烧录
 │   ├── merge_clips.py         # 视频合成
-│   └── generate_cover.py      # 封面生成
+│   ├── generate_cover.py      # 封面生成
+│   └── add_chapter_bar.py    # 章节时间轴
 ├── fonts/                     # 字体缓存（自动下载）
 └── videos/                    # 用户视频工作目录
 ```
