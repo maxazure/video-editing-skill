@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
 """
-Generate a video cover image from the first frame with title text overlay.
+Replace the first frame of a video with a cover frame that has title text overlay.
 
 Usage:
   python3 generate_cover.py <video_path> --title "视频标题"
   python3 generate_cover.py <video_path> --transcript <transcript.json>
 
-If --title is not provided but --transcript is, a title suggestion will be
-printed for the AI agent to refine (the agent should summarize from the
-audience's perspective and pass the result back via --title).
+If --title is not provided but --transcript is, the transcript text will be
+printed for the AI agent to summarize from the audience's perspective, then
+call again with --title.
 
-Output: <video_name>_cover.jpg (in the same directory as the video)
+The script replaces the video's first frame with a title-overlaid version,
+outputting a new video file. The original video is not modified.
+
+Output: <video_name>_with_cover.mp4 (in the same directory as the video)
 """
 
 import argparse
@@ -93,97 +96,50 @@ def sanitize_title(text):
     return text
 
 
+def get_video_info(video_path):
+    """Get video duration, width, height, and frame rate."""
+    cmd = [
+        "ffprobe", "-v", "error",
+        "-select_streams", "v:0",
+        "-show_entries", "stream=width,height,r_frame_rate,duration",
+        "-show_entries", "format=duration",
+        "-of", "json",
+        video_path,
+    ]
+    result = subprocess.check_output(cmd, text=True)
+    info = json.loads(result)
+    fmt_duration = float(info.get("format", {}).get("duration", 0))
+    streams = info.get("streams", [{}])
+    s = streams[0] if streams else {}
+    w = s.get("width", 1080)
+    h = s.get("height", 1920)
+    # Parse frame rate like "30/1" or "29.97"
+    r_str = s.get("r_frame_rate", "30/1")
+    if "/" in r_str:
+        num, den = r_str.split("/")
+        fps = float(num) / float(den) if float(den) != 0 else 30.0
+    else:
+        fps = float(r_str)
+    stream_duration = float(s.get("duration", 0))
+    duration = stream_duration if stream_duration > 0 else fmt_duration
+    return duration, w, h, fps
+
+
 def extract_first_frame(video_path, output_path):
-    """Extract the first frame of a video as a JPEG image."""
+    """Extract the first frame of a video as a PNG image (lossless)."""
     cmd = [
         "ffmpeg", "-y",
         "-i", video_path,
         "-vframes", "1",
-        "-q:v", "2",
+        "-q:v", "1",
         output_path,
     ]
     subprocess.run(cmd, check=True, capture_output=True, text=True)
 
 
-def get_image_dimensions(image_path):
-    """Get width and height of an image via ffprobe."""
-    cmd = [
-        "ffprobe", "-v", "error",
-        "-select_streams", "v:0",
-        "-show_entries", "stream=width,height",
-        "-of", "json",
-        image_path,
-    ]
-    result = subprocess.check_output(cmd, text=True)
-    info = json.loads(result)
-    streams = info.get("streams", [{}])
-    w = streams[0].get("width", 1080) if streams else 1080
-    h = streams[0].get("height", 1920) if streams else 1920
-    return w, h
-
-
-def overlay_title(image_path, title, font_path, output_path):
-    """Overlay title text on an image using ffmpeg drawtext filter.
-
-    The title is rendered as large, bold white text with a dark shadow,
-    centered horizontally, positioned at roughly 40% from the top.
-    For multi-line titles (containing \\n), each line is drawn separately.
-    """
-    width, height = get_image_dimensions(image_path)
-    short_side = min(width, height)
-
-    # Font size: ~6% of the short side, clamped
-    font_size = max(36, min(int(short_side * 0.06), 120))
-
-    # Split title into lines (max ~10 chars per line for Chinese, ~20 for English)
-    lines = _wrap_title(title, max_chars=10, font_size=font_size, img_width=width)
-
-    # Build drawtext filter chain — one filter per line, stacked vertically
-    # Center block vertically around 40% from top
-    total_lines = len(lines)
-    line_height = int(font_size * 1.5)
-    block_height = total_lines * line_height
-    start_y = int(height * 0.40) - block_height // 2
-
-    # Escape font path for ffmpeg
-    escaped_font = font_path.replace("\\", "/").replace(":", "\\:") if font_path else ""
-
-    filters = []
-    for i, line in enumerate(lines):
-        # Escape text for drawtext: ' → \\', : → \\:, etc.
-        escaped_text = line.replace("\\", "\\\\").replace("'", "\u2019")
-        escaped_text = escaped_text.replace(":", "\\:")
-        y = start_y + i * line_height
-
-        f = (
-            f"drawtext=text='{escaped_text}'"
-            f":fontsize={font_size}"
-            f":fontcolor=white"
-            f":borderw=4:bordercolor=black@0.8"
-            f":shadowcolor=black@0.5:shadowx=3:shadowy=3"
-            f":x=(w-text_w)/2:y={y}"
-        )
-        if escaped_font:
-            f += f":fontfile='{escaped_font}'"
-        filters.append(f)
-
-    filter_str = ",".join(filters)
-
-    cmd = [
-        "ffmpeg", "-y",
-        "-i", image_path,
-        "-vf", filter_str,
-        "-q:v", "2",
-        output_path,
-    ]
-    subprocess.run(cmd, check=True, capture_output=True, text=True)
-
-
-def _wrap_title(title, max_chars=10, font_size=60, img_width=1080):
+def _wrap_title(title, font_size=60, img_width=1080):
     """Split title into lines that fit the image width."""
-    # Estimate usable width (80% of image width)
     usable = img_width * 0.80
-    # Chinese char width ≈ font_size; ASCII ≈ 0.5 * font_size
     chars_per_line = max(4, int(usable / font_size))
 
     if len(title) <= chars_per_line:
@@ -195,7 +151,6 @@ def _wrap_title(title, max_chars=10, font_size=60, img_width=1080):
         if len(remaining) <= chars_per_line:
             lines.append(remaining)
             break
-        # Find a natural break point
         cut = chars_per_line
         best = cut
         for offset in range(min(4, cut)):
@@ -214,6 +169,108 @@ def _wrap_title(title, max_chars=10, font_size=60, img_width=1080):
     return lines
 
 
+def build_drawtext_filters(title, font_path, width, height):
+    """Build ffmpeg drawtext filter string for title overlay."""
+    short_side = min(width, height)
+    font_size = max(36, min(int(short_side * 0.06), 120))
+
+    lines = _wrap_title(title, font_size=font_size, img_width=width)
+
+    line_height = int(font_size * 1.5)
+    block_height = len(lines) * line_height
+    start_y = int(height * 0.40) - block_height // 2
+
+    escaped_font = font_path.replace("\\", "/").replace(":", "\\:") if font_path else ""
+
+    filters = []
+    for i, line in enumerate(lines):
+        escaped_text = line.replace("\\", "\\\\").replace("'", "\u2019")
+        escaped_text = escaped_text.replace(":", "\\:")
+        y = start_y + i * line_height
+
+        f = (
+            f"drawtext=text='{escaped_text}'"
+            f":fontsize={font_size}"
+            f":fontcolor=white"
+            f":borderw=4:bordercolor=black@0.8"
+            f":shadowcolor=black@0.5:shadowx=3:shadowy=3"
+            f":x=(w-text_w)/2:y={y}"
+        )
+        if escaped_font:
+            f += f":fontfile='{escaped_font}'"
+        filters.append(f)
+
+    return ",".join(filters)
+
+
+def replace_first_frame(video_path, cover_image_path, output_path, fps):
+    """Replace the first frame of the video with the cover image.
+
+    Strategy:
+    1. Create a short video clip from the cover image (duration = 1 frame).
+    2. Trim the original video starting from the 2nd frame.
+    3. Concatenate: cover_clip + rest_of_video.
+    """
+    frame_duration = 1.0 / fps
+
+    tmp_dir = tempfile.mkdtemp(prefix="cover_")
+    cover_clip = os.path.join(tmp_dir, "cover_clip.mp4")
+    rest_clip = os.path.join(tmp_dir, "rest.mp4")
+    concat_list = os.path.join(tmp_dir, "concat.txt")
+
+    try:
+        # Step 1: Create a 1-frame video from the cover image
+        # Match the original video's resolution and encoding
+        cmd_cover = [
+            "ffmpeg", "-y",
+            "-loop", "1",
+            "-i", cover_image_path,
+            "-t", str(frame_duration),
+            "-r", str(fps),
+            "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+            "-pix_fmt", "yuv420p",
+            "-an",
+            cover_clip,
+        ]
+        subprocess.run(cmd_cover, check=True, capture_output=True, text=True)
+
+        # Step 2: Trim the original video, skip the first frame
+        cmd_rest = [
+            "ffmpeg", "-y",
+            "-ss", str(frame_duration),
+            "-i", video_path,
+            "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+            "-c:a", "aac", "-b:a", "192k",
+            rest_clip,
+        ]
+        subprocess.run(cmd_rest, check=True, capture_output=True, text=True)
+
+        # Step 3: Concatenate cover_clip + rest_clip
+        # Use concat demuxer — need to re-encode for seamless join
+        # since cover_clip has no audio
+        cmd_final = [
+            "ffmpeg", "-y",
+            "-i", cover_clip,
+            "-i", rest_clip,
+            "-filter_complex",
+            "[0:v][1:v]concat=n=2:v=1:a=0[outv]",
+            "-map", "[outv]",
+            "-map", "1:a?",
+            "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+            "-c:a", "aac", "-b:a", "192k",
+            output_path,
+        ]
+        subprocess.run(cmd_final, check=True, capture_output=True, text=True)
+
+    finally:
+        # Clean up temp files
+        for f in [cover_clip, rest_clip, concat_list]:
+            if os.path.exists(f):
+                os.remove(f)
+        if os.path.isdir(tmp_dir):
+            os.rmdir(tmp_dir)
+
+
 def collect_transcript_text(transcript_path):
     """Read transcript JSON and return the combined text of all segments."""
     with open(transcript_path, "r", encoding="utf-8") as f:
@@ -223,15 +280,16 @@ def collect_transcript_text(transcript_path):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Generate video cover image with title")
-    parser.add_argument("video_path", help="Path to the video file (uses first frame)")
+    parser = argparse.ArgumentParser(
+        description="Replace the first frame of a video with a titled cover frame")
+    parser.add_argument("video_path", help="Path to the video file")
     parser.add_argument("--title", default=None,
-                        help="Cover title text. If omitted, prints transcript summary for AI to refine.")
+                        help="Cover title text. If omitted, prints transcript for AI to summarize.")
     parser.add_argument("--transcript", default=None,
-                        help="Path to transcript JSON (used for auto-generating title suggestion)")
+                        help="Path to transcript JSON (for auto title generation)")
     parser.add_argument("--font-path", default=None, help="Custom font file path")
     parser.add_argument("--output", default=None,
-                        help="Output cover image path (default: <video_name>_cover.jpg)")
+                        help="Output video path (default: <video_name>_with_cover.mp4)")
     args = parser.parse_args()
 
     video_path = os.path.abspath(args.video_path)
@@ -259,30 +317,50 @@ def main():
     if args.output:
         output_path = os.path.abspath(args.output)
     else:
-        base = os.path.splitext(video_path)[0]
-        output_path = base + "_cover.jpg"
+        base, ext = os.path.splitext(video_path)
+        output_path = base + "_with_cover" + ext
 
-    # Step 1: Extract first frame
-    frame_fd, frame_path = tempfile.mkstemp(suffix=".jpg", prefix="cover_frame_")
+    # Get video info
+    duration, width, height, fps = get_video_info(video_path)
+    print(f"Video: {width}x{height}, {fps:.2f}fps, {duration:.1f}s")
+
+    # Extract first frame
+    frame_fd, frame_path = tempfile.mkstemp(suffix=".png", prefix="cover_frame_")
     os.close(frame_fd)
 
+    cover_fd, cover_path = tempfile.mkstemp(suffix=".png", prefix="cover_titled_")
+    os.close(cover_fd)
+
     try:
-        print(f"Extracting first frame from: {video_path}")
+        print(f"Extracting first frame...")
         extract_first_frame(video_path, frame_path)
 
-        # Step 2: Find font
+        # Find font
         font_path = find_chinese_font(args.font_path)
         if not font_path:
-            print("WARNING: No Chinese font found, title may not render correctly.", file=sys.stderr)
+            print("WARNING: No Chinese font found, title may not render correctly.",
+                  file=sys.stderr)
 
-        # Step 3: Overlay title
+        # Overlay title on the first frame
         print(f"Overlaying title: {title}")
-        overlay_title(frame_path, title, font_path, output_path)
+        drawtext = build_drawtext_filters(title, font_path, width, height)
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", frame_path,
+            "-vf", drawtext,
+            cover_path,
+        ]
+        subprocess.run(cmd, check=True, capture_output=True, text=True)
 
-        print(f"Cover generated: {output_path}")
+        # Replace first frame in video
+        print(f"Replacing first frame with cover...")
+        replace_first_frame(video_path, cover_path, output_path, fps)
+
+        print(f"Done: {output_path}")
     finally:
-        if os.path.exists(frame_path):
-            os.remove(frame_path)
+        for p in [frame_path, cover_path]:
+            if os.path.exists(p):
+                os.remove(p)
 
 
 if __name__ == "__main__":

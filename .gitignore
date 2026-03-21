@@ -17,7 +17,7 @@ videos/
 *_transcript.json
 *_clips/
 *_clips_subtitled/
-*_cover.jpg
+*_with_cover.mp4
 
 # Firebase
 firebase-debug.log

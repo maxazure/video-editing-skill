@@ -14,7 +14,7 @@
 - **灵活合成** — 选择需要的片段，按任意顺序合成最终视频
 - **多视频支持** — 可同时处理多个视频文件，跨视频混合选择片段
 - **速度调整** — 支持加速/减速输出（1.1x、1.25x、1.5x 等）
-- **自动封面** — 从视频第一帧生成封面，自动根据内容总结标题，支持自定义
+- **自动封面** — 将视频第一帧替换为带标题的封面，自动根据内容总结标题，支持自定义
 
 ## 📦 安装
 
@@ -136,9 +136,10 @@ python3 scripts/merge_clips.py "your_video_clips_subtitled" --select "1-5,8,10-1
 
 ```bash
 python3 scripts/generate_cover.py "final.mp4" --title "你的封面标题" --transcript "your_video_transcript.json"
-# 输出: final_cover.jpg
+# 输出: final_with_cover.mp4
 ```
 
+脚本会提取第一帧、叠加标题文字、然后替换回视频第一帧，生成新视频。原视频不变。
 如果不指定 `--title`，脚本会输出视频转录全文，供 AI 自动总结标题。
 
 #### Step 7（可选）: 调整播放速度
