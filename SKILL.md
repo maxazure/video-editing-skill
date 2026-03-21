@@ -1,0 +1,163 @@
+---
+name: video-editing
+description: "Automated video editing skill for talk/vlog/standup videos. Use when: cutting video, splitting video into sentences, merging video clips, extracting audio, transcribing speech, auto-editing oral presentation videos, combining selected sentence clips into a final video. Requires ffmpeg and whisper."
+argument-hint: "Provide the path(s) to video file(s) to process"
+metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
+---
+
+# Auto Video Editing（自动视频剪辑）
+
+根据语音内容，将口播/脱口秀类视频按句子自动切分，然后按用户选择合成带字幕的最终视频。
+
+## Prerequisites（前置要求）
+
+在执行任何操作之前，先检查以下工具是否可用：
+
+```bash
+which ffmpeg && ffmpeg -version | head -1
+which whisper || pip show openai-whisper
+```
+
+如果缺少依赖，提示用户安装：
+- **ffmpeg**: `brew install ffmpeg`（macOS）或 `apt install ffmpeg`（Linux）
+- **whisper**: `pip install openai-whisper`
+
+如果项目根目录有 `.venv` 虚拟环境，运行 Python 脚本前先激活：
+```bash
+source .venv/bin/activate
+```
+
+## Workflow（工作流程）
+
+### Phase 1: Audio Extraction（音频提取）
+
+对每个输入视频文件，使用 [extract_audio.sh](./scripts/extract_audio.sh) 提取音频：
+
+```bash
+bash scripts/extract_audio.sh "<video_path>"
+```
+
+输出：与视频同目录下的 `<video_name>_audio.wav` 文件。
+
+### Phase 2: Speech Recognition（语音识别）
+
+使用 [transcribe.py](./scripts/transcribe.py) 对音频进行语音识别，生成带时间戳的逐句文本：
+
+```bash
+python3 scripts/transcribe.py "<audio_path>" --model large --language zh
+```
+
+支持的 `--model` 参数：`tiny`, `base`, `small`, `medium`, `large`（越大越准，但越慢）。
+**建议中文使用 `large` 模型**，`base` 模型中文识别率较低。
+支持的 `--language` 参数：`zh`（中文），`en`（英文），`ja`（日文）等，也可省略让 whisper 自动检测。
+
+输出：与音频同目录下的 `<video_name>_transcript.json` 文件，格式如下：
+
+```json
+{
+  "segments": [
+    {"id": 1, "start": 0.0, "end": 2.5, "text": "大家好"},
+    {"id": 2, "start": 2.5, "end": 5.1, "text": "今天我们来聊一个话题"}
+  ]
+}
+```
+
+**转录后检查**：如果文本中有明显的识别错误（如产品名、专有名词），应修正 transcript.json 中的文字后再进行后续步骤。
+
+### Phase 3: Video Splitting（视频切分）
+
+使用 [split_video.py](./scripts/split_video.py) 根据转录结果将视频切分为独立片段：
+
+```bash
+python3 scripts/split_video.py "<video_path>" "<transcript_json_path>"
+```
+
+输出：在视频同目录下创建 `<video_name>_clips/` 文件夹，包含按句子编号命名的片段文件，如 `clip_001.mp4`, `clip_002.mp4` 等。
+
+**注意**：
+- 默认 padding 为 0（片段间无重叠），避免合成时出现重复音频。
+- 使用精确重编码切割（`-ss` 后置 + re-encode），确保音频在句子边界精确切断。
+
+### Phase 3.5: Subtitle Burning（字幕烧录）
+
+使用 [burn_subtitles.py](./scripts/burn_subtitles.py) 为每个片段烧录字幕：
+
+```bash
+python3 scripts/burn_subtitles.py "<clips_dir>" "<transcript_json_path>"
+```
+
+字幕行为：
+- **自动检测语言**：中文内容自动使用中文字幕，英文内容使用英文字幕。
+- **自动折行**：长字幕自动分成两行，不会超出屏幕边界。
+- **竖屏优化**：字体大小按短边（宽度）缩放，字幕位置在画面 72% 高度处，适配小红书等竖屏平台。
+- **中文字体优先级**：
+  1. 首先尝试从 Google Fonts 下载 **Noto Sans SC**（会缓存到 skill 的 `fonts/` 目录）
+  2. 如果下载失败，macOS 使用 **PingFang SC**（苹方）；Windows 使用 **Microsoft YaHei**（微软雅黑）
+- 可用 `--font-path` 指定自定义字体文件
+- 可用 `--font-size` 调整字号（默认 48，基于 1080p 自动缩放）
+
+输出：`<video_name>_clips_subtitled/` 目录，包含带字幕的片段。
+
+**注意**：此步骤完成后，Phase 4-5 中应使用 `_clips_subtitled/` 目录而非 `_clips/` 目录。
+
+### Phase 4: User Interaction（用户交互）
+
+**展示片段列表给用户**，格式如下：
+
+```
+视频片段列表：
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  #   | 时间区间          | 内容
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  1   | 00:00.0 - 00:02.5 | 大家好
+  2   | 00:02.5 - 00:05.1 | 今天我们来聊一个话题
+  3   | 00:05.1 - 00:08.3 | 这个话题非常有意思
+  ...
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+请选择要合成的片段（示例）：
+  - 连续范围：1-10
+  - 多个片段：1,3,5,7
+  - 混合选择：1-4,6,8-10
+```
+
+如果有多个视频文件，分别展示每个视频的片段列表，让用户跨视频选择。
+选好后可将来自不同视频的片段复制到同一个临时目录中，按顺序重新编号后合成。
+
+等待用户回复选择后，进入 Phase 5。
+
+### Phase 5: Merge & Export（合成导出）
+
+使用 [merge_clips.py](./scripts/merge_clips.py) 将用户选择的片段合成为最终视频：
+
+```bash
+python3 scripts/merge_clips.py "<clips_dir>" --select "1-4,6,8" --output "<output_path>"
+```
+
+- `--select`：用户选择的片段编号，支持 `1-4`（范围）、`1,3,5`（逐个）、`1-4,6,8-10`（混合）。
+- `--output`：输出文件路径，默认为 `<clips_dir>/../<video_name>_final.mp4`。
+
+输出：合成后的最终视频文件。
+
+### Phase 6: Post-merge Validation（合成后验证）
+
+合成完成后，对最终视频执行一次验证流程：
+
+1. 提取最终视频的音频
+2. 重新进行语音识别
+3. 检查识别结果中是否存在相邻片段的文字重复（前一句末尾 2-3 个字与后一句开头重复）
+4. 如发现技术性重复（非自然语言重复），需要回到 Phase 3 重新切分相关片段
+
+## Important Notes（注意事项）
+
+1. **精确切割**：视频切分使用重编码模式（非 stream copy），确保音频在句子边界精确切断，避免相邻片段出现重复的尾音。
+2. **多视频处理**：如果用户提供多个视频，对每个视频独立执行 Phase 1-3.5，然后在 Phase 4 统一展示所有视频的片段列表，支持跨视频混合选择片段。
+3. **识别模型选择**：中文视频建议使用 `large` 模型，`base`/`small` 模型中文识别率较低。`large` 模型约需 2.9GB 下载空间。
+4. **工作目录**：所有中间文件（音频、转录、片段）都保存在视频文件所在目录下，便于管理。
+5. **错误处理**：如果某一步失败，向用户报告具体错误信息，并建议可能的解决方案。
+6. **字幕字体**：ffmpeg 需要编译包含 `libass` 和 `libfreetype`。macOS 可通过 `brew install ffmpeg` 获取。
+7. **竖屏适配**：字幕位置和字体大小已针对 9:16 竖屏视频（如小红书、抖音）优化。横屏视频同样支持。
+8. **速度调整**：如需调整播放速度，可使用 ffmpeg：
+   ```bash
+   ffmpeg -i input.mp4 -filter_complex "[0:v]setpts=PTS/1.25[v];[0:a]atempo=1.25[a]" -map "[v]" -map "[a]" -c:v libx264 -preset fast -crf 18 -c:a aac -b:a 192k output_1.25x.mp4
+   ```

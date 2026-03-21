@@ -1,0 +1,22 @@
+# OS
+.DS_Store
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Fonts (auto-downloaded by burn_subtitles.py)
+fonts/
+
+# User video workspace
+videos/
+
+# Intermediate files (generated during processing)
+*_audio.wav
+*_transcript.json
+*_clips/
+*_clips_subtitled/
+
+# Firebase
+firebase-debug.log
