@@ -1,6 +1,6 @@
 ---
 name: video-editing
-description: "Automated video editing skill for talk/vlog/standup videos. Use when: cutting video, splitting video into sentences, merging video clips, extracting audio, transcribing speech, auto-editing oral presentation videos, combining selected sentence clips into a final video. Requires ffmpeg and whisper."
+description: "Automated video editing skill for talk/vlog/standup videos. Use when: cutting video, splitting video into sentences, merging video clips, extracting audio, transcribing speech, auto-editing oral presentation videos, combining selected sentence clips into a final video, generating video cover/thumbnail with title. Requires ffmpeg and whisper."
 argument-hint: "Provide the path(s) to video file(s) to process"
 metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
 ---
@@ -139,7 +139,36 @@ python3 scripts/merge_clips.py "<clips_dir>" --select "1-4,6,8" --output "<outpu
 
 输出：合成后的最终视频文件。
 
-### Phase 6: Post-merge Validation（合成后验证）
+### Phase 6: Cover Generation（封面生成）
+
+合成完成后，为视频生成封面图片。
+
+**交互流程**：
+1. 询问用户是否要为视频命名以及封面标题怎么写。
+2. 如果用户提供了标题，直接使用该标题。
+3. 如果用户没有特别要求，先从 transcript JSON 中读取所有句子文本，然后 **站在观众的角度** 总结出一个吸引人的封面标题：
+   - 标题应简短有力（建议 6-15 个字）
+   - 从观众视角出发，突出视频的核心看点或价值
+   - 例如：「3 分钟学会拍小红书封面」而非「我今天教大家拍封面」
+4. 确认标题后，使用 [generate_cover.py](./scripts/generate_cover.py) 生成封面：
+
+```bash
+python3 scripts/generate_cover.py "<final_video_path>" --title "封面标题文字" --transcript "<transcript_json_path>"
+```
+
+- `--title`：封面上显示的标题文字
+- `--transcript`：转录 JSON 路径（当未提供 --title 时，脚本会输出全文供 AI 总结）
+- `--font-path`：可选，指定自定义字体
+- `--output`：可选，指定输出路径，默认为 `<video_name>_cover.jpg`
+
+**注意**：
+- 封面标题会自动过滤特殊字符和 emoji，避免乱码。
+- 封面基于视频第一帧，白色粗体文字居中显示，带黑色描边和阴影，确保可读性。
+- 中文字体使用与字幕相同的查找逻辑（Google Noto Sans SC > 系统字体）。
+
+输出：`<video_name>_cover.jpg`
+
+### Phase 7: Post-merge Validation（合成后验证）
 
 合成完成后，对最终视频执行一次验证流程：
 

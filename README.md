@@ -14,6 +14,7 @@
 - **灵活合成** — 选择需要的片段，按任意顺序合成最终视频
 - **多视频支持** — 可同时处理多个视频文件，跨视频混合选择片段
 - **速度调整** — 支持加速/减速输出（1.1x、1.25x、1.5x 等）
+- **自动封面** — 从视频第一帧生成封面，自动根据内容总结标题，支持自定义
 
 ## 📦 安装
 
@@ -131,7 +132,16 @@ python3 scripts/merge_clips.py "your_video_clips_subtitled" --select "1-5,8,10-1
 - 多个片段：`1,3,5,7`
 - 混合选择：`1-4,6,8-10`
 
-#### Step 6（可选）: 调整播放速度
+#### Step 6: 生成封面
+
+```bash
+python3 scripts/generate_cover.py "final.mp4" --title "你的封面标题" --transcript "your_video_transcript.json"
+# 输出: final_cover.jpg
+```
+
+如果不指定 `--title`，脚本会输出视频转录全文，供 AI 自动总结标题。
+
+#### Step 7（可选）: 调整播放速度
 
 ```bash
 ffmpeg -i final.mp4 \
@@ -152,7 +162,8 @@ video-editing-skill/
 │   ├── transcribe.py          # 语音识别
 │   ├── split_video.py         # 视频切分
 │   ├── burn_subtitles.py      # 字幕烧录
-│   └── merge_clips.py         # 视频合成
+│   ├── merge_clips.py         # 视频合成
+│   └── generate_cover.py     # 封面生成
 ├── fonts/              # 字体缓存（自动下载，已 gitignore）
 └── videos/             # 用户视频工作目录（已 gitignore）
 ```
