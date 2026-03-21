@@ -219,6 +219,8 @@ chapters.json 格式：
 参数说明：
 - `--transcript`：从转录 JSON 自动生成章节
 - `--chapters`：使用自定义章节 JSON
+- `--style color`（默认）：彩色分段，每章不同颜色
+- `--style mono`：单色风格，灰白交替，更简约
 - `--max-chapters`：自动分章的最大章节数（默认 8）
 - `--font-path`：自定义字体
 - `--output`：输出路径，默认为 `<video_name>_chapters.mp4`

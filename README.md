@@ -154,7 +154,9 @@ python3 scripts/add_chapter_bar.py "final.mp4" --transcript "your_video_transcri
 
 自动根据转录内容分章，在视频上叠加彩色章节进度条。横屏视频放在底部，竖屏视频放在顶部（避开抖音/小红书底部 UI）。
 
-也可自定义章节：`--chapters chapters.json`
+可选参数：
+- `--style mono` — 单色灰白风格（默认 `color` 彩色）
+- `--chapters chapters.json` — 自定义章节 JSON
 
 #### Step 8（可选）: 调整播放速度
 
