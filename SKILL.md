@@ -138,6 +138,7 @@ Whisper 常见的识别错误类型：
     {"video": "path/to/video2.MOV", "segment_id": 1, "transcript": "path/to/transcript2.json"}
   ],
   "title": "封面标题文字",
+  "cover_duration": 2.0,
   "chapters": [
     {"title": "章节名", "start": 0.0, "end": 30.0}
   ],
@@ -148,6 +149,11 @@ Whisper 常见的识别错误类型：
 **封面标题**：
 1. 如果用户提供了标题，直接使用。
 2. 如果用户没有特别要求，**站在观众角度**总结一个吸引人的标题（6-15 个字）。
+
+**封面时长**（`cover_duration`）：
+- 默认 2.0 秒，将第一帧冻结并叠加标题文字作为封面
+- 可在配置中设置 `"cover_duration": 1.0` 或 `2.0`
+- 也可通过 `--cover-duration` 命令行参数覆盖
 
 **章节划分**：
 - 根据视频内容逻辑划分章节，建议 **不超过 4 个章节**
@@ -162,12 +168,16 @@ Whisper 常见的识别错误类型：
 python3 scripts/render_final.py --config render_config.json --output final.mp4 --speed 1.25 1.5
 ```
 
-**核心原理**：使用 ffmpeg `filter_complex` 的 `trim/atrim` 直接从原始视频裁切片段，然后 `concat` 拼接，最后叠加字幕、封面、章节时间轴，全部在**一次编码**中完成。
+**核心原理**：
+- **单视频**（最常见场景）：使用 `select/aselect` + `between()` 表达式一次性筛选所有保留片段，FFmpeg 解码完整源视频但只编码选中的帧，配合 `-crf 18 -preset medium` 只编码一次
+- **多视频混剪**：使用 `trim/atrim` 裁切 + `concat` 拼接（自动降级）
+- 封面使用 `tpad` 冻结第一帧 + `adelay` 添加静音，字幕、章节时间轴自动偏移，全部在**一次编码**中完成
 
 参数说明：
 - `--config`：渲染配置 JSON 路径
 - `--output`：输出文件路径
 - `--speed 1.25 1.5`：同时输出变速版本（每个变速版本也是从原始视频直接编码，不是从已编码视频二次压缩）
+- `--cover-duration 2.0`：封面冻结时长（秒），覆盖配置中的 `cover_duration`
 - `--font-path`：自定义字体文件
 - `--font-size`：字幕字号（默认 48，基于 1080p 自动缩放）
 - `--no-subtitles`、`--no-cover`、`--no-chapters`：跳过对应功能
@@ -218,7 +228,7 @@ python3 scripts/render_final.py --config render_config.json --output final.mp4 -
 
 ### 视频质量与编码准则（最重要）
 
-1. **单次编码原则**：从原始视频到最终输出，**只允许一次编码**。严禁多次重编码（如先切分编码、再烧字幕编码、再加封面编码），每次重编码都会累积质量损失。使用 `render_final.py` 的 `filter_complex` + `trim/atrim` 方案，在一条 ffmpeg 命令中完成裁切、拼接、字幕、封面、章节时间轴的全部操作。
+1. **单次编码原则**：从原始视频到最终输出，**只允许一次编码**。严禁多次重编码（如先切分编码、再烧字幕编码、再加封面编码），每次重编码都会累积质量损失。使用 `render_final.py` 的 `select/aselect` + `between()` 方案（单视频）或 `trim/atrim` + `concat` 方案（多视频），在一条 ffmpeg 命令中完成裁切、拼接、字幕、封面、章节时间轴的全部操作。
 2. **变速版本也从原始视频直接编码**：`--speed 1.25 1.5` 的变速版本在 `filter_complex` 中集成 `setpts` + `atempo`，直接从原始视频一步到位，**不要**从已编码的 1x 视频再次压缩。
 3. **编码参数**：使用固定比特率（如 `-b:v 12M`）而非质量参数（如 `-q:v`）。固定比特率可以精确控制文件大小和质量，避免 `-q:v` 在不同编码器上表现不一致。参考原始视频比特率（通常 8-15 Mbps）设定。
 4. **旧流程脚本仅用于预览**：`split_video.py`、`burn_subtitles.py`、`merge_clips.py`、`generate_cover.py`、`add_chapter_bar.py` 仍可单独使用，但**最终输出必须使用 `render_final.py`**。旧脚本适合快速预览单个片段效果。

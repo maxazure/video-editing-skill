@@ -93,8 +93,13 @@ def resolve_clips(config):
     return clips
 
 
-def build_merged_ass(clips, font_name, font_size, video_width, video_height, speed=1.0):
-    """Build a single ASS subtitle file covering the entire merged timeline."""
+def build_merged_ass(clips, font_name, font_size, video_width, video_height,
+                     speed=1.0, cover_duration=0.0):
+    """Build a single ASS subtitle file covering the entire merged timeline.
+
+    Args:
+        cover_duration: Seconds of cover at the start; subtitles begin after this.
+    """
     margin_lr = 60
     usable_width = video_width - 2 * margin_lr
     margin_v = int(video_height * 0.28)
@@ -120,7 +125,7 @@ Style: Default,{font_name},{font_size},&H00FFFFFF,&H000000FF,&H00000000,&H800000
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
     dialogues = []
-    offset = 0.0
+    offset = cover_duration  # Start subtitles after cover
     for clip in clips:
         dur = clip["end"] - clip["start"]
         text = clip["text"]
@@ -143,10 +148,45 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     return header + "\n".join(dialogues) + "\n", offset
 
 
+def _clips_in_temporal_order(clips):
+    """Check if all clips come from one video and are in temporal order."""
+    videos = set(c["video"] for c in clips)
+    if len(videos) != 1:
+        return False
+    for i in range(1, len(clips)):
+        if clips[i]["start"] < clips[i - 1]["start"]:
+            return False
+    return True
+
+
+def build_select_filter(clips, fps):
+    """Build filter using select/aselect with between() expressions.
+
+    Much simpler than trim/concat: one expression selects all segments,
+    FFmpeg decodes the full source but only encodes selected frames.
+    Only works for single-video, temporally-ordered clips.
+
+    Returns (filter_str, input_files).
+    """
+    between_exprs = [
+        f"between(t,{c['start']:.4f},{c['end']:.4f})" for c in clips
+    ]
+    select_expr = "+".join(between_exprs)
+
+    filters = [
+        f"[0:v]select='{select_expr}',setpts=N/{fps:.4f}/TB[merged_v]",
+        f"[0:a]aselect='{select_expr}',asetpts=N/SR/TB[merged_a]",
+    ]
+    return ";\n".join(filters), [clips[0]["video"]]
+
+
 def build_trim_filter(clips):
     """Build filter_complex string for trimming and concatenating clips.
 
-    Returns (filter_str, input_files_ordered, final_video_label, final_audio_label).
+    Fallback for multi-video or reordered clips where select filter
+    cannot be used.
+
+    Returns (filter_str, input_files).
     """
     # Deduplicate input files while preserving order
     input_files = []
@@ -177,13 +217,18 @@ def build_trim_filter(clips):
     return ";\n".join(filters), input_files
 
 
-def build_cover_filter(title, font_path, width, height, fps):
-    """Build drawtext filter for cover overlay on first frame."""
-    if not title:
+def build_cover_filter(title, font_path, width, height, cover_duration):
+    """Build drawtext filter for cover overlay.
+
+    Args:
+        cover_duration: How long the cover is displayed (seconds).
+            The video should already have tpad applied to freeze the first
+            frame for this duration.
+    """
+    if not title or cover_duration <= 0:
         return ""
 
     title = sanitize_title(title)
-    frame_dur = 1.0 / fps
 
     # Build drawtext filters directly (not via build_drawtext_filters which returns joined string)
     short_side = min(width, height)
@@ -196,10 +241,10 @@ def build_cover_filter(title, font_path, width, height, fps):
 
     escaped_font = escape_ffmpeg_path(font_path) if font_path else ""
 
-    # Semi-dark overlay on first frame
+    # Semi-dark overlay for the cover duration
     parts = [
         f"drawbox=x=0:y=0:w=iw:h=ih:color=black@0.4:t=fill"
-        f":enable='lte(t,{frame_dur:.4f})'"
+        f":enable='lte(t,{cover_duration:.4f})'"
     ]
 
     for i, line in enumerate(lines):
@@ -214,7 +259,7 @@ def build_cover_filter(title, font_path, width, height, fps):
             f":borderw=4:bordercolor=black@0.8"
             f":shadowcolor=black@0.5:shadowx=3:shadowy=3"
             f":x=(w-text_w)/2:y={y}"
-            f":enable='lte(t\\,{frame_dur:.4f})'"
+            f":enable='lte(t\\,{cover_duration:.4f})'"
         )
         if escaped_font:
             f += f":fontfile='{escaped_font}'"
@@ -234,6 +279,8 @@ def main():
     parser.add_argument("--no-chapters", action="store_true")
     parser.add_argument("--speed", nargs="*", type=float, default=[],
                         help="Additional speed variants to render (e.g. --speed 1.25 1.5)")
+    parser.add_argument("--cover-duration", type=float, default=None,
+                        help="Cover freeze duration in seconds (default: from config or 2.0)")
     parser.add_argument("--cleanup", action="store_true", help="Remove temp files after render")
     args = parser.parse_args()
 
@@ -257,9 +304,13 @@ def main():
     font_path, font_name = find_chinese_font(args.font_path)
     print(f"Font: {font_name}")
 
-    # --- Step 1: Build trim + concat filter ---
-    trim_filter, input_files = build_trim_filter(clips)
-    print(f"Sources: {len(input_files)} video(s), {len(clips)} clips")
+    # --- Step 1: Build segment selection filter ---
+    if _clips_in_temporal_order(clips):
+        base_filter, input_files = build_select_filter(clips, fps)
+        print(f"Using select filter: {len(clips)} segments from 1 video")
+    else:
+        base_filter, input_files = build_trim_filter(clips)
+        print(f"Using trim/concat filter: {len(clips)} clips from {len(input_files)} video(s)")
 
     # Collect all speeds to render (1.0 = original, plus any extras)
     all_speeds = [1.0] + [s for s in args.speed if s != 1.0]
@@ -275,6 +326,16 @@ def main():
     temp_files = []
     failed_speeds = []
 
+    # Cover duration: CLI arg > config > default 2.0 (0 if no title or --no-cover)
+    if args.cover_duration is not None:
+        cover_duration = args.cover_duration
+    else:
+        cover_duration = config.get("cover_duration", 2.0)
+    if not title or args.no_cover:
+        cover_duration = 0.0
+    if cover_duration > 0:
+        print(f"Cover: {cover_duration:.1f}s freeze + title overlay")
+
     for speed in all_speeds:
         if speed == 1.0:
             out_path = output_path
@@ -287,11 +348,12 @@ def main():
 
         effective_duration = total_duration / speed
 
-        # --- Build subtitle ASS (scaled for speed) ---
+        # --- Build subtitle ASS (scaled for speed, offset by cover duration) ---
         ass_path = None
         if not args.no_subtitles:
             ass_content, _ = build_merged_ass(
-                clips, font_name, font_size, width, height, speed=speed
+                clips, font_name, font_size, width, height,
+                speed=speed, cover_duration=cover_duration,
             )
             fd, ass_path = tempfile.mkstemp(suffix=".ass", prefix=f"sub_{label}_")
             with os.fdopen(fd, "w", encoding="utf-8") as f:
@@ -301,11 +363,17 @@ def main():
         # --- Build video filter chain on [merged_v] ---
         vf_parts = []
 
-        # Speed adjustment (before overlays so timing matches)
+        # Speed adjustment (before cover padding so cover stays at normal speed)
         if speed != 1.0:
             vf_parts.append(f"setpts=PTS/{speed}")
 
-        # Subtitles
+        # Cover: freeze first frame for cover_duration seconds
+        if cover_duration > 0:
+            vf_parts.append(
+                f"tpad=start_duration={cover_duration}:start_mode=clone"
+            )
+
+        # Subtitles (ASS timing already includes cover offset)
         if ass_path:
             escaped_ass = escape_ffmpeg_path(ass_path)
             if font_path:
@@ -314,21 +382,28 @@ def main():
             else:
                 vf_parts.append(f"ass='{escaped_ass}'")
 
-        # Cover (on first frame of the speed-adjusted video)
-        if title and not args.no_cover:
-            # Use original fps — setpts already adjusts timing
-            cover_vf = build_cover_filter(title, font_path, width, height, fps)
+        # Cover title overlay (drawtext for the cover duration)
+        if cover_duration > 0 and title:
+            cover_vf = build_cover_filter(
+                title, font_path, width, height, cover_duration
+            )
             if cover_vf:
                 vf_parts.append(cover_vf)
 
-        # Chapter bar (with speed-adjusted timing)
+        # Chapter bar (with speed-adjusted timing + cover offset)
         if chapters and not args.no_chapters and has_dt:
             speed_chapters = [
-                {**ch, "start": ch["start"] / speed, "end": ch["end"] / speed}
+                {
+                    **ch,
+                    "start": ch["start"] / speed + cover_duration,
+                    "end": ch["end"] / speed + cover_duration,
+                }
                 for ch in chapters
             ]
             chapter_vf = build_chapter_bar_filter(
-                speed_chapters, effective_duration, width, height,
+                speed_chapters,
+                effective_duration + cover_duration,
+                width, height,
                 font_path=font_path, style=chapter_style, has_drawtext=has_dt,
             )
             if chapter_vf:
@@ -343,13 +418,18 @@ def main():
                 remaining /= 2.0
             af_parts.append(f"atempo={remaining:.4f}")
 
+        # Audio: add silence for cover duration (after speed adjustment)
+        if cover_duration > 0:
+            delay_ms = int(cover_duration * 1000)
+            af_parts.append(f"adelay={delay_ms}:all=1")
+
         # --- Assemble full filter_complex ---
         if vf_parts:
             vf_chain = ",".join(vf_parts)
-            full_filter = trim_filter + ";\n" + f"[merged_v]{vf_chain}[final_v]"
+            full_filter = base_filter + ";\n" + f"[merged_v]{vf_chain}[final_v]"
             map_v = "[final_v]"
         else:
-            full_filter = trim_filter
+            full_filter = base_filter
             map_v = "[merged_v]"
 
         if af_parts:
@@ -378,7 +458,8 @@ def main():
         cmd.extend(["-c:a", "aac", "-b:a", "192k"])
         cmd.append(out_path)
 
-        print(f"\nRendering {label} ({effective_duration:.0f}s)...")
+        total_out = effective_duration + cover_duration
+        print(f"\nRendering {label} ({total_out:.0f}s)...")
         try:
             subprocess.run(cmd, check=True, capture_output=True, text=True)
         except subprocess.CalledProcessError as e:
@@ -393,11 +474,12 @@ def main():
     if failed_speeds:
         print(f"\nWARNING: Failed to render: {', '.join(failed_speeds)}", file=sys.stderr)
 
-    # Print chapter timestamps (for 1x)
+    # Print chapter timestamps (for 1x, with cover offset)
     if chapters:
         print("\nYouTube chapter timestamps:")
         for ch in chapters:
-            m, s = divmod(ch["start"], 60)
+            t = ch["start"] + cover_duration
+            m, s = divmod(t, 60)
             print(f"  {int(m)}:{int(s):02d} {ch.get('title', '')}")
 
     # --- Cleanup ---

@@ -168,8 +168,8 @@ def get_ffmpeg_encoder(gpu_info=None):
     if gpu_info.get("amf"):
         return "h264_amf", ["-quality", "balanced", "-rc", "cqp", "-qp_i", "20", "-qp_p", "22"]
 
-    # CPU fallback
-    return "libx264", ["-preset", "fast", "-crf", "18"]
+    # CPU fallback — preset medium balances speed and quality well
+    return "libx264", ["-preset", "medium", "-crf", "18"]
 
 
 def get_ffmpeg_encode_args(gpu_info=None):
