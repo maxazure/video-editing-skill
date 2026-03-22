@@ -18,7 +18,7 @@ import tempfile
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from utils import (
     find_chinese_font as _find_font, detect_gpu, get_ffmpeg_encode_args,
-    escape_ffmpeg_path,
+    escape_ffmpeg_path, get_video_info as _get_video_info,
 )
 
 
@@ -130,25 +130,9 @@ Dialogue: 0,{start_time},{end_time},Default,,0,0,0,,{escaped_text}
 
 
 def get_video_info(video_path):
-    """Get video duration and resolution."""
-    cmd = [
-        "ffprobe", "-v", "error",
-        "-select_streams", "v:0",
-        "-show_entries", "stream=width,height",
-        "-show_entries", "format=duration",
-        "-of", "json",
-        video_path
-    ]
-    try:
-        result = subprocess.check_output(cmd, text=True)
-        info = json.loads(result)
-        duration = float(info.get("format", {}).get("duration", 0))
-        streams = info.get("streams", [{}])
-        width = streams[0].get("width", 1920) if streams else 1920
-        height = streams[0].get("height", 1080) if streams else 1080
-        return duration, width, height
-    except (subprocess.CalledProcessError, ValueError, json.JSONDecodeError):
-        return 5.0, 1920, 1080
+    """Get video duration and display resolution (rotation-aware)."""
+    duration, width, height, _fps, _rotation = _get_video_info(video_path)
+    return duration, width, height
 
 
 def main():

@@ -158,7 +158,7 @@ def get_ffmpeg_encoder(gpu_info=None):
 
     # Apple VideoToolbox
     if gpu_info.get("videotoolbox"):
-        return "h264_videotoolbox", ["-q:v", "65"]
+        return "h264_videotoolbox", ["-b:v", "12M"]
 
     # Intel QSV
     if gpu_info.get("qsv"):
@@ -524,6 +524,79 @@ def print_env_report():
 # ---------------------------------------------------------------------------
 # Path utilities (cross-platform)
 # ---------------------------------------------------------------------------
+
+def get_video_info(video_path):
+    """Get video duration, width, height, fps, and rotation.
+
+    Detects rotation metadata (e.g. iPhone vertical video recorded as
+    1920x1080 with rotation=-90) and swaps width/height accordingly so
+    callers always get the *display* dimensions.
+
+    Returns (duration, width, height, fps, rotation).
+    """
+    cmd = [
+        "ffprobe", "-v", "error",
+        "-select_streams", "v:0",
+        "-show_entries", "stream=width,height,r_frame_rate,duration",
+        "-show_entries", "stream_side_data=rotation",
+        "-show_entries", "format=duration",
+        "-of", "json",
+        video_path,
+    ]
+    try:
+        result = subprocess.check_output(cmd, text=True)
+        info = json.loads(result)
+    except (subprocess.CalledProcessError, ValueError, json.JSONDecodeError):
+        return 5.0, 1920, 1080, 30.0, 0
+
+    fmt_duration = float(info.get("format", {}).get("duration", 0))
+    streams = info.get("streams", [{}])
+    s = streams[0] if streams else {}
+
+    w = s.get("width", 1920)
+    h = s.get("height", 1080)
+
+    # Parse frame rate like "30/1" or "29.97"
+    r_str = s.get("r_frame_rate", "30/1")
+    if "/" in r_str:
+        num, den = r_str.split("/")
+        fps = float(num) / float(den) if float(den) != 0 else 30.0
+    else:
+        fps = float(r_str)
+
+    stream_duration = float(s.get("duration", 0))
+    duration = stream_duration if stream_duration > 0 else fmt_duration
+
+    # Detect rotation from side_data or via separate ffprobe call
+    rotation = 0
+    side_data = s.get("side_data_list", [])
+    for sd in side_data:
+        if "rotation" in sd:
+            rotation = int(float(sd["rotation"]))
+            break
+
+    if rotation == 0:
+        # Fallback: check via stream tags or displaymatrix
+        rot_cmd = [
+            "ffprobe", "-v", "error",
+            "-select_streams", "v:0",
+            "-show_entries", "stream_tags=rotate",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            video_path,
+        ]
+        try:
+            rot_out = subprocess.check_output(rot_cmd, text=True).strip()
+            if rot_out:
+                rotation = int(float(rot_out))
+        except (subprocess.CalledProcessError, ValueError):
+            pass
+
+    # Swap width/height for 90/270 degree rotations
+    if abs(rotation) in (90, 270):
+        w, h = h, w
+
+    return duration, w, h, fps, rotation
+
 
 def escape_ffmpeg_path(path):
     """Escape a file path for use inside ffmpeg filter strings."""

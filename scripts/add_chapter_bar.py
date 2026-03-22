@@ -26,7 +26,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from utils import (
     detect_gpu, get_ffmpeg_encode_args, escape_ffmpeg_path,
-    find_chinese_font, check_ffmpeg,
+    find_chinese_font, check_ffmpeg, get_video_info as _get_video_info,
 )
 
 # Material Design palette
@@ -45,22 +45,8 @@ CHAPTER_COLORS = [
 
 
 def get_video_info(video_path):
-    """Get video duration, width, height."""
-    cmd = [
-        "ffprobe", "-v", "error",
-        "-select_streams", "v:0",
-        "-show_entries", "stream=width,height",
-        "-show_entries", "format=duration",
-        "-of", "json",
-        video_path,
-    ]
-    result = subprocess.check_output(cmd, text=True)
-    info = json.loads(result)
-    duration = float(info.get("format", {}).get("duration", 0))
-    streams = info.get("streams", [{}])
-    s = streams[0] if streams else {}
-    w = s.get("width", 1920)
-    h = s.get("height", 1080)
+    """Get video duration, width, height (rotation-aware)."""
+    duration, w, h, _fps, _rotation = _get_video_info(video_path)
     return duration, w, h
 
 
@@ -180,10 +166,10 @@ def build_chapter_bar_filter(chapters, total_duration, width, height,
     else:
         bar_y = height - bar_h  # at bottom
 
-    # Label position
-    label_fs = max(14, int(short_side * 0.02))
+    # Label position — larger font for readability
+    label_fs = max(18, int(short_side * 0.035))
     if portrait:
-        label_y = bar_y + bar_h + 6
+        label_y = bar_y + bar_h + 8
     else:
         label_y = bar_y - label_fs - 8
 
@@ -207,15 +193,15 @@ def build_chapter_bar_filter(chapters, total_duration, width, height,
                 f":color={color}@0.85:t=fill"
             )
     else:
-        # Mono: alternating light/dark gray
+        # Mono: semi-transparent white, alternating opacity
         for i, chap in enumerate(chapters):
-            gray = "0xBBBBBB" if i % 2 == 0 else "0x888888"
+            alpha = "0.35" if i % 2 == 0 else "0.2"
             x_frac = chap["start"] / total_duration
             w_frac = (chap["end"] - chap["start"]) / total_duration
             filters.append(
                 f"drawbox=x=iw*{x_frac:.6f}:y={bar_y}"
                 f":w=iw*{w_frac:.6f}:h={bar_h}"
-                f":color={gray}@0.8:t=fill"
+                f":color=white@{alpha}:t=fill"
             )
 
     # Separator lines
@@ -247,6 +233,8 @@ def build_chapter_bar_filter(chapters, total_duration, width, height,
             escaped_font = escape_ffmpeg_path(font_path)
             font_arg = f":fontfile='{escaped_font}'"
 
+        # All chapter labels are always visible;
+        # the current chapter is brighter, others are dimmer.
         for i, chap in enumerate(chapters):
             title = chap.get("title", "").strip()
             if not title:
@@ -254,30 +242,28 @@ def build_chapter_bar_filter(chapters, total_duration, width, height,
 
             escaped = _escape_drawtext(title)
             cs = chap["start"]
-            ce = min(cs + 3.0, chap["end"])
+            ce = chap["end"]
 
             # x position: pixel offset for the center of this chapter's segment
             mid_px = int(width * (chap["start"] + chap["end"]) / 2.0 / total_duration)
 
-            # Alpha fade: 0.4s in, hold, 0.6s out
-            fade_in = 0.4
-            fade_out = 0.6
+            # Alpha: bright (0.95) when current chapter, dim (0.4) otherwise
             alpha_expr = (
-                f"if(lt(t\\,{cs + fade_in:.2f})\\,"
-                f"(t-{cs:.2f})/{fade_in:.1f}\\,"
-                f"if(lt(t\\,{ce - fade_out:.2f})\\,"
-                f"1\\,"
-                f"({ce:.2f}-t)/{fade_out:.1f}))"
+                f"if(between(t\\,{cs:.2f}\\,{ce:.2f})\\,"
+                f"0.95\\,0.4)"
             )
 
+            # Use double-draw technique for bold effect:
+            # first pass = thick black outline, second pass = white fill
+            # This creates a clearly readable bold label after compression
             filters.append(
                 f"drawtext=text='{escaped}'"
                 f":fontsize={label_fs}"
                 f":fontcolor=white"
                 f":alpha='{alpha_expr}'"
-                f":borderw=2:bordercolor=black@0.6"
+                f":borderw=3:bordercolor=black@0.7"
+                f":shadowcolor=black@0.4:shadowx=1:shadowy=1"
                 f":x={mid_px}-text_w/2:y={label_y}"
-                f":enable='between(t\\,{cs:.2f}\\,{ce:.2f})'"
                 f"{font_arg}"
             )
 

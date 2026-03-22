@@ -77,45 +77,31 @@ python3 scripts/transcribe.py "<audio_path>" --model auto --language zh
 }
 ```
 
-**转录后检查**：如果文本中有明显的识别错误（如产品名、专有名词），应修正 transcript.json 中的文字后再进行后续步骤。
+### Phase 2.5: Transcript Review（转录文字校验）
 
-### Phase 3: Video Splitting（视频切分）
+转录完成后，**必须**对所有 transcript.json 中的文字进行逐条审查，修正以下两类问题：
 
-使用 [split_video.py](./scripts/split_video.py) 根据转录结果将视频切分为独立片段：
+**1. 语音识别错误（ASR errors）**：
+Whisper 常见的识别错误类型：
+- **专有名词/产品名**：如 "opencloud" → "OpenClaw"、"cloudcode" → "Claude Code"、"cloud ops" → "Claude Opus"
+- **同音字错误**：如 "小红树" → "小红书"、"检映" → "剪映"、"断耕" → "断更"、"懒得讲" → "懒得剪"
+- **英文拼写**：如 "scale" → "skill"、"箱子" → "视频"
+- **尾部幻觉**：Whisper 有时在安静片段末尾生成无意义的重复文字，应直接删除
 
-```bash
-python3 scripts/split_video.py "<video_path>" "<transcript_json_path>"
-```
+**2. 口误标记（Speaker errors）**：
+- **重复/卡壳**：说话人重复说同一句话或卡住后重新说，标记为可跳过
+- **乱码片段**：语音模糊导致识别为无意义文字的片段（如连续的单字碎片），标记为可跳过
 
-输出：在视频同目录下创建 `<video_name>_clips/` 文件夹，包含按句子编号命名的片段文件，如 `clip_001.mp4`, `clip_002.mp4` 等。
+**校验流程**：
+1. 读取所有 transcript.json 的文字内容
+2. 逐条检查，列出发现的问题（原文 → 修正 或 标记为可跳过）
+3. 将修正列表展示给用户确认
+4. 用户确认后，直接修改 transcript.json 文件中的 text 字段
+5. 对于口误/乱码片段，在展示片段列表时（Phase 3）标注为建议跳过
 
-**注意**：
-- 默认 padding 为 0（片段间无重叠），避免合成时出现重复音频。
-- 使用精确重编码切割（`-ss` 后置 + re-encode），确保音频在句子边界精确切断。
+**注意**：此步骤必须在 Phase 5（渲染）之前完成，因为字幕文字来源于 transcript.json。修正后再渲染，才能保证最终视频中的字幕文字正确。
 
-### Phase 3.5: Subtitle Burning（字幕烧录）
-
-使用 [burn_subtitles.py](./scripts/burn_subtitles.py) 为每个片段烧录字幕：
-
-```bash
-python3 scripts/burn_subtitles.py "<clips_dir>" "<transcript_json_path>"
-```
-
-字幕行为：
-- **自动检测语言**：中文内容自动使用中文字幕，英文内容使用英文字幕。
-- **自动折行**：长字幕自动分成两行，不会超出屏幕边界。
-- **竖屏优化**：字体大小按短边（宽度）缩放，字幕位置在画面 72% 高度处，适配小红书等竖屏平台。
-- **中文字体优先级**：
-  1. 首先尝试从 Google Fonts 下载 **Noto Sans SC**（会缓存到 skill 的 `fonts/` 目录）
-  2. 如果下载失败，macOS 使用 **PingFang SC**（苹方）；Windows 使用 **Microsoft YaHei**（微软雅黑）
-- 可用 `--font-path` 指定自定义字体文件
-- 可用 `--font-size` 调整字号（默认 48，基于 1080p 自动缩放）
-
-输出：`<video_name>_clips_subtitled/` 目录，包含带字幕的片段。
-
-**注意**：此步骤完成后，Phase 4-5 中应使用 `_clips_subtitled/` 目录而非 `_clips/` 目录。
-
-### Phase 4: User Interaction（用户交互）
+### Phase 3: User Interaction（用户交互）
 
 **展示片段列表给用户**，格式如下：
 
@@ -137,118 +123,124 @@ python3 scripts/burn_subtitles.py "<clips_dir>" "<transcript_json_path>"
 ```
 
 如果有多个视频文件，分别展示每个视频的片段列表，让用户跨视频选择。
-选好后可将来自不同视频的片段复制到同一个临时目录中，按顺序重新编号后合成。
 
-等待用户回复选择后，进入 Phase 5。
+等待用户回复选择后，进入 Phase 4。
 
-### Phase 5: Merge & Export（合成导出）
+### Phase 4: Render Config（渲染配置）
 
-使用 [merge_clips.py](./scripts/merge_clips.py) 将用户选择的片段合成为最终视频：
+根据用户的选择，生成 `render_config.json` 配置文件：
 
-```bash
-python3 scripts/merge_clips.py "<clips_dir>" --select "1-4,6,8" --output "<output_path>"
-```
-
-- `--select`：用户选择的片段编号，支持 `1-4`（范围）、`1,3,5`（逐个）、`1-4,6,8-10`（混合）。
-- `--output`：输出文件路径，默认为 `<clips_dir>/../<video_name>_final.mp4`。
-
-输出：合成后的最终视频文件。
-
-### Phase 6: Cover Generation（封面生成）
-
-合成完成后，为视频生成封面图片。
-
-**交互流程**：
-1. 询问用户是否要为视频命名以及封面标题怎么写。
-2. 如果用户提供了标题，直接使用该标题。
-3. 如果用户没有特别要求，先从 transcript JSON 中读取所有句子文本，然后 **站在观众的角度** 总结出一个吸引人的封面标题：
-   - 标题应简短有力（建议 6-15 个字）
-   - 从观众视角出发，突出视频的核心看点或价值
-   - 例如：「3 分钟学会拍小红书封面」而非「我今天教大家拍封面」
-4. 确认标题后，使用 [generate_cover.py](./scripts/generate_cover.py) 将封面写入视频：
-
-```bash
-python3 scripts/generate_cover.py "<final_video_path>" --title "封面标题文字" --transcript "<transcript_json_path>"
-```
-
-- `--title`：封面上显示的标题文字
-- `--transcript`：转录 JSON 路径（当未提供 --title 时，脚本会输出全文供 AI 总结）
-- `--font-path`：可选，指定自定义字体
-- `--output`：可选，指定输出路径，默认为 `<video_name>_with_cover.mp4`
-
-**注意**：
-- 封面标题会自动过滤特殊字符和 emoji，避免乱码。
-- 脚本会提取视频第一帧，叠加白色粗体标题文字（带黑色描边和阴影），然后将这一帧替换回视频的第一帧，生成新的视频文件。原视频不会被修改。
-- 中文字体使用与字幕相同的查找逻辑（Google Noto Sans SC > 系统字体）。
-
-输出：`<video_name>_with_cover.mp4`
-
-### Phase 7: Chapter Timeline Bar（章节时间轴）
-
-为最终视频添加可视化的章节进度条。
-
-使用 [add_chapter_bar.py](./scripts/add_chapter_bar.py) 在视频上叠加章节时间轴：
-
-```bash
-python3 scripts/add_chapter_bar.py "<video_path>" --transcript "<transcript_json_path>"
-```
-
-**自动行为**：
-- 根据 transcript 自动将视频分为若干章节（每章约 15-30 秒，最多 8 章）
-- 每章使用不同颜色的色块，带白色播放进度指示
-- 章节切换时自动显示章节标题（3 秒后淡出）
-- **横屏视频**：时间轴在视频底部，章节标题在时间轴上方
-- **竖屏视频**：时间轴在视频顶部（避开底部平台 UI），章节标题在时间轴下方
-
-也可以提供自定义章节 JSON：
-
-```bash
-python3 scripts/add_chapter_bar.py "<video_path>" --chapters chapters.json
-```
-
-chapters.json 格式：
 ```json
 {
+  "clips": [
+    {"video": "path/to/video1.MOV", "segment_id": 4, "transcript": "path/to/transcript1.json"},
+    {"video": "path/to/video1.MOV", "segment_id": 5, "transcript": "path/to/transcript1.json"},
+    {"video": "path/to/video2.MOV", "segment_id": 1, "transcript": "path/to/transcript2.json"}
+  ],
+  "title": "封面标题文字",
   "chapters": [
-    {"title": "开场", "start": 0.0, "end": 15.0},
-    {"title": "正题", "start": 15.0, "end": 60.0}
-  ]
+    {"title": "章节名", "start": 0.0, "end": 30.0}
+  ],
+  "chapter_style": "mono"
 }
 ```
 
+**封面标题**：
+1. 如果用户提供了标题，直接使用。
+2. 如果用户没有特别要求，**站在观众角度**总结一个吸引人的标题（6-15 个字）。
+
+**章节划分**：
+- 根据视频内容逻辑划分章节，建议 **不超过 4 个章节**
+- 章节名要**简短**（2-4 个字），如：痛点、原因、方案、工具
+- 章节时间需要根据选定片段的累计时长精确计算
+
+### Phase 5: Single-Pass Render（单次渲染）
+
+使用 [render_final.py](./scripts/render_final.py) 从原始视频**一次编码**生成最终视频：
+
+```bash
+python3 scripts/render_final.py --config render_config.json --output final.mp4 --speed 1.25 1.5
+```
+
+**核心原理**：使用 ffmpeg `filter_complex` 的 `trim/atrim` 直接从原始视频裁切片段，然后 `concat` 拼接，最后叠加字幕、封面、章节时间轴，全部在**一次编码**中完成。
+
 参数说明：
-- `--transcript`：从转录 JSON 自动生成章节
-- `--chapters`：使用自定义章节 JSON
-- `--style color`（默认）：彩色分段，每章不同颜色
-- `--style mono`：单色风格，灰白交替，更简约
-- `--max-chapters`：自动分章的最大章节数（默认 8）
-- `--font-path`：自定义字体
-- `--output`：输出路径，默认为 `<video_name>_chapters.mp4`
+- `--config`：渲染配置 JSON 路径
+- `--output`：输出文件路径
+- `--speed 1.25 1.5`：同时输出变速版本（每个变速版本也是从原始视频直接编码，不是从已编码视频二次压缩）
+- `--font-path`：自定义字体文件
+- `--font-size`：字幕字号（默认 48，基于 1080p 自动缩放）
+- `--no-subtitles`、`--no-cover`、`--no-chapters`：跳过对应功能
 
-输出：`<video_name>_chapters.mp4`，同时在终端打印 YouTube 兼容的章节时间戳。
+**输出**：
+- `final.mp4`（原速）
+- `final_1_25x.mp4`（1.25 倍速）
+- `final_1_5x.mp4`（1.5 倍速）
 
-### Phase 8: Post-merge Validation（合成后验证）
+**自动功能**：
+- 字幕自动检测语言、自动折行、竖屏优化定位
+- 封面自动叠加标题文字（带描边和阴影）在第一帧
+- 章节时间轴自动叠加在视频顶部（竖屏）或底部（横屏）
+- 所有章节名全程显示，当前章节高亮，其他章节半透明
+- 变速版本的字幕时间、章节时间自动缩放
 
-合成完成后，对最终视频执行一次验证流程：
+### Phase 6: Post-render Validation（渲染后验证）
 
+渲染完成后，对最终视频执行验证流程：
+
+**6a. 音频重复检测**：
 1. 提取最终视频的音频
 2. 重新进行语音识别
 3. 检查识别结果中是否存在相邻片段的文字重复（前一句末尾 2-3 个字与后一句开头重复）
-4. 如发现技术性重复（非自然语言重复），需要回到 Phase 3 重新切分相关片段
+4. 如发现技术性重复（非自然语言重复），需要调整 render_config.json 中的片段选择
+
+**6b. 字幕文字最终校验**：
+1. 读取最终视频使用的所有 transcript 片段的文字
+2. 按最终视频的片段顺序，逐条检查以下问题：
+   - **语音识别残留错误**：Phase 2.5 可能遗漏的同音字、专有名词错误
+   - **口误未清理**：说话人的口误（如说反了、重复了）是否仍然保留在最终视频中
+   - **上下文连贯性**：跨视频拼接后，相邻片段之间是否存在语义断裂或逻辑跳跃
+   - **字幕一致性**：同一个词/名称在不同片段中是否拼写一致
+3. 如发现问题，列出问题清单并展示给用户：
+   ```
+   字幕校验结果：
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+     #  | 问题类型     | 原文 → 建议修正
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+     3  | 识别错误     | "检映" → "剪映"
+     7  | 口误        | "先说了结果" → 建议删除此片段
+    12  | 名称不一致   | "opencloud" → 统一为 "OpenClaw"
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   ```
+4. 用户确认修正后，修改对应的 transcript.json，然后重新执行 Phase 5 渲染
 
 ## Important Notes（注意事项）
 
-1. **精确切割**：视频切分使用重编码模式（非 stream copy），确保音频在句子边界精确切断，避免相邻片段出现重复的尾音。
-2. **多视频处理**：如果用户提供多个视频，对每个视频独立执行 Phase 1-3.5，然后在 Phase 4 统一展示所有视频的片段列表，支持跨视频混合选择片段。
-3. **识别模型选择**：中文视频建议使用 `large` 模型，`base`/`small` 模型中文识别率较低。`large` 模型约需 2.9GB 下载空间。
-4. **工作目录**：所有中间文件（音频、转录、片段）都保存在视频文件所在目录下，便于管理。
-5. **错误处理**：如果某一步失败，向用户报告具体错误信息，并建议可能的解决方案。
-6. **字幕字体**：ffmpeg 需要编译包含 `libass` 和 `libfreetype`。macOS 可通过 `brew install ffmpeg` 获取。
-7. **竖屏适配**：字幕位置和字体大小已针对 9:16 竖屏视频（如小红书、抖音）优化。横屏视频同样支持。
-8. **速度调整**：如需调整播放速度，可使用 ffmpeg：
-   ```bash
-   ffmpeg -i input.mp4 -filter_complex "[0:v]setpts=PTS/1.25[v];[0:a]atempo=1.25[a]" -map "[v]" -map "[a]" -c:v libx264 -preset fast -crf 18 -c:a aac -b:a 192k output_1.25x.mp4
-   ```
+### 视频质量与编码准则（最重要）
+
+1. **单次编码原则**：从原始视频到最终输出，**只允许一次编码**。严禁多次重编码（如先切分编码、再烧字幕编码、再加封面编码），每次重编码都会累积质量损失。使用 `render_final.py` 的 `filter_complex` + `trim/atrim` 方案，在一条 ffmpeg 命令中完成裁切、拼接、字幕、封面、章节时间轴的全部操作。
+2. **变速版本也从原始视频直接编码**：`--speed 1.25 1.5` 的变速版本在 `filter_complex` 中集成 `setpts` + `atempo`，直接从原始视频一步到位，**不要**从已编码的 1x 视频再次压缩。
+3. **编码参数**：使用固定比特率（如 `-b:v 12M`）而非质量参数（如 `-q:v`）。固定比特率可以精确控制文件大小和质量，避免 `-q:v` 在不同编码器上表现不一致。参考原始视频比特率（通常 8-15 Mbps）设定。
+4. **旧流程脚本仅用于预览**：`split_video.py`、`burn_subtitles.py`、`merge_clips.py`、`generate_cover.py`、`add_chapter_bar.py` 仍可单独使用，但**最终输出必须使用 `render_final.py`**。旧脚本适合快速预览单个片段效果。
+
+### Rotation 检测
+
+5. **Rotation 检测**：iPhone 等设备录制的竖屏视频，编码尺寸可能是 1920x1080 + rotation=-90 元数据。所有脚本通过 `utils.get_video_info()` 统一检测 rotation 并自动交换宽高，确保获取正确的显示尺寸。检测视频信息时必须首先检查 rotation。
+
+### 章节时间轴
+
+6. **章节数量**：建议不超过 4 个章节，章节名 2-4 个字。
+7. **章节标签样式**：推荐使用 `mono` 样式（半透明白色），所有章节名全程显示，当前章节高亮(0.95)，其他半透明(0.4)。标签使用 `borderw=3` + 轻阴影，确保压缩后仍清晰可读。
+8. **时间轴位置**：竖屏视频在顶部（避开底部平台 UI），横屏视频在底部。
+
+### 其他
+
+9. **多视频处理**：如果用户提供多个视频，对每个视频独立执行 Phase 1-2.5，然后在 Phase 3 统一展示所有视频的片段列表，支持跨视频混合选择片段。
+10. **识别模型选择**：中文视频建议使用 `large` 模型，`base`/`small` 模型中文识别率较低。`large` 模型约需 2.9GB 下载空间。
+11. **工作目录**：所有中间文件（音频、转录）都保存在视频文件所在目录下，便于管理。渲染完成后应清理临时文件（ASS 字幕文件、filter_complex 脚本）。
+12. **错误处理**：如果某一步失败，向用户报告具体错误信息，并建议可能的解决方案。
+13. **字幕字体**：ffmpeg 需要编译包含 `libass` 和 `libfreetype`。macOS 可通过 `brew install ffmpeg` 获取。
+14. **竖屏适配**：字幕位置和字体大小已针对 9:16 竖屏视频（如小红书、抖音）优化。横屏视频同样支持。
 
 ## FAQ / Troubleshooting（常见问题诊断）
 
@@ -278,7 +270,7 @@ ffmpeg -hide_banner -filters 2>/dev/null | grep -E "drawtext|ass|subtitles"
   ```bash
   sudo apt install libfreetype6-dev libfontconfig1-dev libass-dev
   ```
-- **影响范围**：缺少 drawtext 时，字幕烧录（burn_subtitles.py）、封面文字（generate_cover.py）和章节标题标签会失败或自动降级。章节进度条的色块和播放头不受影响（仅使用 drawbox）。
+- **影响范围**：缺少 drawtext 时，字幕烧录、封面文字和章节标题标签会失败或自动降级。章节进度条的色块和播放头不受影响（仅使用 drawbox）。
 
 ### Q2: `Undefined constant or missing '(' in 'iw*0.5-tw/2'`
 
@@ -308,7 +300,7 @@ drawtext=text='hello':fontcolor=white@'%{eif:if(lt(t,1),t,1):d:2}'
 ffmpeg -encoders 2>/dev/null | grep -E "nvenc|videotoolbox|qsv|amf"
 ```
 
-**解决**：在脚本命令后添加 `--force-cpu` 参数（如脚本支持），或手动替换编码参数。也可以在 `scripts/utils.py` 中临时修改 `get_ffmpeg_encoder()` 函数，让它直接返回 `("libx264", ["-preset", "fast", "-crf", "18"])`。
+**解决**：在 `scripts/utils.py` 中临时修改 `get_ffmpeg_encoder()` 函数，让它直接返回 `("libx264", ["-preset", "fast", "-crf", "18"])`。
 
 ### Q5: 中文字幕显示为方框（豆腐块）
 
@@ -366,3 +358,9 @@ sudo apt update && sudo apt install ffmpeg
 sudo add-apt-repository ppa:savoury1/ffmpeg4
 sudo apt update && sudo apt install ffmpeg
 ```
+
+### Q9: 视频质量差 / 模糊
+
+**原因**：视频经过了多次重编码，每次编码都有质量损失。
+
+**解决**：必须使用 `render_final.py` 单次编码。检查是否在流程中使用了 `split_video.py` + `burn_subtitles.py` + `merge_clips.py` + `generate_cover.py` + `add_chapter_bar.py` 的旧流程（会导致 4-5 次重编码）。改用 `render_final.py --config` 一步到位。

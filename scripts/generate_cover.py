@@ -27,35 +27,13 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from utils import (
     find_chinese_font as _find_font, sanitize_title,
     detect_gpu, get_ffmpeg_encode_args, escape_ffmpeg_path,
+    get_video_info as _get_video_info,
 )
 
 
 def get_video_info(video_path):
-    """Get video duration, width, height, and frame rate."""
-    cmd = [
-        "ffprobe", "-v", "error",
-        "-select_streams", "v:0",
-        "-show_entries", "stream=width,height,r_frame_rate,duration",
-        "-show_entries", "format=duration",
-        "-of", "json",
-        video_path,
-    ]
-    result = subprocess.check_output(cmd, text=True)
-    info = json.loads(result)
-    fmt_duration = float(info.get("format", {}).get("duration", 0))
-    streams = info.get("streams", [{}])
-    s = streams[0] if streams else {}
-    w = s.get("width", 1080)
-    h = s.get("height", 1920)
-    # Parse frame rate like "30/1" or "29.97"
-    r_str = s.get("r_frame_rate", "30/1")
-    if "/" in r_str:
-        num, den = r_str.split("/")
-        fps = float(num) / float(den) if float(den) != 0 else 30.0
-    else:
-        fps = float(r_str)
-    stream_duration = float(s.get("duration", 0))
-    duration = stream_duration if stream_duration > 0 else fmt_duration
+    """Get video duration, width, height, and frame rate (rotation-aware)."""
+    duration, w, h, fps, _rotation = _get_video_info(video_path)
     return duration, w, h, fps
 
 

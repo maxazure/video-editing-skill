@@ -1,0 +1,386 @@
+#!/usr/bin/env python3
+"""
+Single-pass video renderer. Trims, concatenates, and applies subtitles,
+cover, and chapter bar in ONE encoding pass — no intermediate re-encodes.
+
+Usage:
+  python3 render_final.py --config render_config.json --output final.mp4
+
+The config JSON format:
+{
+  "clips": [
+    {"video": "path/to/video1.MOV", "segment_id": 4, "transcript": "path/to/transcript1.json"},
+    {"video": "path/to/video1.MOV", "segment_id": 5, "transcript": "path/to/transcript1.json"},
+    {"video": "path/to/video2.MOV", "segment_id": 1, "transcript": "path/to/transcript2.json"}
+  ],
+  "title": "封面标题",
+  "chapters": [
+    {"title": "痛点", "start": 0.0, "end": 27.5},
+    ...
+  ],
+  "chapter_style": "mono"
+}
+"""
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+import tempfile
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from utils import (
+    find_chinese_font, get_video_info, get_ffmpeg_encode_args,
+    escape_ffmpeg_path, sanitize_title, detect_gpu,
+)
+from burn_subtitles import (
+    detect_language, escape_ass_text, wrap_subtitle_text,
+)
+from add_chapter_bar import (
+    build_chapter_bar_filter, _has_drawtext,
+)
+from generate_cover import (
+    build_drawtext_filters, _wrap_title,
+)
+
+
+def load_config(config_path):
+    with open(config_path, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def resolve_clips(config):
+    """Resolve clip entries to (video_path, start, end, text) tuples."""
+    transcript_cache = {}
+    clips = []
+    for entry in config["clips"]:
+        video = os.path.abspath(entry["video"])
+        transcript = os.path.abspath(entry["transcript"])
+        seg_id = entry["segment_id"]
+
+        if transcript not in transcript_cache:
+            with open(transcript, encoding="utf-8") as f:
+                data = json.load(f)
+            transcript_cache[transcript] = {s["id"]: s for s in data["segments"]}
+
+        seg = transcript_cache[transcript][seg_id]
+        clips.append({
+            "video": video,
+            "start": seg["start"],
+            "end": seg["end"],
+            "text": seg["text"],
+        })
+    return clips
+
+
+def build_merged_ass(clips, font_name, font_size, video_width, video_height, speed=1.0):
+    """Build a single ASS subtitle file covering the entire merged timeline."""
+    margin_lr = 60
+    usable_width = video_width - 2 * margin_lr
+    margin_v = int(video_height * 0.28)
+
+    def fmt_time(seconds):
+        h = int(seconds // 3600)
+        m = int((seconds % 3600) // 60)
+        s = seconds % 60
+        return f"{h}:{m:02d}:{s:05.2f}"
+
+    header = f"""[Script Info]
+Title: Merged Subtitles
+ScriptType: v4.00+
+PlayResX: {video_width}
+PlayResY: {video_height}
+WrapStyle: 0
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,{font_name},{font_size},&H00FFFFFF,&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,3,1,2,{margin_lr},{margin_lr},{margin_v},1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
+    dialogues = []
+    offset = 0.0
+    for clip in clips:
+        dur = clip["end"] - clip["start"]
+        text = clip["text"]
+        lang = detect_language(text)
+
+        if lang == "zh":
+            max_chars = int(usable_width / font_size)
+        else:
+            max_chars = int(usable_width / (font_size * 0.55))
+
+        wrapped = wrap_subtitle_text(text, max_chars, lang)
+        escaped = escape_ass_text(wrapped)
+
+        scaled_dur = dur / speed
+        start_t = fmt_time(offset)
+        end_t = fmt_time(offset + scaled_dur)
+        dialogues.append(f"Dialogue: 0,{start_t},{end_t},Default,,0,0,0,,{escaped}")
+        offset += scaled_dur
+
+    return header + "\n".join(dialogues) + "\n", offset
+
+
+def build_trim_filter(clips):
+    """Build filter_complex string for trimming and concatenating clips.
+
+    Returns (filter_str, input_files_ordered, final_video_label, final_audio_label).
+    """
+    # Deduplicate input files while preserving order
+    input_files = []
+    input_index = {}
+    for clip in clips:
+        if clip["video"] not in input_index:
+            input_index[clip["video"]] = len(input_files)
+            input_files.append(clip["video"])
+
+    filters = []
+    n = len(clips)
+    concat_inputs = ""
+
+    for i, clip in enumerate(clips):
+        idx = input_index[clip["video"]]
+        s = clip["start"]
+        e = clip["end"]
+        filters.append(
+            f"[{idx}:v]trim=start={s:.4f}:end={e:.4f},setpts=PTS-STARTPTS[v{i}]"
+        )
+        filters.append(
+            f"[{idx}:a]atrim=start={s:.4f}:end={e:.4f},asetpts=PTS-STARTPTS[a{i}]"
+        )
+        concat_inputs += f"[v{i}][a{i}]"
+
+    filters.append(f"{concat_inputs}concat=n={n}:v=1:a=1[merged_v][merged_a]")
+
+    return ";\n".join(filters), input_files
+
+
+def build_cover_filter(title, font_path, width, height, fps):
+    """Build drawtext filter for cover overlay on first frame."""
+    if not title:
+        return ""
+
+    title = sanitize_title(title)
+    frame_dur = 1.0 / fps
+
+    # Build drawtext filters directly (not via build_drawtext_filters which returns joined string)
+    short_side = min(width, height)
+    font_size = max(36, min(int(short_side * 0.06), 120))
+    lines = _wrap_title(title, font_size=font_size, img_width=width)
+
+    line_height = int(font_size * 1.5)
+    block_height = len(lines) * line_height
+    start_y = int(height * 0.40) - block_height // 2
+
+    escaped_font = escape_ffmpeg_path(font_path) if font_path else ""
+
+    # Semi-dark overlay on first frame
+    parts = [
+        f"drawbox=x=0:y=0:w=iw:h=ih:color=black@0.4:t=fill"
+        f":enable='lte(t,{frame_dur:.4f})'"
+    ]
+
+    for i, line in enumerate(lines):
+        escaped_text = line.replace("\\", "\\\\").replace("'", "\u2019")
+        escaped_text = escaped_text.replace(":", "\\:")
+        y = start_y + i * line_height
+
+        f = (
+            f"drawtext=text='{escaped_text}'"
+            f":fontsize={font_size}"
+            f":fontcolor=white"
+            f":borderw=4:bordercolor=black@0.8"
+            f":shadowcolor=black@0.5:shadowx=3:shadowy=3"
+            f":x=(w-text_w)/2:y={y}"
+            f":enable='lte(t\\,{frame_dur:.4f})'"
+        )
+        if escaped_font:
+            f += f":fontfile='{escaped_font}'"
+        parts.append(f)
+
+    return ",".join(parts)
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Single-pass video renderer")
+    parser.add_argument("--config", required=True, help="Path to render config JSON")
+    parser.add_argument("--output", required=True, help="Output video path")
+    parser.add_argument("--font-path", default=None, help="Custom font path")
+    parser.add_argument("--font-size", type=int, default=48, help="Subtitle font size")
+    parser.add_argument("--no-subtitles", action="store_true")
+    parser.add_argument("--no-cover", action="store_true")
+    parser.add_argument("--no-chapters", action="store_true")
+    parser.add_argument("--speed", nargs="*", type=float, default=[],
+                        help="Additional speed variants to render (e.g. --speed 1.25 1.5)")
+    parser.add_argument("--cleanup", action="store_true", help="Remove temp files after render")
+    args = parser.parse_args()
+
+    config = load_config(args.config)
+    clips = resolve_clips(config)
+
+    if not clips:
+        print("Error: No clips in config", file=sys.stderr)
+        sys.exit(1)
+
+    # Get video dimensions from first source
+    first_video = clips[0]["video"]
+    _, width, height, fps, _ = get_video_info(first_video)
+    print(f"Video: {width}x{height}, {fps:.2f}fps")
+
+    # Scale font size based on shorter side
+    ref_dimension = min(width, height)
+    font_size = int(args.font_size * ref_dimension / 1080)
+
+    # Find font
+    font_path, font_name = find_chinese_font(args.font_path)
+    print(f"Font: {font_name}")
+
+    # --- Step 1: Build trim + concat filter ---
+    trim_filter, input_files = build_trim_filter(clips)
+    print(f"Sources: {len(input_files)} video(s), {len(clips)} clips")
+
+    # Collect all speeds to render (1.0 = original, plus any extras)
+    all_speeds = [1.0] + [s for s in args.speed if s != 1.0]
+
+    total_duration = sum(c["end"] - c["start"] for c in clips)
+    title = config.get("title", "")
+    chapters = config.get("chapters", [])
+    chapter_style = config.get("chapter_style", "mono")
+    encode_args = get_ffmpeg_encode_args()
+    output_path = os.path.abspath(args.output)
+    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+    has_dt = _has_drawtext()
+    temp_files = []
+
+    for speed in all_speeds:
+        if speed == 1.0:
+            out_path = output_path
+            label = "1x"
+        else:
+            base, ext = os.path.splitext(output_path)
+            speed_label = f"{speed}x".replace(".", "_")
+            out_path = f"{base}_{speed_label}{ext}"
+            label = f"{speed}x"
+
+        effective_duration = total_duration / speed
+
+        # --- Build subtitle ASS (scaled for speed) ---
+        ass_path = None
+        if not args.no_subtitles:
+            ass_content, _ = build_merged_ass(
+                clips, font_name, font_size, width, height, speed=speed
+            )
+            fd, ass_path = tempfile.mkstemp(suffix=".ass", prefix=f"sub_{label}_")
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(ass_content)
+            temp_files.append(ass_path)
+
+        # --- Build video filter chain on [merged_v] ---
+        vf_parts = []
+
+        # Speed adjustment (before overlays so timing matches)
+        if speed != 1.0:
+            vf_parts.append(f"setpts=PTS/{speed}")
+
+        # Subtitles
+        if ass_path:
+            escaped_ass = escape_ffmpeg_path(ass_path)
+            if font_path:
+                fonts_dir = escape_ffmpeg_path(os.path.dirname(font_path))
+                vf_parts.append(f"ass='{escaped_ass}':fontsdir='{fonts_dir}'")
+            else:
+                vf_parts.append(f"ass='{escaped_ass}'")
+
+        # Cover (on first frame of the speed-adjusted video)
+        if title and not args.no_cover:
+            cover_vf = build_cover_filter(title, font_path, width, height, fps * speed)
+            if cover_vf:
+                vf_parts.append(cover_vf)
+
+        # Chapter bar (with speed-adjusted timing)
+        if chapters and not args.no_chapters and has_dt:
+            speed_chapters = [
+                {**ch, "start": ch["start"] / speed, "end": ch["end"] / speed}
+                for ch in chapters
+            ]
+            chapter_vf = build_chapter_bar_filter(
+                speed_chapters, effective_duration, width, height,
+                font_path=font_path, style=chapter_style, has_drawtext=has_dt,
+            )
+            if chapter_vf:
+                vf_parts.append(chapter_vf)
+
+        # --- Build audio filter chain on [merged_a] ---
+        af_parts = []
+        if speed != 1.0:
+            remaining = speed
+            while remaining > 2.0:
+                af_parts.append("atempo=2.0")
+                remaining /= 2.0
+            af_parts.append(f"atempo={remaining:.4f}")
+
+        # --- Assemble full filter_complex ---
+        if vf_parts:
+            vf_chain = ",".join(vf_parts)
+            full_filter = trim_filter + ";\n" + f"[merged_v]{vf_chain}[final_v]"
+            map_v = "[final_v]"
+        else:
+            full_filter = trim_filter
+            map_v = "[merged_v]"
+
+        if af_parts:
+            af_chain = ",".join(af_parts)
+            full_filter += ";\n" + f"[merged_a]{af_chain}[final_a]"
+            map_a = "[final_a]"
+        else:
+            map_a = "[merged_a]"
+
+        # Write filter to temp file
+        fd, filter_path = tempfile.mkstemp(suffix=".txt", prefix=f"fc_{label}_")
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(full_filter)
+        temp_files.append(filter_path)
+
+        # --- Single ffmpeg encode from source ---
+        cmd = ["ffmpeg", "-y"]
+        for inp in input_files:
+            cmd.extend(["-i", inp])
+        cmd.extend([
+            "-filter_complex_script", filter_path,
+            "-map", map_v,
+            "-map", map_a,
+        ])
+        cmd.extend(encode_args)
+        cmd.extend(["-c:a", "aac", "-b:a", "192k"])
+        cmd.append(out_path)
+
+        print(f"\nRendering {label} ({effective_duration:.0f}s)...")
+        try:
+            subprocess.run(cmd, check=True, capture_output=True, text=True)
+        except subprocess.CalledProcessError as e:
+            print(f"FFmpeg error ({label}):\n{e.stderr[-2000:]}", file=sys.stderr)
+            continue
+
+        size_mb = os.path.getsize(out_path) / 1024 / 1024
+        print(f"Done: {out_path} ({size_mb:.1f}MB)")
+
+    # Print chapter timestamps (for 1x)
+    if chapters:
+        print("\nYouTube chapter timestamps:")
+        for ch in chapters:
+            m, s = divmod(ch["start"], 60)
+            print(f"  {int(m)}:{int(s):02d} {ch.get('title', '')}")
+
+    # --- Cleanup ---
+    for p in temp_files:
+        if p and os.path.exists(p):
+            os.remove(p)
+    if temp_files:
+        print("\nTemp files cleaned up.")
+
+
+if __name__ == "__main__":
+    main()
