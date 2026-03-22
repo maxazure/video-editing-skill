@@ -141,8 +141,7 @@ Whisper 常见的识别错误类型：
   "cover_duration": 2.0,
   "chapters": [
     {"title": "章节名", "start": 0.0, "end": 30.0}
-  ],
-  "chapter_style": "mono"
+  ]
 }
 ```
 
@@ -171,7 +170,8 @@ python3 scripts/render_final.py --config render_config.json --output final.mp4 -
 **核心原理**：
 - **单视频**（最常见场景）：使用 `select/aselect` + `between()` 表达式一次性筛选所有保留片段，FFmpeg 解码完整源视频但只编码选中的帧，配合 `-crf 18 -preset medium` 只编码一次
 - **多视频混剪**：使用 `trim/atrim` 裁切 + `concat` 拼接（自动降级）
-- 封面使用 `tpad` 冻结第一帧 + `adelay` 添加静音，字幕、章节时间轴自动偏移，全部在**一次编码**中完成
+- 封面使用 `tpad` 冻结第一帧 + `adelay` 添加静音，字幕时间自动偏移，全部在**一次编码**中完成
+- 章节时间轴不烧入视频，渲染完成后以文本形式输出，供用户手动粘贴到小红书等平台
 
 参数说明：
 - `--config`：渲染配置 JSON 路径
@@ -180,19 +180,18 @@ python3 scripts/render_final.py --config render_config.json --output final.mp4 -
 - `--cover-duration 2.0`：封面冻结时长（秒），覆盖配置中的 `cover_duration`
 - `--font-path`：自定义字体文件
 - `--font-size`：字幕字号（默认 48，基于 1080p 自动缩放）
-- `--no-subtitles`、`--no-cover`、`--no-chapters`：跳过对应功能
+- `--no-subtitles`、`--no-cover`：跳过对应功能
 
 **输出**：
 - `final.mp4`（原速）
 - `final_1_25x.mp4`（1.25 倍速）
 - `final_1_5x.mp4`（1.5 倍速）
+- 渲染完成后终端输出章节时间轴文本，可直接复制到小红书
 
 **自动功能**：
 - 字幕自动检测语言、自动折行、竖屏优化定位
-- 封面自动叠加标题文字（带描边和阴影）在第一帧
-- 章节时间轴自动叠加在视频顶部（竖屏）或底部（横屏）
-- 所有章节名全程显示，当前章节高亮，其他章节半透明
-- 变速版本的字幕时间、章节时间自动缩放
+- 封面自动叠加标题文字（带描边和阴影），冻结首帧 1-2 秒
+- 变速版本的字幕时间自动缩放
 
 ### Phase 6: Post-render Validation（渲染后验证）
 
@@ -228,7 +227,7 @@ python3 scripts/render_final.py --config render_config.json --output final.mp4 -
 
 ### 视频质量与编码准则（最重要）
 
-1. **单次编码原则**：从原始视频到最终输出，**只允许一次编码**。严禁多次重编码（如先切分编码、再烧字幕编码、再加封面编码），每次重编码都会累积质量损失。使用 `render_final.py` 的 `select/aselect` + `between()` 方案（单视频）或 `trim/atrim` + `concat` 方案（多视频），在一条 ffmpeg 命令中完成裁切、拼接、字幕、封面、章节时间轴的全部操作。
+1. **单次编码原则**：从原始视频到最终输出，**只允许一次编码**。严禁多次重编码（如先切分编码、再烧字幕编码、再加封面编码），每次重编码都会累积质量损失。使用 `render_final.py` 的 `select/aselect` + `between()` 方案（单视频）或 `trim/atrim` + `concat` 方案（多视频），在一条 ffmpeg 命令中完成裁切、拼接、字幕、封面的全部操作。
 2. **变速版本也从原始视频直接编码**：`--speed 1.25 1.5` 的变速版本在 `filter_complex` 中集成 `setpts` + `atempo`，直接从原始视频一步到位，**不要**从已编码的 1x 视频再次压缩。
 3. **编码参数**：使用固定比特率（如 `-b:v 12M`）而非质量参数（如 `-q:v`）。固定比特率可以精确控制文件大小和质量，避免 `-q:v` 在不同编码器上表现不一致。参考原始视频比特率（通常 8-15 Mbps）设定。
 4. **旧流程脚本仅用于预览**：`split_video.py`、`burn_subtitles.py`、`merge_clips.py`、`generate_cover.py`、`add_chapter_bar.py` 仍可单独使用，但**最终输出必须使用 `render_final.py`**。旧脚本适合快速预览单个片段效果。
@@ -240,17 +239,16 @@ python3 scripts/render_final.py --config render_config.json --output final.mp4 -
 ### 章节时间轴
 
 6. **章节数量**：建议不超过 4 个章节，章节名 2-4 个字。
-7. **章节标签样式**：推荐使用 `mono` 样式（半透明白色），所有章节名全程显示，当前章节高亮(0.95)，其他半透明(0.4)。标签使用 `borderw=3` + 轻阴影，确保压缩后仍清晰可读。
-8. **时间轴位置**：竖屏视频在顶部（避开底部平台 UI），横屏视频在底部。
+7. **时间轴不烧入视频**：渲染完成后以文本形式输出章节时间轴（含封面偏移），用户手动复制到小红书等平台的视频描述中。
 
 ### 其他
 
-9. **多视频处理**：如果用户提供多个视频，对每个视频独立执行 Phase 1-2.5，然后在 Phase 3 统一展示所有视频的片段列表，支持跨视频混合选择片段。
-10. **识别模型选择**：中文视频建议使用 `large` 模型，`base`/`small` 模型中文识别率较低。`large` 模型约需 2.9GB 下载空间。
-11. **工作目录**：所有中间文件（音频、转录）都保存在视频文件所在目录下，便于管理。渲染完成后应清理临时文件（ASS 字幕文件、filter_complex 脚本）。
-12. **错误处理**：如果某一步失败，向用户报告具体错误信息，并建议可能的解决方案。
-13. **字幕字体**：ffmpeg 需要编译包含 `libass` 和 `libfreetype`。macOS 可通过 `brew install ffmpeg` 获取。
-14. **竖屏适配**：字幕位置和字体大小已针对 9:16 竖屏视频（如小红书、抖音）优化。横屏视频同样支持。
+8. **多视频处理**：如果用户提供多个视频，对每个视频独立执行 Phase 1-2.5，然后在 Phase 3 统一展示所有视频的片段列表，支持跨视频混合选择片段。
+9. **识别模型选择**：中文视频建议使用 `large` 模型，`base`/`small` 模型中文识别率较低。`large` 模型约需 2.9GB 下载空间。
+10. **工作目录**：所有中间文件（音频、转录）都保存在视频文件所在目录下，便于管理。渲染完成后应清理临时文件（ASS 字幕文件、filter_complex 脚本）。
+11. **错误处理**：如果某一步失败，向用户报告具体错误信息，并建议可能的解决方案。
+12. **字幕字体**：ffmpeg 需要编译包含 `libass` 和 `libfreetype`。macOS 可通过 `brew install ffmpeg` 获取。
+13. **竖屏适配**：字幕位置和字体大小已针对 9:16 竖屏视频（如小红书、抖音）优化。横屏视频同样支持。
 
 ## FAQ / Troubleshooting（常见问题诊断）
 
@@ -280,7 +278,7 @@ ffmpeg -hide_banner -filters 2>/dev/null | grep -E "drawtext|ass|subtitles"
   ```bash
   sudo apt install libfreetype6-dev libfontconfig1-dev libass-dev
   ```
-- **影响范围**：缺少 drawtext 时，字幕烧录、封面文字和章节标题标签会失败或自动降级。章节进度条的色块和播放头不受影响（仅使用 drawbox）。
+- **影响范围**：缺少 drawtext 时，字幕烧录和封面文字会失败或自动降级。
 
 ### Q2: `Undefined constant or missing '(' in 'iw*0.5-tw/2'`
 

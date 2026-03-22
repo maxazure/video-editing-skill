@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Single-pass video renderer. Trims, concatenates, and applies subtitles,
-cover, and chapter bar in ONE encoding pass — no intermediate re-encodes.
+Single-pass video renderer. Selects segments, applies subtitles and cover
+in ONE encoding pass — no intermediate re-encodes.
 
 Usage:
   python3 render_final.py --config render_config.json --output final.mp4
@@ -17,8 +17,7 @@ The config JSON format:
   "chapters": [
     {"title": "痛点", "start": 0.0, "end": 27.5},
     ...
-  ],
-  "chapter_style": "mono"
+  ]
 }
 """
 
@@ -36,9 +35,6 @@ from utils import (
 )
 from burn_subtitles import (
     detect_language, escape_ass_text, wrap_subtitle_text,
-)
-from add_chapter_bar import (
-    build_chapter_bar_filter, _has_drawtext,
 )
 from generate_cover import (
     build_drawtext_filters, _wrap_title,
@@ -276,7 +272,6 @@ def main():
     parser.add_argument("--font-size", type=int, default=48, help="Subtitle font size")
     parser.add_argument("--no-subtitles", action="store_true")
     parser.add_argument("--no-cover", action="store_true")
-    parser.add_argument("--no-chapters", action="store_true")
     parser.add_argument("--speed", nargs="*", type=float, default=[],
                         help="Additional speed variants to render (e.g. --speed 1.25 1.5)")
     parser.add_argument("--cover-duration", type=float, default=None,
@@ -318,11 +313,9 @@ def main():
     total_duration = sum(c["end"] - c["start"] for c in clips)
     title = config.get("title", "")
     chapters = config.get("chapters", [])
-    chapter_style = config.get("chapter_style", "mono")
     encode_args = get_ffmpeg_encode_args()
     output_path = os.path.abspath(args.output)
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
-    has_dt = _has_drawtext()
     temp_files = []
     failed_speeds = []
 
@@ -390,25 +383,6 @@ def main():
             if cover_vf:
                 vf_parts.append(cover_vf)
 
-        # Chapter bar (with speed-adjusted timing + cover offset)
-        if chapters and not args.no_chapters and has_dt:
-            speed_chapters = [
-                {
-                    **ch,
-                    "start": ch["start"] / speed + cover_duration,
-                    "end": ch["end"] / speed + cover_duration,
-                }
-                for ch in chapters
-            ]
-            chapter_vf = build_chapter_bar_filter(
-                speed_chapters,
-                effective_duration + cover_duration,
-                width, height,
-                font_path=font_path, style=chapter_style, has_drawtext=has_dt,
-            )
-            if chapter_vf:
-                vf_parts.append(chapter_vf)
-
         # --- Build audio filter chain on [merged_a] ---
         af_parts = []
         if speed != 1.0:
@@ -474,9 +448,9 @@ def main():
     if failed_speeds:
         print(f"\nWARNING: Failed to render: {', '.join(failed_speeds)}", file=sys.stderr)
 
-    # Print chapter timestamps (for 1x, with cover offset)
+    # Print chapter timeline (for pasting into Xiaohongshu / YouTube etc.)
     if chapters:
-        print("\nYouTube chapter timestamps:")
+        print("\n时间轴（可直接复制到小红书）:")
         for ch in chapters:
             t = ch["start"] + cover_duration
             m, s = divmod(t, 60)
