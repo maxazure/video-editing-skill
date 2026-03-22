@@ -17,7 +17,7 @@ import sys
 import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from utils import detect_gpu, get_ffmpeg_encode_args, get_ffmpeg_encoder
+from utils import detect_gpu, get_ffmpeg_encode_args
 
 
 def parse_selection(selection_str):

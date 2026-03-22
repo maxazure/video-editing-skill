@@ -235,7 +235,7 @@ def main():
             else:
                 cmd += ["-vf", f"ass={escaped_ass}"]
 
-            cmd += encode_args + ["-c:a", "copy", output_path]
+            cmd += encode_args + ["-c:a", "aac", "-b:a", "192k", output_path]
 
             subprocess.run(cmd, check=True, capture_output=True, text=True)
             print(f"  clip_{seg_id:03d}.mp4  [{lang}]  {text}")

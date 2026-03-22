@@ -80,7 +80,7 @@ def chapters_from_transcript(transcript_path, max_chapters=8):
     if total_duration <= 0:
         return []
 
-    n_chapters = max(2, min(max_chapters, int(total_duration / 20)))
+    n_chapters = max(1, min(max_chapters, int(total_duration / 20)))
     target_dur = total_duration / n_chapters
 
     chapters = []

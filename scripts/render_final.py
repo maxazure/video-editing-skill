@@ -54,15 +54,27 @@ def resolve_clips(config):
     """Resolve clip entries to (video_path, start, end, text) tuples."""
     transcript_cache = {}
     clips = []
-    for entry in config["clips"]:
+    errors = []
+    for i, entry in enumerate(config["clips"]):
         video = os.path.abspath(entry["video"])
         transcript = os.path.abspath(entry["transcript"])
         seg_id = entry["segment_id"]
+
+        if not os.path.isfile(video):
+            errors.append(f"Clip #{i+1}: video not found: {video}")
+            continue
+        if not os.path.isfile(transcript):
+            errors.append(f"Clip #{i+1}: transcript not found: {transcript}")
+            continue
 
         if transcript not in transcript_cache:
             with open(transcript, encoding="utf-8") as f:
                 data = json.load(f)
             transcript_cache[transcript] = {s["id"]: s for s in data["segments"]}
+
+        if seg_id not in transcript_cache[transcript]:
+            errors.append(f"Clip #{i+1}: segment_id {seg_id} not found in {os.path.basename(transcript)}")
+            continue
 
         seg = transcript_cache[transcript][seg_id]
         clips.append({
@@ -71,6 +83,13 @@ def resolve_clips(config):
             "end": seg["end"],
             "text": seg["text"],
         })
+
+    if errors:
+        print("Config validation errors:", file=sys.stderr)
+        for e in errors:
+            print(f"  {e}", file=sys.stderr)
+        sys.exit(1)
+
     return clips
 
 
@@ -254,6 +273,7 @@ def main():
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
     has_dt = _has_drawtext()
     temp_files = []
+    failed_speeds = []
 
     for speed in all_speeds:
         if speed == 1.0:
@@ -296,7 +316,8 @@ def main():
 
         # Cover (on first frame of the speed-adjusted video)
         if title and not args.no_cover:
-            cover_vf = build_cover_filter(title, font_path, width, height, fps * speed)
+            # Use original fps — setpts already adjusts timing
+            cover_vf = build_cover_filter(title, font_path, width, height, fps)
             if cover_vf:
                 vf_parts.append(cover_vf)
 
@@ -362,10 +383,15 @@ def main():
             subprocess.run(cmd, check=True, capture_output=True, text=True)
         except subprocess.CalledProcessError as e:
             print(f"FFmpeg error ({label}):\n{e.stderr[-2000:]}", file=sys.stderr)
+            failed_speeds.append(label)
             continue
 
         size_mb = os.path.getsize(out_path) / 1024 / 1024
         print(f"Done: {out_path} ({size_mb:.1f}MB)")
+
+    # Report failures
+    if failed_speeds:
+        print(f"\nWARNING: Failed to render: {', '.join(failed_speeds)}", file=sys.stderr)
 
     # Print chapter timestamps (for 1x)
     if chapters:

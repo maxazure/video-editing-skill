@@ -12,7 +12,7 @@ import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from utils import detect_gpu, get_ffmpeg_encode_args
+from utils import detect_gpu, get_ffmpeg_encode_args, get_video_info
 
 
 def main():
@@ -49,18 +49,10 @@ def main():
     print(f"Splitting video into {len(segments)} clips...")
     print(f"Output directory: {clips_dir}")
 
-    # Get video duration for boundary clamping
-    probe_cmd = [
-        "ffprobe", "-v", "error",
-        "-show_entries", "format=duration",
-        "-of", "default=noprint_wrappers=1:nokey=1",
-        video_path
-    ]
-    try:
-        duration_str = subprocess.check_output(probe_cmd, text=True).strip()
-        video_duration = float(duration_str)
-    except (subprocess.CalledProcessError, ValueError):
-        video_duration = None
+    # Get video info (with rotation detection)
+    video_duration, width, height, fps, rotation = get_video_info(video_path)
+    orient = "portrait" if height > width else "landscape"
+    print(f"Video: {width}x{height}, {orient}" + (f", rotation={rotation}" if rotation else ""))
 
     # Detect GPU and choose encoder
     gpu_info = detect_gpu()
