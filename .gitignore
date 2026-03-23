@@ -11,6 +11,7 @@ fonts/
 
 # User video workspace
 videos/
+origin/
 
 # Intermediate files (generated during processing)
 *_audio.wav

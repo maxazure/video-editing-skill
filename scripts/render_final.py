@@ -36,9 +36,7 @@ from utils import (
 from burn_subtitles import (
     detect_language, escape_ass_text, wrap_subtitle_text,
 )
-from generate_cover import (
-    build_drawtext_filters, _wrap_title,
-)
+from generate_cover_image import generate_cover as generate_cover_image
 
 
 def load_config(config_path):
@@ -213,55 +211,24 @@ def build_trim_filter(clips):
     return ";\n".join(filters), input_files
 
 
-def build_cover_filter(title, font_path, width, height, cover_duration):
-    """Build drawtext filter for cover overlay.
+def generate_cover_png(video_path, title, width, height, temp_files):
+    """Generate cover PNG using headless Chrome.
 
-    Args:
-        cover_duration: How long the cover is displayed (seconds).
-            The video should already have tpad applied to freeze the first
-            frame for this duration.
+    Returns path to the cover PNG, or None if generation fails.
+    The PNG path is appended to temp_files for cleanup.
     """
-    if not title or cover_duration <= 0:
-        return ""
+    if not title:
+        return None
 
-    title = sanitize_title(title)
+    fd, cover_path = tempfile.mkstemp(suffix=".png", prefix="cover_")
+    os.close(fd)
+    temp_files.append(cover_path)
 
-    # Build drawtext filters directly (not via build_drawtext_filters which returns joined string)
-    short_side = min(width, height)
-    font_size = max(36, min(int(short_side * 0.06), 120))
-    lines = _wrap_title(title, font_size=font_size, img_width=width)
-
-    line_height = int(font_size * 1.5)
-    block_height = len(lines) * line_height
-    start_y = int(height * 0.40) - block_height // 2
-
-    escaped_font = escape_ffmpeg_path(font_path) if font_path else ""
-
-    # Semi-dark overlay for the cover duration
-    parts = [
-        f"drawbox=x=0:y=0:w=iw:h=ih:color=black@0.4:t=fill"
-        f":enable='lte(t,{cover_duration:.4f})'"
-    ]
-
-    for i, line in enumerate(lines):
-        escaped_text = line.replace("\\", "\\\\").replace("'", "\u2019")
-        escaped_text = escaped_text.replace(":", "\\:")
-        y = start_y + i * line_height
-
-        f = (
-            f"drawtext=text='{escaped_text}'"
-            f":fontsize={font_size}"
-            f":fontcolor=white"
-            f":borderw=4:bordercolor=black@0.8"
-            f":shadowcolor=black@0.5:shadowx=3:shadowy=3"
-            f":x=(w-text_w)/2:y={y}"
-            f":enable='lte(t\\,{cover_duration:.4f})'"
-        )
-        if escaped_font:
-            f += f":fontfile='{escaped_font}'"
-        parts.append(f)
-
-    return ",".join(parts)
+    result = generate_cover_image(
+        video_path, title, output_path=cover_path,
+        width=width, height=height,
+    )
+    return result
 
 
 def main():
@@ -326,8 +293,17 @@ def main():
         cover_duration = config.get("cover_duration", 2.0)
     if not title or args.no_cover:
         cover_duration = 0.0
-    if cover_duration > 0:
-        print(f"Cover: {cover_duration:.1f}s freeze + title overlay")
+
+    # Generate cover PNG once (reused across all speed variants)
+    cover_png_path = None
+    if cover_duration > 0 and title:
+        cover_png_path = generate_cover_png(
+            clips[0]["video"], title, width, height, temp_files
+        )
+        if cover_png_path:
+            print(f"Cover: {cover_duration:.1f}s freeze + Chrome-rendered overlay")
+        else:
+            print(f"Cover: {cover_duration:.1f}s freeze (no title overlay — Chrome not found)")
 
     for speed in all_speeds:
         if speed == 1.0:
@@ -375,14 +351,6 @@ def main():
             else:
                 vf_parts.append(f"ass='{escaped_ass}'")
 
-        # Cover title overlay (drawtext for the cover duration)
-        if cover_duration > 0 and title:
-            cover_vf = build_cover_filter(
-                title, font_path, width, height, cover_duration
-            )
-            if cover_vf:
-                vf_parts.append(cover_vf)
-
         # --- Build audio filter chain on [merged_a] ---
         af_parts = []
         if speed != 1.0:
@@ -397,21 +365,51 @@ def main():
             delay_ms = int(cover_duration * 1000)
             af_parts.append(f"adelay={delay_ms}:all=1")
 
+        # --- Cover PNG overlay ---
+        # If we have a cover PNG, add it as an overlay on the tpad-frozen frame
+        cover_input_idx = None
+        if cover_png_path and cover_duration > 0:
+            cover_input_idx = len(input_files)  # index of cover PNG input
+            # Overlay the cover PNG during the cover_duration period
+            vf_parts.append(
+                f"[cover_img]overlay=0:0:enable='lte(t,{cover_duration:.4f})'")
+
         # --- Assemble full filter_complex ---
+        filter_lines = [base_filter]
+
         if vf_parts:
             vf_chain = ",".join(vf_parts)
-            full_filter = base_filter + ";\n" + f"[merged_v]{vf_chain}[final_v]"
+            # If cover overlay is used, we need to split the chain at the overlay point
+            if cover_input_idx is not None:
+                # Everything before overlay goes into pre_chain
+                pre_parts = vf_parts[:-1]
+                overlay_part = vf_parts[-1]
+                if pre_parts:
+                    pre_chain = ",".join(pre_parts)
+                    filter_lines.append(f"[merged_v]{pre_chain}[pre_v]")
+                    filter_lines.append(f"[pre_v]{overlay_part}[final_v]")
+                else:
+                    filter_lines.append(f"[merged_v]{overlay_part}[final_v]")
+            else:
+                filter_lines.append(f"[merged_v]{vf_chain}[final_v]")
             map_v = "[final_v]"
         else:
-            full_filter = base_filter
             map_v = "[merged_v]"
 
         if af_parts:
             af_chain = ",".join(af_parts)
-            full_filter += ";\n" + f"[merged_a]{af_chain}[final_a]"
+            filter_lines.append(f"[merged_a]{af_chain}[final_a]")
             map_a = "[final_a]"
         else:
             map_a = "[merged_a]"
+
+        # Add cover image scaling/labeling if needed
+        if cover_input_idx is not None:
+            # Insert cover image prep before the overlay line
+            cover_prep = f"[{cover_input_idx}:v]scale={width}:{height},format=rgba[cover_img]"
+            filter_lines.insert(1, cover_prep)
+
+        full_filter = ";\n".join(filter_lines)
 
         # Write filter to temp file
         fd, filter_path = tempfile.mkstemp(suffix=".txt", prefix=f"fc_{label}_")
@@ -423,6 +421,9 @@ def main():
         cmd = ["ffmpeg", "-y"]
         for inp in input_files:
             cmd.extend(["-i", inp])
+        # Add cover PNG as input if available
+        if cover_input_idx is not None:
+            cmd.extend(["-i", cover_png_path])
         cmd.extend([
             "-filter_complex_script", filter_path,
             "-map", map_v,
