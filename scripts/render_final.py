@@ -211,7 +211,8 @@ def build_trim_filter(clips):
     return ";\n".join(filters), input_files
 
 
-def generate_cover_png(video_path, title, width, height, temp_files):
+def generate_cover_png(video_path, title, width, height, temp_files,
+                       use_frame=False):
     """Generate cover PNG using headless Chrome.
 
     Returns path to the cover PNG, or None if generation fails.
@@ -226,7 +227,7 @@ def generate_cover_png(video_path, title, width, height, temp_files):
 
     result = generate_cover_image(
         video_path, title, output_path=cover_path,
-        width=width, height=height,
+        width=width, height=height, use_frame=use_frame,
     )
     return result
 
@@ -296,9 +297,11 @@ def main():
 
     # Generate cover PNG once (reused across all speed variants)
     cover_png_path = None
+    use_frame = config.get("cover_use_frame", False)
     if cover_duration > 0 and title:
         cover_png_path = generate_cover_png(
-            clips[0]["video"], title, width, height, temp_files
+            clips[0]["video"], title, width, height, temp_files,
+            use_frame=use_frame,
         )
         if cover_png_path:
             print(f"Cover: {cover_duration:.1f}s freeze + Chrome-rendered overlay")
