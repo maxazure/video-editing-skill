@@ -12,7 +12,7 @@
 - **语音识别切分** — 支持 faster-whisper（推荐，4x 加速）和 openai-whisper，自动按句子切分
 - **GPU 硬件加速** — 自动检测 NVIDIA NVENC / Apple VideoToolbox / Intel QSV / AMD AMF
 - **自动字幕** — 中英文自动检测，自动折行，竖屏位置优化
-- **自动封面** — 视频第一帧叠加标题文字（带描边和阴影）
+- **自动封面** — 多种封面风格，支持视频取帧背景、移动端优先大标题、教程型卡片布局
 - **章节时间轴** — 半透明白色章节进度条，章节名全程显示，当前章节高亮
 - **变速输出** — 同时输出 1x / 1.25x / 1.5x 等多个速率版本，每个都从原始视频直接编码
 - **Rotation 检测** — 自动检测 iPhone 竖屏视频的 rotation 元数据，正确识别显示尺寸
@@ -129,6 +129,9 @@ python3 scripts/transcribe.py "your_video_audio.wav" --model auto --language zh
     {"video": "your_video.mp4", "segment_id": 5, "transcript": "your_video_transcript.json"}
   ],
   "title": "封面标题",
+  "subtitle": "副标题（可选）",
+  "cover_style": "news",
+  "cover_use_frame": false,
   "chapters": [
     {"title": "开场", "start": 0.0, "end": 30.0},
     {"title": "正题", "start": 30.0, "end": 90.0}
@@ -149,6 +152,39 @@ python3 scripts/render_final.py --config render_config.json --output final.mp4 -
 - `final_1_5x.mp4`（1.5 倍速）
 
 每个版本都从原始视频直接编码，字幕 + 封面 + 章节时间轴在一次 ffmpeg 命令中完成。
+
+#### Step 3.5: 单独生成封面预览（可选）
+
+如果你想先看封面效果，再决定标题或风格，可以直接生成 PNG：
+
+```bash
+python3 scripts/generate_cover_image.py origin/video1.mp4 \
+  --title "告别剪映" \
+  --subtitle "AI 一键剪口播" \
+  --style news \
+  --use-frame \
+  --frame-timestamp 00:10:00 \
+  --output cover_preview.png
+```
+
+可选风格：
+- `bold`
+- `news`
+- `frame`
+- `gradient`
+- `minimal`
+- `white`
+- `techcard`
+
+封面排版规则：
+- 标题按**单行约 8 个汉字**设计，优先保证手机缩略图可读性
+- 英文/数字按**约半个汉字宽度**估算
+- 副标题字号默认按标题的**约 50%**
+
+选图建议：
+- 录屏/软件教程优先试 `techcard` 或 `news`
+- 画面太杂时，优先纯底风格 `bold` / `white`
+- `--frame-timestamp` 可指定更合适的取帧时间，不必死用第一帧
 
 #### Step 3 备选: 分步流程（仅用于预览）
 
