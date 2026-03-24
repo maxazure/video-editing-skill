@@ -21,5 +21,18 @@ origin/
 *_with_cover.mp4
 *_chapters.mp4
 
+# Output videos
+final*.mp4
+
+# Build config
+build_config.py
+render_config.json
+
+# Covers
+covers/
+
+# Preview frames
+preview_frames/
+
 # Firebase
 firebase-debug.log
