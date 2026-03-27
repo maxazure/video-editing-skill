@@ -71,12 +71,16 @@ def resolve_clips(config):
             continue
 
         seg = transcript_cache[transcript][seg_id]
-        clips.append({
+        resolved = {
             "video": video,
             "start": seg["start"],
             "end": seg["end"],
             "text": seg["text"],
-        })
+        }
+        if "broll" in entry:
+            resolved["broll"] = os.path.abspath(entry["broll"])
+            resolved["broll_start"] = entry.get("broll_start", 0.0)
+        clips.append(resolved)
 
     if errors:
         print("Config validation errors:", file=sys.stderr)
@@ -88,15 +92,17 @@ def resolve_clips(config):
 
 
 def build_merged_ass(clips, font_name, font_size, video_width, video_height,
-                     speed=1.0, cover_duration=0.0):
+                     speed=1.0, cover_duration=0.0, end_cards=None):
     """Build a single ASS subtitle file covering the entire merged timeline.
 
     Args:
         cover_duration: Seconds of cover at the start; subtitles begin after this.
+        end_cards: List of {"text": str, "duration": float} for ending cards.
     """
     margin_lr = 60
     usable_width = video_width - 2 * margin_lr
     margin_v = int(video_height * 0.28)
+    end_card_fs = int(font_size * 1.4)
 
     def fmt_time(seconds):
         h = int(seconds // 3600)
@@ -114,6 +120,7 @@ WrapStyle: 0
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: Default,{font_name},{font_size},&H00FFFFFF,&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,3,1,2,{margin_lr},{margin_lr},{margin_v},1
+Style: EndCard,{font_name},{end_card_fs},&H00FFFFFF,&H000000FF,&H00000000,&H00000000,1,0,0,0,100,100,2,0,0,0,0,5,{margin_lr},{margin_lr},0,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -139,7 +146,25 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         dialogues.append(f"Dialogue: 0,{start_t},{end_t},Default,,0,0,0,,{escaped}")
         offset += scaled_dur
 
-    return header + "\n".join(dialogues) + "\n", offset
+    # End cards: centered text on black screen with fade
+    end_cards_duration = 0.0
+    if end_cards:
+        for card in end_cards:
+            card_text = card["text"]
+            card_dur = card.get("duration", 3.0)
+            fade_in = 300   # ms
+            fade_out = 300  # ms
+            start_t = fmt_time(offset)
+            end_t = fmt_time(offset + card_dur)
+            escaped = escape_ass_text(card_text)
+            escaped = escaped.replace("\n", "\\N")
+            dialogues.append(
+                f"Dialogue: 0,{start_t},{end_t},EndCard,,0,0,0,,{{\\fad({fade_in},{fade_out})}}{escaped}"
+            )
+            offset += card_dur
+            end_cards_duration += card_dur
+
+    return header + "\n".join(dialogues) + "\n", offset, end_cards_duration
 
 
 def _clips_in_temporal_order(clips):
@@ -174,11 +199,15 @@ def build_select_filter(clips, fps):
     return ";\n".join(filters), [clips[0]["video"]]
 
 
-def build_trim_filter(clips):
+def build_trim_filter(clips, target_w=None, target_h=None):
     """Build filter_complex string for trimming and concatenating clips.
 
     Fallback for multi-video or reordered clips where select filter
     cannot be used.
+
+    Supports B-roll: clips with a "broll" key use video from the broll
+    source but audio from the original source. B-roll is scaled/cropped
+    to match target_w x target_h.
 
     Returns (filter_str, input_files).
     """
@@ -186,23 +215,35 @@ def build_trim_filter(clips):
     input_files = []
     input_index = {}
     for clip in clips:
-        if clip["video"] not in input_index:
-            input_index[clip["video"]] = len(input_files)
-            input_files.append(clip["video"])
+        for vpath in [clip["video"], clip.get("broll")]:
+            if vpath and vpath not in input_index:
+                input_index[vpath] = len(input_files)
+                input_files.append(vpath)
 
     filters = []
     n = len(clips)
     concat_inputs = ""
 
     for i, clip in enumerate(clips):
-        idx = input_index[clip["video"]]
+        audio_idx = input_index[clip["video"]]
+        broll = clip.get("broll")
+        video_idx = input_index[broll] if broll else audio_idx
         s = clip["start"]
         e = clip["end"]
+        dur = e - s
+
+        if broll:
+            broll_start = clip.get("broll_start", 0.0)
+            broll_end = broll_start + dur
+            filters.append(
+                f"[{video_idx}:v]trim=start={broll_start:.4f}:end={broll_end:.4f},setpts=PTS-STARTPTS,scale={target_w}:{target_h}:force_original_aspect_ratio=increase,crop={target_w}:{target_h}[v{i}]"
+            )
+        else:
+            filters.append(
+                f"[{video_idx}:v]trim=start={s:.4f}:end={e:.4f},setpts=PTS-STARTPTS[v{i}]"
+            )
         filters.append(
-            f"[{idx}:v]trim=start={s:.4f}:end={e:.4f},setpts=PTS-STARTPTS[v{i}]"
-        )
-        filters.append(
-            f"[{idx}:a]atrim=start={s:.4f}:end={e:.4f},asetpts=PTS-STARTPTS[a{i}]"
+            f"[{audio_idx}:a]atrim=start={s:.4f}:end={e:.4f},asetpts=PTS-STARTPTS[a{i}]"
         )
         concat_inputs += f"[v{i}][a{i}]"
 
@@ -272,7 +313,7 @@ def main():
         base_filter, input_files = build_select_filter(clips, fps)
         print(f"Using select filter: {len(clips)} segments from 1 video")
     else:
-        base_filter, input_files = build_trim_filter(clips)
+        base_filter, input_files = build_trim_filter(clips, target_w=width, target_h=height)
         print(f"Using trim/concat filter: {len(clips)} clips from {len(input_files)} video(s)")
 
     # Collect all speeds to render (1.0 = original, plus any extras)
@@ -300,7 +341,11 @@ def main():
     cover_style = config.get("cover_style", "bold")
     cover_subtitle = config.get("subtitle", None)
     use_frame = config.get("cover_use_frame", False)
-    if cover_duration > 0 and title:
+    custom_cover = config.get("cover_image", None)
+    if cover_duration > 0 and custom_cover and os.path.isfile(custom_cover):
+        cover_png_path = os.path.abspath(custom_cover)
+        print(f"Cover: {cover_duration:.1f}s freeze + custom image ({custom_cover})")
+    elif cover_duration > 0 and title:
         cover_png_path = generate_cover_png(
             clips[0]["video"], title, width, height, temp_files,
             style=cover_style, subtitle=cover_subtitle, use_frame=use_frame,
@@ -323,11 +368,14 @@ def main():
         effective_duration = total_duration / speed
 
         # --- Build subtitle ASS (scaled for speed, offset by cover duration) ---
+        end_cards = config.get("end_cards", None)
         ass_path = None
+        end_cards_duration = 0.0
         if not args.no_subtitles:
-            ass_content, _ = build_merged_ass(
+            ass_content, _, end_cards_duration = build_merged_ass(
                 clips, font_name, font_size, width, height,
                 speed=speed, cover_duration=cover_duration,
+                end_cards=end_cards,
             )
             fd, ass_path = tempfile.mkstemp(suffix=".ass", prefix=f"sub_{label}_")
             with os.fdopen(fd, "w", encoding="utf-8") as f:
@@ -370,6 +418,8 @@ def main():
             delay_ms = int(cover_duration * 1000)
             af_parts.append(f"adelay={delay_ms}:all=1")
 
+        # Note: end cards silence is provided by anullsrc in the concat, no apad needed
+
         # --- Cover PNG overlay ---
         # If we have a cover PNG, add it as an overlay on the tpad-frozen frame
         cover_input_idx = None
@@ -379,40 +429,99 @@ def main():
             vf_parts.append(
                 f"[cover_img]overlay=0:0:enable='lte(t,{cover_duration:.4f})'")
 
+        # --- Persistent video overlay (e.g. badges, watermarks) ---
+        overlay_input_idx = None
+        overlay_path = config.get("video_overlay")
+        if overlay_path and os.path.isfile(overlay_path):
+            overlay_input_idx = len(input_files) + (1 if cover_input_idx is not None else 0)
+            vf_parts.append(
+                f"[overlay_img]overlay=0:0:enable='gt(t,{cover_duration:.4f})'")
+
+        # --- REC dot blink (blinking dot near DAY badge, like a camcorder) ---
+        # Uses a small dot PNG overlaid with alternating enable expression
+        rec_blink = config.get("rec_blink")
+        rec_dot_input_idx = None
+        if rec_blink:
+            dot_path = rec_blink.get("dot_image")
+            if dot_path and os.path.isfile(dot_path):
+                extra_inputs = sum(1 for x in [cover_input_idx, overlay_input_idx] if x is not None)
+                rec_dot_input_idx = len(input_files) + extra_inputs
+                bx = rec_blink.get("x", 62)
+                by = rec_blink.get("y", 55)
+                period = rec_blink.get("period", 1.0)
+                half = period / 2
+                vf_parts.append(
+                    f"[rec_dot]overlay={bx}:{by}:enable='if(gt(t,{cover_duration:.1f}),gte(mod(t,{period:.2f}),{half:.2f}),0)'"
+                )
+
         # --- Assemble full filter_complex ---
         filter_lines = [base_filter]
 
+        # End cards: concat black frames after merged video
+        if end_cards_duration > 0:
+            fps_val = fps if speed == 1.0 else fps
+            filter_lines.append(
+                f"color=c=black:s={width}x{height}:d={end_cards_duration:.4f}:r={fps_val:.4f}[black_v]"
+            )
+            filter_lines.append(
+                f"anullsrc=r=48000:cl=stereo:d={end_cards_duration:.4f}[black_a]"
+            )
+            filter_lines.append(
+                f"[merged_v][merged_a][black_v][black_a]concat=n=2:v=1:a=1[merged_v2][merged_a2]"
+            )
+            # Replace labels for downstream processing
+            merged_v_label = "[merged_v2]"
+            merged_a_label = "[merged_a2]"
+        else:
+            merged_v_label = "[merged_v]"
+            merged_a_label = "[merged_a]"
+
         if vf_parts:
-            vf_chain = ",".join(vf_parts)
-            # If cover overlay is used, we need to split the chain at the overlay point
-            if cover_input_idx is not None:
-                # Everything before overlay goes into pre_chain
-                pre_parts = vf_parts[:-1]
-                overlay_part = vf_parts[-1]
+            # Count how many overlay operations we have at the end
+            overlay_count = sum(1 for x in [cover_input_idx, overlay_input_idx, rec_dot_input_idx] if x is not None)
+            if overlay_count > 0:
+                pre_parts = vf_parts[:-overlay_count]
+                overlay_parts = vf_parts[-overlay_count:]
+
+                current_label = merged_v_label
                 if pre_parts:
                     pre_chain = ",".join(pre_parts)
-                    filter_lines.append(f"[merged_v]{pre_chain}[pre_v]")
-                    filter_lines.append(f"[pre_v]{overlay_part}[final_v]")
-                else:
-                    filter_lines.append(f"[merged_v]{overlay_part}[final_v]")
+                    filter_lines.append(f"{current_label}{pre_chain}[pre_v]")
+                    current_label = "[pre_v]"
+
+                for oi, opart in enumerate(overlay_parts):
+                    out_label = f"[ov{oi}]" if oi < len(overlay_parts) - 1 else "[final_v]"
+                    filter_lines.append(f"{current_label}{opart}{out_label}")
+                    current_label = out_label
             else:
-                filter_lines.append(f"[merged_v]{vf_chain}[final_v]")
+                vf_chain = ",".join(vf_parts)
+                filter_lines.append(f"{merged_v_label}{vf_chain}[final_v]")
             map_v = "[final_v]"
         else:
-            map_v = "[merged_v]"
+            map_v = merged_v_label
 
         if af_parts:
             af_chain = ",".join(af_parts)
-            filter_lines.append(f"[merged_a]{af_chain}[final_a]")
+            filter_lines.append(f"{merged_a_label}{af_chain}[final_a]")
             map_a = "[final_a]"
         else:
-            map_a = "[merged_a]"
+            map_a = merged_a_label
 
         # Add cover image scaling/labeling if needed
         if cover_input_idx is not None:
-            # Insert cover image prep before the overlay line
             cover_prep = f"[{cover_input_idx}:v]scale={width}:{height},format=rgba[cover_img]"
             filter_lines.insert(1, cover_prep)
+
+        # Add persistent overlay image scaling/labeling if needed
+        if overlay_input_idx is not None:
+            overlay_prep = f"[{overlay_input_idx}:v]scale={width}:{height},format=rgba[overlay_img]"
+            filter_lines.insert(1 + (1 if cover_input_idx is not None else 0), overlay_prep)
+
+        # Add REC dot image prep if needed
+        if rec_dot_input_idx is not None:
+            prep_idx = 1 + sum(1 for x in [cover_input_idx, overlay_input_idx] if x is not None)
+            dot_prep = f"[{rec_dot_input_idx}:v]format=rgba[rec_dot]"
+            filter_lines.insert(prep_idx, dot_prep)
 
         full_filter = ";\n".join(filter_lines)
 
@@ -429,16 +538,22 @@ def main():
         # Add cover PNG as input if available
         if cover_input_idx is not None:
             cmd.extend(["-i", cover_png_path])
+        # Add persistent overlay PNG as input if available
+        if overlay_input_idx is not None:
+            cmd.extend(["-i", os.path.abspath(overlay_path)])
+        # Add REC dot PNG as input if available
+        if rec_dot_input_idx is not None:
+            cmd.extend(["-i", os.path.abspath(rec_blink["dot_image"])])
         cmd.extend([
             "-filter_complex_script", filter_path,
             "-map", map_v,
             "-map", map_a,
         ])
         cmd.extend(encode_args)
-        cmd.extend(["-c:a", "aac", "-b:a", "192k"])
+        cmd.extend(["-c:a", "aac", "-b:a", "192k", "-shortest"])
         cmd.append(out_path)
 
-        total_out = effective_duration + cover_duration
+        total_out = effective_duration + cover_duration + end_cards_duration
         print(f"\nRendering {label} ({total_out:.0f}s)...")
         try:
             subprocess.run(cmd, check=True, capture_output=True, text=True)

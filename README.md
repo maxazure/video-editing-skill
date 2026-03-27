@@ -12,11 +12,17 @@
 - **语音识别切分** — 支持 faster-whisper（推荐，4x 加速）和 openai-whisper，自动按句子切分
 - **GPU 硬件加速** — 自动检测 NVIDIA NVENC / Apple VideoToolbox / Intel QSV / AMD AMF
 - **自动字幕** — 中英文自动检测，自动折行，竖屏位置优化
-- **自动封面** — 多种封面风格，支持视频取帧背景、移动端优先大标题、教程型卡片布局
+- **自动封面** — 多种封面风格，支持视频取帧背景、移动端优先大标题、教程型卡片布局，也支持自定义封面 PNG
+- **B-roll 替换** — 指定片段使用替代画面（保留原始音频），自动缩放裁切匹配分辨率
+- **持续叠加层** — 透明 PNG 全程叠加显示（品牌水印、系列标识等）
+- **闪烁圆点** — 录像机 REC 风格的周期性闪烁标志
+- **结尾卡片** — 黑屏文字卡片自动拼接，带淡入淡出效果
+- **音频混合** — 独立音频文件（M4A 等）可与任意画面组合，实现配音+B-roll 剪辑
 - **章节时间轴** — 半透明白色章节进度条，章节名全程显示，当前章节高亮
 - **变速输出** — 同时输出 1x / 1.25x / 1.5x 等多个速率版本，每个都从原始视频直接编码
 - **Rotation 检测** — 自动检测 iPhone 竖屏视频的 rotation 元数据，正确识别显示尺寸
 - **多视频支持** — 同时处理多个视频文件，跨视频混合选择片段
+- **时长对齐** — 自动确保视频/音频流时长一致，避免平台上传时的时长不匹配报错
 - **跨平台** — 支持 macOS / Linux / WSL / Windows
 - **中国加速** — 自动检测中国区域，使用清华 pip 镜像和 HuggingFace 镜像
 
@@ -126,19 +132,36 @@ python3 scripts/transcribe.py "your_video_audio.wav" --model auto --language zh
   "clips": [
     {"video": "your_video.mp4", "segment_id": 1, "transcript": "your_video_transcript.json"},
     {"video": "your_video.mp4", "segment_id": 2, "transcript": "your_video_transcript.json"},
-    {"video": "your_video.mp4", "segment_id": 5, "transcript": "your_video_transcript.json"}
+    {"video": "your_video.mp4", "segment_id": 5, "transcript": "your_video_transcript.json",
+     "broll": "cityscape.mp4", "broll_start": 10.0}
   ],
   "title": "封面标题",
   "subtitle": "副标题（可选）",
   "cover_style": "news",
+  "cover_image": "custom_cover.png",
   "cover_use_frame": false,
+  "video_overlay": "overlay.png",
+  "rec_blink": {"dot_image": "dot.png", "x": 55, "y": 66, "period": 1.0},
+  "end_cards": [
+    {"text": "感谢观看\n更多内容敬请期待", "duration": 3.5}
+  ],
   "chapters": [
     {"title": "开场", "start": 0.0, "end": 30.0},
     {"title": "正题", "start": 30.0, "end": 90.0}
-  ],
-  "chapter_style": "mono"
+  ]
 }
 ```
+
+**新增配置字段说明**：
+
+| 字段 | 说明 | 必填 |
+|------|------|------|
+| `clips[].broll` | B-roll 视频路径，替换该片段的画面（保留原始音频） | 否 |
+| `clips[].broll_start` | B-roll 截取起始时间（秒），默认 0.0 | 否 |
+| `cover_image` | 自定义封面 PNG 路径，优先于自动生成封面 | 否 |
+| `video_overlay` | 透明 PNG 叠加层路径，全程显示（需 RGBA 格式） | 否 |
+| `rec_blink` | 闪烁圆点配置（dot_image/x/y/period） | 否 |
+| `end_cards` | 结尾黑屏卡片数组（text/duration），text 用 `\n` 换行 | 否 |
 
 渲染：
 
@@ -221,7 +244,7 @@ video-editing-skill/
 | 组件 | 技术 |
 |------|------|
 | 语音识别 | faster-whisper (CTranslate2) / OpenAI Whisper |
-| 视频渲染 | ffmpeg filter_complex: trim/atrim + concat + ASS + drawtext/drawbox |
+| 视频渲染 | ffmpeg filter_complex: trim/atrim + concat + ASS + overlay + color |
 | 视频编码 | NVENC / VideoToolbox / QSV / AMF / libx264（自动检测）|
 | 编码策略 | 固定比特率 `-b:v 12M`（VideoToolbox）/ `-cq 20`（NVENC）|
 | 字幕渲染 | ASS 格式 + Noto Sans SC / PingFang SC / Microsoft YaHei |

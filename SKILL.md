@@ -1,6 +1,6 @@
 ---
 name: video-editing
-description: "Automated video editing skill for talk/vlog/standup videos. Use when: cutting video, splitting video into sentences, merging video clips, extracting audio, transcribing speech, auto-editing oral presentation videos, combining selected sentence clips into a final video, generating video cover/thumbnail with title. Requires ffmpeg and whisper."
+description: "Automated video editing skill for talk/vlog/standup videos. Use when: cutting video, splitting video into sentences, merging video clips, extracting audio, transcribing speech, auto-editing oral presentation videos, combining selected sentence clips into a final video, generating video cover/thumbnail with title, B-roll cutaway editing, persistent video overlay/watermark, blinking REC indicator, ending title cards, multi-source audio mixing. Requires ffmpeg and whisper."
 argument-hint: "Provide the path(s) to video file(s) to process"
 metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
 ---
@@ -135,18 +135,64 @@ Whisper 常见的识别错误类型：
   "clips": [
     {"video": "path/to/video1.MOV", "segment_id": 4, "transcript": "path/to/transcript1.json"},
     {"video": "path/to/video1.MOV", "segment_id": 5, "transcript": "path/to/transcript1.json"},
-    {"video": "path/to/video2.MOV", "segment_id": 1, "transcript": "path/to/transcript2.json"}
+    {"video": "path/to/video2.MOV", "segment_id": 1, "transcript": "path/to/transcript2.json",
+     "broll": "path/to/cityscape.mp4", "broll_start": 5.0}
   ],
   "title": "封面标题文字",
   "subtitle": "副标题/情感钩子（可选）",
   "cover_style": "news",
   "cover_duration": 2.0,
+  "cover_image": "path/to/custom_cover.png",
   "cover_use_frame": false,
+  "video_overlay": "path/to/overlay.png",
+  "rec_blink": {
+    "dot_image": "path/to/dot.png",
+    "x": 55, "y": 66,
+    "period": 1.0
+  },
+  "end_cards": [
+    {"text": "感谢观看\n更多内容敬请期待", "duration": 3.5}
+  ],
   "chapters": [
     {"title": "章节名", "start": 0.0, "end": 30.0}
   ]
 }
 ```
+
+**B-roll 替换**（`broll` 字段）：
+- 在 clip 中添加 `"broll": "path/to/video.mp4"` 可替换该片段的画面，同时保留原始音频
+- `broll_start` 指定从 B-roll 视频的哪个时间点开始截取（默认 0.0）
+- B-roll 视频会自动缩放/裁切以匹配主视频分辨率
+- 适用场景：屏幕录制口播配城市街景、音频配音配画面等
+
+**自定义封面**（`cover_image`）：
+- 提供自定义封面 PNG 路径，优先于自动生成的封面
+- 尺寸应与视频分辨率匹配（如 1080x1920）
+
+**持续叠加层**（`video_overlay`）：
+- 提供透明 PNG 路径，在封面之后的整个视频上持续叠加显示
+- 适用场景：品牌水印、系列标识（如 DAY 标签、数据指标）等
+- PNG 必须包含 Alpha 通道（RGBA），透明区域不会遮挡视频
+
+**闪烁圆点**（`rec_blink`）：
+- 在视频上叠加一个周期性闪烁的小圆点 PNG（如录像机 REC 标志）
+- `dot_image`：圆点 PNG 路径（建议 12-16px，RGBA 格式）
+- `x`, `y`：圆点在视频画面中的像素坐标
+- `period`：闪烁周期（秒），默认 1.0（0.5 秒亮 + 0.5 秒灭）
+
+**结尾卡片**（`end_cards`）：
+- 在视频末尾追加黑屏文字卡片，每张卡片有 300ms 淡入淡出
+- `text`：卡片文字内容，用 `\n` 换行
+- `duration`：每张卡片显示时长（秒），建议 3.0-4.0
+- 文字居中显示，字号为正文字幕的 1.4 倍
+
+**音频源替代（M4A/独立音频）**：
+- 如果有独立录制的音频文件（M4A 等），可先用 ffmpeg 转为带黑屏视频轨的 MP4：
+  ```bash
+  ffmpeg -f lavfi -i "color=c=black:s=1080x1920:r=30:d=60" -i audio.m4a -c:v libx264 -c:a aac -shortest audio.mp4
+  ```
+- 然后在 clip 中用 `"video": "audio.mp4"` 提供音频源，用 `"broll"` 提供画面
+- 这样可以将补录的配音与任意画面组合
 
 **封面标题**：
 1. 如果用户提供了标题，直接使用。
@@ -227,6 +273,10 @@ python3 scripts/render_final.py --config render_config.json --output final.mp4 -
 - 字幕自动检测语言、自动折行、竖屏优化定位
 - 封面自动叠加标题文字（带描边和阴影），冻结首帧 1-2 秒
 - 变速版本的字幕时间自动缩放
+- B-roll 自动缩放裁切匹配主视频分辨率
+- 结尾卡片自动拼接黑帧 + 静音 + 淡入淡出字幕
+- 持续叠加层和闪烁圆点在封面之后自动启用
+- 视频/音频时长自动对齐（`-shortest`），避免平台上传时的时长不匹配问题
 
 ### Phase 6: Post-render Validation（渲染后验证）
 
