@@ -36,3 +36,9 @@ preview_frames/
 
 # Firebase
 firebase-debug.log
+
+# Media library
+media/
+media_index.json
+media_index.db
+media_index.json.bak

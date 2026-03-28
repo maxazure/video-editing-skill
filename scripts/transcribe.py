@@ -22,6 +22,21 @@ from utils import (
     get_whisper_device, setup_china_env, detect_platform,
 )
 
+# Common filler words/phrases by language
+FILLER_PATTERNS = {
+    "zh": [
+        "嗯", "呃", "额", "啊", "哦", "唔",
+        "那个", "就是", "就是说", "然后呢", "怎么说呢",
+        "对吧", "你知道吗", "我觉得吧", "基本上",
+    ],
+    "en": [
+        "um", "uh", "erm", "ah", "oh",
+        "like", "you know", "i mean", "basically",
+        "actually", "literally", "right", "so yeah",
+        "kind of", "sort of",
+    ],
+}
+
 
 def transcribe_faster_whisper(audio_path, model_name, language, device, compute_type,
                               word_timestamps=False):
@@ -122,6 +137,53 @@ def detect_silences(segments, min_gap=1.0):
     return silences
 
 
+def detect_filler_words(segments, language="zh"):
+    """Detect filler words/phrases in transcript segments.
+
+    Args:
+        segments: List of {"id", "start", "end", "text"} dicts.
+        language: Language code ("zh", "en", etc.)
+
+    Returns:
+        List of {"segment_id", "text", "fillers_found", "is_filler_only"} dicts.
+    """
+    import re
+    lang_key = "zh" if language and language.startswith("zh") else "en"
+    patterns = FILLER_PATTERNS.get(lang_key, FILLER_PATTERNS["en"])
+
+    results = []
+    for seg in segments:
+        text = seg["text"].strip()
+        text_lower = text.lower()
+        found = []
+        for filler in patterns:
+            if lang_key == "zh":
+                if filler in text:
+                    found.append(filler)
+            else:
+                if re.search(r'\b' + re.escape(filler) + r'\b', text_lower):
+                    found.append(filler)
+
+        if found:
+            clean = text_lower
+            for f in patterns:
+                if lang_key == "zh":
+                    clean = clean.replace(f, "")
+                else:
+                    clean = re.sub(r'\b' + re.escape(f) + r'\b', '', clean)
+            clean = re.sub(r'[^\w]', '', clean).strip()
+            is_filler_only = len(clean) == 0 or (len(text) <= 6 and len(found) > 0)
+
+            results.append({
+                "segment_id": seg["id"],
+                "text": text,
+                "fillers_found": found,
+                "is_filler_only": is_filler_only,
+            })
+
+    return results
+
+
 def main():
     parser = argparse.ArgumentParser(description="Transcribe audio with Whisper")
     parser.add_argument("audio_path", help="Path to the audio file (.wav)")
@@ -137,6 +199,8 @@ def main():
                         help="Min gap (seconds) to flag as silence (default: 1.0). Set 0 to disable.")
     parser.add_argument("--word-timestamps", action="store_true",
                         help="Include per-word timestamps (required for karaoke subtitles)")
+    parser.add_argument("--detect-fillers", action="store_true",
+                        help="Detect filler words (um, uh, 嗯, 呃, etc.) and mark segments")
     args = parser.parse_args()
 
     audio_path = os.path.abspath(args.audio_path)
@@ -213,6 +277,13 @@ def main():
     if silences:
         output_data["silences"] = silences
 
+    # Detect filler words
+    fillers = []
+    if args.detect_fillers:
+        fillers = detect_filler_words(segments, detected_lang)
+        if fillers:
+            output_data["filler_words"] = fillers
+
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(output_data, f, ensure_ascii=False, indent=2)
 
@@ -229,6 +300,16 @@ def main():
         print(f"     Exclude these segment ranges when building render_config.json.")
     else:
         print(f"\nNo significant silences detected (threshold: {args.silence_threshold}s).")
+
+    # Report fillers
+    if args.detect_fillers and fillers:
+        filler_only = [f for f in fillers if f["is_filler_only"]]
+        print(f"\nDetected filler words in {len(fillers)} segments ({len(filler_only)} filler-only):")
+        for f in fillers[:10]:
+            marker = " ← SKIP" if f["is_filler_only"] else ""
+            print(f"  #{f['segment_id']:3d} [{', '.join(f['fillers_found'])}] \"{f['text']}\"{marker}")
+        if len(fillers) > 10:
+            print(f"  ... and {len(fillers) - 10} more")
 
     print("\nSegment preview:")
     for seg in segments[:5]:

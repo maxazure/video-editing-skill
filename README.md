@@ -28,6 +28,11 @@
 - **Remotion 口播生成** — 当只有语音没有画面时，使用 Remotion 生成配合语音的动态视频（TikTok 风格字幕、图文解说、动态文字等）
 - **脱口秀/Standup 视频生成** — 完整的 Remotion 项目，将音频+文稿转为动态文字视频，12 种文字动画效果，自动检测笑点，3 种风格预设
 - **丰富字体目录** — 内置 14 款免费中英文字体（思源黑体、霞鹜文楷/Lite、站酷系列、Inter、Montserrat 等），一键下载缓存
+- **素材库管理** — 自动初始化视频项目目录结构（raw/broll/bgm/assets），双后端索引（JSON + SQLite），自动扫描和分类素材
+- **填充词检测** — 自动识别中英文填充词（嗯/呃/那个/um/uh/like），标记纯填充词片段为建议跳过
+- **AI 智能选片** — AI agent 基于吸引力评分自动推荐最佳片段，长视频自动拆分为多个短视频方案
+- **字幕风格预设** — 6 种字幕样式（normal/karaoke/bold_pop/neon/minimal/yellow_pop）
+- **多平台导出** — 一键输出 9:16（抖音/TikTok）、1:1（Instagram）、16:9（YouTube）多种比例
 - **跨平台** — 支持 macOS / Linux / WSL / Windows
 - **中国加速** — 自动检测中国区域，使用清华 pip 镜像和 HuggingFace 镜像
 
@@ -90,6 +95,36 @@ python3 scripts/utils.py  # 运行环境诊断
 
 这会输出完整的环境报告：平台、GPU、编码器、Whisper 引擎、推荐模型等。
 
+## 素材库管理
+
+首次使用时，初始化项目素材目录结构：
+
+```bash
+python3 scripts/media_library.py init
+```
+
+这会创建：
+```
+media/
+├── raw/      — 原始素材
+├── broll/    — B-roll 素材
+├── bgm/      — 背景音乐
+├── assets/   — 叠加素材（水印、Logo）
+└── output/   — 输出目录
+```
+
+扫描并建立索引：
+```bash
+python3 scripts/media_library.py scan     # 扫描并索引
+python3 scripts/media_library.py status   # 查看素材库状态
+python3 scripts/media_library.py search "关键词"  # 搜索素材
+```
+
+索引后端自动选择：
+- **< 200 个文件** → JSON 索引（`media_index.json`）
+- **≥ 200 个文件** → 自动升级为 SQLite（`media_index.db`）
+- 手动升级：`python3 scripts/media_library.py upgrade`
+
 ## 使用方式
 
 ### 配合 OpenClaw / Claude Code 使用（推荐）
@@ -115,12 +150,14 @@ python3 scripts/extract_audio.py "your_video.mp4"
 
 ```bash
 source .venv/bin/activate
-python3 scripts/transcribe.py "your_video_audio.wav" --model auto --language zh
+python3 scripts/transcribe.py "your_video_audio.wav" --model auto --language zh --detect-fillers
 # 输出: your_video_transcript.json
 
 # 如需卡拉OK逐词高亮字幕，加 --word-timestamps：
 python3 scripts/transcribe.py "your_video_audio.wav" --model auto --language zh --word-timestamps
 ```
+
+`--detect-fillers` 会自动检测填充词（嗯、呃、那个、um、uh 等）并标记纯填充词片段。
 
 `--model auto` 会根据硬件自动选择最佳模型：
 
@@ -180,6 +217,15 @@ python3 scripts/transcribe.py "your_video_audio.wav" --model auto --language zh 
 | `bgm_fade_out` | BGM 结尾淡出时长（秒），默认 3.0 | 否 |
 | `subtitle_style` | 字幕风格：`"normal"`（默认）或 `"karaoke"`（逐词高亮） | 否 |
 | `subtitle_highlight_color` | 卡拉OK高亮色，默认 `"#FFFF00"`（黄色） | 否 |
+
+字幕风格预设：`--subtitle-style` 支持 `normal`、`karaoke`、`bold_pop`、`neon`、`minimal`、`yellow_pop`
+
+多平台导出：
+```bash
+python3 scripts/render_final.py --config render_config.json --output final.mp4 \
+  --formats vertical square horizontal
+```
+同时输出 9:16、1:1、16:9 三种比例视频。
 
 渲染：
 
@@ -250,6 +296,7 @@ video-editing-skill/
 │   ├── transcribe.py          # 语音识别（faster-whisper / openai-whisper）
 │   ├── render_final.py        # 单次编码渲染（推荐，字幕+封面+章节+变速）
 │   ├── generate_cover_image.py # 封面图片生成（7 种风格，headless Chrome 渲染）
+│   ├── media_library.py       # 素材库管理（初始化/扫描/索引/搜索）
 │   ├── generate_standup_timeline.py  # 脱口秀时间轴生成（transcript → timeline.json）
 │   ├── split_video.py         # 视频切分（预览用）
 │   ├── burn_subtitles.py      # 字幕烧录（预览用）

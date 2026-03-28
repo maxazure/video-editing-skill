@@ -42,6 +42,53 @@ source .venv/bin/activate  # macOS/Linux/WSL
 
 ## Workflow（工作流程）
 
+### Phase 0: Media Library Setup（素材库初始化）
+
+首次使用时，帮助用户建立素材目录结构：
+
+```bash
+python3 scripts/media_library.py init [project_dir]
+```
+
+这会创建以下目录结构：
+```
+media/
+├── raw/      — 原始素材（摄像机/手机直出的视频）
+├── broll/    — B-roll 素材（城市街景、产品特写等）
+├── bgm/      — 背景音乐（MP3/WAV/M4A）
+├── assets/   — 叠加素材（水印 PNG、Logo 等）
+└── output/   — 输出目录
+```
+
+**询问素材来源**：
+1. 询问用户的视频文件位置（本地路径、外部设备或云端）
+2. 建议将原始素材复制/移动到 `media/raw/` 目录
+3. 询问是否有 B-roll、BGM 等辅助素材
+4. 如果用户视频散落在多个目录，建议先集中到 `media/raw/`
+
+**扫描并建立索引**：
+```bash
+python3 scripts/media_library.py scan [project_dir]
+```
+
+索引系统会自动：
+- 扫描所有视频/音频/图片文件
+- 提取时长、分辨率、帧率等元数据
+- 关联已有的 transcript 文件
+- 小型项目（< 200 文件）使用 JSON 索引（`media_index.json`）
+- 大型项目自动升级为 SQLite 索引（`media_index.db`）
+- 手动升级：`python3 scripts/media_library.py upgrade`
+
+**查看素材库状态**：
+```bash
+python3 scripts/media_library.py status
+```
+
+**搜索素材**：
+```bash
+python3 scripts/media_library.py search "关键词"
+```
+
 ### Phase 1: Audio Extraction（音频提取）
 
 对每个输入视频文件，使用 [extract_audio.py](./scripts/extract_audio.py) 提取音频：
@@ -57,7 +104,7 @@ python3 scripts/extract_audio.py "<video_path>"
 使用 [transcribe.py](./scripts/transcribe.py) 对音频进行语音识别，生成带时间戳的逐句文本：
 
 ```bash
-python3 scripts/transcribe.py "<audio_path>" --model auto --language zh
+python3 scripts/transcribe.py "<audio_path>" --model auto --language zh --detect-fillers
 ```
 
 - `--model auto`：根据硬件自动选择最佳模型（NVIDIA GPU → large-v3，Apple Silicon → large-v3-turbo，集成显卡 → medium，纯 CPU → small）
@@ -67,6 +114,7 @@ python3 scripts/transcribe.py "<audio_path>" --model auto --language zh
 - `--language`：`zh`（中文），`en`（英文），`ja`（日文）等，也可省略让 whisper 自动检测
 - `--silence-threshold 1.0`：静音检测阈值（秒），默认 1.0。设为 0 关闭
 - `--word-timestamps`：启用逐词时间戳（卡拉OK字幕必需）
+- `--detect-fillers`：检测填充词（中文：嗯/呃/那个/就是说；英文：um/uh/like/you know），标记纯填充词片段为建议跳过
 
 输出：与音频同目录下的 `<video_name>_transcript.json` 文件，格式如下：
 
@@ -78,6 +126,10 @@ python3 scripts/transcribe.py "<audio_path>" --model auto --language zh
   ],
   "silences": [
     {"start": 15.2, "end": 18.5, "duration": 3.3, "before_segment": 5, "after_segment": 6}
+  ],
+  "filler_words": [
+    {"segment_id": 3, "text": "嗯那个", "fillers_found": ["嗯", "那个"], "is_filler_only": true},
+    {"segment_id": 7, "text": "就是说我觉得这个方案", "fillers_found": ["就是说"], "is_filler_only": false}
   ]
 }
 ```
@@ -130,6 +182,36 @@ Whisper 常见的识别错误类型：
 ```
 
 如果有多个视频文件，分别展示每个视频的片段列表，让用户跨视频选择。
+
+#### AI 智能选片建议
+
+在展示片段列表时，AI agent 应基于以下维度为每个片段提供推荐评分（1-5 星）：
+
+**吸引力评分维度**：
+1. **Hook 强度**（前 3 秒）：是否有吸引人的开头（提问、反直觉观点、情感触发）
+2. **信息密度**：每秒传递的有效信息量（避免重复、废话）
+3. **情感变化**：是否有情感起伏（幽默→严肃→惊喜）
+4. **完整性**：片段是否构成完整叙事单元（有开头、展开、收尾）
+
+**自动跳过建议**：
+- transcript 中 `is_filler_only: true` 的片段（纯填充词）
+- 静音间隙 > 2 秒的相邻片段（卡壳后重说）
+- 转录文字与前一片段高度重复的片段（口误重说）
+
+**长视频自动拆短片**（视频 > 3 分钟时）：
+AI agent 应分析 transcript 识别话题转换点（语义断裂、过渡词如"接下来"、"另外"），将片段按话题分组为独立短视频（每个 30-90 秒），并为每组计算整体吸引力评分：
+
+```
+推荐短视频拆分方案：
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  方案 | 片段范围    | 时长  | 主题         | 推荐指数
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  A    | #1-#8       | 45s   | 痛点引入      | ★★★★★
+  B    | #9-#18      | 62s   | 核心方法      | ★★★★☆
+  C    | #19-#25     | 38s   | 实操演示      | ★★★☆☆
+  D    | #1-#25      | 2m25s | 完整版       | ★★★★☆
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
 
 等待用户回复选择后，进入 Phase 4。
 
@@ -205,6 +287,16 @@ Whisper 常见的识别错误类型：
 - BGM 自动循环播放直到视频结束，不需要预先剪辑长度
 - 推荐免费可商用音乐源：Pixabay Music、Mixkit、YouTube Audio Library
 - 选曲建议：口播/教程用轻柔纯音乐（无人声），节奏不要太强，避免抢人声
+
+**字幕风格预设**（`subtitle_style`）：
+| 风格 | 效果 | 适用场景 |
+|------|------|---------|
+| `normal` | 白字黑描边（默认） | 适合所有场景 |
+| `karaoke` | 逐词高亮 | 音乐/节奏感内容 |
+| `bold_pop` | 粗描边高对比 | MrBeast/Hormozi 风格 |
+| `neon` | 霓虹灯青紫色 | 科技/潮流内容 |
+| `minimal` | 极简无描边 | 文艺/安静内容 |
+| `yellow_pop` | 黄字黑描边 | 高可见度，户外/嘈杂画面 |
 
 **卡拉OK字幕 / 逐词高亮**（`subtitle_style: "karaoke"`）：
 - 在 config 中设置 `"subtitle_style": "karaoke"` 启用逐词高亮字幕
@@ -304,6 +396,19 @@ python3 scripts/render_final.py --config render_config.json --output final.mp4 -
 - `final_1_25x.mp4`（1.25 倍速）
 - `final_1_5x.mp4`（1.5 倍速）
 - 渲染完成后终端输出章节时间轴文本，可直接复制到小红书
+
+**多平台格式导出**：
+```bash
+python3 scripts/render_final.py --config render_config.json --output final.mp4 \
+  --formats vertical square horizontal
+```
+
+同时输出：
+- `final_vertical.mp4`（9:16 抖音/小红书/TikTok）
+- `final_square.mp4`（1:1 Instagram）
+- `final_horizontal.mp4`（16:9 YouTube/B站）
+
+裁切策略为中心裁切（center-crop），保持画面主体不变。
 
 **自动功能**：
 - 字幕自动检测语言、自动折行、竖屏优化定位

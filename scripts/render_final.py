@@ -38,10 +38,60 @@ from burn_subtitles import (
 )
 from generate_cover_image import generate_cover as generate_cover_image
 
+# --- Caption style presets ---
+CAPTION_PRESETS = {
+    "normal": {
+        "primary": "&H00FFFFFF", "outline": "&H00000000",
+        "outline_w": 3, "shadow": 1, "bold": 1,
+    },
+    "bold_pop": {
+        "primary": "&H00FFFFFF", "outline": "&H00000000",
+        "outline_w": 6, "shadow": 3, "bold": 1,
+    },
+    "neon": {
+        "primary": "&H00FFFF00", "outline": "&H00FF00FF",
+        "outline_w": 4, "shadow": 0, "bold": 1,
+    },
+    "minimal": {
+        "primary": "&H00FFFFFF", "outline": "&H00000000",
+        "outline_w": 0, "shadow": 2, "bold": 0,
+    },
+    "yellow_pop": {
+        "primary": "&H0000FFFF", "outline": "&H00000000",
+        "outline_w": 4, "shadow": 1, "bold": 1,
+    },
+}
+
+# --- Multi-platform output formats ---
+OUTPUT_FORMATS = {
+    "vertical":   {"width": 1080, "height": 1920, "label": "9:16 (抖音/小红书/TikTok)"},
+    "square":     {"width": 1080, "height": 1080, "label": "1:1 (Instagram)"},
+    "horizontal": {"width": 1920, "height": 1080, "label": "16:9 (YouTube/B站)"},
+}
+
+
+def build_reformat_filter(src_w, src_h, dst_w, dst_h):
+    """Build ffmpeg filter to reformat video dimensions via center-crop."""
+    src_ratio = src_w / src_h
+    dst_ratio = dst_w / dst_h
+    if abs(src_ratio - dst_ratio) < 0.01:
+        return f"scale={dst_w}:{dst_h}"
+    elif src_ratio > dst_ratio:
+        return f"scale=-1:{dst_h},crop={dst_w}:{dst_h}"
+    else:
+        return f"scale={dst_w}:-1,crop={dst_w}:{dst_h}"
+
 
 def load_config(config_path):
-    with open(config_path, encoding="utf-8") as f:
-        return json.load(f)
+    try:
+        with open(config_path, encoding="utf-8") as f:
+            return json.load(f)
+    except json.JSONDecodeError as e:
+        print(f"Error: Invalid JSON in {config_path}: {e}", file=sys.stderr)
+        sys.exit(1)
+    except FileNotFoundError:
+        print(f"Error: Config file not found: {config_path}", file=sys.stderr)
+        sys.exit(1)
 
 
 def resolve_clips(config):
@@ -94,17 +144,27 @@ def resolve_clips(config):
 
 
 def build_merged_ass(clips, font_name, font_size, video_width, video_height,
-                     speed=1.0, cover_duration=0.0, end_cards=None):
+                     speed=1.0, cover_duration=0.0, end_cards=None,
+                     subtitle_style="normal"):
     """Build a single ASS subtitle file covering the entire merged timeline.
 
     Args:
         cover_duration: Seconds of cover at the start; subtitles begin after this.
         end_cards: List of {"text": str, "duration": float} for ending cards.
+        subtitle_style: Caption preset name (normal/bold_pop/neon/minimal/yellow_pop).
     """
     margin_lr = 60
     usable_width = video_width - 2 * margin_lr
     margin_v = int(video_height * 0.28)
     end_card_fs = int(font_size * 1.4)
+
+    # Apply caption preset
+    preset = CAPTION_PRESETS.get(subtitle_style, CAPTION_PRESETS["normal"])
+    p_color = preset["primary"]
+    o_color = preset["outline"]
+    o_width = preset["outline_w"]
+    s_depth = preset["shadow"]
+    bold = preset["bold"]
 
     def fmt_time(seconds):
         h = int(seconds // 3600)
@@ -121,7 +181,7 @@ WrapStyle: 0
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,{font_name},{font_size},&H00FFFFFF,&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,3,1,2,{margin_lr},{margin_lr},{margin_v},1
+Style: Default,{font_name},{font_size},{p_color},&H000000FF,{o_color},&H80000000,{bold},0,0,0,100,100,0,0,1,{o_width},{s_depth},2,{margin_lr},{margin_lr},{margin_v},1
 Style: EndCard,{font_name},{end_card_fs},&H00FFFFFF,&H000000FF,&H00000000,&H00000000,1,0,0,0,100,100,2,0,0,0,0,5,{margin_lr},{margin_lr},0,1
 
 [Events]
@@ -416,8 +476,11 @@ def main():
     parser.add_argument("--bgm-volume", type=float, default=None,
                         help="BGM volume 0.0-1.0 (default: from config or 0.15)")
     parser.add_argument("--subtitle-style", default=None,
-                        choices=["normal", "karaoke"],
+                        choices=["normal", "karaoke", "bold_pop", "neon", "minimal", "yellow_pop"],
                         help="Subtitle style (default: from config or 'normal')")
+    parser.add_argument("--formats", nargs="*",
+                        choices=list(OUTPUT_FORMATS.keys()),
+                        help="Additional output formats: vertical, square, horizontal")
     args = parser.parse_args()
 
     config = load_config(args.config)
@@ -542,6 +605,7 @@ def main():
                     clips, font_name, font_size, width, height,
                     speed=speed, cover_duration=cover_duration,
                     end_cards=end_cards,
+                    subtitle_style=subtitle_style,
                 )
             fd, ass_path = tempfile.mkstemp(suffix=".ass", prefix=f"sub_{label}_")
             with os.fdopen(fd, "w", encoding="utf-8") as f:
@@ -586,41 +650,37 @@ def main():
 
         # Note: end cards silence is provided by anullsrc in the concat, no apad needed
 
-        # --- BGM mixing ---
+        # --- Extra inputs tracking (order matters: must match -i order in cmd) ---
+        extra_inputs = []  # list of (type, idx, path)
+
         bgm_input_idx = None
         if bgm_path:
-            bgm_input_idx = len(input_files)
-            # Total output duration for BGM loop/trim
+            bgm_input_idx = len(input_files) + len(extra_inputs)
+            extra_inputs.append(("bgm", bgm_input_idx, bgm_path))
             bgm_total = effective_duration + cover_duration + end_cards_duration
 
-        # --- Cover PNG overlay ---
-        # If we have a cover PNG, add it as an overlay on the tpad-frozen frame
         cover_input_idx = None
         if cover_png_path and cover_duration > 0:
-            extra_offset = 1 if bgm_input_idx is not None else 0
-            cover_input_idx = len(input_files) + extra_offset
-            # Overlay the cover PNG during the cover_duration period
+            cover_input_idx = len(input_files) + len(extra_inputs)
+            extra_inputs.append(("cover", cover_input_idx, cover_png_path))
             vf_parts.append(
                 f"[cover_img]overlay=0:0:enable='lte(t,{cover_duration:.4f})'")
 
-        # --- Persistent video overlay (e.g. badges, watermarks) ---
         overlay_input_idx = None
         overlay_path = config.get("video_overlay")
         if overlay_path and os.path.isfile(overlay_path):
-            extra_inputs = sum(1 for x in [bgm_input_idx, cover_input_idx] if x is not None)
-            overlay_input_idx = len(input_files) + extra_inputs
+            overlay_input_idx = len(input_files) + len(extra_inputs)
+            extra_inputs.append(("overlay", overlay_input_idx, os.path.abspath(overlay_path)))
             vf_parts.append(
                 f"[overlay_img]overlay=0:0:enable='gt(t,{cover_duration:.4f})'")
 
-        # --- REC dot blink (blinking dot near DAY badge, like a camcorder) ---
-        # Uses a small dot PNG overlaid with alternating enable expression
         rec_blink = config.get("rec_blink")
         rec_dot_input_idx = None
         if rec_blink:
             dot_path = rec_blink.get("dot_image")
             if dot_path and os.path.isfile(dot_path):
-                extra_inputs = sum(1 for x in [bgm_input_idx, cover_input_idx, overlay_input_idx] if x is not None)
-                rec_dot_input_idx = len(input_files) + extra_inputs
+                rec_dot_input_idx = len(input_files) + len(extra_inputs)
+                extra_inputs.append(("rec_dot", rec_dot_input_idx, os.path.abspath(dot_path)))
                 bx = rec_blink.get("x", 62)
                 by = rec_blink.get("y", 55)
                 period = rec_blink.get("period", 1.0)
@@ -634,7 +694,7 @@ def main():
 
         # End cards: concat black frames after merged video
         if end_cards_duration > 0:
-            fps_val = fps if speed == 1.0 else fps
+            fps_val = fps
             filter_lines.append(
                 f"color=c=black:s={width}x{height}:d={end_cards_duration:.4f}:r={fps_val:.4f}[black_v]"
             )
@@ -731,18 +791,9 @@ def main():
         cmd = ["ffmpeg", "-y"]
         for inp in input_files:
             cmd.extend(["-i", inp])
-        # Add BGM audio as input if available
-        if bgm_input_idx is not None:
-            cmd.extend(["-i", bgm_path])
-        # Add cover PNG as input if available
-        if cover_input_idx is not None:
-            cmd.extend(["-i", cover_png_path])
-        # Add persistent overlay PNG as input if available
-        if overlay_input_idx is not None:
-            cmd.extend(["-i", os.path.abspath(overlay_path)])
-        # Add REC dot PNG as input if available
-        if rec_dot_input_idx is not None:
-            cmd.extend(["-i", os.path.abspath(rec_blink["dot_image"])])
+        # Add extra inputs in tracked order
+        for etype, eidx, epath in extra_inputs:
+            cmd.extend(["-i", epath])
         cmd.extend([
             "-filter_complex_script", filter_path,
             "-map", map_v,
@@ -775,6 +826,28 @@ def main():
             t = ch["start"] + cover_duration
             m, s = divmod(t, 60)
             print(f"  {int(m)}:{int(s):02d} {ch.get('title', '')}")
+
+    # --- Multi-platform format export ---
+    base_output = args.output
+    if args.formats and os.path.isfile(base_output):
+        for fmt_name in args.formats:
+            fmt = OUTPUT_FORMATS[fmt_name]
+            fmt_output = base_output.replace(".mp4", f"_{fmt_name}.mp4")
+            reformat = build_reformat_filter(width, height, fmt["width"], fmt["height"])
+            fmt_cmd = [
+                "ffmpeg", "-y", "-i", base_output,
+                "-vf", reformat,
+                "-c:v", "libx264", "-crf", "18", "-preset", "medium",
+                "-c:a", "copy",
+                fmt_output,
+            ]
+            print(f"\nRendering {fmt['label']}...")
+            try:
+                subprocess.run(fmt_cmd, check=True, capture_output=True, text=True)
+                size_mb = os.path.getsize(fmt_output) / 1024 / 1024
+                print(f"Done: {fmt_output} ({size_mb:.1f}MB)")
+            except subprocess.CalledProcessError as e:
+                print(f"Format error ({fmt_name}):\n{e.stderr[-2000:]}", file=sys.stderr)
 
     # --- Cleanup ---
     for p in temp_files:
