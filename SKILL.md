@@ -65,6 +65,7 @@ python3 scripts/transcribe.py "<audio_path>" --model auto --language zh
 - `--engine auto`：自动检测 faster-whisper（推荐）或 openai-whisper
 - `--mirror`：中国用户使用镜像源下载模型
 - `--language`：`zh`（中文），`en`（英文），`ja`（日文）等，也可省略让 whisper 自动检测
+- `--silence-threshold 1.0`：静音检测阈值（秒），默认 1.0。设为 0 关闭
 
 输出：与音频同目录下的 `<video_name>_transcript.json` 文件，格式如下：
 
@@ -73,9 +74,14 @@ python3 scripts/transcribe.py "<audio_path>" --model auto --language zh
   "segments": [
     {"id": 1, "start": 0.0, "end": 2.5, "text": "大家好"},
     {"id": 2, "start": 2.5, "end": 5.1, "text": "今天我们来聊一个话题"}
+  ],
+  "silences": [
+    {"start": 15.2, "end": 18.5, "duration": 3.3, "before_segment": 5, "after_segment": 6}
   ]
 }
 ```
+
+**静音检测**：transcribe.py 会自动分析相邻语音片段之间的间隙。超过阈值（默认 1 秒）的间隙会被标记为静音并输出到 `silences` 字段中。这些静音通常是说话人的停顿、卡壳或口误，在构建 render_config.json 选片时应注意避开这些区域。
 
 ### Phase 2.5: Transcript Review（转录文字校验）
 
@@ -153,6 +159,9 @@ Whisper 常见的识别错误类型：
   "end_cards": [
     {"text": "感谢观看\n更多内容敬请期待", "duration": 3.5}
   ],
+  "bgm": "path/to/background_music.mp3",
+  "bgm_volume": 0.15,
+  "bgm_fade_out": 3.0,
   "chapters": [
     {"title": "章节名", "start": 0.0, "end": 30.0}
   ]
@@ -185,6 +194,14 @@ Whisper 常见的识别错误类型：
 - `text`：卡片文字内容，用 `\n` 换行
 - `duration`：每张卡片显示时长（秒），建议 3.0-4.0
 - 文字居中显示，字号为正文字幕的 1.4 倍
+
+**背景音乐**（`bgm`）：
+- 提供背景音乐文件路径（MP3/M4A/WAV 等 FFmpeg 支持的格式）
+- `bgm_volume`：BGM 音量（0.0-1.0），默认 0.15（人声为主，BGM 为辅）
+- `bgm_fade_out`：结尾淡出时长（秒），默认 3.0
+- BGM 自动循环播放直到视频结束，不需要预先剪辑长度
+- 推荐免费可商用音乐源：Pixabay Music、Mixkit、YouTube Audio Library
+- 选曲建议：口播/教程用轻柔纯音乐（无人声），节奏不要太强，避免抢人声
 
 **音频源替代（M4A/独立音频）**：
 - 如果有独立录制的音频文件（M4A 等），可先用 ffmpeg 转为带黑屏视频轨的 MP4：

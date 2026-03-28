@@ -17,6 +17,8 @@
 - **持续叠加层** — 透明 PNG 全程叠加显示（品牌水印、系列标识等）
 - **闪烁圆点** — 录像机 REC 风格的周期性闪烁标志
 - **结尾卡片** — 黑屏文字卡片自动拼接，带淡入淡出效果
+- **背景音乐** — 支持添加 BGM，自动循环、音量控制、结尾淡出，与人声智能混音
+- **静音检测** — 自动识别语音片段间的长停顿/卡壳/口误，辅助 AI 选片决策
 - **音频混合** — 独立音频文件（M4A 等）可与任意画面组合，实现配音+B-roll 剪辑
 - **章节时间轴** — 半透明白色章节进度条，章节名全程显示，当前章节高亮
 - **变速输出** — 同时输出 1x / 1.25x / 1.5x 等多个速率版本，每个都从原始视频直接编码
@@ -148,6 +150,9 @@ python3 scripts/transcribe.py "your_video_audio.wav" --model auto --language zh
   "end_cards": [
     {"text": "感谢观看\n更多内容敬请期待", "duration": 3.5}
   ],
+  "bgm": "music/chill-background.mp3",
+  "bgm_volume": 0.15,
+  "bgm_fade_out": 3.0,
   "chapters": [
     {"title": "开场", "start": 0.0, "end": 30.0},
     {"title": "正题", "start": 30.0, "end": 90.0}
@@ -155,7 +160,7 @@ python3 scripts/transcribe.py "your_video_audio.wav" --model auto --language zh
 }
 ```
 
-**新增配置字段说明**：
+**配置字段说明**：
 
 | 字段 | 说明 | 必填 |
 |------|------|------|
@@ -165,6 +170,9 @@ python3 scripts/transcribe.py "your_video_audio.wav" --model auto --language zh
 | `video_overlay` | 透明 PNG 叠加层路径，全程显示（需 RGBA 格式） | 否 |
 | `rec_blink` | 闪烁圆点配置（dot_image/x/y/period） | 否 |
 | `end_cards` | 结尾黑屏卡片数组（text/duration），text 用 `\n` 换行 | 否 |
+| `bgm` | 背景音乐文件路径（MP3/M4A/WAV），自动循环 | 否 |
+| `bgm_volume` | BGM 音量 0.0-1.0，默认 0.15 | 否 |
+| `bgm_fade_out` | BGM 结尾淡出时长（秒），默认 3.0 | 否 |
 
 渲染：
 

@@ -286,6 +286,10 @@ def main():
     parser.add_argument("--cover-duration", type=float, default=None,
                         help="Cover freeze duration in seconds (default: from config or 2.0)")
     parser.add_argument("--cleanup", action="store_true", help="Remove temp files after render")
+    parser.add_argument("--bgm", default=None,
+                        help="Background music file path (overrides config)")
+    parser.add_argument("--bgm-volume", type=float, default=None,
+                        help="BGM volume 0.0-1.0 (default: from config or 0.15)")
     args = parser.parse_args()
 
     config = load_config(args.config)
@@ -355,6 +359,18 @@ def main():
         else:
             print(f"Cover: {cover_duration:.1f}s freeze (no title overlay — Chrome not found)")
 
+    # --- BGM config ---
+    bgm_path = args.bgm or config.get("bgm")
+    if bgm_path and os.path.isfile(bgm_path):
+        bgm_path = os.path.abspath(bgm_path)
+    elif bgm_path:
+        print(f"Warning: BGM file not found: {bgm_path}", file=sys.stderr)
+        bgm_path = None
+    bgm_volume = args.bgm_volume if args.bgm_volume is not None else config.get("bgm_volume", 0.15)
+    bgm_fade_out = config.get("bgm_fade_out", 3.0)
+    if bgm_path:
+        print(f"BGM: {os.path.basename(bgm_path)} (volume={bgm_volume}, fade_out={bgm_fade_out}s)")
+
     for speed in all_speeds:
         if speed == 1.0:
             out_path = output_path
@@ -420,11 +436,19 @@ def main():
 
         # Note: end cards silence is provided by anullsrc in the concat, no apad needed
 
+        # --- BGM mixing ---
+        bgm_input_idx = None
+        if bgm_path:
+            bgm_input_idx = len(input_files)
+            # Total output duration for BGM loop/trim
+            bgm_total = effective_duration + cover_duration + end_cards_duration
+
         # --- Cover PNG overlay ---
         # If we have a cover PNG, add it as an overlay on the tpad-frozen frame
         cover_input_idx = None
         if cover_png_path and cover_duration > 0:
-            cover_input_idx = len(input_files)  # index of cover PNG input
+            extra_offset = 1 if bgm_input_idx is not None else 0
+            cover_input_idx = len(input_files) + extra_offset
             # Overlay the cover PNG during the cover_duration period
             vf_parts.append(
                 f"[cover_img]overlay=0:0:enable='lte(t,{cover_duration:.4f})'")
@@ -433,7 +457,8 @@ def main():
         overlay_input_idx = None
         overlay_path = config.get("video_overlay")
         if overlay_path and os.path.isfile(overlay_path):
-            overlay_input_idx = len(input_files) + (1 if cover_input_idx is not None else 0)
+            extra_inputs = sum(1 for x in [bgm_input_idx, cover_input_idx] if x is not None)
+            overlay_input_idx = len(input_files) + extra_inputs
             vf_parts.append(
                 f"[overlay_img]overlay=0:0:enable='gt(t,{cover_duration:.4f})'")
 
@@ -444,7 +469,7 @@ def main():
         if rec_blink:
             dot_path = rec_blink.get("dot_image")
             if dot_path and os.path.isfile(dot_path):
-                extra_inputs = sum(1 for x in [cover_input_idx, overlay_input_idx] if x is not None)
+                extra_inputs = sum(1 for x in [bgm_input_idx, cover_input_idx, overlay_input_idx] if x is not None)
                 rec_dot_input_idx = len(input_files) + extra_inputs
                 bx = rec_blink.get("x", 62)
                 by = rec_blink.get("y", 55)
@@ -502,10 +527,30 @@ def main():
 
         if af_parts:
             af_chain = ",".join(af_parts)
-            filter_lines.append(f"{merged_a_label}{af_chain}[final_a]")
+            filter_lines.append(f"{merged_a_label}{af_chain}[voice_a]")
+            voice_label = "[voice_a]"
+        else:
+            voice_label = merged_a_label
+
+        # BGM: loop, trim, volume, fade out, then amix with voice
+        if bgm_input_idx is not None:
+            bgm_filters = [
+                f"aloop=loop=-1:size=2147483647",
+                f"atrim=duration={bgm_total:.4f}",
+                f"asetpts=PTS-STARTPTS",
+                f"volume={bgm_volume:.2f}",
+            ]
+            if bgm_fade_out > 0:
+                fade_start = max(0, bgm_total - bgm_fade_out)
+                bgm_filters.append(f"afade=t=out:st={fade_start:.4f}:d={bgm_fade_out:.4f}")
+            bgm_chain = ",".join(bgm_filters)
+            filter_lines.append(f"[{bgm_input_idx}:a]{bgm_chain}[bgm_a]")
+            filter_lines.append(
+                f"{voice_label}[bgm_a]amix=inputs=2:duration=first:dropout_transition=0[final_a]"
+            )
             map_a = "[final_a]"
         else:
-            map_a = merged_a_label
+            map_a = voice_label
 
         # Add cover image scaling/labeling if needed
         if cover_input_idx is not None:
@@ -520,6 +565,7 @@ def main():
         # Add REC dot image prep if needed
         if rec_dot_input_idx is not None:
             prep_idx = 1 + sum(1 for x in [cover_input_idx, overlay_input_idx] if x is not None)
+            # BGM filter lines are appended (not inserted), so no offset needed here
             dot_prep = f"[{rec_dot_input_idx}:v]format=rgba[rec_dot]"
             filter_lines.insert(prep_idx, dot_prep)
 
@@ -535,6 +581,9 @@ def main():
         cmd = ["ffmpeg", "-y"]
         for inp in input_files:
             cmd.extend(["-i", inp])
+        # Add BGM audio as input if available
+        if bgm_input_idx is not None:
+            cmd.extend(["-i", bgm_path])
         # Add cover PNG as input if available
         if cover_input_idx is not None:
             cmd.extend(["-i", cover_png_path])
