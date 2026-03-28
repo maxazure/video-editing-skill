@@ -66,6 +66,7 @@ python3 scripts/transcribe.py "<audio_path>" --model auto --language zh
 - `--mirror`：中国用户使用镜像源下载模型
 - `--language`：`zh`（中文），`en`（英文），`ja`（日文）等，也可省略让 whisper 自动检测
 - `--silence-threshold 1.0`：静音检测阈值（秒），默认 1.0。设为 0 关闭
+- `--word-timestamps`：启用逐词时间戳（卡拉OK字幕必需）
 
 输出：与音频同目录下的 `<video_name>_transcript.json` 文件，格式如下：
 
@@ -162,6 +163,8 @@ Whisper 常见的识别错误类型：
   "bgm": "path/to/background_music.mp3",
   "bgm_volume": 0.15,
   "bgm_fade_out": 3.0,
+  "subtitle_style": "karaoke",
+  "subtitle_highlight_color": "#FFFF00",
   "chapters": [
     {"title": "章节名", "start": 0.0, "end": 30.0}
   ]
@@ -202,6 +205,22 @@ Whisper 常见的识别错误类型：
 - BGM 自动循环播放直到视频结束，不需要预先剪辑长度
 - 推荐免费可商用音乐源：Pixabay Music、Mixkit、YouTube Audio Library
 - 选曲建议：口播/教程用轻柔纯音乐（无人声），节奏不要太强，避免抢人声
+
+**卡拉OK字幕 / 逐词高亮**（`subtitle_style: "karaoke"`）：
+- 在 config 中设置 `"subtitle_style": "karaoke"` 启用逐词高亮字幕
+- 需要先用 `--word-timestamps` 参数进行语音识别，获取逐词时间戳
+- `subtitle_highlight_color`：当前词高亮颜色，默认 `"#FFFF00"`（黄色）
+- `subtitle_base_color`：未说到的词底色，默认 `"#FFFFFF"`（白色）
+- `subtitle_base_alpha`：底色透明度 hex，默认 `"80"`（半透明）
+- 如果 transcript 中没有 word 级时间戳，会自动回退到按字符均匀分布（效果稍差）
+- 也可通过 CLI 参数 `--subtitle-style karaoke` 覆盖 config
+- 典型工作流：
+  ```bash
+  # 1. 转录时开启逐词时间戳
+  python3 scripts/transcribe.py audio.wav --model auto --language zh --word-timestamps
+  # 2. 渲染时选择 karaoke 字幕风格
+  python3 scripts/render_final.py --config render_config.json --output final.mp4 --subtitle-style karaoke
+  ```
 
 **音频源替代（M4A/独立音频）**：
 - 如果有独立录制的音频文件（M4A 等），可先用 ffmpeg 转为带黑屏视频轨的 MP4：

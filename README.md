@@ -11,7 +11,7 @@
 - **单次编码渲染** — 从原始视频直接到最终输出，只编码一次，无质量损失
 - **语音识别切分** — 支持 faster-whisper（推荐，4x 加速）和 openai-whisper，自动按句子切分
 - **GPU 硬件加速** — 自动检测 NVIDIA NVENC / Apple VideoToolbox / Intel QSV / AMD AMF
-- **自动字幕** — 中英文自动检测，自动折行，竖屏位置优化
+- **自动字幕** — 中英文自动检测，自动折行，竖屏位置优化，支持逐词高亮卡拉OK模式
 - **自动封面** — 多种封面风格，支持视频取帧背景、移动端优先大标题、教程型卡片布局，也支持自定义封面 PNG
 - **B-roll 替换** — 指定片段使用替代画面（保留原始音频），自动缩放裁切匹配分辨率
 - **持续叠加层** — 透明 PNG 全程叠加显示（品牌水印、系列标识等）
@@ -117,6 +117,9 @@ python3 scripts/extract_audio.py "your_video.mp4"
 source .venv/bin/activate
 python3 scripts/transcribe.py "your_video_audio.wav" --model auto --language zh
 # 输出: your_video_transcript.json
+
+# 如需卡拉OK逐词高亮字幕，加 --word-timestamps：
+python3 scripts/transcribe.py "your_video_audio.wav" --model auto --language zh --word-timestamps
 ```
 
 `--model auto` 会根据硬件自动选择最佳模型：
@@ -153,6 +156,8 @@ python3 scripts/transcribe.py "your_video_audio.wav" --model auto --language zh
   "bgm": "music/chill-background.mp3",
   "bgm_volume": 0.15,
   "bgm_fade_out": 3.0,
+  "subtitle_style": "karaoke",
+  "subtitle_highlight_color": "#FFFF00",
   "chapters": [
     {"title": "开场", "start": 0.0, "end": 30.0},
     {"title": "正题", "start": 30.0, "end": 90.0}
@@ -173,6 +178,8 @@ python3 scripts/transcribe.py "your_video_audio.wav" --model auto --language zh
 | `bgm` | 背景音乐文件路径（MP3/M4A/WAV），自动循环 | 否 |
 | `bgm_volume` | BGM 音量 0.0-1.0，默认 0.15 | 否 |
 | `bgm_fade_out` | BGM 结尾淡出时长（秒），默认 3.0 | 否 |
+| `subtitle_style` | 字幕风格：`"normal"`（默认）或 `"karaoke"`（逐词高亮） | 否 |
+| `subtitle_highlight_color` | 卡拉OK高亮色，默认 `"#FFFF00"`（黄色） | 否 |
 
 渲染：
 

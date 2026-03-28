@@ -77,6 +77,8 @@ def resolve_clips(config):
             "end": seg["end"],
             "text": seg["text"],
         }
+        if "words" in seg:
+            resolved["words"] = seg["words"]
         if "broll" in entry:
             resolved["broll"] = os.path.abspath(entry["broll"])
             resolved["broll_start"] = entry.get("broll_start", 0.0)
@@ -160,6 +162,129 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             escaped = escaped.replace("\n", "\\N")
             dialogues.append(
                 f"Dialogue: 0,{start_t},{end_t},EndCard,,0,0,0,,{{\\fad({fade_in},{fade_out})}}{escaped}"
+            )
+            offset += card_dur
+            end_cards_duration += card_dur
+
+    return header + "\n".join(dialogues) + "\n", offset, end_cards_duration
+
+
+def _ass_color(hex_color):
+    """Convert '#RRGGBB' or '#AARRGGBB' to ASS '&HAABBGGRR' format."""
+    h = hex_color.lstrip("#")
+    if len(h) == 6:
+        r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+        return f"&H00{b:02X}{g:02X}{r:02X}"
+    elif len(h) == 8:
+        a, r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16), int(h[6:8], 16)
+        return f"&H{a:02X}{b:02X}{g:02X}{r:02X}"
+    return "&H0000FFFF"  # fallback yellow
+
+
+def _build_karaoke_line(clip, seg_start):
+    """Build ASS karaoke text from word timestamps.
+
+    Uses \\kf (smooth fill) for each word. If word timestamps are missing,
+    falls back to even distribution across characters.
+    """
+    words = clip.get("words")
+    text = clip["text"]
+    seg_duration = clip["end"] - clip["start"]
+
+    if words:
+        parts = []
+        prev_end = 0.0  # relative to segment start
+        for w in words:
+            word_rel_end = w["end"] - seg_start
+            # Duration from previous word end to this word's end (in centiseconds)
+            kf_cs = max(1, round((word_rel_end - prev_end) * 100))
+            escaped = escape_ass_text(w["word"])
+            parts.append(f"{{\\kf{kf_cs}}}{escaped}")
+            prev_end = word_rel_end
+        return "".join(parts)
+    else:
+        # Fallback: distribute evenly across characters
+        chars = list(text)
+        if not chars:
+            return escape_ass_text(text)
+        per_char_cs = max(1, round(seg_duration * 100 / len(chars)))
+        parts = [f"{{\\kf{per_char_cs}}}{escape_ass_text(c)}" for c in chars]
+        return "".join(parts)
+
+
+def build_karaoke_ass(clips, font_name, font_size, video_width, video_height,
+                      speed=1.0, cover_duration=0.0, end_cards=None,
+                      highlight_color="#FFFF00", base_color="#FFFFFF",
+                      base_alpha="80"):
+    """Build ASS subtitle file with karaoke word-by-word highlighting.
+
+    Uses ASS \\kf tags: text starts in SecondaryColour (base/dim) and fills
+    to PrimaryColour (highlight) as each word is spoken.
+
+    Args:
+        highlight_color: Hex color for the active/highlighted word (default yellow).
+        base_color: Hex color for words not yet spoken (default white).
+        base_alpha: Alpha hex for base color (00=opaque, FF=transparent, default 80=semi).
+    """
+    margin_lr = 60
+    margin_v = int(video_height * 0.28)
+    end_card_fs = int(font_size * 1.4)
+
+    # ASS colors: PrimaryColour = after karaoke fill, SecondaryColour = before fill
+    primary = _ass_color(highlight_color)
+    # Base color with alpha for "not yet spoken" dimmed look
+    bh = base_color.lstrip("#")
+    if len(bh) == 6:
+        r, g, b = int(bh[0:2], 16), int(bh[2:4], 16), int(bh[4:6], 16)
+        secondary = f"&H{base_alpha}{b:02X}{g:02X}{r:02X}"
+    else:
+        secondary = f"&H{base_alpha}FFFFFF"
+
+    def fmt_time(seconds):
+        h = int(seconds // 3600)
+        m = int((seconds % 3600) // 60)
+        s = seconds % 60
+        return f"{h}:{m:02d}:{s:05.2f}"
+
+    header = f"""[Script Info]
+Title: Karaoke Subtitles
+ScriptType: v4.00+
+PlayResX: {video_width}
+PlayResY: {video_height}
+WrapStyle: 0
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Karaoke,{font_name},{font_size},{primary},{secondary},&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,3,1,2,{margin_lr},{margin_lr},{margin_v},1
+Style: EndCard,{font_name},{end_card_fs},&H00FFFFFF,&H000000FF,&H00000000,&H00000000,1,0,0,0,100,100,2,0,0,0,0,5,{margin_lr},{margin_lr},0,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
+    dialogues = []
+    offset = cover_duration
+
+    for clip in clips:
+        dur = clip["end"] - clip["start"]
+        scaled_dur = dur / speed
+        start_t = fmt_time(offset)
+        end_t = fmt_time(offset + scaled_dur)
+
+        karaoke_text = _build_karaoke_line(clip, clip["start"])
+        dialogues.append(f"Dialogue: 0,{start_t},{end_t},Karaoke,,0,0,0,,{karaoke_text}")
+        offset += scaled_dur
+
+    # End cards (same as normal mode)
+    end_cards_duration = 0.0
+    if end_cards:
+        for card in end_cards:
+            card_text = card["text"]
+            card_dur = card.get("duration", 3.0)
+            start_t = fmt_time(offset)
+            end_t = fmt_time(offset + card_dur)
+            escaped = escape_ass_text(card_text).replace("\n", "\\N")
+            dialogues.append(
+                f"Dialogue: 0,{start_t},{end_t},EndCard,,0,0,0,,{{\\fad(300,300)}}{escaped}"
             )
             offset += card_dur
             end_cards_duration += card_dur
@@ -290,6 +415,9 @@ def main():
                         help="Background music file path (overrides config)")
     parser.add_argument("--bgm-volume", type=float, default=None,
                         help="BGM volume 0.0-1.0 (default: from config or 0.15)")
+    parser.add_argument("--subtitle-style", default=None,
+                        choices=["normal", "karaoke"],
+                        help="Subtitle style (default: from config or 'normal')")
     args = parser.parse_args()
 
     config = load_config(args.config)
@@ -311,6 +439,14 @@ def main():
     # Find font
     font_path, font_name = find_chinese_font(args.font_path)
     print(f"Font: {font_name}")
+
+    # Subtitle style
+    sub_style = args.subtitle_style or config.get("subtitle_style", "normal")
+    if sub_style == "karaoke":
+        has_words = any("words" in c for c in clips)
+        print(f"Subtitles: karaoke (word-level highlight)")
+        if not has_words:
+            print("  Note: No word timestamps in transcript — using even distribution fallback")
 
     # --- Step 1: Build segment selection filter ---
     if _clips_in_temporal_order(clips):
@@ -387,12 +523,26 @@ def main():
         end_cards = config.get("end_cards", None)
         ass_path = None
         end_cards_duration = 0.0
+        subtitle_style = args.subtitle_style or config.get("subtitle_style", "normal")
         if not args.no_subtitles:
-            ass_content, _, end_cards_duration = build_merged_ass(
-                clips, font_name, font_size, width, height,
-                speed=speed, cover_duration=cover_duration,
-                end_cards=end_cards,
-            )
+            if subtitle_style == "karaoke":
+                highlight_color = config.get("subtitle_highlight_color", "#FFFF00")
+                base_color = config.get("subtitle_base_color", "#FFFFFF")
+                base_alpha = config.get("subtitle_base_alpha", "80")
+                ass_content, _, end_cards_duration = build_karaoke_ass(
+                    clips, font_name, font_size, width, height,
+                    speed=speed, cover_duration=cover_duration,
+                    end_cards=end_cards,
+                    highlight_color=highlight_color,
+                    base_color=base_color,
+                    base_alpha=base_alpha,
+                )
+            else:
+                ass_content, _, end_cards_duration = build_merged_ass(
+                    clips, font_name, font_size, width, height,
+                    speed=speed, cover_duration=cover_duration,
+                    end_cards=end_cards,
+                )
             fd, ass_path = tempfile.mkstemp(suffix=".ass", prefix=f"sub_{label}_")
             with os.fdopen(fd, "w", encoding="utf-8") as f:
                 f.write(ass_content)
