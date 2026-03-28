@@ -24,7 +24,8 @@
 - **多视频支持** — 同时处理多个视频文件，跨视频混合选择片段
 - **时长对齐** — 自动确保视频/音频流时长一致，避免平台上传时的时长不匹配报错
 - **Remotion 口播生成** — 当只有语音没有画面时，使用 Remotion 生成配合语音的动态视频（TikTok 风格字幕、图文解说、动态文字等）
-- **丰富字体目录** — 内置 13 款免费中英文字体（思源黑体、霞鹜文楷、站酷系列、Inter、Montserrat 等），一键下载缓存
+- **脱口秀/Standup 视频生成** — 完整的 Remotion 项目，将音频+文稿转为动态文字视频，12 种文字动画效果，自动检测笑点，3 种风格预设
+- **丰富字体目录** — 内置 14 款免费中英文字体（思源黑体、霞鹜文楷/Lite、站酷系列、Inter、Montserrat 等），一键下载缓存
 - **跨平台** — 支持 macOS / Linux / WSL / Windows
 - **中国加速** — 自动检测中国区域，使用清华 pip 镜像和 HuggingFace 镜像
 
@@ -227,29 +228,68 @@ python3 scripts/merge_clips.py "your_video_clips_subtitled" --select "1-5,8" --o
 video-editing-skill/
 ├── README.md                  # 本文件
 ├── SKILL.md                   # Skill 定义（OpenClaw / AI agent 读取）
+├── REMOTION_VOICEOVER.md      # Remotion 口播视频生成参考文档
 ├── scripts/
 │   ├── utils.py               # 共享工具（平台/GPU/字体/镜像/rotation 检测）
 │   ├── extract_audio.py       # 音频提取
 │   ├── transcribe.py          # 语音识别（faster-whisper / openai-whisper）
 │   ├── render_final.py        # 单次编码渲染（推荐，字幕+封面+章节+变速）
+│   ├── generate_cover_image.py # 封面图片生成（7 种风格，headless Chrome 渲染）
+│   ├── generate_standup_timeline.py  # 脱口秀时间轴生成（transcript → timeline.json）
 │   ├── split_video.py         # 视频切分（预览用）
 │   ├── burn_subtitles.py      # 字幕烧录（预览用）
 │   ├── merge_clips.py         # 视频合成（预览用）
-│   ├── generate_cover.py      # 封面生成（预览用）
+│   ├── generate_cover.py      # 封面生成（旧版，预览用）
 │   └── add_chapter_bar.py     # 章节时间轴（预览用）
+├── remotion-standup/          # Remotion 脱口秀视频项目
+│   ├── package.json
+│   ├── tsconfig.json
+│   └── src/
+│       ├── Root.tsx            # Remotion 入口组件
+│       ├── StandupVideo.tsx    # 主视频组件
+│       ├── types.ts            # 类型定义
+│       └── components/         # 动画文字、波形、背景、进度条等组件
 ├── fonts/                     # 字体缓存（自动下载）
 └── videos/                    # 用户视频工作目录
 ```
+
+## Remotion 脱口秀/Standup 视频生成
+
+当你只有音频和文稿（没有摄像头画面）时，可以使用 Remotion 生成动态文字视频：
+
+```bash
+# 1. 从 transcript 生成时间轴
+python3 scripts/generate_standup_timeline.py transcript.json --style default --output timeline.json
+
+# 2. 用 Remotion 渲染视频
+cd remotion-standup
+npm install
+npx remotion render src/index.ts StandupVideo --props='{"timelineFile":"../timeline.json","audioFile":"../audio.wav"}' out.mp4
+```
+
+**文字动画效果（12 种）**：fadeIn, springIn, scaleUp, bounce, shake, slam, wave, glitch, rotateIn, splitReveal, typewriter, scaleDown
+
+**风格预设**：
+- `default` — 标准节奏，适合大多数内容
+- `calm` — 平缓节奏，适合叙事/深度内容
+- `energetic` — 快节奏，适合脱口秀/搞笑内容
+
+自动检测短句、感叹号和喜剧关键词，应用强调动画和笑点高亮。
+
+> 详细的 Remotion 口播视频参考见 [REMOTION_VOICEOVER.md](REMOTION_VOICEOVER.md)
 
 ## 技术细节
 
 | 组件 | 技术 |
 |------|------|
 | 语音识别 | faster-whisper (CTranslate2) / OpenAI Whisper |
-| 视频渲染 | ffmpeg filter_complex: trim/atrim + concat + ASS + overlay + color |
+| 视频渲染 | ffmpeg filter_complex: select/trim + concat + ASS + overlay + color |
 | 视频编码 | NVENC / VideoToolbox / QSV / AMF / libx264（自动检测）|
-| 编码策略 | 固定比特率 `-b:v 12M`（VideoToolbox）/ `-cq 20`（NVENC）|
+| 编码策略 | 固定比特率 `-b:v 12M`（VideoToolbox）/ `-cq 20`（NVENC）/ preset medium (CPU) |
 | 字幕渲染 | ASS 格式 + Noto Sans SC / PingFang SC / Microsoft YaHei |
+| 封面生成 | Headless Chrome + HTML/CSS 渲染，7 种预设风格 |
+| 动态视频 | Remotion (React) — 脱口秀/口播场景，12 种文字动画 |
+| 字体系统 | 14 款内置字体（8 CJK + 6 英文），自动下载 + CDN 加速 |
 | 平台检测 | macOS / Linux / WSL / Windows 自动识别 |
 
 ### 硬件加速编码器优先级
