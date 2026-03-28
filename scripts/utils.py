@@ -325,29 +325,43 @@ FONT_CATALOG = {
         "name": "LXGW WenKai",
         "filename": "LXGWWenKai-Regular.ttf",
         "urls": [
-            "https://github.com/lxgw/LxgwWenKai/releases/download/v1.501/LXGWWenKai-Regular.ttf",
+            "https://github.com/lxgw/LxgwWenKai/releases/download/v1.522/LXGWWenKai-Regular.ttf",
         ],
         "urls_cn": [
-            "https://cdn.jsdelivr.net/gh/lxgw/LxgwWenKai@v1.501/fonts/TTF/LXGWWenKai-Regular.ttf",
+            "https://cdn.jsdelivr.net/gh/lxgw/LxgwWenKai@v1.522/fonts/TTF/LXGWWenKai-Regular.ttf",
         ],
         "license": "SIL OFL 1.1",
         "cjk": True,
         "use_case": "all",
-        "description": "霞鹜文楷，手写楷体风格，适合文艺/文化/情感类视频",
+        "description": "霞鹜文楷，手写楷体风格，适合文艺/文化/情感类视频（~24MB）",
+    },
+    "lxgw-wenkai-lite": {
+        "name": "LXGW WenKai Lite",
+        "filename": "LXGWWenKaiLite-Regular.ttf",
+        "urls": [
+            "https://github.com/lxgw/LxgwWenKai-Lite/releases/download/v1.522/LXGWWenKaiLite-Regular.ttf",
+        ],
+        "urls_cn": [
+            "https://cdn.jsdelivr.net/gh/lxgw/LxgwWenKai-Lite@v1.522/fonts/TTF/LXGWWenKaiLite-Regular.ttf",
+        ],
+        "license": "SIL OFL 1.1",
+        "cjk": True,
+        "use_case": "all",
+        "description": "霞鹜文楷轻便版，字符较少但体积更小（~13MB），适合嵌入式场景",
     },
     "lxgw-wenkai-bold": {
         "name": "LXGW WenKai",
-        "filename": "LXGWWenKai-Bold.ttf",
+        "filename": "LXGWWenKai-Medium.ttf",
         "urls": [
-            "https://github.com/lxgw/LxgwWenKai/releases/download/v1.501/LXGWWenKai-Bold.ttf",
+            "https://github.com/lxgw/LxgwWenKai/releases/download/v1.522/LXGWWenKai-Medium.ttf",
         ],
         "urls_cn": [
-            "https://cdn.jsdelivr.net/gh/lxgw/LxgwWenKai@v1.501/fonts/TTF/LXGWWenKai-Bold.ttf",
+            "https://cdn.jsdelivr.net/gh/lxgw/LxgwWenKai@v1.522/fonts/TTF/LXGWWenKai-Medium.ttf",
         ],
         "license": "SIL OFL 1.1",
         "cjk": True,
         "use_case": "title",
-        "description": "霞鹜文楷粗体，适合标题",
+        "description": "霞鹜文楷中粗体，适合标题（~24MB）",
     },
     "zcool-kuaile": {
         "name": "ZCOOL KuaiLe",
@@ -572,8 +586,8 @@ def find_chinese_font(custom_font_path=None):
 
     # Check cached fonts (try Noto Sans SC first, then others)
     fonts_dir = get_fonts_dir()
-    for font_id in ["noto-sans-sc", "lxgw-wenkai", "lxgw-wenkai-bold",
-                     "zcool-xiaowei", "noto-serif-sc"]:
+    for font_id in ["noto-sans-sc", "lxgw-wenkai", "lxgw-wenkai-lite",
+                     "lxgw-wenkai-bold", "zcool-xiaowei", "noto-serif-sc"]:
         info = FONT_CATALOG[font_id]
         cached_path = os.path.join(fonts_dir, info["filename"])
         if os.path.isfile(cached_path):
@@ -672,6 +686,8 @@ def _guess_font_name(font_path):
         return "SimHei"
     if "heiti" in base:
         return "Heiti SC"
+    if "wenkailite" in base:
+        return "LXGW WenKai Lite"
     if "lxgw" in base or "wenkai" in base:
         return "LXGW WenKai"
     if "zcoolkuaile" in base:

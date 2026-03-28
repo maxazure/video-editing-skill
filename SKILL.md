@@ -457,8 +457,9 @@ download_font('inter')
 |---------|------|------|------|--------|
 | `noto-sans-sc` | Noto Sans SC（思源黑体） | 万能黑体 | 全场景 | SIL OFL |
 | `noto-serif-sc` | Noto Serif SC（思源宋体） | 正式宋体 | 文化/古典/深度 | SIL OFL |
-| `lxgw-wenkai` | LXGW WenKai（霞鹜文楷） | 手写楷体 | 文艺/文化/情感 | SIL OFL |
-| `lxgw-wenkai-bold` | LXGW WenKai Bold | 手写楷体粗 | 标题 | SIL OFL |
+| `lxgw-wenkai` | LXGW WenKai（霞鹜文楷） | 手写楷体 | 文艺/文化/情感（~24MB） | SIL OFL |
+| `lxgw-wenkai-lite` | LXGW WenKai Lite（轻便版） | 手写楷体 | 同上，体积更小（~13MB） | SIL OFL |
+| `lxgw-wenkai-bold` | LXGW WenKai Medium | 手写楷体粗 | 标题 | SIL OFL |
 | `zcool-kuaile` | ZCOOL KuaiLe（站酷快乐体） | 圆润可爱 | 轻松/娱乐标题 | SIL OFL |
 | `zcool-qingke-huangyou` | ZCOOL QingKe HuangYou（庆科黄油体） | 手写潮流 | 时尚/年轻标题 | SIL OFL |
 | `zcool-xiaowei` | ZCOOL XiaoWei（站酷小薇体） | 清秀端正 | 正文/字幕 | SIL OFL |
