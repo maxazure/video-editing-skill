@@ -304,10 +304,14 @@ const windowedData = useWindowedAudioData({
 ### 字幕系统
 
 ```tsx
-import { createTikTokStyleCaptions, parseSrt } from "@remotion/captions";
+import { createTikTokStyleCaptions, parseSrt, parseVtt } from "@remotion/captions";
+
+// Caption 类型定义:
+// { text: string, startMs: number, endMs: number, timestampMs: number, confidence: number | null }
 
 // 1. 解析 SRT/VTT 字幕文件
-const captions = parseSrt(srtContent);
+const { captions } = parseSrt({ input: srtContent });   // SRT → Caption[]
+const { captions } = parseVtt({ input: vttContent });   // VTT → Caption[]
 
 // 2. 从 Whisper JSON 转换
 // transcript.json 的 segments 可以映射为 captions 格式:
@@ -322,8 +326,27 @@ const captions = segments.map(seg => ({
 // 3. 生成 TikTok 风格逐词字幕
 const { pages } = createTikTokStyleCaptions({
   captions,
-  combineTokensWithinMilliseconds: 800,  // 合并间隔
+  combineTokensWithinMilliseconds: 800,  // 高值=每页多词；低值=逐词显示
 });
+// 返回 pages: TikTokPage[]
+// 每个 page 有: { text, startMs, durationMs, tokens: [{ text, fromMs, toMs }] }
+
+// 4. 渲染字幕页：每个 page 变成一个 <Sequence>
+pages.map((page, i) => {
+  const startFrame = (page.startMs / 1000) * fps;
+  const nextStart = pages[i + 1]?.startMs ?? (page.startMs + page.durationMs);
+  const durationFrames = ((nextStart - page.startMs) / 1000) * fps;
+  return (
+    <Sequence from={startFrame} durationInFrames={durationFrames}>
+      {page.tokens.map(token => {
+        // 比较 token.fromMs/toMs 与当前播放时间来确定高亮状态
+        const isActive = timeInMs >= token.fromMs && timeInMs < token.toMs;
+        return <span style={{ color: isActive ? "#39E508" : "#fff" }}>{token.text}</span>;
+      })}
+    </Sequence>
+  );
+});
+// CSS 必须设置 white-space: pre 以保留空格
 ```
 
 ### 动画工具
@@ -359,6 +382,7 @@ import { TransitionSeries, linearTiming, springTiming } from "@remotion/transiti
 import { fade } from "@remotion/transitions/fade";
 import { slide } from "@remotion/transitions/slide";
 import { wipe } from "@remotion/transitions/wipe";
+import { flip } from "@remotion/transitions/flip";
 
 <TransitionSeries>
   <TransitionSeries.Sequence durationInFrames={90}>
@@ -366,12 +390,38 @@ import { wipe } from "@remotion/transitions/wipe";
   </TransitionSeries.Sequence>
   <TransitionSeries.Transition
     presentation={fade()}
-    timing={springTiming({ config: { damping: 200 } })}
+    timing={springTiming({ config: { damping: 200 }, durationRestThreshold: 0.001 })}
   />
   <TransitionSeries.Sequence durationInFrames={90}>
     <Scene2 />
   </TransitionSeries.Sequence>
 </TransitionSeries>
+
+// 转场效果参数:
+// slide({ direction: "from-left" | "from-right" | "from-top" | "from-bottom" })
+// fade({ shouldFadeOutExitingScene: false })
+// wipe({ direction: "from-left" | "from-top-left" | ... })  -- 8 个方向含对角线
+// flip({ direction: "from-left", perspective: 1000 })
+
+// Timing:
+// linearTiming({ durationInFrames: 15, easing: Easing.inOut(Easing.ease) })
+// springTiming({ config: { damping: 200 }, durationRestThreshold: 0.001 })
+```
+
+### 动画工具 (interpolateStyles)
+
+```tsx
+import { makeTransform, interpolateStyles } from "@remotion/animation-utils";
+
+// 组合多个 transform:
+const transform = makeTransform([rotate(45), translate(50, 50), scale(1.2)]);
+
+// 插值样式对象:
+const style = interpolateStyles(frame, [0, 30, 60], [
+  { opacity: 0, transform: makeTransform([translateY(-50)]) },
+  { opacity: 1, transform: makeTransform([translateY(0)]) },
+  { opacity: 0, transform: makeTransform([translateY(50)]) },
+]);
 ```
 
 ### 字体加载
