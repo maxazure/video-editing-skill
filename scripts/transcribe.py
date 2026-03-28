@@ -23,14 +23,15 @@ from utils import (
 )
 
 
-def transcribe_faster_whisper(audio_path, model_name, language, device, compute_type):
+def transcribe_faster_whisper(audio_path, model_name, language, device, compute_type,
+                              word_timestamps=False):
     """Transcribe using faster-whisper engine."""
     from faster_whisper import WhisperModel
 
     print(f"[faster-whisper] Loading model: {model_name} (device={device}, compute={compute_type})")
     model = WhisperModel(model_name, device=device, compute_type=compute_type)
 
-    kwargs = {}
+    kwargs = {"word_timestamps": word_timestamps}
     if language:
         kwargs["language"] = language
 
@@ -39,24 +40,34 @@ def transcribe_faster_whisper(audio_path, model_name, language, device, compute_
 
     segments = []
     for i, seg in enumerate(segments_iter, start=1):
-        segments.append({
+        entry = {
             "id": i,
             "start": round(seg.start, 2),
             "end": round(seg.end, 2),
             "text": seg.text.strip(),
-        })
+        }
+        if word_timestamps and seg.words:
+            entry["words"] = [
+                {
+                    "word": w.word.strip(),
+                    "start": round(w.start, 3),
+                    "end": round(w.end, 3),
+                }
+                for w in seg.words if w.word.strip()
+            ]
+        segments.append(entry)
 
     return segments, detected_lang
 
 
-def transcribe_openai_whisper(audio_path, model_name, language):
+def transcribe_openai_whisper(audio_path, model_name, language, word_timestamps=False):
     """Transcribe using openai-whisper engine."""
     import whisper
 
     print(f"[openai-whisper] Loading model: {model_name}")
     model = whisper.load_model(model_name)
 
-    kwargs = {}
+    kwargs = {"word_timestamps": word_timestamps}
     if language:
         kwargs["language"] = language
 
@@ -65,14 +76,50 @@ def transcribe_openai_whisper(audio_path, model_name, language):
 
     segments = []
     for i, seg in enumerate(result.get("segments", []), start=1):
-        segments.append({
+        entry = {
             "id": i,
             "start": round(seg["start"], 2),
             "end": round(seg["end"], 2),
             "text": seg["text"].strip(),
-        })
+        }
+        if word_timestamps and seg.get("words"):
+            entry["words"] = [
+                {
+                    "word": w["word"].strip(),
+                    "start": round(w["start"], 3),
+                    "end": round(w["end"], 3),
+                }
+                for w in seg["words"] if w.get("word", "").strip()
+            ]
+        segments.append(entry)
 
     return segments, detected_lang
+
+
+def detect_silences(segments, min_gap=1.0):
+    """Detect silent gaps between speech segments.
+
+    Args:
+        segments: List of {"id", "start", "end", "text"} dicts.
+        min_gap: Minimum gap duration (seconds) to flag as silence.
+
+    Returns:
+        List of {"start", "end", "duration", "before_segment", "after_segment"} dicts.
+    """
+    silences = []
+    for i in range(1, len(segments)):
+        gap_start = segments[i - 1]["end"]
+        gap_end = segments[i]["start"]
+        gap_dur = gap_end - gap_start
+        if gap_dur >= min_gap:
+            silences.append({
+                "start": round(gap_start, 2),
+                "end": round(gap_end, 2),
+                "duration": round(gap_dur, 2),
+                "before_segment": segments[i - 1]["id"],
+                "after_segment": segments[i]["id"],
+            })
+    return silences
 
 
 def main():
@@ -86,6 +133,10 @@ def main():
                         help="Whisper engine (default: auto-detect)")
     parser.add_argument("--mirror", action="store_true",
                         help="Use China mirrors for model download")
+    parser.add_argument("--silence-threshold", type=float, default=1.0,
+                        help="Min gap (seconds) to flag as silence (default: 1.0). Set 0 to disable.")
+    parser.add_argument("--word-timestamps", action="store_true",
+                        help="Include per-word timestamps (required for karaoke subtitles)")
     args = parser.parse_args()
 
     audio_path = os.path.abspath(args.audio_path)
@@ -126,14 +177,19 @@ def main():
     print(f"Transcribing: {audio_path}")
 
     # Run transcription
+    if args.word_timestamps:
+        print("Word-level timestamps: enabled (for karaoke subtitles)")
+
     if engine == "faster-whisper":
         device, compute_type = get_whisper_device(gpu_info)
         segments, detected_lang = transcribe_faster_whisper(
-            audio_path, model_name, args.language, device, compute_type
+            audio_path, model_name, args.language, device, compute_type,
+            word_timestamps=args.word_timestamps,
         )
     else:
         segments, detected_lang = transcribe_openai_whisper(
-            audio_path, model_name, args.language
+            audio_path, model_name, args.language,
+            word_timestamps=args.word_timestamps,
         )
 
     # Build output path
@@ -142,6 +198,11 @@ def main():
     video_name = audio_name.replace("_audio", "")
     output_path = os.path.join(audio_dir, f"{video_name}_transcript.json")
 
+    # Detect silences
+    silences = []
+    if args.silence_threshold > 0 and len(segments) > 1:
+        silences = detect_silences(segments, min_gap=args.silence_threshold)
+
     output_data = {
         "source_audio": audio_path,
         "engine": engine,
@@ -149,12 +210,26 @@ def main():
         "language": detected_lang,
         "segments": segments,
     }
+    if silences:
+        output_data["silences"] = silences
 
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(output_data, f, ensure_ascii=False, indent=2)
 
     print(f"\nTranscription complete: {output_path}")
     print(f"Total segments: {len(segments)}")
+
+    # Report silences
+    if silences:
+        total_silence = sum(s["duration"] for s in silences)
+        print(f"\nDetected {len(silences)} silent gaps (>= {args.silence_threshold}s), total {total_silence:.1f}s:")
+        for s in silences:
+            print(f"  {s['start']:7.2f}s - {s['end']:7.2f}s ({s['duration']:.1f}s gap, between #{s['before_segment']} and #{s['after_segment']})")
+        print(f"\nTip: These gaps are likely stammers, pauses, or hesitations.")
+        print(f"     Exclude these segment ranges when building render_config.json.")
+    else:
+        print(f"\nNo significant silences detected (threshold: {args.silence_threshold}s).")
+
     print("\nSegment preview:")
     for seg in segments[:5]:
         print(f"  #{seg['id']:3d} [{seg['start']:7.2f}s - {seg['end']:7.2f}s] {seg['text']}")

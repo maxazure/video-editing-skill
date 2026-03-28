@@ -77,6 +77,8 @@ def resolve_clips(config):
             "end": seg["end"],
             "text": seg["text"],
         }
+        if "words" in seg:
+            resolved["words"] = seg["words"]
         if "broll" in entry:
             resolved["broll"] = os.path.abspath(entry["broll"])
             resolved["broll_start"] = entry.get("broll_start", 0.0)
@@ -160,6 +162,129 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             escaped = escaped.replace("\n", "\\N")
             dialogues.append(
                 f"Dialogue: 0,{start_t},{end_t},EndCard,,0,0,0,,{{\\fad({fade_in},{fade_out})}}{escaped}"
+            )
+            offset += card_dur
+            end_cards_duration += card_dur
+
+    return header + "\n".join(dialogues) + "\n", offset, end_cards_duration
+
+
+def _ass_color(hex_color):
+    """Convert '#RRGGBB' or '#AARRGGBB' to ASS '&HAABBGGRR' format."""
+    h = hex_color.lstrip("#")
+    if len(h) == 6:
+        r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+        return f"&H00{b:02X}{g:02X}{r:02X}"
+    elif len(h) == 8:
+        a, r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16), int(h[6:8], 16)
+        return f"&H{a:02X}{b:02X}{g:02X}{r:02X}"
+    return "&H0000FFFF"  # fallback yellow
+
+
+def _build_karaoke_line(clip, seg_start):
+    """Build ASS karaoke text from word timestamps.
+
+    Uses \\kf (smooth fill) for each word. If word timestamps are missing,
+    falls back to even distribution across characters.
+    """
+    words = clip.get("words")
+    text = clip["text"]
+    seg_duration = clip["end"] - clip["start"]
+
+    if words:
+        parts = []
+        prev_end = 0.0  # relative to segment start
+        for w in words:
+            word_rel_end = w["end"] - seg_start
+            # Duration from previous word end to this word's end (in centiseconds)
+            kf_cs = max(1, round((word_rel_end - prev_end) * 100))
+            escaped = escape_ass_text(w["word"])
+            parts.append(f"{{\\kf{kf_cs}}}{escaped}")
+            prev_end = word_rel_end
+        return "".join(parts)
+    else:
+        # Fallback: distribute evenly across characters
+        chars = list(text)
+        if not chars:
+            return escape_ass_text(text)
+        per_char_cs = max(1, round(seg_duration * 100 / len(chars)))
+        parts = [f"{{\\kf{per_char_cs}}}{escape_ass_text(c)}" for c in chars]
+        return "".join(parts)
+
+
+def build_karaoke_ass(clips, font_name, font_size, video_width, video_height,
+                      speed=1.0, cover_duration=0.0, end_cards=None,
+                      highlight_color="#FFFF00", base_color="#FFFFFF",
+                      base_alpha="80"):
+    """Build ASS subtitle file with karaoke word-by-word highlighting.
+
+    Uses ASS \\kf tags: text starts in SecondaryColour (base/dim) and fills
+    to PrimaryColour (highlight) as each word is spoken.
+
+    Args:
+        highlight_color: Hex color for the active/highlighted word (default yellow).
+        base_color: Hex color for words not yet spoken (default white).
+        base_alpha: Alpha hex for base color (00=opaque, FF=transparent, default 80=semi).
+    """
+    margin_lr = 60
+    margin_v = int(video_height * 0.28)
+    end_card_fs = int(font_size * 1.4)
+
+    # ASS colors: PrimaryColour = after karaoke fill, SecondaryColour = before fill
+    primary = _ass_color(highlight_color)
+    # Base color with alpha for "not yet spoken" dimmed look
+    bh = base_color.lstrip("#")
+    if len(bh) == 6:
+        r, g, b = int(bh[0:2], 16), int(bh[2:4], 16), int(bh[4:6], 16)
+        secondary = f"&H{base_alpha}{b:02X}{g:02X}{r:02X}"
+    else:
+        secondary = f"&H{base_alpha}FFFFFF"
+
+    def fmt_time(seconds):
+        h = int(seconds // 3600)
+        m = int((seconds % 3600) // 60)
+        s = seconds % 60
+        return f"{h}:{m:02d}:{s:05.2f}"
+
+    header = f"""[Script Info]
+Title: Karaoke Subtitles
+ScriptType: v4.00+
+PlayResX: {video_width}
+PlayResY: {video_height}
+WrapStyle: 0
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Karaoke,{font_name},{font_size},{primary},{secondary},&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,3,1,2,{margin_lr},{margin_lr},{margin_v},1
+Style: EndCard,{font_name},{end_card_fs},&H00FFFFFF,&H000000FF,&H00000000,&H00000000,1,0,0,0,100,100,2,0,0,0,0,5,{margin_lr},{margin_lr},0,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
+    dialogues = []
+    offset = cover_duration
+
+    for clip in clips:
+        dur = clip["end"] - clip["start"]
+        scaled_dur = dur / speed
+        start_t = fmt_time(offset)
+        end_t = fmt_time(offset + scaled_dur)
+
+        karaoke_text = _build_karaoke_line(clip, clip["start"])
+        dialogues.append(f"Dialogue: 0,{start_t},{end_t},Karaoke,,0,0,0,,{karaoke_text}")
+        offset += scaled_dur
+
+    # End cards (same as normal mode)
+    end_cards_duration = 0.0
+    if end_cards:
+        for card in end_cards:
+            card_text = card["text"]
+            card_dur = card.get("duration", 3.0)
+            start_t = fmt_time(offset)
+            end_t = fmt_time(offset + card_dur)
+            escaped = escape_ass_text(card_text).replace("\n", "\\N")
+            dialogues.append(
+                f"Dialogue: 0,{start_t},{end_t},EndCard,,0,0,0,,{{\\fad(300,300)}}{escaped}"
             )
             offset += card_dur
             end_cards_duration += card_dur
@@ -286,6 +411,13 @@ def main():
     parser.add_argument("--cover-duration", type=float, default=None,
                         help="Cover freeze duration in seconds (default: from config or 2.0)")
     parser.add_argument("--cleanup", action="store_true", help="Remove temp files after render")
+    parser.add_argument("--bgm", default=None,
+                        help="Background music file path (overrides config)")
+    parser.add_argument("--bgm-volume", type=float, default=None,
+                        help="BGM volume 0.0-1.0 (default: from config or 0.15)")
+    parser.add_argument("--subtitle-style", default=None,
+                        choices=["normal", "karaoke"],
+                        help="Subtitle style (default: from config or 'normal')")
     args = parser.parse_args()
 
     config = load_config(args.config)
@@ -307,6 +439,14 @@ def main():
     # Find font
     font_path, font_name = find_chinese_font(args.font_path)
     print(f"Font: {font_name}")
+
+    # Subtitle style
+    sub_style = args.subtitle_style or config.get("subtitle_style", "normal")
+    if sub_style == "karaoke":
+        has_words = any("words" in c for c in clips)
+        print(f"Subtitles: karaoke (word-level highlight)")
+        if not has_words:
+            print("  Note: No word timestamps in transcript — using even distribution fallback")
 
     # --- Step 1: Build segment selection filter ---
     if _clips_in_temporal_order(clips):
@@ -355,6 +495,18 @@ def main():
         else:
             print(f"Cover: {cover_duration:.1f}s freeze (no title overlay — Chrome not found)")
 
+    # --- BGM config ---
+    bgm_path = args.bgm or config.get("bgm")
+    if bgm_path and os.path.isfile(bgm_path):
+        bgm_path = os.path.abspath(bgm_path)
+    elif bgm_path:
+        print(f"Warning: BGM file not found: {bgm_path}", file=sys.stderr)
+        bgm_path = None
+    bgm_volume = args.bgm_volume if args.bgm_volume is not None else config.get("bgm_volume", 0.15)
+    bgm_fade_out = config.get("bgm_fade_out", 3.0)
+    if bgm_path:
+        print(f"BGM: {os.path.basename(bgm_path)} (volume={bgm_volume}, fade_out={bgm_fade_out}s)")
+
     for speed in all_speeds:
         if speed == 1.0:
             out_path = output_path
@@ -371,12 +523,26 @@ def main():
         end_cards = config.get("end_cards", None)
         ass_path = None
         end_cards_duration = 0.0
+        subtitle_style = args.subtitle_style or config.get("subtitle_style", "normal")
         if not args.no_subtitles:
-            ass_content, _, end_cards_duration = build_merged_ass(
-                clips, font_name, font_size, width, height,
-                speed=speed, cover_duration=cover_duration,
-                end_cards=end_cards,
-            )
+            if subtitle_style == "karaoke":
+                highlight_color = config.get("subtitle_highlight_color", "#FFFF00")
+                base_color = config.get("subtitle_base_color", "#FFFFFF")
+                base_alpha = config.get("subtitle_base_alpha", "80")
+                ass_content, _, end_cards_duration = build_karaoke_ass(
+                    clips, font_name, font_size, width, height,
+                    speed=speed, cover_duration=cover_duration,
+                    end_cards=end_cards,
+                    highlight_color=highlight_color,
+                    base_color=base_color,
+                    base_alpha=base_alpha,
+                )
+            else:
+                ass_content, _, end_cards_duration = build_merged_ass(
+                    clips, font_name, font_size, width, height,
+                    speed=speed, cover_duration=cover_duration,
+                    end_cards=end_cards,
+                )
             fd, ass_path = tempfile.mkstemp(suffix=".ass", prefix=f"sub_{label}_")
             with os.fdopen(fd, "w", encoding="utf-8") as f:
                 f.write(ass_content)
@@ -420,11 +586,19 @@ def main():
 
         # Note: end cards silence is provided by anullsrc in the concat, no apad needed
 
+        # --- BGM mixing ---
+        bgm_input_idx = None
+        if bgm_path:
+            bgm_input_idx = len(input_files)
+            # Total output duration for BGM loop/trim
+            bgm_total = effective_duration + cover_duration + end_cards_duration
+
         # --- Cover PNG overlay ---
         # If we have a cover PNG, add it as an overlay on the tpad-frozen frame
         cover_input_idx = None
         if cover_png_path and cover_duration > 0:
-            cover_input_idx = len(input_files)  # index of cover PNG input
+            extra_offset = 1 if bgm_input_idx is not None else 0
+            cover_input_idx = len(input_files) + extra_offset
             # Overlay the cover PNG during the cover_duration period
             vf_parts.append(
                 f"[cover_img]overlay=0:0:enable='lte(t,{cover_duration:.4f})'")
@@ -433,7 +607,8 @@ def main():
         overlay_input_idx = None
         overlay_path = config.get("video_overlay")
         if overlay_path and os.path.isfile(overlay_path):
-            overlay_input_idx = len(input_files) + (1 if cover_input_idx is not None else 0)
+            extra_inputs = sum(1 for x in [bgm_input_idx, cover_input_idx] if x is not None)
+            overlay_input_idx = len(input_files) + extra_inputs
             vf_parts.append(
                 f"[overlay_img]overlay=0:0:enable='gt(t,{cover_duration:.4f})'")
 
@@ -444,7 +619,7 @@ def main():
         if rec_blink:
             dot_path = rec_blink.get("dot_image")
             if dot_path and os.path.isfile(dot_path):
-                extra_inputs = sum(1 for x in [cover_input_idx, overlay_input_idx] if x is not None)
+                extra_inputs = sum(1 for x in [bgm_input_idx, cover_input_idx, overlay_input_idx] if x is not None)
                 rec_dot_input_idx = len(input_files) + extra_inputs
                 bx = rec_blink.get("x", 62)
                 by = rec_blink.get("y", 55)
@@ -502,10 +677,30 @@ def main():
 
         if af_parts:
             af_chain = ",".join(af_parts)
-            filter_lines.append(f"{merged_a_label}{af_chain}[final_a]")
+            filter_lines.append(f"{merged_a_label}{af_chain}[voice_a]")
+            voice_label = "[voice_a]"
+        else:
+            voice_label = merged_a_label
+
+        # BGM: loop, trim, volume, fade out, then amix with voice
+        if bgm_input_idx is not None:
+            bgm_filters = [
+                f"aloop=loop=-1:size=2147483647",
+                f"atrim=duration={bgm_total:.4f}",
+                f"asetpts=PTS-STARTPTS",
+                f"volume={bgm_volume:.2f}",
+            ]
+            if bgm_fade_out > 0:
+                fade_start = max(0, bgm_total - bgm_fade_out)
+                bgm_filters.append(f"afade=t=out:st={fade_start:.4f}:d={bgm_fade_out:.4f}")
+            bgm_chain = ",".join(bgm_filters)
+            filter_lines.append(f"[{bgm_input_idx}:a]{bgm_chain}[bgm_a]")
+            filter_lines.append(
+                f"{voice_label}[bgm_a]amix=inputs=2:duration=first:dropout_transition=0[final_a]"
+            )
             map_a = "[final_a]"
         else:
-            map_a = merged_a_label
+            map_a = voice_label
 
         # Add cover image scaling/labeling if needed
         if cover_input_idx is not None:
@@ -520,6 +715,7 @@ def main():
         # Add REC dot image prep if needed
         if rec_dot_input_idx is not None:
             prep_idx = 1 + sum(1 for x in [cover_input_idx, overlay_input_idx] if x is not None)
+            # BGM filter lines are appended (not inserted), so no offset needed here
             dot_prep = f"[{rec_dot_input_idx}:v]format=rgba[rec_dot]"
             filter_lines.insert(prep_idx, dot_prep)
 
@@ -535,6 +731,9 @@ def main():
         cmd = ["ffmpeg", "-y"]
         for inp in input_files:
             cmd.extend(["-i", inp])
+        # Add BGM audio as input if available
+        if bgm_input_idx is not None:
+            cmd.extend(["-i", bgm_path])
         # Add cover PNG as input if available
         if cover_input_idx is not None:
             cmd.extend(["-i", cover_png_path])
