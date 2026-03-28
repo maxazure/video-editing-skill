@@ -379,10 +379,86 @@ python3 scripts/render_final.py --config render_config.json --output final.mp4 -
 node --version  # >= 18.0.0
 npm --version
 
-# 初始化 Remotion 项目（首次使用）
-npx create-video@latest --blank
-npm install @remotion/media-utils @remotion/captions @remotion/google-fonts @remotion/fonts @remotion/transitions
+# 安装 Remotion standup 项目依赖
+cd remotion-standup
+npm install
 ```
+
+### 脱口秀/纯音频视频生成（Standup Comedy Workflow）
+
+当用户有一段脱口秀音频（或任何纯语音内容）但没有画面时，可以生成带文字动效的视频：
+
+**Step 1: 语音识别**
+```bash
+python3 scripts/transcribe.py audio.wav --model auto --language zh
+```
+
+**Step 2: 生成时间轴**
+```bash
+# 默认风格
+python3 scripts/generate_standup_timeline.py transcript.json \
+    --audio audio/standup.wav \
+    --output remotion-standup/public/timeline.json
+
+# 活力风格（更多夸张动效）
+python3 scripts/generate_standup_timeline.py transcript.json \
+    --audio audio/standup.wav \
+    --style energetic \
+    --output remotion-standup/public/timeline.json
+
+# 选择特定片段 + 自定义字体
+python3 scripts/generate_standup_timeline.py transcript.json \
+    --audio audio/standup.wav \
+    --segments 1-10,12,15-20 \
+    --font "LXGW WenKai, sans-serif" \
+    --output remotion-standup/public/timeline.json
+```
+
+**Step 3: 预览和渲染**
+```bash
+cd remotion-standup
+
+# 把音频文件复制到 public 目录
+cp /path/to/audio.wav public/audio/standup.wav
+
+# 开发预览
+npx remotion studio
+
+# 渲染最终视频
+npx remotion render StandupVideo out/standup.mp4 --codec=h264 --crf=18
+```
+
+**脚本会自动：**
+- 检测笑点/短句（感叹号、关键词、短句跟长句的对比）→ 用 slam/shake/bounce 等夸张动效
+- 短句放大字号（emphasis 1.3-1.6x），长句缩小避免溢出
+- 笑点使用径向渐变 + 醒目配色（红/橙/金/绿）
+- 常规句子使用深色渐变背景 + 不同动画循环
+- 自动在中文长句中间插入换行
+
+**12 种文字动画效果：**
+
+| 动画 | 效果 | 适合场景 |
+|------|------|---------|
+| `fadeIn` | 渐显 | 平稳叙述 |
+| `springIn` | 弹性入场 | 正常对话 |
+| `scaleUp` | 由小放大 | 强调 |
+| `scaleDown` | 由大缩小 | 砸入感 |
+| `typewriter` | 打字机 | 引述/对话 |
+| `bounce` | 弹跳 | 活泼/搞笑 |
+| `shake` | 抖动 | 笑点/吐槽 |
+| `slam` | 急速砸入 | 重磅笑点 |
+| `wave` | 逐字波浪 | 开场/结尾 |
+| `glitch` | 故障闪烁 | 意外/反转 |
+| `rotateIn` | 旋转入场 | 切换话题 |
+| `splitReveal` | 中间展开 | 揭示/揭晓 |
+
+**3 种风格预设：**
+
+| 风格 | 说明 |
+|------|------|
+| `default` | 均衡混合所有动画，适合大多数内容 |
+| `calm` | 只用平缓动画（fadeIn/springIn/typewriter），适合讲故事/深度内容 |
+| `energetic` | 偏重夸张动画（slam/shake/bounce/glitch），适合脱口秀/搞笑内容 |
 
 ### timeline.json 配置格式
 
