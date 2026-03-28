@@ -301,6 +301,282 @@ GOOGLE_FONT_URL = "https://github.com/google/fonts/raw/main/ofl/notosanssc/NotoS
 GOOGLE_FONT_URL_CN = "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosanssc/NotoSansSC%5Bwght%5D.ttf"
 GOOGLE_FONT_FILENAME = "NotoSansSC[wght].ttf"
 
+# ---------------------------------------------------------------------------
+# Font catalog — popular free fonts for video production
+# ---------------------------------------------------------------------------
+# Each entry: (font_id, display_name, filename, urls, license, cjk, use_case)
+# urls: list of download URLs (first working one wins), China CDN first if applicable
+# cjk: True if the font supports CJK characters
+# use_case: "title" | "body" | "caption" | "display" | "all"
+
+FONT_CATALOG = {
+    # ── Chinese fonts ──────────────────────────────────────────────────
+    "noto-sans-sc": {
+        "name": "Noto Sans SC",
+        "filename": "NotoSansSC[wght].ttf",
+        "urls": [GOOGLE_FONT_URL],
+        "urls_cn": [GOOGLE_FONT_URL_CN],
+        "license": "SIL OFL 1.1",
+        "cjk": True,
+        "use_case": "all",
+        "description": "Google 思源黑体简体，万能中文字体，支持多字重",
+    },
+    "lxgw-wenkai": {
+        "name": "LXGW WenKai",
+        "filename": "LXGWWenKai-Regular.ttf",
+        "urls": [
+            "https://github.com/lxgw/LxgwWenKai/releases/download/v1.522/LXGWWenKai-Regular.ttf",
+        ],
+        "urls_cn": [
+            "https://cdn.jsdelivr.net/gh/lxgw/LxgwWenKai@v1.522/fonts/TTF/LXGWWenKai-Regular.ttf",
+        ],
+        "license": "SIL OFL 1.1",
+        "cjk": True,
+        "use_case": "all",
+        "description": "霞鹜文楷，手写楷体风格，适合文艺/文化/情感类视频（~24MB）",
+    },
+    "lxgw-wenkai-lite": {
+        "name": "LXGW WenKai Lite",
+        "filename": "LXGWWenKaiLite-Regular.ttf",
+        "urls": [
+            "https://github.com/lxgw/LxgwWenKai-Lite/releases/download/v1.522/LXGWWenKaiLite-Regular.ttf",
+        ],
+        "urls_cn": [
+            "https://cdn.jsdelivr.net/gh/lxgw/LxgwWenKai-Lite@v1.522/fonts/TTF/LXGWWenKaiLite-Regular.ttf",
+        ],
+        "license": "SIL OFL 1.1",
+        "cjk": True,
+        "use_case": "all",
+        "description": "霞鹜文楷轻便版，字符较少但体积更小（~13MB），适合嵌入式场景",
+    },
+    "lxgw-wenkai-bold": {
+        "name": "LXGW WenKai",
+        "filename": "LXGWWenKai-Medium.ttf",
+        "urls": [
+            "https://github.com/lxgw/LxgwWenKai/releases/download/v1.522/LXGWWenKai-Medium.ttf",
+        ],
+        "urls_cn": [
+            "https://cdn.jsdelivr.net/gh/lxgw/LxgwWenKai@v1.522/fonts/TTF/LXGWWenKai-Medium.ttf",
+        ],
+        "license": "SIL OFL 1.1",
+        "cjk": True,
+        "use_case": "title",
+        "description": "霞鹜文楷中粗体，适合标题（~24MB）",
+    },
+    "zcool-kuaile": {
+        "name": "ZCOOL KuaiLe",
+        "filename": "ZCOOLKuaiLe-Regular.ttf",
+        "urls": [
+            "https://github.com/google/fonts/raw/main/ofl/zcoolkuaile/ZCOOLKuaiLe-Regular.ttf",
+        ],
+        "urls_cn": [
+            "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/zcoolkuaile/ZCOOLKuaiLe-Regular.ttf",
+        ],
+        "license": "SIL OFL 1.1",
+        "cjk": True,
+        "use_case": "display",
+        "description": "站酷快乐体，圆润可爱风格，适合轻松/娱乐类标题",
+    },
+    "zcool-qingke-huangyou": {
+        "name": "ZCOOL QingKe HuangYou",
+        "filename": "ZCOOLQingKeHuangYou-Regular.ttf",
+        "urls": [
+            "https://github.com/google/fonts/raw/main/ofl/zcoolqingkehuangyou/ZCOOLQingKeHuangYou-Regular.ttf",
+        ],
+        "urls_cn": [
+            "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/zcoolqingkehuangyou/ZCOOLQingKeHuangYou-Regular.ttf",
+        ],
+        "license": "SIL OFL 1.1",
+        "cjk": True,
+        "use_case": "display",
+        "description": "站酷庆科黄油体，手写潮流风格，适合年轻/时尚类标题",
+    },
+    "zcool-xiaowei": {
+        "name": "ZCOOL XiaoWei",
+        "filename": "ZCOOLXiaoWei-Regular.ttf",
+        "urls": [
+            "https://github.com/google/fonts/raw/main/ofl/zcoolxiaowei/ZCOOLXiaoWei-Regular.ttf",
+        ],
+        "urls_cn": [
+            "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/zcoolxiaowei/ZCOOLXiaoWei-Regular.ttf",
+        ],
+        "license": "SIL OFL 1.1",
+        "cjk": True,
+        "use_case": "body",
+        "description": "站酷小薇体，清秀端正风格，适合正文和字幕",
+    },
+    "noto-serif-sc": {
+        "name": "Noto Serif SC",
+        "filename": "NotoSerifSC[wght].ttf",
+        "urls": [
+            "https://github.com/google/fonts/raw/main/ofl/notoserifsc/NotoSerifSC%5Bwght%5D.ttf",
+        ],
+        "urls_cn": [
+            "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notoserifsc/NotoSerifSC%5Bwght%5D.ttf",
+        ],
+        "license": "SIL OFL 1.1",
+        "cjk": True,
+        "use_case": "all",
+        "description": "Google 思源宋体简体，适合文化/古典/深度内容",
+    },
+    # ── English fonts ──────────────────────────────────────────────────
+    "inter": {
+        "name": "Inter",
+        "filename": "Inter[opsz,wght].ttf",
+        "urls": [
+            "https://github.com/google/fonts/raw/main/ofl/inter/Inter%5Bopsz%2Cwght%5D.ttf",
+        ],
+        "urls_cn": [
+            "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/inter/Inter%5Bopsz%2Cwght%5D.ttf",
+        ],
+        "license": "SIL OFL 1.1",
+        "cjk": False,
+        "use_case": "all",
+        "description": "现代无衬线字体，专为屏幕设计，极佳可读性",
+    },
+    "montserrat": {
+        "name": "Montserrat",
+        "filename": "Montserrat[wght].ttf",
+        "urls": [
+            "https://github.com/google/fonts/raw/main/ofl/montserrat/Montserrat%5Bwght%5D.ttf",
+        ],
+        "urls_cn": [
+            "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/montserrat/Montserrat%5Bwght%5D.ttf",
+        ],
+        "license": "SIL OFL 1.1",
+        "cjk": False,
+        "use_case": "title",
+        "description": "几何无衬线字体，粗体适合视频标题",
+    },
+    "poppins": {
+        "name": "Poppins",
+        "filename": "Poppins-Bold.ttf",
+        "urls": [
+            "https://github.com/google/fonts/raw/main/ofl/poppins/Poppins-Bold.ttf",
+        ],
+        "urls_cn": [
+            "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/poppins/Poppins-Bold.ttf",
+        ],
+        "license": "SIL OFL 1.1",
+        "cjk": False,
+        "use_case": "title",
+        "description": "几何圆润无衬线字体，适合现代感标题",
+    },
+    "roboto": {
+        "name": "Roboto",
+        "filename": "Roboto[wdth,wght].ttf",
+        "urls": [
+            "https://github.com/google/fonts/raw/main/ofl/roboto/Roboto%5Bwdth%2Cwght%5D.ttf",
+        ],
+        "urls_cn": [
+            "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/roboto/Roboto%5Bwdth%2Cwght%5D.ttf",
+        ],
+        "license": "Apache 2.0",
+        "cjk": False,
+        "use_case": "all",
+        "description": "Google 默认字体，中性现代风格",
+    },
+    "oswald": {
+        "name": "Oswald",
+        "filename": "Oswald[wght].ttf",
+        "urls": [
+            "https://github.com/google/fonts/raw/main/ofl/oswald/Oswald%5Bwght%5D.ttf",
+        ],
+        "urls_cn": [
+            "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/oswald/Oswald%5Bwght%5D.ttf",
+        ],
+        "license": "SIL OFL 1.1",
+        "cjk": False,
+        "use_case": "title",
+        "description": "窄体无衬线字体，适合新闻/头条风格标题",
+    },
+    "playfair-display": {
+        "name": "Playfair Display",
+        "filename": "PlayfairDisplay[wght].ttf",
+        "urls": [
+            "https://github.com/google/fonts/raw/main/ofl/playfairdisplay/PlayfairDisplay%5Bwght%5D.ttf",
+        ],
+        "urls_cn": [
+            "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/playfairdisplay/PlayfairDisplay%5Bwght%5D.ttf",
+        ],
+        "license": "SIL OFL 1.1",
+        "cjk": False,
+        "use_case": "title",
+        "description": "优雅衬线字体，适合文艺/高端/品牌类标题",
+    },
+}
+
+
+def get_fonts_dir():
+    """Return the fonts cache directory path."""
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(os.path.dirname(script_dir), "fonts")
+
+
+def list_available_fonts(cjk_only=False):
+    """List all fonts in the catalog. Returns list of dicts."""
+    fonts_dir = get_fonts_dir()
+    result = []
+    for font_id, info in FONT_CATALOG.items():
+        if cjk_only and not info["cjk"]:
+            continue
+        cached = os.path.isfile(os.path.join(fonts_dir, info["filename"]))
+        result.append({
+            "id": font_id,
+            "name": info["name"],
+            "cached": cached,
+            "cjk": info["cjk"],
+            "use_case": info["use_case"],
+            "description": info["description"],
+            "license": info["license"],
+        })
+    return result
+
+
+def download_font(font_id):
+    """Download a font by its catalog ID. Returns (font_path, font_name) or (None, None)."""
+    if font_id not in FONT_CATALOG:
+        print(f"[font] Unknown font ID: {font_id}", file=sys.stderr)
+        print(f"[font] Available fonts: {', '.join(FONT_CATALOG.keys())}")
+        return None, None
+
+    info = FONT_CATALOG[font_id]
+    fonts_dir = get_fonts_dir()
+    target_path = os.path.join(fonts_dir, info["filename"])
+
+    # Return cached if exists
+    if os.path.isfile(target_path):
+        print(f"[font] Already cached: {info['name']} → {target_path}")
+        return target_path, info["name"]
+
+    # Build URL list (China CDN first if applicable)
+    urls = []
+    if is_china_locale() or os.environ.get("USE_CN_MIRROR"):
+        urls.extend(info.get("urls_cn", []))
+    urls.extend(info["urls"])
+
+    return _download_font_from_urls(fonts_dir, target_path, info["name"], urls)
+
+
+def _download_font_from_urls(fonts_dir, target_path, display_name, urls):
+    """Download a font file from a list of URLs. Returns (path, name) or (None, None)."""
+    for url in urls:
+        try:
+            os.makedirs(fonts_dir, exist_ok=True)
+            print(f"[font] Downloading {display_name}...")
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                with open(target_path, "wb") as f:
+                    f.write(resp.read())
+            size_mb = os.path.getsize(target_path) / (1024 * 1024)
+            print(f"[font] Downloaded: {target_path} ({size_mb:.1f} MB)")
+            return target_path, display_name
+        except (urllib.error.URLError, OSError, TimeoutError) as e:
+            print(f"[font] Download failed from {url}: {e}")
+            continue
+    print(f"[font] ERROR: Could not download {display_name}", file=sys.stderr)
+    return None, None
+
 
 def find_chinese_font(custom_font_path=None):
     """Find a suitable Chinese font. Returns (font_path, font_name) or (None, fallback_name)."""
@@ -308,45 +584,23 @@ def find_chinese_font(custom_font_path=None):
         name = _guess_font_name(custom_font_path)
         return custom_font_path, name
 
-    # Check cached Google font
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    skill_fonts_dir = os.path.join(os.path.dirname(script_dir), "fonts")
-    google_font_path = os.path.join(skill_fonts_dir, GOOGLE_FONT_FILENAME)
+    # Check cached fonts (try Noto Sans SC first, then others)
+    fonts_dir = get_fonts_dir()
+    for font_id in ["noto-sans-sc", "lxgw-wenkai", "lxgw-wenkai-lite",
+                     "lxgw-wenkai-bold", "zcool-xiaowei", "noto-serif-sc"]:
+        info = FONT_CATALOG[font_id]
+        cached_path = os.path.join(fonts_dir, info["filename"])
+        if os.path.isfile(cached_path):
+            return cached_path, info["name"]
 
-    if os.path.isfile(google_font_path):
-        return google_font_path, "Noto Sans SC"
-
-    # Try downloading
-    font_path = _download_font(skill_fonts_dir, google_font_path)
-    if font_path:
-        return font_path, "Noto Sans SC"
+    # Try downloading Noto Sans SC (default)
+    path, name = download_font("noto-sans-sc")
+    if path:
+        return path, name
 
     # System font fallback
     plat = detect_platform()
     return _find_system_font(plat)
-
-
-def _download_font(fonts_dir, target_path):
-    """Try downloading Noto Sans SC font. Uses CDN mirror for China."""
-    urls = []
-    if is_china_locale() or os.environ.get("USE_CN_MIRROR"):
-        urls.append(GOOGLE_FONT_URL_CN)
-    urls.append(GOOGLE_FONT_URL)
-
-    for url in urls:
-        try:
-            os.makedirs(fonts_dir, exist_ok=True)
-            print(f"[font] Downloading Noto Sans SC...")
-            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                with open(target_path, "wb") as f:
-                    f.write(resp.read())
-            print(f"[font] Downloaded: {target_path}")
-            return target_path
-        except (urllib.error.URLError, OSError, TimeoutError) as e:
-            print(f"[font] Download failed from {url}: {e}")
-            continue
-    return None
 
 
 def _find_system_font(plat):
@@ -424,12 +678,36 @@ def _guess_font_name(font_path):
         return "PingFang SC"
     if "notosanssc" in base or "notosanscjk" in base:
         return "Noto Sans SC"
+    if "notoserifsc" in base:
+        return "Noto Serif SC"
     if "msyh" in base:
         return "Microsoft YaHei"
     if "simhei" in base:
         return "SimHei"
     if "heiti" in base:
         return "Heiti SC"
+    if "wenkailite" in base:
+        return "LXGW WenKai Lite"
+    if "lxgw" in base or "wenkai" in base:
+        return "LXGW WenKai"
+    if "zcoolkuaile" in base:
+        return "ZCOOL KuaiLe"
+    if "zcoolqingke" in base:
+        return "ZCOOL QingKe HuangYou"
+    if "zcoolxiaowei" in base:
+        return "ZCOOL XiaoWei"
+    if "inter" in base:
+        return "Inter"
+    if "montserrat" in base:
+        return "Montserrat"
+    if "poppins" in base:
+        return "Poppins"
+    if "roboto" in base:
+        return "Roboto"
+    if "oswald" in base:
+        return "Oswald"
+    if "playfair" in base:
+        return "Playfair Display"
     return "Noto Sans SC"
 
 
@@ -518,6 +796,19 @@ def print_env_report():
     for name, status, msg in deps:
         icon = {"ok": "+", "warn": "!", "missing": "X", "info": "i"}[status]
         print(f"  [{icon}] {name}: {msg}")
+
+    # Font status
+    print()
+    print("Cached fonts:")
+    fonts = list_available_fonts()
+    cached = [f for f in fonts if f["cached"]]
+    if cached:
+        for f in cached:
+            tag = "CJK" if f["cjk"] else "EN"
+            print(f"  [+] {f['name']} ({tag}, {f['use_case']})")
+    else:
+        print("  (none — run download_font('noto-sans-sc') to cache)")
+    print(f"  Total available in catalog: {len(fonts)} fonts")
     print("=" * 50)
 
 
