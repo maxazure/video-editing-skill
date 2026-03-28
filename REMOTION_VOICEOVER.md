@@ -594,22 +594,85 @@ timeline.json 的 scenes:
   - 生成 captions 配置
 ```
 
+## Spring 动画预设
+
+| 预设 | 配置 | 适用场景 |
+|------|------|---------|
+| Smooth（平滑） | `{ damping: 200 }` | 字幕淡入、背景切换，无回弹 |
+| Snappy（灵敏） | `{ damping: 20, stiffness: 200 }` | UI 元素、卡片翻转，微弹 |
+| Bouncy（弹跳） | `{ damping: 8 }` | 标题弹入、趣味动效，明显回弹 |
+| Heavy（厚重） | `{ damping: 15, stiffness: 80, mass: 2 }` | 大标题、数据展示，缓慢有力 |
+
+## Light Leak 转场
+
+```tsx
+import { LightLeak } from "@remotion/light-leaks";
+
+// 在 TransitionSeries 中使用：
+<TransitionSeries.Transition
+  presentation={fade()}
+  timing={linearTiming({ durationInFrames: 30 })}
+>
+  <TransitionSeries.Overlay>
+    <LightLeak seed={42} hueShift={120} />
+  </TransitionSeries.Overlay>
+</TransitionSeries.Transition>
+```
+
+- WebGL 实现，前半段展开光效，后半段收回
+- `seed` 控制光效形状，`hueShift` (0-360) 控制色调
+
+## 第三方字幕库
+
+### remotion-subtitles
+
+```bash
+npm install remotion-subtitles
+```
+
+从 SRT 文件加载字幕，提供多种预设动画样式的 React 组件，可通过 `style` prop 自定义。
+
+### remotion-animate-text
+
+```bash
+npm install remotion-animate-text
+```
+
+按字符或按词动画，支持同时动画化多个 CSS 属性，遵循 Remotion 的 `interpolate` 模式。
+
 ## 常用 Remotion 模板参考
 
 | 模板 | 来源 | 特点 |
 |------|------|------|
 | **Prompt to Video** | `remotion-dev/template-prompt-to-video` | AI 生成故事 + ElevenLabs TTS + 图片，完整口播管线 |
-| **TikTok Template** | `remotion-dev/template-tiktok` | TikTok 风格短视频，逐词字幕 |
+| **TikTok Template** | `remotion-dev/template-tiktok` | TikTok 风格短视频，Whisper.cpp 逐词字幕 |
+| **Audiogram** | `remotion-dev/template-audiogram` | 播客音频 + 波形可视化 |
+| **Short Video Maker** | `gyoridavid/short-video-maker` | Kokoro TTS（本地免费）+ Whisper + Pexels 背景视频，自动化 TikTok/Reels |
 | **Overlay Template** | `remotion-dev/template-overlay` | 叠加层模板，可集成到传统剪辑软件 |
-| **Fireship Template** | `thecmdrunner/remotion-fireship` | 类 Fireship 风格教程视频 |
+| **Fireship Template** | `thecmdrunner/remotion-fireship` | 类 Fireship 风格教程视频，代码高亮 + 解说 |
+| **remotion-subtitles** | `ahgsql/remotion-subtitles` | SRT 字幕多种动画样式 |
 | **Ken Burns Effect** | React Video Editor | 图片平移缩放效果 |
 | **Watercolor Map** | Remotion 官方 | 旅行视频地图动画 |
-| **Text Animations** | Remotion 官方 Snippets | 打字机、词高亮等文字动效 |
 
-## 注意事项
+### Remotion 官方 Skills（AI Agent 规则文件）
 
-1. **CJK 字体必须预加载** — 中文字体文件大（10-20MB），必须在渲染前确保加载完成
-2. **音频格式** — `useWindowedAudioData` 仅支持 `.wav` 格式
-3. **竖屏优先** — 移动端短视频默认 1080x1920 (9:16)
-4. **性能** — 复杂场景建议使用 `--concurrency=4` 并行渲染
-5. **字幕时间对齐** — 字幕时间来自 transcript.json，必须与音频精确对应
+Remotion 官方维护了 37 个 AI agent 规则文件（`remotion-dev/skills`），覆盖：
+
+`voiceover.md` `display-captions.md` `audio-visualization.md` `text-animations.md`
+`transitions.md` `timing.md` `fonts.md` `animations.md` `sequencing.md`
+`compositions.md` `audio.md` `videos.md` `images.md` `charts.md` `3d.md`
+`light-leaks.md` `lottie.md` `maps.md` 等
+
+这些规则文件定义了 AI 在使用 Remotion 时的最佳实践，可以直接安装到 Claude Code 中使用。
+
+## 重要开发规则
+
+1. **所有动画必须基于 `useCurrentFrame()`** — CSS transitions、CSS `@keyframes`、Tailwind 动画类在 Remotion 中**不会正确渲染**
+2. **Sequence 内的子组件** — 在 `<Sequence>` 内部传递音频数据给子组件时，必须显式传递父组件的 frame 值，子组件内部 `useCurrentFrame()` 会因时间偏移导致不连续
+3. **TransitionSeries 时长计算** — 总时长 = 所有场景时长之和 - 所有转场时长之和
+4. **打字机效果** — 始终使用字符串 `.slice(0, charIndex)`，**绝不**使用逐字符 opacity
+5. **CJK 字体必须预加载** — 中文字体文件大（10-20MB），必须在渲染前确保加载完成，使用 `@remotion/google-fonts` 时务必指定 `subsets`
+6. **音频格式** — `useWindowedAudioData` 仅支持 `.wav` 格式
+7. **竖屏优先** — 移动端短视频默认 1080x1920 (9:16)
+8. **性能** — 复杂场景建议使用 `--concurrency=4` 并行渲染
+9. **字幕时间对齐** — 字幕时间来自 transcript.json，必须与音频精确对应
