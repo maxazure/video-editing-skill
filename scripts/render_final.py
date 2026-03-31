@@ -183,6 +183,7 @@ WrapStyle: 0
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: Default,{font_name},{font_size},{p_color},&H000000FF,{o_color},&H80000000,{bold},0,0,0,100,100,0,0,1,{o_width},{s_depth},2,{margin_lr},{margin_lr},{margin_v},1
 Style: EndCard,{font_name},{end_card_fs},&H00FFFFFF,&H000000FF,&H00000000,&H00000000,1,0,0,0,100,100,2,0,0,0,0,5,{margin_lr},{margin_lr},0,1
+Style: Badge,{font_name},{int(font_size * 1.2)},&H00FFFFFF,&H000000FF,&H00000000,&H96000000,1,0,0,0,100,100,2,0,3,4,0,5,{margin_lr},{margin_lr},0,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -207,6 +208,20 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         end_t = fmt_time(offset + scaled_dur)
         dialogues.append(f"Dialogue: 0,{start_t},{end_t},Default,,0,0,0,,{escaped}")
         offset += scaled_dur
+
+    # Text badges: timed text displayed at screen center (e.g. "开源免费")
+    if text_badges:
+        for badge in text_badges:
+            b_start = badge["start"] / speed + cover_duration
+            b_end = badge["end"] / speed + cover_duration
+            b_text = escape_ass_text(badge["text"]).replace("\n", "\\N")
+            fade_in = badge.get("fade_in", 200)
+            fade_out = badge.get("fade_out", 200)
+            start_t = fmt_time(b_start)
+            end_t = fmt_time(b_end)
+            dialogues.append(
+                f"Dialogue: 1,{start_t},{end_t},Badge,,0,0,0,,{{\\fad({fade_in},{fade_out})}}{b_text}"
+            )
 
     # End cards: centered text on black screen with fade
     end_cards_duration = 0.0
@@ -353,9 +368,21 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
 
 def _clips_in_temporal_order(clips):
-    """Check if all clips come from one video and are in temporal order."""
+    """Check if all clips come from one video and are in temporal order.
+
+    KNOWN ISSUE: This function does NOT check for broll fields. When all clips
+    reference the same voiceover video but each has a different broll source,
+    this returns True and the select filter path is used. The select filter
+    ignores broll entirely, and with 100+ segments the between() expression
+    can cause OOM. For voiceover-over-broll workflows with many segments,
+    bypass render_final.py and use a manual ffmpeg pipeline instead.
+    See SKILL.md "K3: render_final.py select filter OOM" for details.
+    """
     videos = set(c["video"] for c in clips)
     if len(videos) != 1:
+        return False
+    # If any clip has broll, select filter won't handle it correctly
+    if any("broll" in c for c in clips):
         return False
     for i in range(1, len(clips)):
         if clips[i]["start"] < clips[i - 1]["start"]:
