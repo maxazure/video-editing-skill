@@ -674,6 +674,8 @@ def _find_system_font(plat):
 def _guess_font_name(font_path):
     """Guess ASS font name from file path."""
     base = os.path.basename(font_path).lower()
+    if "smiley" in base or "得意" in base:
+        return "Smiley Sans"
     if "pingfang" in base:
         return "PingFang SC"
     if "notosanssc" in base or "notosanscjk" in base:

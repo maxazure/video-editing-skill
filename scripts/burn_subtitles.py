@@ -37,6 +37,9 @@ def escape_ass_text(text):
     text = text.replace("\\", "\\\\")
     text = text.replace("{", "\\{")
     text = text.replace("}", "\\}")
+    # Restore ASS control sequences that were double-escaped by the line above
+    text = text.replace("\\\\N", "\\N")
+    text = text.replace("\\\\n", "\\n")
     return text
 
 
