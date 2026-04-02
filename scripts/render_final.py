@@ -145,7 +145,7 @@ def resolve_clips(config):
 
 def build_merged_ass(clips, font_name, font_size, video_width, video_height,
                      speed=1.0, cover_duration=0.0, end_cards=None,
-                     subtitle_style="normal"):
+                     subtitle_style="normal", text_badges=None):
     """Build a single ASS subtitle file covering the entire merged timeline.
 
     Args:
