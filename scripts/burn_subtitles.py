@@ -46,14 +46,14 @@ def escape_ass_text(text):
 def wrap_subtitle_text(text, max_chars_per_line, language):
     """Break long subtitle text into multiple lines using ASS line break \\N."""
     if language == "zh":
-        # For Chinese, count all characters (including ASCII)
+        # For Chinese (may contain embedded English words)
         if len(text) <= max_chars_per_line:
             return text
         # Try to split roughly in the middle
         mid = len(text) // 2
         # Look for natural break points near the middle (punctuation, spaces)
         best_break = mid
-        for offset in range(min(5, mid)):
+        for offset in range(min(8, mid)):
             for pos in [mid + offset, mid - offset]:
                 if 0 < pos < len(text) and text[pos] in ' ,，。、；：！？·':
                     best_break = pos + 1
@@ -61,6 +61,11 @@ def wrap_subtitle_text(text, max_chars_per_line, language):
             else:
                 continue
             break
+        # Never break inside an English word — move to word boundary
+        while (best_break > 0 and best_break < len(text)
+               and text[best_break - 1].isascii() and text[best_break - 1].isalpha()
+               and text[best_break].isascii() and text[best_break].isalpha()):
+            best_break -= 1
         line1 = text[:best_break].rstrip()
         line2 = text[best_break:].lstrip()
         return line1 + "\\N" + line2
