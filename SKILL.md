@@ -1,6 +1,6 @@
 ---
 name: video-editing
-description: "Automated video editing skill for talk/vlog/standup videos. Use when: cutting video, splitting video into sentences, merging video clips, extracting audio, transcribing speech, auto-editing oral presentation videos, combining selected sentence clips into a final video, generating video cover/thumbnail with title, B-roll cutaway editing, persistent video overlay/watermark, blinking REC indicator, ending title cards, multi-source audio mixing, generating voiceover videos with Remotion (audio-only to video with animated visuals/subtitles). Requires ffmpeg and whisper. Remotion workflow additionally requires Node.js and npm."
+description: "Automated video editing skill for talk/vlog/standup videos. Use when: cutting video, splitting video into sentences, merging video clips, extracting audio, transcribing speech, auto-editing oral presentation videos, combining selected sentence clips into a final video, generating video cover/thumbnail with title, B-roll cutaway editing, persistent video overlay/watermark, blinking REC indicator, ending title cards, multi-source audio mixing, exporting to JianYing/CapCut project for further editing, generating voiceover videos with Remotion (audio-only to video with animated visuals/subtitles). Requires ffmpeg and whisper. Remotion workflow additionally requires Node.js and npm."
 argument-hint: "Provide the path(s) to video file(s) to process"
 metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
 ---
@@ -418,6 +418,39 @@ python3 scripts/render_final.py --config render_config.json --output final.mp4 \
 - 结尾卡片自动拼接黑帧 + 静音 + 淡入淡出字幕
 - 持续叠加层和闪烁圆点在封面之后自动启用
 - 视频/音频时长自动对齐（`-shortest`），避免平台上传时的时长不匹配问题
+
+### Phase 5b: Export to JianYing / CapCut（导出剪映工程）
+
+如果用户希望在剪映中继续编辑（添加特效、调色、精修转场等），可以将剪辑方案**直接导出为剪映工程文件**，无需 ffmpeg 渲染：
+
+```bash
+python3 scripts/export_capcut.py --config render_config.json --output ./my_draft
+```
+
+**导出内容**：
+- **视频轨道**：所有选定的片段按顺序排列在主视频轨道上，包含片头封面（冻结首帧或自定义封面图）
+- **字幕轨道**：每个片段的转录文字作为独立字幕段落，位于画面下方
+- **文字轨道**：封面标题、副标题、结尾卡片文字（与字幕分离，便于单独编辑）
+- **音频轨道**：背景音乐（BGM），自动设置音量
+- **转场**：片段之间自动添加淡入淡出转场（300ms）
+- **B-roll**：支持 B-roll 替换画面（使用 broll 路径作为视频源）
+
+参数说明：
+- `--config`：渲染配置 JSON 路径（与 render_final.py 共用同一个 render_config.json）
+- `--output`：输出文件夹路径（会创建 draft_content.json 和 draft_meta_info.json）
+- `--name`：项目名称（默认使用配置中的标题）
+
+**使用方式**：
+1. 将导出的文件夹复制到剪映草稿目录：
+   - macOS: `~/Movies/JianyingPro/User Data/Projects/com.lveditor.draft/`
+   - Windows: `%APPDATA%/JianyingPro/User Data/Projects/com.lveditor.draft/`
+2. 打开剪映，在"草稿"列表中即可看到该项目
+3. 在剪映中可继续添加特效、调整转场、调色、导出等
+
+**注意**：
+- 导出的工程文件使用**绝对路径**引用视频/音频素材，确保素材文件不要移动位置
+- 支持剪映专业版（JianyingPro）；剪映 6+ 版本均可打开生成的草稿
+- 此功能与 Phase 5（ffmpeg 渲染）**二选一**：如果用户只需要最终视频，用 render_final.py；如果需要进一步在剪映中编辑，用 export_capcut.py
 
 ### Phase 6: Post-render Validation（渲染后验证）
 
