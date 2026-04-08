@@ -11,7 +11,7 @@
 - **单次编码渲染** — 从原始视频直接到最终输出，只编码一次，无质量损失
 - **语音识别切分** — 支持 faster-whisper（推荐，4x 加速）和 openai-whisper，自动按句子切分
 - **GPU 硬件加速** — 自动检测 NVIDIA NVENC / Apple VideoToolbox / Intel QSV / AMD AMF
-- **自动字幕** — 中英文自动检测，自动折行，竖屏位置优化，支持逐词高亮卡拉OK模式
+- **自动字幕** — 中英文自动检测，智能折行（英文单词不断行），竖屏位置优化，支持逐词高亮卡拉OK模式
 - **自动封面** — 多种封面风格，支持视频取帧背景、移动端优先大标题、教程型卡片布局，也支持自定义封面 PNG
 - **B-roll 替换** — 指定片段使用替代画面（保留原始音频），自动缩放裁切匹配分辨率
 - **持续叠加层** — 透明 PNG 全程叠加显示（品牌水印、系列标识等）
@@ -27,12 +27,14 @@
 - **时长对齐** — 自动确保视频/音频流时长一致，避免平台上传时的时长不匹配报错
 - **Remotion 口播生成** — 当只有语音没有画面时，使用 Remotion 生成配合语音的动态视频（TikTok 风格字幕、图文解说、动态文字等）
 - **脱口秀/Standup 视频生成** — 完整的 Remotion 项目，将音频+文稿转为动态文字视频，12 种文字动画效果，自动检测笑点，3 种风格预设
-- **丰富字体目录** — 内置 14 款免费中英文字体（思源黑体、霞鹜文楷/Lite、站酷系列、Inter、Montserrat 等），一键下载缓存
+- **文字徽标** — 在视频中指定时间段显示中心文字（如"开源免费"），支持淡入淡出效果
+- **丰富字体目录** — 内置 14 款免费中英文字体（思源黑体、霞鹜文楷/Lite、站酷系列、Inter、Montserrat 等），一键下载缓存，自动识别得意黑 (Smiley Sans) 等自定义字体
 - **素材库管理** — 自动初始化视频项目目录结构（raw/broll/bgm/assets），双后端索引（JSON + SQLite），自动扫描和分类素材
 - **填充词检测** — 自动识别中英文填充词（嗯/呃/那个/um/uh/like），标记纯填充词片段为建议跳过
 - **AI 智能选片** — AI agent 基于吸引力评分自动推荐最佳片段，长视频自动拆分为多个短视频方案
 - **字幕风格预设** — 6 种字幕样式（normal/karaoke/bold_pop/neon/minimal/yellow_pop）
 - **多平台导出** — 一键输出 9:16（抖音/TikTok）、1:1（Instagram）、16:9（YouTube）多种比例
+- **提示词教程** — 14 个场景化提示词指南（口播处理、素材分析、补录、动画配音、多平台导出、封面、长拆短、字幕风格等），可直接复制使用
 - **跨平台** — 支持 macOS / Linux / WSL / Windows
 - **中国加速** — 自动检测中国区域，使用清华 pip 镜像和 HuggingFace 镜像
 
@@ -159,6 +161,8 @@ python3 scripts/transcribe.py "your_video_audio.wav" --model auto --language zh 
 
 `--detect-fillers` 会自动检测填充词（嗯、呃、那个、um、uh 等）并标记纯填充词片段。
 
+`--silence-threshold 1.0` 设置静音检测阈值（秒），低于此间隔的停顿不标记，设为 0 禁用静音检测。
+
 `--model auto` 会根据硬件自动选择最佳模型：
 
 | 硬件 | 自动选择 | 原因 |
@@ -195,6 +199,12 @@ python3 scripts/transcribe.py "your_video_audio.wav" --model auto --language zh 
   "bgm_fade_out": 3.0,
   "subtitle_style": "karaoke",
   "subtitle_highlight_color": "#FFFF00",
+  "subtitle_base_color": "#FFFFFF",
+  "subtitle_base_alpha": "80",
+  "cover_duration": 3.0,
+  "text_badges": [
+    {"text": "开源免费", "start": 5.0, "end": 10.0, "fade_in": 200, "fade_out": 200}
+  ],
   "chapters": [
     {"title": "开场", "start": 0.0, "end": 30.0},
     {"title": "正题", "start": 30.0, "end": 90.0}
@@ -217,6 +227,10 @@ python3 scripts/transcribe.py "your_video_audio.wav" --model auto --language zh 
 | `bgm_fade_out` | BGM 结尾淡出时长（秒），默认 3.0 | 否 |
 | `subtitle_style` | 字幕风格：`"normal"`（默认）或 `"karaoke"`（逐词高亮） | 否 |
 | `subtitle_highlight_color` | 卡拉OK高亮色，默认 `"#FFFF00"`（黄色） | 否 |
+| `subtitle_base_color` | 卡拉OK未播报文字颜色，默认 `"#FFFFFF"` | 否 |
+| `subtitle_base_alpha` | 卡拉OK未播报文字透明度（00-FF），默认 `"80"` | 否 |
+| `cover_duration` | 封面冻结帧时长（秒），默认 3.0 | 否 |
+| `text_badges` | 文字徽标数组（text/start/end/fade_in/fade_out），在画面中心显示定时文字 | 否 |
 
 字幕风格预设：`--subtitle-style` 支持 `normal`、`karaoke`、`bold_pop`、`neon`、`minimal`、`yellow_pop`
 
@@ -230,7 +244,8 @@ python3 scripts/render_final.py --config render_config.json --output final.mp4 \
 渲染：
 
 ```bash
-python3 scripts/render_final.py --config render_config.json --output final.mp4 --speed 1.25 1.5
+python3 scripts/render_final.py --config render_config.json --output final.mp4 --speed 1.25 1.5 \
+  --cover-duration 3.0 --cleanup
 ```
 
 输出：
@@ -297,6 +312,29 @@ python3 scripts/burn_subtitles.py "your_video_clips" "your_video_transcript.json
 python3 scripts/merge_clips.py "your_video_clips_subtitled" --select "1-5,8" --output "preview.mp4"
 ```
 
+## 提示词教程
+
+项目附带 14 个场景化提示词指南，覆盖从素材到发布的完整流程。每个场景都给出了**可以直接复制使用的提示词**。
+
+详见 [docs/prompts/README.md](docs/prompts/README.md)，快速索引：
+
+| 场景 | 说明 |
+|------|------|
+| [口播素材处理](docs/prompts/01-oral-broadcast.md) | 从拍摄素材到发布短视频的完整流程 |
+| [分析素材](docs/prompts/02-analyze-material.md) | AI 分析多条素材，给出剪辑建议 |
+| [补录视频](docs/prompts/03-reshoot-video.md) | AI 生成补录清单，补录后继续剪辑 |
+| [补录音频](docs/prompts/04-reshoot-audio.md) | 只替换声音，画面不变 |
+| [动画配音](docs/prompts/05-animation-voiceover.md) | Remotion 把录音变成动画解说视频 |
+| [多平台导出](docs/prompts/06-multi-platform.md) | 一键导出多比例版本 |
+| [封面生成](docs/prompts/07-cover.md) | 多种风格封面 |
+| [长视频拆短](docs/prompts/08-long-to-short.md) | 10 分钟长视频拆成多条短视频 |
+| [背景音乐和片尾](docs/prompts/09-bgm-endcard.md) | 添加 BGM、片尾卡片 |
+| [B-roll 替换](docs/prompts/10-broll.md) | 用其他画面替换口播片段 |
+| [批量处理](docs/prompts/11-batch.md) | 批量处理多条素材 |
+| [字幕风格](docs/prompts/12-subtitle-style.md) | 6 种字幕风格，卡拉OK逐词高亮 |
+| [提示词技巧](docs/prompts/13-tips.md) | 写好提示词的要点和常见问题 |
+| [导出剪映工程](docs/prompts/14-export-capcut.md) | 导出剪映/CapCut 草稿免渲染编辑 |
+
 ## 目录结构
 
 ```
@@ -304,6 +342,9 @@ video-editing-skill/
 ├── README.md                  # 本文件
 ├── SKILL.md                   # Skill 定义（OpenClaw / AI agent 读取）
 ├── REMOTION_VOICEOVER.md      # Remotion 口播视频生成参考文档
+├── docs/
+│   ├── plans/                 # 开发计划文档
+│   └── prompts/               # 提示词教程（14 个场景指南）
 ├── scripts/
 │   ├── utils.py               # 共享工具（平台/GPU/字体/镜像/rotation 检测）
 │   ├── extract_audio.py       # 音频提取
