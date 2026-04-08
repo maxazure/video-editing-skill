@@ -240,6 +240,20 @@ python3 scripts/render_final.py --config render_config.json --output final.mp4 -
 
 每个版本都从原始视频直接编码，字幕 + 封面 + 章节时间轴在一次 ffmpeg 命令中完成。
 
+#### Step 3 备选: 导出剪映工程（免渲染）
+
+如果你想在剪映中继续编辑（调色、加特效、精修转场），可以直接导出剪映工程文件：
+
+```bash
+python3 scripts/export_capcut.py --config render_config.json --output ./my_draft
+```
+
+导出内容包括：片头封面、所有视频片段、字幕、结尾卡片、BGM、转场。
+
+使用方式：
+1. 将 `my_draft` 文件夹复制到剪映草稿目录（macOS: `~/Movies/JianyingPro/User Data/Projects/com.lveditor.draft/`）
+2. 打开剪映，在草稿列表中即可看到并编辑
+
 #### Step 3.5: 单独生成封面预览（可选）
 
 如果你想先看封面效果，再决定标题或风格，可以直接生成 PNG：
@@ -295,6 +309,7 @@ video-editing-skill/
 │   ├── extract_audio.py       # 音频提取
 │   ├── transcribe.py          # 语音识别（faster-whisper / openai-whisper）
 │   ├── render_final.py        # 单次编码渲染（推荐，字幕+封面+章节+变速）
+│   ├── export_capcut.py       # 导出剪映/CapCut 工程文件（免渲染）
 │   ├── generate_cover_image.py # 封面图片生成（7 种风格，headless Chrome 渲染）
 │   ├── media_library.py       # 素材库管理（初始化/扫描/索引/搜索）
 │   ├── generate_standup_timeline.py  # 脱口秀时间轴生成（transcript → timeline.json）
