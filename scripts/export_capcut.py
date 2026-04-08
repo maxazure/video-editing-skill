@@ -393,24 +393,48 @@ def build_empty_materials():
 def build_draft_meta(draft_name, width, height, duration_us):
     """Build draft_meta_info.json content."""
     now = int(time_mod.time())
-    draft_id = new_id()
+    uid = uuid.uuid4()
+    draft_id = str(uid).upper()  # Dashed UUID format for meta
     return {
+        "draft_cloud_last_action_download": False,
+        "draft_cloud_materials": [],
+        "draft_cloud_purchase_info": "",
+        "draft_cloud_template_id": "",
+        "draft_cloud_tutorial_info": "",
+        "draft_cover": "",
+        "draft_deeplink_url": "",
+        "draft_enterprise_info": {
+            "draft_enterprise_extra": "",
+            "draft_enterprise_id": "",
+            "draft_enterprise_name": "",
+            "enterprise_material": [],
+        },
+        "draft_fold_path": "",
         "draft_id": draft_id,
+        "draft_is_ai_shorts": False,
+        "draft_is_invisible": False,
+        "draft_materials": [
+            {"type": 0, "value": []},
+            {"type": 1, "value": []},
+            {"type": 2, "value": []},
+            {"type": 3, "value": []},
+            {"type": 6, "value": []},
+            {"type": 7, "value": []},
+            {"type": 8, "value": []},
+        ],
+        "draft_materials_copied_info": [],
         "draft_name": draft_name,
+        "draft_new_version": "",
+        "draft_removable_storage_device": "",
         "draft_root_path": "",
+        "draft_segment_extra_info": [],
+        "draft_type": "",
+        "tm_draft_cloud_completed": "",
+        "tm_draft_cloud_modified": 0,
         "tm_draft_create": now,
         "tm_draft_modified": now,
-        "draft_removable_storage_device": "",
-        "draft_materials_copied": False,
-        "draft_materials": [],
-        "draft_fold_path": "",
-        "draft_settings": {
-            "canvas_config": {
-                "height": height,
-                "ratio": "original",
-                "width": width,
-            }
-        },
+        "tm_draft_removed": 0,
+        "tm_duration": duration_us,
     }
 
 
@@ -626,18 +650,70 @@ def build_draft(config, clips, width, height, fps):
 
     # --- Assemble draft_content ---
     draft_content = {
+        "id": new_id(),
         "canvas_config": {
             "height": height,
             "ratio": "original",
             "width": width,
         },
+        "color_space": 0,
         "config": {
+            "adjust_max_index": 1,
+            "attachment_info": [],
+            "combination_max_index": 1,
+            "export_range": None,
+            "extract_audio_last_index": 1,
+            "lyrics_recognition_id": "",
+            "lyrics_sync": True,
+            "lyrics_taskinfo": [],
             "maintrack_adsorb": True,
+            "material_save_mode": 0,
+            "original_sound_last_index": 1,
+            "record_audio_last_index": 1,
+            "sticker_max_index": 1,
+            "subtitle_recognition_id": "",
+            "subtitle_sync": True,
+            "subtitle_taskinfo": [],
+            "system_font_list": [],
+            "video_mute": False,
         },
+        "cover": None,
+        "create_time": int(time_mod.time()),
         "duration": total_duration_us,
+        "extra_info": None,
         "fps": float(fps),
+        "free_render_index_mode_on": False,
+        "group_container": None,
+        "keyframe_graph_list": [],
+        "keyframes": {
+            "adjusts": [], "audios": [], "effects": [], "filters": [],
+            "handwrites": [], "stickers": [], "texts": [], "videos": [],
+        },
         "materials": materials,
+        "mutable_config": None,
+        "name": "",
+        "new_version": "110.0.0",
+        "platform": {
+            "app_id": 3704,
+            "app_source": "lv",
+            "app_version": "5.9.0",
+            "os": "mac",
+        },
+        "last_modified_platform": {
+            "app_id": 3704,
+            "app_source": "lv",
+            "app_version": "5.9.0",
+            "os": "mac",
+        },
+        "relationships": [],
+        "render_index_track_mode_on": False,
+        "retouch_cover": None,
+        "source": "default",
+        "static_cover_image_path": "",
+        "time_marks": None,
         "tracks": tracks,
+        "update_time": int(time_mod.time()),
+        "version": 360000,
     }
 
     return draft_content, total_duration_us
