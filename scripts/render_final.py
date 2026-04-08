@@ -490,7 +490,7 @@ def main():
     parser.add_argument("--config", required=True, help="Path to render config JSON")
     parser.add_argument("--output", required=True, help="Output video path")
     parser.add_argument("--font-path", default=None, help="Custom font path")
-    parser.add_argument("--font-size", type=int, default=48, help="Subtitle font size")
+    parser.add_argument("--font-size", type=int, default=120, help="Subtitle font size (default: 120, i.e. screen_width/9 for 1080p portrait)")
     parser.add_argument("--no-subtitles", action="store_true")
     parser.add_argument("--no-cover", action="store_true")
     parser.add_argument("--speed", nargs="*", type=float, default=[],

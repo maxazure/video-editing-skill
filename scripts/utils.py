@@ -634,16 +634,21 @@ def find_chinese_font(custom_font_path=None):
         name = _guess_font_name(custom_font_path)
         return custom_font_path, name
 
-    # Check cached fonts (try Noto Sans SC first, then others)
+    # Check cached fonts (prefer LXGW WenKai for better visual style)
     fonts_dir = get_fonts_dir()
-    for font_id in ["noto-sans-sc", "lxgw-wenkai", "lxgw-wenkai-lite",
-                     "lxgw-wenkai-bold", "zcool-xiaowei", "noto-serif-sc"]:
+    for font_id in ["lxgw-wenkai-bold", "lxgw-wenkai", "lxgw-wenkai-lite",
+                     "noto-sans-sc", "zcool-xiaowei", "noto-serif-sc"]:
         info = FONT_CATALOG[font_id]
         cached_path = os.path.join(fonts_dir, info["filename"])
         if os.path.isfile(cached_path):
             return cached_path, info["name"]
 
-    # Try downloading Noto Sans SC (default)
+    # Try downloading LXGW WenKai Bold (default — visually superior for video subtitles)
+    path, name = download_font("lxgw-wenkai-bold")
+    if path:
+        return path, name
+
+    # Fallback: try Noto Sans SC (universal compatibility)
     path, name = download_font("noto-sans-sc")
     if path:
         return path, name
