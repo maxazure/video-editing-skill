@@ -95,7 +95,35 @@ pip install faster-whisper -i https://pypi.tuna.tsinghua.edu.cn/simple
 python3 scripts/utils.py  # 运行环境诊断
 ```
 
-这会输出完整的环境报告：平台、GPU、编码器、Whisper 引擎、推荐模型等。
+这会输出完整的环境报告：平台、GPU（包括显卡型号和架构代次）、编码器、Whisper 引擎、推荐模型等。
+
+### Linux GPU 配置（NVIDIA / Intel Arc）
+
+不同显卡需要不同的 CUDA 和依赖版本，详见下表：
+
+| 显卡系列 | 架构 | CUDA Toolkit | 驱动版本 | CTranslate2 | 计算精度 | Whisper 引擎 |
+|---------|------|-------------|---------|-------------|---------|-------------|
+| RTX 40xx | Ada Lovelace (sm_89) | >= 12.4 | >= 535 | >= 4.5.0 | float16 / int8 均可 | faster-whisper |
+| RTX 50xx | Blackwell (sm_120) | >= 12.8 | >= 565 | >= 4.7.1 | **float16**（推荐） | faster-whisper |
+| Intel Arc | Xe HPG / Battlemage | N/A | i915 | N/A | N/A | OpenVINO 或 whisper.cpp+SYCL |
+
+**NVIDIA RTX 40 系列：** 开箱即用，标准安装 `pip install faster-whisper` 即可。
+
+**NVIDIA RTX 50 系列（5060/5070/5080/5090）：**
+```bash
+# 需要 CUDA 12.8+ 和最新 CTranslate2
+pip install faster-whisper>=1.1.0
+pip install --upgrade ctranslate2>=4.7.1
+
+# 工具会自动检测 50 系列并使用 float16 精度，避免 INT8 cuBLAS 报错
+```
+
+**Intel Arc 显卡（A770/A750/B580）：**
+faster-whisper 不支持 Intel Arc GPU 加速。推荐使用 OpenVINO：
+```bash
+pip install openvino openvino-genai
+```
+或编译 whisper.cpp 并启用 SYCL 后端。详细配置见 [SKILL.md](./SKILL.md) 中的「Linux GPU 配置指南」。
 
 ## 素材库管理
 

@@ -86,6 +86,38 @@ def _run_quiet(cmd):
         return ""
 
 
+def _detect_nvidia_gpu_name():
+    """Query the GPU product name via nvidia-smi. Returns name string or ''."""
+    out = _run_quiet([
+        "nvidia-smi", "--query-gpu=name", "--format=csv,noheader,nounits"
+    ])
+    return out.strip().split("\n")[0].strip() if out.strip() else ""
+
+
+def _detect_nvidia_arch_generation(gpu_name):
+    """Detect NVIDIA architecture generation from GPU name.
+
+    Returns one of: 'blackwell', 'ada', 'hopper', 'ampere', 'older', 'unknown'.
+    """
+    name = gpu_name.upper()
+    # RTX 50xx = Blackwell (Compute Capability 12.0, sm_120)
+    if any(x in name for x in ["RTX 50", "RTX50"]):
+        return "blackwell"
+    # RTX 40xx = Ada Lovelace (Compute Capability 8.9, sm_89)
+    if any(x in name for x in ["RTX 40", "RTX40"]):
+        return "ada"
+    # RTX 30xx = Ampere (Compute Capability 8.6)
+    if any(x in name for x in ["RTX 30", "RTX30", "RTX A", "A100", "A6000"]):
+        return "ampere"
+    # H100 / H200 = Hopper
+    if any(x in name for x in ["H100", "H200"]):
+        return "hopper"
+    # RTX 20xx / GTX 16xx = Turing
+    if any(x in name for x in ["RTX 20", "RTX20", "GTX 16", "GTX16"]):
+        return "older"
+    return "unknown"
+
+
 def detect_gpu():
     """Detect available GPU type.
 
@@ -96,6 +128,8 @@ def detect_gpu():
         qsv: bool  (Intel Quick Sync)
         amf: bool  (AMD AMF)
         videotoolbox: bool
+        nvidia_gpu_name: str  (GPU product name, e.g. 'NVIDIA GeForce RTX 5060 Ti')
+        nvidia_arch: str  ('blackwell' | 'ada' | 'ampere' | 'hopper' | 'older' | 'unknown')
     """
     info = {
         "type": "none",
@@ -104,6 +138,8 @@ def detect_gpu():
         "qsv": False,
         "amf": False,
         "videotoolbox": False,
+        "nvidia_gpu_name": "",
+        "nvidia_arch": "",
     }
 
     plat = detect_platform()
@@ -112,6 +148,9 @@ def detect_gpu():
     if _run_quiet(["nvidia-smi"]).strip():
         info["type"] = "nvidia"
         info["cuda"] = True
+        gpu_name = _detect_nvidia_gpu_name()
+        info["nvidia_gpu_name"] = gpu_name
+        info["nvidia_arch"] = _detect_nvidia_arch_generation(gpu_name)
         return info
 
     # Apple Silicon MPS
@@ -233,11 +272,22 @@ def get_whisper_device(gpu_info=None):
     """Return the device string for Whisper inference.
 
     Returns (device, compute_type) tuple.
+
+    For NVIDIA Blackwell (RTX 50xx) GPUs, always uses float16 to avoid
+    cuBLAS CUBLAS_STATUS_NOT_SUPPORTED errors with INT8 on sm_120.
+    See: https://github.com/OpenNMT/CTranslate2/issues/1865
     """
     if gpu_info is None:
         gpu_info = detect_gpu()
 
     if gpu_info.get("cuda"):
+        arch = gpu_info.get("nvidia_arch", "")
+        if arch == "blackwell":
+            # Blackwell (RTX 50xx, sm_120): INT8 Tensor Cores require
+            # matrix dimensions padded to multiples of 16. CTranslate2 >= 4.7.1
+            # has this fix, but float16 is the safest choice.
+            print("[gpu] Blackwell GPU detected — using float16 (INT8 may cause cuBLAS errors)")
+            return "cuda", "float16"
         return "cuda", "float16"
 
     if gpu_info.get("mps"):
@@ -789,8 +839,14 @@ def print_env_report():
     print(f"Platform      : {plat}" + (" (Apple Silicon)" if is_apple_silicon() else ""))
     print(f"China locale  : {is_china_locale()}")
     print(f"GPU type      : {gpu['type']}")
+    if gpu.get("nvidia_gpu_name"):
+        print(f"GPU name      : {gpu['nvidia_gpu_name']}")
+        print(f"GPU arch      : {gpu.get('nvidia_arch', 'unknown')}")
     print(f"FFmpeg encoder: {encoder}")
     print(f"Whisper engine: {engine or 'not installed'}")
+    if engine == "faster-whisper":
+        device, compute = get_whisper_device(gpu)
+        print(f"Whisper device: {device} (compute_type={compute})")
     print(f"Recommended model: {model} ({reason})")
     print()
 
