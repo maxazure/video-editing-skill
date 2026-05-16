@@ -29,6 +29,7 @@ from utils import (
     detect_gpu, get_ffmpeg_encode_args, escape_ffmpeg_path,
     get_video_info as _get_video_info,
 )
+from _internal_text_guard import check_visible_text
 
 
 def get_video_info(video_path):
@@ -224,6 +225,7 @@ def main():
     if not title:
         print("Error: Title is empty after sanitization.", file=sys.stderr)
         sys.exit(1)
+    check_visible_text(title)  # refuse internal tokens (1.25x, model names, etc.)
 
     # Determine output path
     if args.output:

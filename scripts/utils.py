@@ -224,8 +224,16 @@ def get_ffmpeg_encode_args(gpu_info=None):
 def detect_whisper_engine():
     """Detect the best available Whisper engine.
 
-    Returns one of: 'faster-whisper', 'openai-whisper', 'none'.
+    Returns one of: 'mlx-whisper', 'faster-whisper', 'openai-whisper', 'none'.
     """
+    # Apple Silicon: prefer MLX so Whisper runs on Metal instead of CPU.
+    if is_apple_silicon():
+        try:
+            import mlx_whisper  # noqa: F401
+            return "mlx-whisper"
+        except ImportError:
+            pass
+
     # Try faster-whisper first
     try:
         import faster_whisper  # noqa: F401
@@ -255,8 +263,7 @@ def recommend_whisper_model(gpu_info=None):
         return "large-v3", "NVIDIA GPU detected, large model runs fast on CUDA"
 
     if gpu_info.get("mps"):
-        # Apple Silicon — large-v3-turbo is ideal
-        return "large-v3-turbo", "Apple Silicon detected, turbo model balances speed and quality"
+        return "large-v3-turbo", "Apple Silicon detected, MLX turbo model balances speed and quality"
 
     if gpu_info.get("qsv"):
         return "medium", "Intel iGPU detected, medium model is the best balance for CPU+iGPU"
@@ -291,8 +298,9 @@ def get_whisper_device(gpu_info=None):
         return "cuda", "float16"
 
     if gpu_info.get("mps"):
-        # faster-whisper doesn't support MPS yet; use CPU with int8
         engine = detect_whisper_engine()
+        if engine == "mlx-whisper":
+            return "mlx", "float16"
         if engine == "openai-whisper":
             return "cpu", "float32"  # openai-whisper on Mac
         return "cpu", "int8"  # faster-whisper CPU
@@ -412,6 +420,34 @@ FONT_CATALOG = {
         "cjk": True,
         "use_case": "title",
         "description": "霞鹜文楷中粗体，适合标题（~24MB）",
+    },
+    "source-han-sans-sc-heavy": {
+        "name": "Source Han Sans SC Heavy",
+        "filename": "SourceHanSansSC-Heavy.otf",
+        "urls": [
+            "https://github.com/adobe-fonts/source-han-sans/raw/release/OTF/SimplifiedChinese/SourceHanSansSC-Heavy.otf",
+        ],
+        "urls_cn": [
+            "https://cdn.jsdelivr.net/gh/adobe-fonts/source-han-sans@release/OTF/SimplifiedChinese/SourceHanSansSC-Heavy.otf",
+        ],
+        "license": "SIL OFL 1.1",
+        "cjk": True,
+        "use_case": "title",
+        "description": "思源黑体简体 Heavy，短视频字幕/封面默认（~16MB）",
+    },
+    "smiley-sans": {
+        "name": "Smiley Sans",
+        "filename": "SmileySans-Oblique.ttf",
+        "urls": [
+            "https://github.com/atelier-anchor/smiley-sans/releases/latest/download/smiley-sans.zip",
+        ],
+        "urls_cn": [
+            "https://cdn.jsdelivr.net/gh/atelier-anchor/smiley-sans@main/fonts/ttf/SmileySans-Oblique.ttf",
+        ],
+        "license": "SIL OFL 1.1",
+        "cjk": True,
+        "use_case": "title",
+        "description": "得意黑，潮酷科技风标题字体，小红书封面常用（~3MB）",
     },
     "zcool-kuaile": {
         "name": "ZCOOL KuaiLe",
@@ -634,19 +670,23 @@ def find_chinese_font(custom_font_path=None):
         name = _guess_font_name(custom_font_path)
         return custom_font_path, name
 
-    # Check cached fonts (try Noto Sans SC first, then others)
+    # Check cached fonts. Heavy/Medium-weight CJK fonts come first because short-form
+    # video subtitles need bold faces to stay readable at 1080×1920. Day58 production
+    # used Hiragino W3 by default and the rendered subtitles looked too thin.
     fonts_dir = get_fonts_dir()
-    for font_id in ["noto-sans-sc", "lxgw-wenkai", "lxgw-wenkai-lite",
-                     "lxgw-wenkai-bold", "zcool-xiaowei", "noto-serif-sc"]:
+    for font_id in ["source-han-sans-sc-heavy", "smiley-sans", "lxgw-wenkai-bold",
+                     "noto-sans-sc", "lxgw-wenkai", "lxgw-wenkai-lite",
+                     "zcool-xiaowei", "noto-serif-sc"]:
         info = FONT_CATALOG[font_id]
         cached_path = os.path.join(fonts_dir, info["filename"])
         if os.path.isfile(cached_path):
             return cached_path, info["name"]
 
-    # Try downloading Noto Sans SC (default)
-    path, name = download_font("noto-sans-sc")
-    if path:
-        return path, name
+    # Try downloading Source Han Sans SC Heavy first, then Noto Sans SC as backup
+    for fid in ("source-han-sans-sc-heavy", "noto-sans-sc"):
+        path, name = download_font(fid)
+        if path:
+            return path, name
 
     # System font fallback
     plat = detect_platform()
@@ -658,14 +698,21 @@ def _find_system_font(plat):
     candidates = []
     if plat == "macos":
         import glob
+        # Prefer Heavy/Medium weights first — short-form video subtitles need a
+        # bold face to stay readable at 1080×1920. Day58 production used the
+        # default Hiragino W3 and the result was too thin.
         candidates = [
-            ("/System/Library/Fonts/PingFang.ttc", "PingFang SC"),
-            ("/System/Library/Fonts/STHeiti Medium.ttc", "Heiti SC"),
-            ("/Library/Fonts/PingFang.ttc", "PingFang SC"),
+            ("/Users/Shared/Fonts/SourceHanSansSC-Heavy.otf", "Source Han Sans SC Heavy"),
+            (os.path.expanduser("~/Library/Fonts/SourceHanSansSC-Heavy.otf"), "Source Han Sans SC Heavy"),
+            (os.path.expanduser("~/Library/Fonts/SmileySans-Oblique.otf"), "Smiley Sans"),
+            (os.path.expanduser("~/Library/Fonts/SmileySans-Oblique.ttf"), "Smiley Sans"),
+            ("/System/Library/Fonts/STHeiti Medium.ttc", "Heiti SC Medium"),
+            ("/System/Library/Fonts/PingFang.ttc", "PingFang SC Semibold"),
+            ("/Library/Fonts/PingFang.ttc", "PingFang SC Semibold"),
         ]
         # AssetsV2
         for p in glob.glob("/System/Library/AssetsV2/**/PingFang.ttc", recursive=True):
-            candidates.append((p, "PingFang SC"))
+            candidates.append((p, "PingFang SC Semibold"))
     elif plat == "windows":
         windir = os.environ.get("WINDIR", os.environ.get("SystemRoot", r"C:\Windows"))
         candidates = [
@@ -724,6 +771,12 @@ def _find_system_font(plat):
 def _guess_font_name(font_path):
     """Guess ASS font name from file path."""
     base = os.path.basename(font_path).lower()
+    if "sourcehansanssc-heavy" in base or "sourcehansanscn-heavy" in base:
+        return "Source Han Sans SC Heavy"
+    if "sourcehansanssc-bold" in base or "sourcehansanscn-bold" in base:
+        return "Source Han Sans SC Bold"
+    if "sourcehansanssc" in base:
+        return "Source Han Sans SC"
     if "smiley" in base or "得意" in base:
         return "Smiley Sans"
     if "pingfang" in base:
@@ -810,12 +863,14 @@ def check_dependencies():
 
     # Python whisper
     engine = detect_whisper_engine()
-    if engine == "faster-whisper":
+    if engine == "mlx-whisper":
+        results.append(("whisper", "ok", "mlx-whisper (Apple Silicon/Metal)"))
+    elif engine == "faster-whisper":
         results.append(("whisper", "ok", "faster-whisper (recommended)"))
     elif engine == "openai-whisper":
         results.append(("whisper", "ok", "openai-whisper (consider upgrading to faster-whisper)"))
     else:
-        results.append(("whisper", "missing", "Install: pip install faster-whisper (recommended) or pip install openai-whisper"))
+        results.append(("whisper", "missing", "Install: pip install mlx-whisper (Apple Silicon) or pip install faster-whisper"))
 
     # GPU
     gpu = detect_gpu()
@@ -844,7 +899,7 @@ def print_env_report():
         print(f"GPU arch      : {gpu.get('nvidia_arch', 'unknown')}")
     print(f"FFmpeg encoder: {encoder}")
     print(f"Whisper engine: {engine or 'not installed'}")
-    if engine == "faster-whisper":
+    if engine in ("mlx-whisper", "faster-whisper"):
         device, compute = get_whisper_device(gpu)
         print(f"Whisper device: {device} (compute_type={compute})")
     print(f"Recommended model: {model} ({reason})")

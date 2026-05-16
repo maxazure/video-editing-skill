@@ -37,6 +37,7 @@ from burn_subtitles import (
     detect_language, escape_ass_text, wrap_subtitle_text,
 )
 from generate_cover_image import generate_cover as generate_cover_image
+from _internal_text_guard import check_visible_text
 
 # --- Caption style presets ---
 CAPTION_PRESETS = {
@@ -493,8 +494,13 @@ def main():
     parser.add_argument("--font-size", type=int, default=48, help="Subtitle font size")
     parser.add_argument("--no-subtitles", action="store_true")
     parser.add_argument("--no-cover", action="store_true")
+    parser.add_argument("--no-loudnorm", action="store_true",
+                        help="Disable the default dynaudnorm+compressor+loudnorm chain on the speech track")
     parser.add_argument("--speed", nargs="*", type=float, default=[],
                         help="Additional speed variants to render (e.g. --speed 1.25 1.5)")
+    parser.add_argument("--primary-speed", type=float, default=1.0,
+                        help="Primary output speed (default 1.0). When set, the main output is "
+                             "rendered at this speed instead of 1.0; --speed values become extra variants.")
     parser.add_argument("--cover-duration", type=float, default=None,
                         help="Cover freeze duration in seconds (default: from config or 2.0)")
     parser.add_argument("--cleanup", action="store_true", help="Remove temp files after render")
@@ -511,6 +517,19 @@ def main():
     args = parser.parse_args()
 
     config = load_config(args.config)
+
+    # Guard visible-text fields BEFORE any expensive work — no speed/model/engine/debug
+    # tokens may reach the frame. (User-facing content only; this catches accidents
+    # like "DAY 58 — 1.25x".)
+    check_visible_text(config.get("title"))
+    check_visible_text(config.get("subtitle"))
+    for chapter in config.get("chapters", []) or []:
+        check_visible_text(chapter.get("title") if isinstance(chapter, dict) else chapter)
+    for badge in config.get("text_badges", []) or []:
+        check_visible_text(badge.get("text") if isinstance(badge, dict) else badge)
+    for card in config.get("end_cards", []) or []:
+        check_visible_text(card.get("text") if isinstance(card, dict) else card)
+
     clips = resolve_clips(config)
 
     if not clips:
@@ -546,8 +565,11 @@ def main():
         base_filter, input_files = build_trim_filter(clips, target_w=width, target_h=height)
         print(f"Using trim/concat filter: {len(clips)} clips from {len(input_files)} video(s)")
 
-    # Collect all speeds to render (1.0 = original, plus any extras)
-    all_speeds = [1.0] + [s for s in args.speed if s != 1.0]
+    # Collect all speeds to render: primary first, then extras (no duplicates).
+    # --primary-speed lets the main output be sped-up (or slowed down) directly,
+    # without rendering a 1.0× version first. Day58 wanted 1.25× as the only output.
+    primary = args.primary_speed
+    all_speeds = [primary] + [s for s in args.speed if s != primary]
 
     total_duration = sum(c["end"] - c["start"] for c in clips)
     title = config.get("title", "")
@@ -597,10 +619,12 @@ def main():
     if bgm_path:
         print(f"BGM: {os.path.basename(bgm_path)} (volume={bgm_volume}, fade_out={bgm_fade_out}s)")
 
-    for speed in all_speeds:
-        if speed == 1.0:
+    for idx, speed in enumerate(all_speeds):
+        # The first speed in all_speeds is always the primary output (writes to
+        # the requested --output path). Extras get a "_<speed>x" suffix.
+        if idx == 0:
             out_path = output_path
-            label = "1x"
+            label = f"{speed}x"
         else:
             base, ext = os.path.splitext(output_path)
             speed_label = f"{speed}x".replace(".", "_")
@@ -670,7 +694,16 @@ def main():
                 remaining /= 2.0
             af_parts.append(f"atempo={remaining:.4f}")
 
-        # Audio: add silence for cover duration (after speed adjustment)
+        # Speech loudness chain (day58 lesson: after a speed change the mid section
+        # got noticeably quieter; manual fix at the time was the same chain below).
+        # Disable with --no-loudnorm for music-heavy or already-mastered tracks.
+        if not args.no_loudnorm:
+            af_parts.append("dynaudnorm=f=250:g=15")
+            af_parts.append("acompressor=threshold=-18dB:ratio=3:attack=20:release=200")
+            af_parts.append("loudnorm=I=-16:TP=-1.5:LRA=11")
+
+        # Audio: add silence for cover duration (after speed + loudness adjustment,
+        # so the silent cover region stays at -inf dB instead of being normalised up)
         if cover_duration > 0:
             delay_ms = int(cover_duration * 1000)
             af_parts.append(f"adelay={delay_ms}:all=1")

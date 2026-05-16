@@ -2,8 +2,9 @@
 """
 Transcribe audio using Whisper and output a JSON file with per-sentence timestamps.
 
-Supports two engines (auto-detected):
-  - faster-whisper (recommended, 4x faster, less memory)
+Supports three engines (auto-detected):
+  - mlx-whisper (recommended on Apple Silicon)
+  - faster-whisper (recommended on NVIDIA/CPU)
   - openai-whisper (fallback)
 
 Usage: python3 transcribe.py <audio_path> [--model auto] [--language zh] [--engine auto]
@@ -36,6 +37,26 @@ FILLER_PATTERNS = {
         "kind of", "sort of",
     ],
 }
+
+MLX_MODEL_MAP = {
+    "tiny": "mlx-community/whisper-tiny",
+    "base": "mlx-community/whisper-base",
+    "small": "mlx-community/whisper-small",
+    "medium": "mlx-community/whisper-medium",
+    "large-v3": "mlx-community/whisper-large-v3-mlx",
+    "large-v3-turbo": "mlx-community/whisper-large-v3-turbo",
+    "turbo": "mlx-community/whisper-turbo",
+    "whisper-turbo": "mlx-community/whisper-turbo",
+}
+
+
+def resolve_mlx_model(model_name):
+    """Map standard Whisper names to MLX Hugging Face repos."""
+    if model_name in MLX_MODEL_MAP:
+        return MLX_MODEL_MAP[model_name]
+    if "/" in model_name or os.path.exists(model_name):
+        return model_name
+    return f"mlx-community/whisper-{model_name}"
 
 
 def transcribe_faster_whisper(audio_path, model_name, language, device, compute_type,
@@ -70,6 +91,49 @@ def transcribe_faster_whisper(audio_path, model_name, language, device, compute_
                 }
                 for w in seg.words if w.word.strip()
             ]
+        segments.append(entry)
+
+    return segments, detected_lang
+
+
+def transcribe_mlx_whisper(audio_path, model_name, language, word_timestamps=False):
+    """Transcribe using mlx-whisper engine."""
+    import mlx_whisper
+
+    model_ref = resolve_mlx_model(model_name)
+    print(f"[mlx-whisper] Loading model: {model_ref}")
+
+    kwargs = {
+        "path_or_hf_repo": model_ref,
+        "word_timestamps": word_timestamps,
+    }
+    if language:
+        kwargs["language"] = language
+
+    result = mlx_whisper.transcribe(audio_path, **kwargs)
+    detected_lang = result.get("language", "unknown")
+
+    segments = []
+    for i, seg in enumerate(result.get("segments", []), start=1):
+        entry = {
+            "id": i,
+            "start": round(float(seg["start"]), 2),
+            "end": round(float(seg["end"]), 2),
+            "text": seg.get("text", "").strip(),
+        }
+        if word_timestamps and seg.get("words"):
+            words = []
+            for w in seg["words"]:
+                word = w.get("word", "").strip()
+                if not word:
+                    continue
+                words.append({
+                    "word": word,
+                    "start": round(float(w["start"]), 3),
+                    "end": round(float(w["end"]), 3),
+                })
+            if words:
+                entry["words"] = words
         segments.append(entry)
 
     return segments, detected_lang
@@ -191,7 +255,7 @@ def main():
                         help="Whisper model size: tiny/base/small/medium/large-v3/large-v3-turbo/auto (default: auto)")
     parser.add_argument("--language", default=None,
                         help="Language code (e.g. zh, en, ja). Omit for auto-detection.")
-    parser.add_argument("--engine", default="auto", choices=["auto", "faster-whisper", "openai-whisper"],
+    parser.add_argument("--engine", default="auto", choices=["auto", "mlx-whisper", "faster-whisper", "openai-whisper"],
                         help="Whisper engine (default: auto-detect)")
     parser.add_argument("--mirror", action="store_true",
                         help="Use China mirrors for model download")
@@ -222,6 +286,7 @@ def main():
         if engine == "none":
             print("Error: No Whisper engine found.", file=sys.stderr)
             print("Install one of:", file=sys.stderr)
+            print("  pip install mlx-whisper     (recommended on Apple Silicon)", file=sys.stderr)
             print("  pip install faster-whisper  (recommended, 4x faster)", file=sys.stderr)
             print("  pip install openai-whisper", file=sys.stderr)
             sys.exit(1)
@@ -248,6 +313,11 @@ def main():
         device, compute_type = get_whisper_device(gpu_info)
         segments, detected_lang = transcribe_faster_whisper(
             audio_path, model_name, args.language, device, compute_type,
+            word_timestamps=args.word_timestamps,
+        )
+    elif engine == "mlx-whisper":
+        segments, detected_lang = transcribe_mlx_whisper(
+            audio_path, model_name, args.language,
             word_timestamps=args.word_timestamps,
         )
     else:
