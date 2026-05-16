@@ -1,0 +1,35 @@
+# Title-font palette per design preset.
+# Each preset names a primary font (used at the largest size) and a fallback
+# chain. find_chinese_font() handles auto-download from FONT_CATALOG; this
+# YAML just maps "design intent" → font name(s).
+
+presets:
+  tech_ai:
+    label: 科技/AI/工具盘点
+    primary: Smiley Sans                       # 得意黑
+    fallbacks: [Source Han Sans SC Heavy, PingFang SC Semibold]
+    weight: Heavy
+
+  data_review:
+    label: 数据复盘/榜单/教程干货
+    primary: Alimama Shu Hei                   # 阿里妈妈数黑体
+    fallbacks: [Source Han Sans SC Heavy, Smiley Sans]
+    weight: Heavy
+
+  warm_lifestyle:
+    label: 生活方式/亲子/温柔向
+    primary: Alimama Fang Yuan                 # 阿里妈妈方圆体
+    fallbacks: [PingFang SC Semibold, STHeiti Medium]
+    weight: Medium
+
+  business_serious:
+    label: 商务/职场/严肃论点
+    primary: Source Han Sans SC Heavy           # 思源黑体
+    fallbacks: [PingFang SC Semibold, STHeiti Medium]
+    weight: Heavy
+
+  food_youth:
+    label: 美食/穿搭/学生向
+    primary: Maoken Naizhi                     # 奶酪体
+    fallbacks: [ZCOOL XiaoWei, PingFang SC Semibold]
+    weight: Medium
