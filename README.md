@@ -6,6 +6,22 @@
 
 > 适用于：小红书、抖音、视频号等竖屏短视频平台
 
+## 🆕 V3 — 小红书赛道优化
+
+V3 在 V2 的基础上把这个工具从「剪辑工具」升级为「小红书内容引擎」。新增能力：
+
+- **Content Guard** ([docs](docs/prompts/16-content-guard.md))：80+ 条平台雷区 lint（广告法极限词、导流外站、医美功效、财富诱导）。导出前自动拦截，避免限流。
+- **Story Engine** ([scripts/rewrite_script.py](scripts/rewrite_script.py))：8 个钩子模板 + 5 个 CTA 模板 + 3 种故事结构（痛点解决/故事反转/清单盘点）。让 LLM 重组成符合小红书爆款公式的 5 段式结构。
+- **Audience Profiles** ([scripts/profiles/](scripts/profiles/))：`tech_pro` / `lifestyle` 等档位预设镜头节奏、字幕密度、BGM 增益、目标比例，一个 `--profile` 即可。
+- **Auto-Enrich** ([docs](docs/prompts/18-auto-enrich.md))：自动调度 B-roll 切片、章节标题卡、emoji 贴纸、BGM 卡点（librosa.beat_track + ±200ms snap）。
+- **Multi-Platform Export** ([docs](docs/prompts/17-multi-platform.md))：一条主视频 → 小红书 3:4 / 抖音 9:16 / 视频号 ≤60s，智能裁切。
+- **Caption Generator** ([scripts/generate_caption.py](scripts/generate_caption.py))：自动生成标题（≤18 字 + 关键词前置）+ 200-500 字正文（emoji 节奏）+ 3-6 个 tag + 发布时段建议。
+- **Internal-Text Guard**：永远不会再把 `1.25x` / 模型名 / 调试 token 烧到画面里。
+- **Heavy-weight font default**：默认走 Source Han Sans SC Heavy / STHeiti Medium，绝不再走 Hiragino W3。
+- **Auto Loudness Norm**：渲染时自动 `dynaudnorm + acompressor + loudnorm` —— 加速后中段不再听不清。
+
+完整流水线一条命令跑完 → 看 [docs/prompts/15-xhs-daily-tech-video.md](docs/prompts/15-xhs-daily-tech-video.md)。
+
 ## 功能特性
 
 - **单次编码渲染** — 从原始视频直接到最终输出，只编码一次，无质量损失
