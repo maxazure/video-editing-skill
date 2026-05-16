@@ -27,6 +27,10 @@
 | 12 | [字幕风格定制](12-subtitle-style.md) | 6 种字幕风格，卡拉OK逐词高亮 |
 | 13 | [提示词技巧和常见问题](13-tips.md) | 写好提示词的要点，以及常见问题解答 |
 | 14 | [导出剪映工程](14-export-capcut.md) | 导出剪映/CapCut 草稿文件，免渲染直接编辑 |
+| 15 | [小红书每日科技短视频（V3 完整流水线）](15-xhs-daily-tech-video.md) | 一条提示词跑完转写 → 重组 → 丰富 → 渲染 → 多平台 → 文案 |
+| 16 | [Content Guard 平台雷区 lint](16-content-guard.md) | 自动检测违禁词/导流/医美/财富诱导，导出前拦截 |
+| 17 | [一条视频 × 三平台导出](17-multi-platform.md) | 主视频 → 小红书 3:4 / 抖音 / 视频号 三版本 |
+| 18 | [Auto-Enrich 自动丰富](18-auto-enrich.md) | 自动 B-roll / 章节卡 / 贴纸 / BGM 卡点 |
 
 ## 快速上手
 
@@ -52,3 +56,7 @@
 | 字幕好看一点 | [12-字幕风格](12-subtitle-style.md) |
 | 提示词怎么写更好 | [13-技巧和FAQ](13-tips.md) |
 | 导出到剪映继续编辑 | [14-导出剪映工程](14-export-capcut.md) |
+| 每天做一条小红书科技短视频 | [15-V3 完整流水线](15-xhs-daily-tech-video.md) |
+| 担心标题/正文触发平台限流 | [16-Content Guard](16-content-guard.md) |
+| 一次发小红书+抖音+视频号 | [17-三平台导出](17-multi-platform.md) |
+| 想让视频更"有质感"自动加丰富度 | [18-Auto-Enrich](18-auto-enrich.md) |
