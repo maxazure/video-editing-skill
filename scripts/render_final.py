@@ -498,6 +498,9 @@ def main():
                         help="Disable the default dynaudnorm+compressor+loudnorm chain on the speech track")
     parser.add_argument("--speed", nargs="*", type=float, default=[],
                         help="Additional speed variants to render (e.g. --speed 1.25 1.5)")
+    parser.add_argument("--primary-speed", type=float, default=1.0,
+                        help="Primary output speed (default 1.0). When set, the main output is "
+                             "rendered at this speed instead of 1.0; --speed values become extra variants.")
     parser.add_argument("--cover-duration", type=float, default=None,
                         help="Cover freeze duration in seconds (default: from config or 2.0)")
     parser.add_argument("--cleanup", action="store_true", help="Remove temp files after render")
@@ -562,8 +565,11 @@ def main():
         base_filter, input_files = build_trim_filter(clips, target_w=width, target_h=height)
         print(f"Using trim/concat filter: {len(clips)} clips from {len(input_files)} video(s)")
 
-    # Collect all speeds to render (1.0 = original, plus any extras)
-    all_speeds = [1.0] + [s for s in args.speed if s != 1.0]
+    # Collect all speeds to render: primary first, then extras (no duplicates).
+    # --primary-speed lets the main output be sped-up (or slowed down) directly,
+    # without rendering a 1.0× version first. Day58 wanted 1.25× as the only output.
+    primary = args.primary_speed
+    all_speeds = [primary] + [s for s in args.speed if s != primary]
 
     total_duration = sum(c["end"] - c["start"] for c in clips)
     title = config.get("title", "")
@@ -613,10 +619,12 @@ def main():
     if bgm_path:
         print(f"BGM: {os.path.basename(bgm_path)} (volume={bgm_volume}, fade_out={bgm_fade_out}s)")
 
-    for speed in all_speeds:
-        if speed == 1.0:
+    for idx, speed in enumerate(all_speeds):
+        # The first speed in all_speeds is always the primary output (writes to
+        # the requested --output path). Extras get a "_<speed>x" suffix.
+        if idx == 0:
             out_path = output_path
-            label = "1x"
+            label = f"{speed}x"
         else:
             base, ext = os.path.splitext(output_path)
             speed_label = f"{speed}x".replace(".", "_")
