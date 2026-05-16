@@ -494,6 +494,8 @@ def main():
     parser.add_argument("--font-size", type=int, default=48, help="Subtitle font size")
     parser.add_argument("--no-subtitles", action="store_true")
     parser.add_argument("--no-cover", action="store_true")
+    parser.add_argument("--no-loudnorm", action="store_true",
+                        help="Disable the default dynaudnorm+compressor+loudnorm chain on the speech track")
     parser.add_argument("--speed", nargs="*", type=float, default=[],
                         help="Additional speed variants to render (e.g. --speed 1.25 1.5)")
     parser.add_argument("--cover-duration", type=float, default=None,
@@ -684,7 +686,16 @@ def main():
                 remaining /= 2.0
             af_parts.append(f"atempo={remaining:.4f}")
 
-        # Audio: add silence for cover duration (after speed adjustment)
+        # Speech loudness chain (day58 lesson: after a speed change the mid section
+        # got noticeably quieter; manual fix at the time was the same chain below).
+        # Disable with --no-loudnorm for music-heavy or already-mastered tracks.
+        if not args.no_loudnorm:
+            af_parts.append("dynaudnorm=f=250:g=15")
+            af_parts.append("acompressor=threshold=-18dB:ratio=3:attack=20:release=200")
+            af_parts.append("loudnorm=I=-16:TP=-1.5:LRA=11")
+
+        # Audio: add silence for cover duration (after speed + loudness adjustment,
+        # so the silent cover region stays at -inf dB instead of being normalised up)
         if cover_duration > 0:
             delay_ms = int(cover_duration * 1000)
             af_parts.append(f"adelay={delay_ms}:all=1")
