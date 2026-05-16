@@ -421,6 +421,34 @@ FONT_CATALOG = {
         "use_case": "title",
         "description": "霞鹜文楷中粗体，适合标题（~24MB）",
     },
+    "source-han-sans-sc-heavy": {
+        "name": "Source Han Sans SC Heavy",
+        "filename": "SourceHanSansSC-Heavy.otf",
+        "urls": [
+            "https://github.com/adobe-fonts/source-han-sans/raw/release/OTF/SimplifiedChinese/SourceHanSansSC-Heavy.otf",
+        ],
+        "urls_cn": [
+            "https://cdn.jsdelivr.net/gh/adobe-fonts/source-han-sans@release/OTF/SimplifiedChinese/SourceHanSansSC-Heavy.otf",
+        ],
+        "license": "SIL OFL 1.1",
+        "cjk": True,
+        "use_case": "title",
+        "description": "思源黑体简体 Heavy，短视频字幕/封面默认（~16MB）",
+    },
+    "smiley-sans": {
+        "name": "Smiley Sans",
+        "filename": "SmileySans-Oblique.ttf",
+        "urls": [
+            "https://github.com/atelier-anchor/smiley-sans/releases/latest/download/smiley-sans.zip",
+        ],
+        "urls_cn": [
+            "https://cdn.jsdelivr.net/gh/atelier-anchor/smiley-sans@main/fonts/ttf/SmileySans-Oblique.ttf",
+        ],
+        "license": "SIL OFL 1.1",
+        "cjk": True,
+        "use_case": "title",
+        "description": "得意黑，潮酷科技风标题字体，小红书封面常用（~3MB）",
+    },
     "zcool-kuaile": {
         "name": "ZCOOL KuaiLe",
         "filename": "ZCOOLKuaiLe-Regular.ttf",
@@ -642,19 +670,23 @@ def find_chinese_font(custom_font_path=None):
         name = _guess_font_name(custom_font_path)
         return custom_font_path, name
 
-    # Check cached fonts (try Noto Sans SC first, then others)
+    # Check cached fonts. Heavy/Medium-weight CJK fonts come first because short-form
+    # video subtitles need bold faces to stay readable at 1080×1920. Day58 production
+    # used Hiragino W3 by default and the rendered subtitles looked too thin.
     fonts_dir = get_fonts_dir()
-    for font_id in ["noto-sans-sc", "lxgw-wenkai", "lxgw-wenkai-lite",
-                     "lxgw-wenkai-bold", "zcool-xiaowei", "noto-serif-sc"]:
+    for font_id in ["source-han-sans-sc-heavy", "smiley-sans", "lxgw-wenkai-bold",
+                     "noto-sans-sc", "lxgw-wenkai", "lxgw-wenkai-lite",
+                     "zcool-xiaowei", "noto-serif-sc"]:
         info = FONT_CATALOG[font_id]
         cached_path = os.path.join(fonts_dir, info["filename"])
         if os.path.isfile(cached_path):
             return cached_path, info["name"]
 
-    # Try downloading Noto Sans SC (default)
-    path, name = download_font("noto-sans-sc")
-    if path:
-        return path, name
+    # Try downloading Source Han Sans SC Heavy first, then Noto Sans SC as backup
+    for fid in ("source-han-sans-sc-heavy", "noto-sans-sc"):
+        path, name = download_font(fid)
+        if path:
+            return path, name
 
     # System font fallback
     plat = detect_platform()
@@ -666,14 +698,21 @@ def _find_system_font(plat):
     candidates = []
     if plat == "macos":
         import glob
+        # Prefer Heavy/Medium weights first — short-form video subtitles need a
+        # bold face to stay readable at 1080×1920. Day58 production used the
+        # default Hiragino W3 and the result was too thin.
         candidates = [
-            ("/System/Library/Fonts/PingFang.ttc", "PingFang SC"),
-            ("/System/Library/Fonts/STHeiti Medium.ttc", "Heiti SC"),
-            ("/Library/Fonts/PingFang.ttc", "PingFang SC"),
+            ("/Users/Shared/Fonts/SourceHanSansSC-Heavy.otf", "Source Han Sans SC Heavy"),
+            (os.path.expanduser("~/Library/Fonts/SourceHanSansSC-Heavy.otf"), "Source Han Sans SC Heavy"),
+            (os.path.expanduser("~/Library/Fonts/SmileySans-Oblique.otf"), "Smiley Sans"),
+            (os.path.expanduser("~/Library/Fonts/SmileySans-Oblique.ttf"), "Smiley Sans"),
+            ("/System/Library/Fonts/STHeiti Medium.ttc", "Heiti SC Medium"),
+            ("/System/Library/Fonts/PingFang.ttc", "PingFang SC Semibold"),
+            ("/Library/Fonts/PingFang.ttc", "PingFang SC Semibold"),
         ]
         # AssetsV2
         for p in glob.glob("/System/Library/AssetsV2/**/PingFang.ttc", recursive=True):
-            candidates.append((p, "PingFang SC"))
+            candidates.append((p, "PingFang SC Semibold"))
     elif plat == "windows":
         windir = os.environ.get("WINDIR", os.environ.get("SystemRoot", r"C:\Windows"))
         candidates = [
@@ -732,6 +771,12 @@ def _find_system_font(plat):
 def _guess_font_name(font_path):
     """Guess ASS font name from file path."""
     base = os.path.basename(font_path).lower()
+    if "sourcehansanssc-heavy" in base or "sourcehansanscn-heavy" in base:
+        return "Source Han Sans SC Heavy"
+    if "sourcehansanssc-bold" in base or "sourcehansanscn-bold" in base:
+        return "Source Han Sans SC Bold"
+    if "sourcehansanssc" in base:
+        return "Source Han Sans SC"
     if "smiley" in base or "得意" in base:
         return "Smiley Sans"
     if "pingfang" in base:
