@@ -27,8 +27,21 @@ def test_build_plan_no_extras():
     assert "broll" in plan
     assert "stickers" in plan
     assert "chapter_cards" in plan
+    assert "imagegen" in plan
     # At minimum the transition word "但是" + the long-shot gap should yield broll cues
     assert len(plan["broll"]) >= 1
+
+
+def test_build_plan_includes_imagegen_for_abstract_concept():
+    """A transcript that mentions 注意力机制 should produce an imagegen cue."""
+    transcript = {
+        "segments": [
+            {"start": 1.0, "end": 4.0, "text": "我们来聊一下注意力机制的本质"},
+        ]
+    }
+    plan = build_plan(transcript)
+    assert len(plan["imagegen"]) >= 1
+    assert plan["imagegen"][0]["template_id"] == "attention_mechanism"
 
 
 def test_build_plan_with_clean_script(tmp_path):

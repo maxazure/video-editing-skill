@@ -1,0 +1,199 @@
+# Image-generation prompt templates targeted at OpenAI gpt-image-2.
+#
+# These are tuned for short-form video b-roll / chapter art / data-viz inserts.
+# Each sample follows the 7-slot structure from the OpenAI prompting cookbook
+# (Subject → Action → Environment → Mood → Style → Lighting → Composition)
+# plus a Constraints clause.
+#
+# When running inside Codex, the agent should call the built-in `imagegen`
+# tool with these prompts as-is. When running elsewhere, the CLI fallback is
+# `scripts/image_gen.py generate --prompt "<text>" --size 1024x1536` against
+# gpt-image-1.5 (requires OPENAI_API_KEY).
+#
+# Sources synthesised from:
+#   - OpenAI Cookbook prompting guide (cookbook.openai.com)
+#   - gpt-image-2 model docs (developers.openai.com/api/docs/models/gpt-image-2)
+#   - Codex imagegen SKILL.md
+#   - fal.ai prompting-gpt-image-2 reference
+
+# ─── Universal constraints, appended to every prompt ───────────────────────
+system_suffix: |-
+  Constraints to always apply: no watermarks, no logos, no platform UI;
+  no text or numbers in the image except short phrases wrapped in double
+  quotes; avoid close-ups of human hands and faces; leave generous negative
+  space for caption overlay; style coherence with the rest of the video.
+
+# ─── Structural recipes per use case ───────────────────────────────────────
+structures:
+  chapter_background:
+    label: 章节卡背景（标题烧在它上面）
+    target_aspects: ["9:16", "3:4"]
+    slots: [subject, metaphor, style, palette, lighting, composition]
+    composition_hint: "Upper half of the frame stays empty for title overlay text."
+
+  chapter_title_card:
+    label: 全屏章节标题卡（图本身带文字）
+    target_aspects: ["9:16", "3:4"]
+    slots: [base_design, exact_text_main_in_quotes, exact_text_sub_in_quotes, palette]
+    composition_hint: 'Use double quotes around exact text strings: "CHAPTER 02".'
+
+  broll_fallback:
+    label: B-roll 替代画面（真实素材不够时）
+    target_aspects: ["9:16"]
+    slots: [subject, action, environment, mood, camera, lighting]
+    composition_hint: "Photoreal editorial look; hide faces; medium-wide framing."
+
+  data_visualization:
+    label: 数据可视化插图（不含真实数字）
+    target_aspects: ["9:16", "1:1"]
+    slots: [chart_type, palette, composition]
+    composition_hint: "No numbers, no axis labels — leave space for real data overlay later."
+
+  abstract_concept:
+    label: 抽象概念视觉化（注意力机制 / 复利 / 信息茧房 等）
+    target_aspects: ["9:16", "1:1"]
+    slots: [concept_name, visual_metaphor, style, palette, composition]
+    composition_hint: "Use a concrete metaphor for the abstract idea; isometric or flat-vector tends to read clearly."
+
+# ─── Curated samples — paste-and-use prompts for the most common scenes ────
+samples:
+  - id: attention_mechanism
+    concept: 注意力机制
+    use_case: abstract_concept
+    target_aspect: "9:16"
+    prompt_en: |-
+      An isometric illustration of an "Attention Mechanism": a glowing
+      translucent neural network with floating word tokens, beams of soft
+      cyan light selectively converging from multiple words onto one
+      highlighted token in the center. Flat vector style, navy background,
+      subtle dot grid, no labels. Crisp edges, generous negative space,
+      3/4 isometric view.
+    prompt_cn: |-
+      等距 3/4 视角，发光半透明神经网络浮在深蓝底上，多个词元节点向
+      中央一个高亮节点投射柔和青色光束。扁平矢量风，留白充分，背景
+      点阵网格，无文字标签。
+    why_works: |-
+      Abstract idea → concrete metaphor (light beams converging). Isometric
+      and flat-vector together suppress AI-realism sheen. Explicit "no labels"
+      stops the model from inventing junk text.
+
+  - id: information_bubble
+    concept: 信息茧房
+    use_case: abstract_concept
+    target_aspect: "9:16"
+    prompt_en: |-
+      A wide cinematic shot of a single person seen from behind, sitting
+      cross-legged inside a translucent iridescent soap bubble, surrounded
+      in the dark void by hundreds of dim glowing screens drifting like a
+      school of fish. Only the screens inside the bubble are bright. Shot
+      on 35mm, shallow depth of field, volumetric haze, deep teal-and-amber
+      palette. Photoreal, editorial. No face visible.
+    prompt_cn: |-
+      电影宽镜头，一人背影盘坐在彩虹色肥皂泡中，泡外暗黑虚空漂浮上百
+      块微光屏幕如鱼群，仅泡内屏幕明亮。35mm 浅景深，青琥珀色调，
+      写实编辑摄影风。不露脸。
+    why_works: |-
+      Single back-view person sidesteps face/hand failures. Cinematic
+      lens + volumetric haze swaps "AI realism" for "filmic realism".
+      Color story (teal/amber) gives a consistent palette for the chapter.
+
+  - id: compound_interest
+    concept: 复利
+    use_case: chapter_background
+    target_aspect: "9:16"
+    prompt_en: |-
+      An elegant editorial illustration of "Compound Interest": a single
+      golden seed in the lower-left growing into a fractal tree whose
+      branches recursively duplicate, each branch tipped with a small glowing
+      coin. Cream paper-texture background, hand-drawn ink line plus
+      gold-foil accent. Vertical 9:16. Empty upper half reserved for the
+      video title overlay. The phrase "COMPOUND INTEREST" in small serif
+      caps along the bottom edge. No other text.
+    prompt_cn: |-
+      编辑设计感插图，左下金色种子生长为分形树，枝桠递归复制，每枝末
+      端发光小金币。米色纸纹底，手绘墨线+烫金质感。9:16 竖构图，上半
+      留白给字幕。底部小字衬线大写"COMPOUND INTEREST"。
+    why_works: |-
+      Quoted text gets exact-render treatment (the only string that should
+      appear in the image). Empty upper half is the slot the video overlay
+      will land in. Fractal-recursion visualises the math of compounding.
+
+  - id: data_bars_clean
+    concept: 数据图（不含真数字）
+    use_case: data_visualization
+    target_aspect: "9:16"
+    prompt_en: |-
+      A clean editorial 3D bar chart rising from a soft gray studio floor,
+      bars in a graduated indigo-to-coral gradient, the tallest bar three
+      times the shortest, no axis labels, no numbers, no text. Soft top-down
+      studio lighting, subtle contact shadows, seamless white background,
+      flat-shaded geometric style. Vertical 9:16, lots of headroom above
+      the bars.
+    prompt_cn: |-
+      纯净编辑设计风 3D 柱状图，柱体从软灰摄影棚地面升起，颜色由靛蓝渐
+      变到珊瑚红，最高柱是最低柱的三倍，无任何文字数字。顶光、无缝白
+      底、扁平几何阴影。9:16 竖构图，柱体上方大量留白。
+    why_works: |-
+      Explicit "no numbers, no axis labels" prevents the model inventing
+      garbled charts. Indigo→coral palette stays brand-neutral. Headroom
+      lets the real numbers/captions land in after-effects.
+
+  - id: chapter_title_card_minimal
+    concept: 章节卡 #02
+    use_case: chapter_title_card
+    target_aspect: "9:16"
+    prompt_en: |-
+      A minimal full-bleed title card. Deep midnight-blue paper texture
+      background. A single thin gold horizontal line crossing the lower
+      third. The text "CHAPTER 02" in large elegant serif caps centered
+      above the line; below the line the subtitle "The Compounding Effect"
+      in small thin sans serif. Generous margins, vertical 9:16, no other
+      decoration.
+    prompt_cn: |-
+      极简全屏标题卡。深午夜蓝纸纹底，下三分之一处一条细金色横线。
+      横线上方居中大号衬线大写"CHAPTER 02"，下方小号细无衬线副标题
+      "The Compounding Effect"。大量边距，9:16 竖构图，无其他装饰。
+    why_works: |-
+      Two quoted strings = two exact-render targets. "No other decoration"
+      kills the model's urge to add flourishes. Title typography hierarchy
+      is explicit (large serif caps + small thin sans).
+
+  - id: broll_notebook_morning
+    concept: 早晨工作的笔记本（B-roll 替代）
+    use_case: broll_fallback
+    target_aspect: "9:16"
+    prompt_en: |-
+      Photoreal close-up of hands holding a worn paperback notebook on a
+      wooden desk, soft morning light from a window on the left, dust
+      particles visible in the beam, a cup of black coffee blurred in the
+      foreground bokeh. Shot on Fuji X100V at f/2.0, slight film grain,
+      natural color. No text on the notebook, no logo, no face visible.
+    prompt_cn: |-
+      写实特写：手捧旧平装笔记本放在木桌上，左侧窗户洒进晨光，光束
+      中可见尘埃浮动，前景虚化一杯黑咖啡。富士 X100V f/2.0 拍摄，
+      轻微胶片颗粒，自然色调。笔记本无字，无 logo，不露脸。
+    why_works: |-
+      Concrete camera (Fuji X100V) + concrete aperture (f/2.0) + concrete
+      lighting (morning side-light) is the secret to "not feeling AI".
+      "No text on the notebook" is critical — gpt-image-2 will otherwise
+      print garbled lorem-ipsum on the cover.
+
+  - id: long_tail_effect
+    concept: 长尾效应
+    use_case: abstract_concept
+    target_aspect: "9:16"
+    prompt_en: |-
+      An editorial isometric illustration of "the long tail": a curve
+      shaped like a smooth declining slope, with a tall cluster of glowing
+      bars on the left and a long string of small bars stretching to the
+      right toward the horizon, each tiny bar gently glowing. Off-white
+      paper background, navy and gold palette, subtle paper grain. 9:16
+      vertical, the title area left empty in the top quarter.
+    prompt_cn: |-
+      编辑设计感等距插图：曲线呈平滑下降坡，左侧高耸的发光柱簇，向
+      右延伸成长串的小柱，越远越小且微微发光，直到地平线。米白纸纹
+      底，海军蓝+金色配色。9:16 竖构图，顶部 1/4 留白给标题。
+    why_works: |-
+      Long-tail curve as literal geometry. Tiny bars "glowing" gives
+      visual interest in what would otherwise be a flat tail. Top-quarter
+      empty for the title is a recurring pattern Jay's videos use.
