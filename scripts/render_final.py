@@ -37,6 +37,7 @@ from burn_subtitles import (
     detect_language, escape_ass_text, wrap_subtitle_text,
 )
 from generate_cover_image import generate_cover as generate_cover_image
+from _internal_text_guard import check_visible_text
 
 # --- Caption style presets ---
 CAPTION_PRESETS = {
@@ -511,6 +512,19 @@ def main():
     args = parser.parse_args()
 
     config = load_config(args.config)
+
+    # Guard visible-text fields BEFORE any expensive work — no speed/model/engine/debug
+    # tokens may reach the frame. (User-facing content only; this catches accidents
+    # like "DAY 58 — 1.25x".)
+    check_visible_text(config.get("title"))
+    check_visible_text(config.get("subtitle"))
+    for chapter in config.get("chapters", []) or []:
+        check_visible_text(chapter.get("title") if isinstance(chapter, dict) else chapter)
+    for badge in config.get("text_badges", []) or []:
+        check_visible_text(badge.get("text") if isinstance(badge, dict) else badge)
+    for card in config.get("end_cards", []) or []:
+        check_visible_text(card.get("text") if isinstance(card, dict) else card)
+
     clips = resolve_clips(config)
 
     if not clips:
