@@ -224,8 +224,16 @@ def get_ffmpeg_encode_args(gpu_info=None):
 def detect_whisper_engine():
     """Detect the best available Whisper engine.
 
-    Returns one of: 'faster-whisper', 'openai-whisper', 'none'.
+    Returns one of: 'mlx-whisper', 'faster-whisper', 'openai-whisper', 'none'.
     """
+    # Apple Silicon: prefer MLX so Whisper runs on Metal instead of CPU.
+    if is_apple_silicon():
+        try:
+            import mlx_whisper  # noqa: F401
+            return "mlx-whisper"
+        except ImportError:
+            pass
+
     # Try faster-whisper first
     try:
         import faster_whisper  # noqa: F401
@@ -255,8 +263,7 @@ def recommend_whisper_model(gpu_info=None):
         return "large-v3", "NVIDIA GPU detected, large model runs fast on CUDA"
 
     if gpu_info.get("mps"):
-        # Apple Silicon — large-v3-turbo is ideal
-        return "large-v3-turbo", "Apple Silicon detected, turbo model balances speed and quality"
+        return "large-v3-turbo", "Apple Silicon detected, MLX turbo model balances speed and quality"
 
     if gpu_info.get("qsv"):
         return "medium", "Intel iGPU detected, medium model is the best balance for CPU+iGPU"
@@ -291,8 +298,9 @@ def get_whisper_device(gpu_info=None):
         return "cuda", "float16"
 
     if gpu_info.get("mps"):
-        # faster-whisper doesn't support MPS yet; use CPU with int8
         engine = detect_whisper_engine()
+        if engine == "mlx-whisper":
+            return "mlx", "float16"
         if engine == "openai-whisper":
             return "cpu", "float32"  # openai-whisper on Mac
         return "cpu", "int8"  # faster-whisper CPU
@@ -810,12 +818,14 @@ def check_dependencies():
 
     # Python whisper
     engine = detect_whisper_engine()
-    if engine == "faster-whisper":
+    if engine == "mlx-whisper":
+        results.append(("whisper", "ok", "mlx-whisper (Apple Silicon/Metal)"))
+    elif engine == "faster-whisper":
         results.append(("whisper", "ok", "faster-whisper (recommended)"))
     elif engine == "openai-whisper":
         results.append(("whisper", "ok", "openai-whisper (consider upgrading to faster-whisper)"))
     else:
-        results.append(("whisper", "missing", "Install: pip install faster-whisper (recommended) or pip install openai-whisper"))
+        results.append(("whisper", "missing", "Install: pip install mlx-whisper (Apple Silicon) or pip install faster-whisper"))
 
     # GPU
     gpu = detect_gpu()
@@ -844,7 +854,7 @@ def print_env_report():
         print(f"GPU arch      : {gpu.get('nvidia_arch', 'unknown')}")
     print(f"FFmpeg encoder: {encoder}")
     print(f"Whisper engine: {engine or 'not installed'}")
-    if engine == "faster-whisper":
+    if engine in ("mlx-whisper", "faster-whisper"):
         device, compute = get_whisper_device(gpu)
         print(f"Whisper device: {device} (compute_type={compute})")
     print(f"Recommended model: {model} ({reason})")

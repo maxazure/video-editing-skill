@@ -21,8 +21,11 @@ python3 scripts/utils.py
 
 如果缺少依赖，提示用户安装：
 - **ffmpeg**: `brew install ffmpeg`（macOS）或 `apt install ffmpeg`（Linux/WSL）或下载 Windows 版本
-- **whisper**: `pip install faster-whisper`（推荐，速度快 4 倍）或 `pip install openai-whisper`
-- **中国用户**加速安装：`pip install faster-whisper -i https://pypi.tuna.tsinghua.edu.cn/simple`
+- **whisper**:
+  - **Apple Silicon (M1/M2/M3/M4)**: `pip install mlx-whisper`（推荐，Metal 加速最快）
+  - **NVIDIA / CPU**: `pip install faster-whisper`（推荐，速度快 4 倍）或 `pip install openai-whisper`
+- **中国用户**加速安装（Apple Silicon）：`pip install mlx-whisper -i https://pypi.tuna.tsinghua.edu.cn/simple`
+  其他平台：`pip install faster-whisper -i https://pypi.tuna.tsinghua.edu.cn/simple`
 
 如果项目根目录有 `.venv` 虚拟环境，运行 Python 脚本前先激活：
 ```bash
@@ -32,7 +35,7 @@ source .venv/bin/activate  # macOS/Linux/WSL
 
 ### 平台说明
 
-- **macOS (Apple Silicon)**: 自动使用 VideoToolbox 硬件编码加速，Whisper 推荐 large-v3-turbo 模型
+- **macOS (Apple Silicon)**: 自动使用 VideoToolbox 硬件编码加速；Whisper 引擎自动选 `mlx-whisper`（已安装），推荐 large-v3-turbo 模型（走 `mlx-community/whisper-large-v3-turbo`）
 - **macOS (Intel)**: 使用 VideoToolbox 编码，Whisper 使用 CPU 模式
 - **Linux**: 自动检测 NVIDIA GPU (NVENC)、Intel QSV、AMD AMF
 - **WSL**: 支持，自动检测 Windows 字体路径 (`/mnt/c/Windows/Fonts/`)
