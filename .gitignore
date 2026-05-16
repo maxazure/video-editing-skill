@@ -1,6 +1,11 @@
 # OS
 .DS_Store
 
+# Local-only notes (personal workflow, secrets, scratch — never committed)
+NOTES.local.md
+*.local.md
+.notes/
+
 # Python
 .venv/
 __pycache__/

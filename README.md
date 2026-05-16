@@ -1,487 +1,364 @@
-# Video Editing Skill for OpenClaw
+# Video Editing Skill — 小红书内容引擎
 
-一个基于 AI 的自动视频剪辑 Skill，专为口播/脱口秀/Vlog 类视频设计。
+把 5-15 分钟的原始口播音频 + 一堆无声素材，变成可发布的多平台短视频。
 
-它可以自动将你的视频按每句话切分，去掉口误和卡壳，加上字幕，最终合成一个可以直接发布的短视频。
+不是另一个剪辑工具。是一条 **从口播 → 重组故事 → 平台守门 → 自动丰富 → 渲染 → 三平台导出 → 标题文案** 的端到端流水线，按小红书/抖音/视频号的算法和审核规则调过参。
 
-> 适用于：小红书、抖音、视频号等竖屏短视频平台
+```
+口播音频 + 无声素材
+   │
+   ├─→ transcribe.py            转写 + 词级时间戳 + 口误标记
+   │                            (mlx-whisper / faster-whisper / openai-whisper)
+   │
+   ├─→ rewrite_script.py        LLM 重组为 5 段式 (hook/pain/turn/value[]/cta)
+   │     ↑ 8 hook 模板 + 5 CTA 模板 + 3 故事结构
+   │
+   ├─→ content_guard.py         80+ 条平台雷区 lint (HARD-BLOCK / SOFT-WARN)
+   │     极限词 / 导流 / 医美 / 财富诱导 ...
+   │
+   ├─→ auto_enrich.py           调度 B-roll / 章节卡 / 贴纸 / BGM 卡点
+   │     transition / entity match / silence boundary / beat snap
+   │
+   ├─→ render_final.py          单次编码渲染
+   │     Heavy 字幕 + 自动响度规范化 + speed + 内部 token 守卫
+   │
+   ├─→ multi_export.py          小红书 3:4 / 抖音 9:16 / 视频号 ≤60s
+   │
+   └─→ generate_caption.py      标题 + 200-500 字正文 + 3-6 tags + 发布时段建议
+```
 
-## 🆕 V3 — 小红书赛道优化
+> **适用场景**：daily 短视频、口播为主的内容（创业/AI/职场/效率/Vlog）、要发小红书/抖音/视频号
+> **不适用**：电影感剪辑、纯音乐 MV、需要精细 keyframe 控制的特效视频
 
-V3 在 V2 的基础上把这个工具从「剪辑工具」升级为「小红书内容引擎」。新增能力：
+---
 
-- **Content Guard** ([docs](docs/prompts/16-content-guard.md))：80+ 条平台雷区 lint（广告法极限词、导流外站、医美功效、财富诱导）。导出前自动拦截，避免限流。
-- **Story Engine** ([scripts/rewrite_script.py](scripts/rewrite_script.py))：8 个钩子模板 + 5 个 CTA 模板 + 3 种故事结构（痛点解决/故事反转/清单盘点）。让 LLM 重组成符合小红书爆款公式的 5 段式结构。
-- **Audience Profiles** ([scripts/profiles/](scripts/profiles/))：`tech_pro` / `lifestyle` 等档位预设镜头节奏、字幕密度、BGM 增益、目标比例，一个 `--profile` 即可。
-- **Auto-Enrich** ([docs](docs/prompts/18-auto-enrich.md))：自动调度 B-roll 切片、章节标题卡、emoji 贴纸、BGM 卡点（librosa.beat_track + ±200ms snap）。
-- **Multi-Platform Export** ([docs](docs/prompts/17-multi-platform.md))：一条主视频 → 小红书 3:4 / 抖音 9:16 / 视频号 ≤60s，智能裁切。
-- **Caption Generator** ([scripts/generate_caption.py](scripts/generate_caption.py))：自动生成标题（≤18 字 + 关键词前置）+ 200-500 字正文（emoji 节奏）+ 3-6 个 tag + 发布时段建议。
-- **Internal-Text Guard**：永远不会再把 `1.25x` / 模型名 / 调试 token 烧到画面里。
-- **Heavy-weight font default**：默认走 Source Han Sans SC Heavy / STHeiti Medium，绝不再走 Hiragino W3。
-- **Auto Loudness Norm**：渲染时自动 `dynaudnorm + acompressor + loudnorm` —— 加速后中段不再听不清。
+## 60 秒上手
 
-完整流水线一条命令跑完 → 看 [docs/prompts/15-xhs-daily-tech-video.md](docs/prompts/15-xhs-daily-tech-video.md)。
+```bash
+# 1. 装好依赖（macOS Apple Silicon 为例）
+brew install ffmpeg
+pip install mlx-whisper Pillow
 
-## 功能特性
+# 2. 克隆
+git clone https://github.com/maxazure/video-editing-skill ~/projects/video-editing-skill
+cd ~/projects/video-editing-skill
 
-- **单次编码渲染** — 从原始视频直接到最终输出，只编码一次，无质量损失
-- **语音识别切分** — 支持 faster-whisper（推荐，4x 加速）和 openai-whisper，自动按句子切分
-- **GPU 硬件加速** — 自动检测 NVIDIA NVENC / Apple VideoToolbox / Intel QSV / AMD AMF
-- **自动字幕** — 中英文自动检测，智能折行（英文单词不断行），竖屏位置优化，支持逐词高亮卡拉OK模式
-- **自动封面** — 多种封面风格，支持视频取帧背景、移动端优先大标题、教程型卡片布局，也支持自定义封面 PNG
-- **B-roll 替换** — 指定片段使用替代画面（保留原始音频），自动缩放裁切匹配分辨率
-- **持续叠加层** — 透明 PNG 全程叠加显示（品牌水印、系列标识等）
-- **闪烁圆点** — 录像机 REC 风格的周期性闪烁标志
-- **结尾卡片** — 黑屏文字卡片自动拼接，带淡入淡出效果
-- **背景音乐** — 支持添加 BGM，自动循环、音量控制、结尾淡出，与人声智能混音
-- **静音检测** — 自动识别语音片段间的长停顿/卡壳/口误，辅助 AI 选片决策
-- **音频混合** — 独立音频文件（M4A 等）可与任意画面组合，实现配音+B-roll 剪辑
-- **章节时间轴** — 半透明白色章节进度条，章节名全程显示，当前章节高亮
-- **变速输出** — 同时输出 1x / 1.25x / 1.5x 等多个速率版本，每个都从原始视频直接编码
-- **Rotation 检测** — 自动检测 iPhone 竖屏视频的 rotation 元数据，正确识别显示尺寸
-- **多视频支持** — 同时处理多个视频文件，跨视频混合选择片段
-- **时长对齐** — 自动确保视频/音频流时长一致，避免平台上传时的时长不匹配报错
-- **Remotion 口播生成** — 当只有语音没有画面时，使用 Remotion 生成配合语音的动态视频（TikTok 风格字幕、图文解说、动态文字等）
-- **脱口秀/Standup 视频生成** — 完整的 Remotion 项目，将音频+文稿转为动态文字视频，12 种文字动画效果，自动检测笑点，3 种风格预设
-- **文字徽标** — 在视频中指定时间段显示中心文字（如"开源免费"），支持淡入淡出效果
-- **丰富字体目录** — 内置 14 款免费中英文字体（思源黑体、霞鹜文楷/Lite、站酷系列、Inter、Montserrat 等），一键下载缓存，自动识别得意黑 (Smiley Sans) 等自定义字体
-- **素材库管理** — 自动初始化视频项目目录结构（raw/broll/bgm/assets），双后端索引（JSON + SQLite），自动扫描和分类素材
-- **填充词检测** — 自动识别中英文填充词（嗯/呃/那个/um/uh/like），标记纯填充词片段为建议跳过
-- **AI 智能选片** — AI agent 基于吸引力评分自动推荐最佳片段，长视频自动拆分为多个短视频方案
-- **字幕风格预设** — 6 种字幕样式（normal/karaoke/bold_pop/neon/minimal/yellow_pop）
-- **多平台导出** — 一键输出 9:16（抖音/TikTok）、1:1（Instagram）、16:9（YouTube）多种比例
-- **提示词教程** — 14 个场景化提示词指南（口播处理、素材分析、补录、动画配音、多平台导出、封面、长拆短、字幕风格等），可直接复制使用
-- **跨平台** — 支持 macOS / Linux / WSL / Windows
-- **中国加速** — 自动检测中国区域，使用清华 pip 镜像和 HuggingFace 镜像
+# 3. 环境自检（应该全 ✅ 或 ⚠️ 可选项）
+python3 scripts/utils.py
+
+# 4. 跑一遍测试套件确认 OK
+pytest tests/           # 131 个测试，应该 <2 秒
+```
+
+每天做一条视频的完整模板：**[docs/prompts/15-xhs-daily-tech-video.md](docs/prompts/15-xhs-daily-tech-video.md)**
+
+---
 
 ## 安装
 
-### 方式一：通过 OpenClaw Skills 安装（推荐）
+### 必装
+
+| 依赖 | 用途 | 装法 |
+|---|---|---|
+| `ffmpeg` | 一切视频/音频处理 | macOS: `brew install ffmpeg` · Linux: `apt install ffmpeg` |
+| `python3` ≥3.10 | 跑脚本 | 系统 / pyenv / brew |
+| Whisper | 语音识别 | 见下表 |
+
+### Whisper 引擎（按平台选一种）
+
+| 平台 | 推荐引擎 | 安装命令 |
+|---|---|---|
+| **Apple Silicon (M1/M2/M3/M4)** | `mlx-whisper` | `pip install mlx-whisper` |
+| **NVIDIA GPU (CUDA)** | `faster-whisper` | `pip install faster-whisper` |
+| **Intel / AMD / CPU only** | `faster-whisper` (CPU) | `pip install faster-whisper` |
+| **后备** | `openai-whisper` | `pip install openai-whisper` |
+
+中国用户走清华镜像：
+```bash
+pip install mlx-whisper -i https://pypi.tuna.tsinghua.edu.cn/simple
+```
+
+NVIDIA GPU 配置详见 [docs/install-nvidia.md](#linux-gpu-配置) 段（README 末尾）。
+
+### 可选
+
+| 依赖 | 启用 | 缺时回落 |
+|---|---|---|
+| `Pillow` | 章节卡 PNG 渲染（auto_chapter_cards） | 不能跑章节卡 |
+| `librosa` | BGM 真实节拍检测 | 用 120 bpm 固定网格 |
+| `pyyaml` | profile YAML 读取加速 | 用内置 fallback parser |
+| `spacy + zh_core_web_sm` | 高级 B-roll 命名实体识别（V3.2+ 路线图） | 用关键词列表匹配 |
+
+---
+
+## V3 核心能力
+
+### 🛡️ Content Guard — 平台雷区 lint
+[`scripts/content_guard.py`](scripts/content_guard.py) · [详细文档](docs/prompts/16-content-guard.md)
+
+80+ 条 regex 检查 4 类硬性违规 + 3 类软性警告：
+
+| 级别 | 类别 | 例子 |
+|---|---|---|
+| 🚫 HARD | 广告法极限词 | 最 / 第一 / 唯一 / 万能 / 全网最低 / 遥遥领先 |
+| 🚫 HARD | 导流外站 | 微信 / VX / wx / +V / 加微 / QQ / 手机号 / 抖音 / 二维码 |
+| 🚫 HARD | 医美/医疗 | 治愈 / 根治 / 祛斑 / 抗衰 / 水光针 / 热玛吉 / 医生同款 |
+| 🚫 HARD | 财富诱导 | 年入 X 万 / 躺赚 / 财富自由 / 稳赚不赔 / 零成本 / 暴利 |
+| ⚠️ SOFT | 标题/正文 | 标题 >20 字、`!!!` 连用、emoji 占比 >30%、正文 >800 字 |
+
+被 `render_final.py` / `rewrite_script.py` / `generate_caption.py` 自动调用——HARD 违规导出退出码 2。
+
+### 📖 Story Engine — 让 AI 按小红书爆款公式重组
+[`scripts/rewrite_script.py`](scripts/rewrite_script.py) · [hook 模板](scripts/prompts/hook_templates.yaml) · [CTA 模板](scripts/prompts/cta_templates.yaml)
+
+- **8 个钩子模板**：反常识、痛点共鸣、数字成绩、悬念问句、身份标签、反差对比、利益承诺、场景代入
+- **5 个 CTA 模板**：按小红书 CES 权重（关注 8 > 评论/分享 4 > 收藏/点赞 1）排序
+- **3 种故事结构**：`pain_solve`（干货）/ `story_reversal`（故事）/ `listicle`（盘点）
+
+不绑定任何 LLM 提供商——脚本输出 prompt，你喂给 Claude / ChatGPT，把返回 JSON 喂回脚本验证 + 物化为 `clean_script.md`。
+
+### 🎬 Auto-Enrich — 自动加 B-roll / 章节卡 / 贴纸 / 卡点
+[详细文档](docs/prompts/18-auto-enrich.md)
+
+| 模块 | 触发逻辑 |
+|---|---|
+| [`auto_broll.py`](scripts/auto_broll.py) | 转折词（但是/然而/关键是/重点来了）/ 实体匹配素材库 / 长镜头守卫 |
+| [`auto_chapter_cards.py`](scripts/auto_chapter_cards.py) | `## ` 章节标题 / 静音 ≥1.5s 边界 / Pillow PNG 渲染 |
+| [`beat_sync.py`](scripts/beat_sync.py) | librosa beat_track + ±200ms snap（缺时回落固定网格） |
+| [`auto_stickers.py`](scripts/auto_stickers.py) | 情绪关键词→emoji 池（excited 🚀✨🔥 / doubt 🤔 / data 📈 等） |
+| [`auto_enrich.py`](scripts/auto_enrich.py) | 编排上面四个，输出综合 plan JSON |
+
+### 🎚️ 渲染层（V3 强化）
+[`scripts/render_final.py`](scripts/render_final.py)
+
+| 默认行为 | 触发命令 / 配置 |
+|---|---|
+| Heavy 字幕字体（Source Han Sans Heavy / STHeiti Medium） | `find_chinese_font()` 自动选 |
+| 响度规范化 `dynaudnorm + acompressor + loudnorm` | 默认开启，`--no-loudnorm` 关 |
+| 速度直接生效（不留 1.0× 副本） | `--primary-speed 1.25` |
+| 受众档位预设（节奏/字幕密度/BGM 增益） | `--profile tech_pro` |
+| 内部 token 拦截 | 自动；任何 `1.25x`/`mlx-whisper`/`loudnorm` 出现在画面文本字段都退出 |
+| 平台 lint | 自动；`--no-content-guard` 关 |
+| 字幕风格 | `--subtitle-style normal/karaoke/bold_pop/neon/minimal/yellow_pop` |
+
+### 📦 多平台导出
+[`scripts/multi_export.py`](scripts/multi_export.py) · [详细文档](docs/prompts/17-multi-platform.md)
+
+| 平台 | 尺寸 | 时长 | 说明 |
+|---|---|---|---|
+| 小红书 / RED | 1080×1440 (3:4) | — | 占满 feed 缩略图 (+40% 显示面积) |
+| 抖音 / TikTok | 1080×1920 (9:16) | — | 全屏沉浸 |
+| 微信视频号 | 1080×1920 (9:16) | ≤60s | 自动截断；社交链分发 |
+
+### ✍️ Caption Generator — 标题 + 正文 + 标签
+[`scripts/generate_caption.py`](scripts/generate_caption.py)
+
+无 LLM 依赖，纯规则：
+- 标题 ≤18 字，前 18 字含 2 个 TF-IDF 关键词
+- 正文 200-500 字，每 ~60 字一个 emoji（`📌✨💡🔥👇✅🚀📈`）
+- 3-6 个 # tag，混合垂类 + 长尾（避免纯热词堆叠被判搬运）
+- 发布时段建议来自所选 audience profile
+
+### 👤 受众 Profile
+[`scripts/profiles/`](scripts/profiles/)
+
+预设镜头节奏、字幕密度、BGM 增益、目标比例：
+
+- `tech_pro` — AI/创业/效率向（90s 默认，每 2.5s 切镜，BGM -16dB，3:4 小红书首选）
+- `lifestyle` — vlog/穿搭/家居向（60s 默认，每 2.0s 切镜，BGM -10dB）
+
+字体预设（5 套）在 `profiles/_fonts.yaml`：得意黑 / 阿里妈妈数黑体 / 阿里妈妈方圆体 / 思源黑体 Heavy / 奶酪体。
+
+---
+
+## 日常工作流
+
+完整命令链见 [**docs/prompts/15-xhs-daily-tech-video.md**](docs/prompts/15-xhs-daily-tech-video.md)。
+
+简化版（每天替换 `<NN>` 和 `<主题>`）：
 
 ```bash
-openclaw skills add https://github.com/maxazure/video-editing-skill.git
+DAY=NN
+WORK=~/Movies/xiaohongshu/day$DAY
+SKILL=~/projects/video-editing-skill
+
+# 1. 转写
+python3 $SKILL/scripts/transcribe.py $WORK/origin/voice.mp3 \
+  --word-timestamps --detect-fillers
+
+# 2. 重组（手动喂 prompt 给 LLM，落地 JSON 后回放）
+python3 $SKILL/scripts/rewrite_script.py \
+  --transcript $WORK/work/transcript.json --emit-prompt > $WORK/work/prompt.md
+# ...LLM 输出 work/llm.json 后...
+python3 $SKILL/scripts/rewrite_script.py \
+  --transcript $WORK/work/transcript.json \
+  --llm-output $WORK/work/llm.json \
+  --output $WORK/work/clean_script.md
+
+# 3. 自动丰富
+python3 $SKILL/scripts/auto_enrich.py \
+  --transcript $WORK/work/transcript.json \
+  --clean-script $WORK/work/clean_script.md \
+  --bgm $WORK/origin/bgm.mp3 \
+  --output $WORK/work/enrich_plan.json
+
+# 4. 渲染
+python3 $SKILL/scripts/render_final.py \
+  --config $WORK/work/render_config.json \
+  --profile tech_pro \
+  --primary-speed 1.25 \
+  --subtitle-style karaoke \
+  --output $WORK/output/day${DAY}_master.mp4
+
+# 5. 多平台
+python3 $SKILL/scripts/multi_export.py \
+  $WORK/output/day${DAY}_master.mp4 --output-dir $WORK/output/
+
+# 6. 文案
+python3 $SKILL/scripts/generate_caption.py \
+  --script $WORK/work/clean_script.md --profile tech_pro \
+  --output $WORK/output/day${DAY}_caption.json
 ```
 
-或手动克隆到 OpenClaw skills 目录：
+---
+
+## 测试
 
 ```bash
-git clone https://github.com/maxazure/video-editing-skill.git ~/.openclaw/skills/video-editing
+pytest tests/           # 131 测试，<2 秒
 ```
 
-### 方式二：手动克隆
-
+按模块跑：
 ```bash
-git clone https://github.com/maxazure/video-editing-skill.git
-cd video-editing-skill
+pytest tests/test_content_guard.py -v       # 80+ 规则的 38 个测试
+pytest tests/test_rewrite_script.py -v      # Story Engine
+pytest tests/test_auto_broll.py -v          # B-roll 调度
+pytest tests/test_multi_export.py -v        # 多平台比例转换
+pytest tests/test_generate_caption.py -v    # 文案合成
 ```
 
-### 安装系统依赖
-
-**macOS：**
-```bash
-brew install ffmpeg
-```
-
-**Ubuntu/Debian/WSL：**
-```bash
-sudo apt install ffmpeg fonts-noto-cjk
-```
-
-**Windows：**
-建议使用 WSL2 环境。在 WSL 中按 Ubuntu 方式安装即可。
-
-### 安装 Python 依赖
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate  # Windows WSL 同样使用此命令
-pip install faster-whisper  # 推荐，速度快 4 倍
-```
-
-中国用户加速安装：
-```bash
-pip install faster-whisper -i https://pypi.tuna.tsinghua.edu.cn/simple
-```
-
-> Whisper 模型首次运行时会自动下载。中国用户会自动使用 HuggingFace 镜像 (hf-mirror.com)。
-
-### 验证安装
-
-```bash
-python3 scripts/utils.py  # 运行环境诊断
-```
-
-这会输出完整的环境报告：平台、GPU（包括显卡型号和架构代次）、编码器、Whisper 引擎、推荐模型等。
-
-### Linux GPU 配置（NVIDIA / Intel Arc）
-
-不同显卡需要不同的 CUDA 和依赖版本，详见下表：
-
-| 显卡系列 | 架构 | CUDA Toolkit | 驱动版本 | CTranslate2 | 计算精度 | Whisper 引擎 |
-|---------|------|-------------|---------|-------------|---------|-------------|
-| RTX 40xx | Ada Lovelace (sm_89) | >= 12.4 | >= 535 | >= 4.5.0 | float16 / int8 均可 | faster-whisper |
-| RTX 50xx | Blackwell (sm_120) | >= 12.8 | >= 565 | >= 4.7.1 | **float16**（推荐） | faster-whisper |
-| Intel Arc | Xe HPG / Battlemage | N/A | i915 | N/A | N/A | OpenVINO 或 whisper.cpp+SYCL |
-
-**NVIDIA RTX 40 系列：** 开箱即用，标准安装 `pip install faster-whisper` 即可。
-
-**NVIDIA RTX 50 系列（5060/5070/5080/5090）：**
-```bash
-# 需要 CUDA 12.8+ 和最新 CTranslate2
-pip install faster-whisper>=1.1.0
-pip install --upgrade ctranslate2>=4.7.1
-
-# 工具会自动检测 50 系列并使用 float16 精度，避免 INT8 cuBLAS 报错
-```
-
-**Intel Arc 显卡（A770/A750/B580）：**
-faster-whisper 不支持 Intel Arc GPU 加速。推荐使用 OpenVINO：
-```bash
-pip install openvino openvino-genai
-```
-或编译 whisper.cpp 并启用 SYCL 后端。详细配置见 [SKILL.md](./SKILL.md) 中的「Linux GPU 配置指南」。
-
-## 素材库管理
-
-首次使用时，初始化项目素材目录结构：
-
-```bash
-python3 scripts/media_library.py init
-```
-
-这会创建：
-```
-media/
-├── raw/      — 原始素材
-├── broll/    — B-roll 素材
-├── bgm/      — 背景音乐
-├── assets/   — 叠加素材（水印、Logo）
-└── output/   — 输出目录
-```
-
-扫描并建立索引：
-```bash
-python3 scripts/media_library.py scan     # 扫描并索引
-python3 scripts/media_library.py status   # 查看素材库状态
-python3 scripts/media_library.py search "关键词"  # 搜索素材
-```
-
-索引后端自动选择：
-- **< 200 个文件** → JSON 索引（`media_index.json`）
-- **≥ 200 个文件** → 自动升级为 SQLite（`media_index.db`）
-- 手动升级：`python3 scripts/media_library.py upgrade`
-
-## 使用方式
-
-### 配合 OpenClaw / Claude Code 使用（推荐）
-
-安装完依赖后，用自然语言告诉 AI：
-
-```
-帮我剪一下 videos/ 目录下的视频，按句子切分，去掉口误，加上字幕
-```
-
-AI 会自动调用各个脚本，完成整个剪辑流程。
-
-### 手动使用
-
-#### Step 1: 提取音频
-
-```bash
-python3 scripts/extract_audio.py "your_video.mp4"
-# 输出: your_video_audio.wav
-```
-
-#### Step 2: 语音识别
-
-```bash
-source .venv/bin/activate
-python3 scripts/transcribe.py "your_video_audio.wav" --model auto --language zh --detect-fillers
-# 输出: your_video_transcript.json
-
-# 如需卡拉OK逐词高亮字幕，加 --word-timestamps：
-python3 scripts/transcribe.py "your_video_audio.wav" --model auto --language zh --word-timestamps
-```
-
-`--detect-fillers` 会自动检测填充词（嗯、呃、那个、um、uh 等）并标记纯填充词片段。
-
-`--silence-threshold 1.0` 设置静音检测阈值（秒），低于此间隔的停顿不标记，设为 0 禁用静音检测。
-
-`--model auto` 会根据硬件自动选择最佳模型：
-
-| 硬件 | 自动选择 | 原因 |
-|------|---------|------|
-| NVIDIA GPU | large-v3 | CUDA 加速，大模型也很快 |
-| Apple Silicon | large-v3-turbo | 速度与质量的最佳平衡 |
-| Intel/AMD 集显 | medium | CPU+iGPU 的最佳平衡 |
-| 纯 CPU | small | 速度优先 |
-
-#### Step 3: 单次渲染（推荐）
-
-创建渲染配置 `render_config.json`：
-
-```json
-{
-  "clips": [
-    {"video": "your_video.mp4", "segment_id": 1, "transcript": "your_video_transcript.json"},
-    {"video": "your_video.mp4", "segment_id": 2, "transcript": "your_video_transcript.json"},
-    {"video": "your_video.mp4", "segment_id": 5, "transcript": "your_video_transcript.json",
-     "broll": "cityscape.mp4", "broll_start": 10.0}
-  ],
-  "title": "封面标题",
-  "subtitle": "副标题（可选）",
-  "cover_style": "news",
-  "cover_image": "custom_cover.png",
-  "cover_use_frame": false,
-  "video_overlay": "overlay.png",
-  "rec_blink": {"dot_image": "dot.png", "x": 55, "y": 66, "period": 1.0},
-  "end_cards": [
-    {"text": "感谢观看\n更多内容敬请期待", "duration": 3.5}
-  ],
-  "bgm": "music/chill-background.mp3",
-  "bgm_volume": 0.15,
-  "bgm_fade_out": 3.0,
-  "subtitle_style": "karaoke",
-  "subtitle_highlight_color": "#FFFF00",
-  "subtitle_base_color": "#FFFFFF",
-  "subtitle_base_alpha": "80",
-  "cover_duration": 3.0,
-  "text_badges": [
-    {"text": "开源免费", "start": 5.0, "end": 10.0, "fade_in": 200, "fade_out": 200}
-  ],
-  "chapters": [
-    {"title": "开场", "start": 0.0, "end": 30.0},
-    {"title": "正题", "start": 30.0, "end": 90.0}
-  ]
-}
-```
-
-**配置字段说明**：
-
-| 字段 | 说明 | 必填 |
-|------|------|------|
-| `clips[].broll` | B-roll 视频路径，替换该片段的画面（保留原始音频） | 否 |
-| `clips[].broll_start` | B-roll 截取起始时间（秒），默认 0.0 | 否 |
-| `cover_image` | 自定义封面 PNG 路径，优先于自动生成封面 | 否 |
-| `video_overlay` | 透明 PNG 叠加层路径，全程显示（需 RGBA 格式） | 否 |
-| `rec_blink` | 闪烁圆点配置（dot_image/x/y/period） | 否 |
-| `end_cards` | 结尾黑屏卡片数组（text/duration），text 用 `\n` 换行 | 否 |
-| `bgm` | 背景音乐文件路径（MP3/M4A/WAV），自动循环 | 否 |
-| `bgm_volume` | BGM 音量 0.0-1.0，默认 0.15 | 否 |
-| `bgm_fade_out` | BGM 结尾淡出时长（秒），默认 3.0 | 否 |
-| `subtitle_style` | 字幕风格：`"normal"`（默认）或 `"karaoke"`（逐词高亮） | 否 |
-| `subtitle_highlight_color` | 卡拉OK高亮色，默认 `"#FFFF00"`（黄色） | 否 |
-| `subtitle_base_color` | 卡拉OK未播报文字颜色，默认 `"#FFFFFF"` | 否 |
-| `subtitle_base_alpha` | 卡拉OK未播报文字透明度（00-FF），默认 `"80"` | 否 |
-| `cover_duration` | 封面冻结帧时长（秒），默认 3.0 | 否 |
-| `text_badges` | 文字徽标数组（text/start/end/fade_in/fade_out），在画面中心显示定时文字 | 否 |
-
-字幕风格预设：`--subtitle-style` 支持 `normal`、`karaoke`、`bold_pop`、`neon`、`minimal`、`yellow_pop`
-
-多平台导出：
-```bash
-python3 scripts/render_final.py --config render_config.json --output final.mp4 \
-  --formats vertical square horizontal
-```
-同时输出 9:16、1:1、16:9 三种比例视频。
-
-渲染：
-
-```bash
-python3 scripts/render_final.py --config render_config.json --output final.mp4 --speed 1.25 1.5 \
-  --cover-duration 3.0 --cleanup
-```
-
-输出：
-- `final.mp4`（原速）
-- `final_1_25x.mp4`（1.25 倍速）
-- `final_1_5x.mp4`（1.5 倍速）
-
-每个版本都从原始视频直接编码，字幕 + 封面 + 章节时间轴在一次 ffmpeg 命令中完成。
-
-#### Step 3 备选: 导出剪映工程（免渲染）
-
-如果你想在剪映中继续编辑（调色、加特效、精修转场），可以直接导出剪映工程文件：
-
-```bash
-python3 scripts/export_capcut.py --config render_config.json --output ./my_draft
-```
-
-导出内容包括：片头封面、所有视频片段、字幕、结尾卡片、BGM、转场。
-
-使用方式：
-1. 将 `my_draft` 文件夹复制到剪映草稿目录（macOS: `~/Movies/JianyingPro/User Data/Projects/com.lveditor.draft/`）
-2. 打开剪映，在草稿列表中即可看到并编辑
-
-#### Step 3.5: 单独生成封面预览（可选）
-
-如果你想先看封面效果，再决定标题或风格，可以直接生成 PNG：
-
-```bash
-python3 scripts/generate_cover_image.py origin/video1.mp4 \
-  --title "告别剪映" \
-  --subtitle "AI 一键剪口播" \
-  --style news \
-  --use-frame \
-  --frame-timestamp 00:10:00 \
-  --output cover_preview.png
-```
-
-可选风格：
-- `bold`
-- `news`
-- `frame`
-- `gradient`
-- `minimal`
-- `white`
-- `techcard`
-
-封面排版规则：
-- 标题按**单行约 8 个汉字**设计，优先保证手机缩略图可读性
-- 英文/数字按**约半个汉字宽度**估算
-- 副标题字号默认按标题的**约 50%**
-
-选图建议：
-- 录屏/软件教程优先试 `techcard` 或 `news`
-- 画面太杂时，优先纯底风格 `bold` / `white`
-- `--frame-timestamp` 可指定更合适的取帧时间，不必死用第一帧
-
-#### Step 3 备选: 分步流程（仅用于预览）
-
-> 注意：分步流程会产生多次重编码，**不建议用于最终输出**。仅用于快速预览单个片段效果。
-
-```bash
-python3 scripts/split_video.py "your_video.mp4" "your_video_transcript.json"
-python3 scripts/burn_subtitles.py "your_video_clips" "your_video_transcript.json"
-python3 scripts/merge_clips.py "your_video_clips_subtitled" --select "1-5,8" --output "preview.mp4"
-```
+---
 
 ## 提示词教程
 
-项目附带 14 个场景化提示词指南，覆盖从素材到发布的完整流程。每个场景都给出了**可以直接复制使用的提示词**。
+| # | 主题 | 何时用 |
+|---|---|---|
+| 01 | [口播素材处理](docs/prompts/01-oral-broadcast.md) | 第一次入门，完整 V2 流程 |
+| 06 | [多平台导出（V2 版）](docs/prompts/06-multi-platform.md) | 简易多比例（V3 推荐看 17） |
+| 14 | [导出剪映/CapCut](docs/prompts/14-export-capcut.md) | 想在剪映里继续手工调 |
+| **15** | **[V3 完整流水线](docs/prompts/15-xhs-daily-tech-video.md)** | **每天做一条小红书视频 — 推荐入口** |
+| **16** | **[Content Guard](docs/prompts/16-content-guard.md)** | **担心标题/正文限流** |
+| **17** | **[三平台导出](docs/prompts/17-multi-platform.md)** | **一次发小红书/抖音/视频号** |
+| **18** | **[Auto-Enrich](docs/prompts/18-auto-enrich.md)** | **想让视频更"有质感"** |
 
-详见 [docs/prompts/README.md](docs/prompts/README.md)，快速索引：
+完整列表见 [docs/prompts/README.md](docs/prompts/README.md)。
 
-| 场景 | 说明 |
-|------|------|
-| [口播素材处理](docs/prompts/01-oral-broadcast.md) | 从拍摄素材到发布短视频的完整流程 |
-| [分析素材](docs/prompts/02-analyze-material.md) | AI 分析多条素材，给出剪辑建议 |
-| [补录视频](docs/prompts/03-reshoot-video.md) | AI 生成补录清单，补录后继续剪辑 |
-| [补录音频](docs/prompts/04-reshoot-audio.md) | 只替换声音，画面不变 |
-| [动画配音](docs/prompts/05-animation-voiceover.md) | Remotion 把录音变成动画解说视频 |
-| [多平台导出](docs/prompts/06-multi-platform.md) | 一键导出多比例版本 |
-| [封面生成](docs/prompts/07-cover.md) | 多种风格封面 |
-| [长视频拆短](docs/prompts/08-long-to-short.md) | 10 分钟长视频拆成多条短视频 |
-| [背景音乐和片尾](docs/prompts/09-bgm-endcard.md) | 添加 BGM、片尾卡片 |
-| [B-roll 替换](docs/prompts/10-broll.md) | 用其他画面替换口播片段 |
-| [批量处理](docs/prompts/11-batch.md) | 批量处理多条素材 |
-| [字幕风格](docs/prompts/12-subtitle-style.md) | 6 种字幕风格，卡拉OK逐词高亮 |
-| [提示词技巧](docs/prompts/13-tips.md) | 写好提示词的要点和常见问题 |
-| [导出剪映工程](docs/prompts/14-export-capcut.md) | 导出剪映/CapCut 草稿免渲染编辑 |
+---
 
-## 目录结构
+## 平台支持
+
+| 平台 | Whisper | 编码器 | 备注 |
+|---|---|---|---|
+| **macOS Apple Silicon** | mlx-whisper (Metal) | VideoToolbox | 主开发平台。large-v3-turbo 推荐 |
+| macOS Intel | faster-whisper (CPU) | VideoToolbox | medium 模型推荐 |
+| Linux + NVIDIA | faster-whisper (CUDA) | NVENC | RTX 40 系直通；50 系需 float16 |
+| Linux + Intel Arc | faster-whisper (CPU) | QSV | iGPU/Arc 都走 QSV |
+| WSL | faster-whisper | NVENC（如有） | Windows 字体自动从 /mnt/c |
+| Windows | faster-whisper | QSV/AMF | 推荐 WSL2 |
+
+中国用户：自动检测中国 locale，pip 走清华镜像、HuggingFace 走 hf-mirror.com，也可 `--mirror` 强制启用。
+
+---
+
+## 架构
+
+每个脚本一个明确职责。没有"god script"。
 
 ```
-video-editing-skill/
-├── README.md                  # 本文件
-├── SKILL.md                   # Skill 定义（OpenClaw / AI agent 读取）
-├── REMOTION_VOICEOVER.md      # Remotion 口播视频生成参考文档
-├── docs/
-│   ├── plans/                 # 开发计划文档
-│   └── prompts/               # 提示词教程（14 个场景指南）
-├── scripts/
-│   ├── utils.py               # 共享工具（平台/GPU/字体/镜像/rotation 检测）
-│   ├── extract_audio.py       # 音频提取
-│   ├── transcribe.py          # 语音识别（faster-whisper / openai-whisper）
-│   ├── render_final.py        # 单次编码渲染（推荐，字幕+封面+章节+变速）
-│   ├── export_capcut.py       # 导出剪映/CapCut 工程文件（免渲染）
-│   ├── generate_cover_image.py # 封面图片生成（7 种风格，headless Chrome 渲染）
-│   ├── media_library.py       # 素材库管理（初始化/扫描/索引/搜索）
-│   ├── generate_standup_timeline.py  # 脱口秀时间轴生成（transcript → timeline.json）
-│   ├── split_video.py         # 视频切分（预览用）
-│   ├── burn_subtitles.py      # 字幕烧录（预览用）
-│   ├── merge_clips.py         # 视频合成（预览用）
-│   ├── generate_cover.py      # 封面生成（旧版，预览用）
-│   └── add_chapter_bar.py     # 章节时间轴（预览用）
-├── remotion-standup/          # Remotion 脱口秀视频项目
-│   ├── package.json
-│   ├── tsconfig.json
-│   └── src/
-│       ├── Root.tsx            # Remotion 入口组件
-│       ├── StandupVideo.tsx    # 主视频组件
-│       ├── types.ts            # 类型定义
-│       └── components/         # 动画文字、波形、背景、进度条等组件
-├── fonts/                     # 字体缓存（自动下载）
-└── videos/                    # 用户视频工作目录
+scripts/
+├── utils.py                    平台/字体/编码器自检
+├── _internal_text_guard.py     内部 token 拦截器
+├── transcribe.py               Whisper 转写
+├── extract_audio.py            音频提取
+├── split_video.py              按句切片（V2 兼容）
+├── media_library.py            素材库索引（CLIP-ready）
+├── merge_clips.py              合并片段（V2 兼容）
+├── content_guard.py            平台雷区 lint                   [V3]
+├── rewrite_script.py           Story Engine                    [V3]
+├── auto_broll.py               B-roll 调度                      [V3]
+├── auto_chapter_cards.py       章节卡渲染                       [V3]
+├── beat_sync.py                BGM 卡点                         [V3]
+├── auto_stickers.py            情绪→贴纸                        [V3]
+├── auto_enrich.py              丰富度编排                       [V3]
+├── render_final.py             单次编码渲染（V3 强化）
+├── burn_subtitles.py           字幕 ASS 生成
+├── generate_cover.py           封面生成
+├── generate_cover_image.py     Chrome-rendered 封面
+├── add_chapter_bar.py          章节进度条
+├── export_capcut.py            剪映工程导出
+├── generate_standup_timeline.py Remotion timeline
+├── multi_export.py             三平台导出                       [V3]
+├── generate_caption.py         标题/正文/标签                   [V3]
+├── prompts/
+│   ├── hook_templates.yaml     8 钩子模板                       [V3]
+│   └── cta_templates.yaml      5 CTA 模板                       [V3]
+└── profiles/
+    ├── __init__.py             加载器                           [V3]
+    ├── tech_pro.yaml           AI/创业 profile                   [V3]
+    ├── lifestyle.yaml          vlog profile                      [V3]
+    └── _fonts.yaml             5 套字体预设                     [V3]
 ```
 
-## Remotion 脱口秀/Standup 视频生成
+实施记录：[docs/plans/2026-05-17-v3-xhs-improvements.md](docs/plans/2026-05-17-v3-xhs-improvements.md)
 
-当你只有音频和文稿（没有摄像头画面）时，可以使用 Remotion 生成动态文字视频：
+---
+
+## Linux GPU 配置
+
+### NVIDIA 40 系（RTX 4060/4070/4080/4090）
+
+开箱即用，CUDA 12.4+ + 驱动 535+：
 
 ```bash
-# 1. 从 transcript 生成时间轴
-python3 scripts/generate_standup_timeline.py transcript.json --style default --output timeline.json
-
-# 2. 用 Remotion 渲染视频
-cd remotion-standup
-npm install
-npx remotion render src/index.ts StandupVideo --props='{"timelineFile":"../timeline.json","audioFile":"../audio.wav"}' out.mp4
+sudo apt install nvidia-driver-535 nvidia-cuda-toolkit
+pip install faster-whisper
+nvidia-smi   # 验证
 ```
 
-**文字动画效果（12 种）**：fadeIn, springIn, scaleUp, bounce, shake, slam, wave, glitch, rotateIn, splitReveal, typewriter, scaleDown
+### NVIDIA 50 系（RTX 5070/5080/5090）
 
-**风格预设**：
-- `default` — 标准节奏，适合大多数内容
-- `calm` — 平缓节奏，适合叙事/深度内容
-- `energetic` — 快节奏，适合脱口秀/搞笑内容
+需要最新 CUDA + 强制 float16 防止 INT8 cuBLAS 报错。`scripts/utils.py` 自动检测 50 系列并使用 float16 精度。
 
-自动检测短句、感叹号和喜剧关键词，应用强调动画和笑点高亮。
+### Intel Arc / iGPU
 
-> 详细的 Remotion 口播视频参考见 [REMOTION_VOICEOVER.md](REMOTION_VOICEOVER.md)
-
-## 技术细节
-
-| 组件 | 技术 |
-|------|------|
-| 语音识别 | faster-whisper (CTranslate2) / OpenAI Whisper |
-| 视频渲染 | ffmpeg filter_complex: select/trim + concat + ASS + overlay + color |
-| 视频编码 | NVENC / VideoToolbox / QSV / AMF / libx264（自动检测）|
-| 编码策略 | 固定比特率 `-b:v 12M`（VideoToolbox）/ `-cq 20`（NVENC）/ preset medium (CPU) |
-| 字幕渲染 | ASS 格式 + Noto Sans SC / PingFang SC / Microsoft YaHei |
-| 封面生成 | Headless Chrome + HTML/CSS 渲染，7 种预设风格 |
-| 动态视频 | Remotion (React) — 脱口秀/口播场景，12 种文字动画 |
-| 字体系统 | 14 款内置字体（8 CJK + 6 英文），自动下载 + CDN 加速 |
-| 平台检测 | macOS / Linux / WSL / Windows 自动识别 |
-
-### 硬件加速编码器优先级
-
-```
-NVIDIA NVENC > Apple VideoToolbox > Intel QSV > AMD AMF > CPU libx264
+走 QSV 编码：
+```bash
+pip install faster-whisper   # CPU 模式跑 Whisper
+ffmpeg -hwaccels  # 应该列出 qsv
 ```
 
-### 字幕字体优先级
+详细分卡指南：`python3 scripts/utils.py` 会按你的硬件给具体提示。
 
-```
-自定义字体 > Noto Sans SC (自动下载) > PingFang SC (macOS) > Microsoft YaHei (Windows/WSL) > fc-match
-```
+---
 
-中国用户字体下载使用 jsDelivr CDN 加速，无需访问 GitHub。
+## 贡献
 
-### 中国用户优化
+V3 路线图后续可能加：
 
-- pip 安装自动使用清华镜像
-- Whisper 模型自动使用 hf-mirror.com 下载
-- 字体下载使用 jsDelivr CDN 备用源
-- 可通过 `--mirror` 参数或 `USE_CN_MIRROR=1` 环境变量强制启用
+- spaCy 中文 NER + CLIP embedding → 更精准的 B-roll 匹配
+- librosa beat → 真节拍替代固定网格回落
+- zxing-cpp QR 扫描 + 外站 logo OCR → 画面级 lint
+- 自动接 `enrich_plan.json` 到 `render_final.py`（目前还要手工塞 cues）
+- minimax-image 集成（AI 生图补抽象概念画面）
 
-## 系统要求
+PR 欢迎。新功能必须带测试，每个新脚本至少 5 个测试。
 
-- macOS / Linux / WSL / Windows
-- Python 3.8+
-- FFmpeg（需包含 libass、libfreetype）
-- 磁盘空间：约 1-3GB（取决于 Whisper 模型大小）
+---
 
 ## License
 
-MIT
+MIT.
+
+---
+
+_BestAI Labs · 2026_
