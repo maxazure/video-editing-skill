@@ -1,13 +1,82 @@
 ---
 name: video-editing
-description: "Automated video editing skill for talk/vlog/standup videos. Use when: cutting video, splitting video into sentences, merging video clips, extracting audio, transcribing speech, auto-editing oral presentation videos, combining selected sentence clips into a final video, generating video cover/thumbnail with title, B-roll cutaway editing, persistent video overlay/watermark, blinking REC indicator, ending title cards, multi-source audio mixing, exporting to JianYing/CapCut project for further editing, generating voiceover videos with Remotion (audio-only to video with animated visuals/subtitles). Requires ffmpeg and whisper. Remotion workflow additionally requires Node.js and npm."
-argument-hint: "Provide the path(s) to video file(s) to process"
+description: "Xiaohongshu/RED-tuned content engine for short-form video. Use when: producing daily 小红书/抖音/视频号 videos from raw voice-over + b-roll materials; transcribing speech with mlx-whisper/faster-whisper; rewriting transcripts into 5-field (hook/pain/turn/value/cta) story structures using 8 hook + 5 CTA templates; running platform-rule content lint (80+ regex for 广告法极限词/导流外站/医美/财富诱导); auto-scheduling B-roll cutaways, chapter title cards, emoji stickers, and BGM beat-sync (librosa); rendering with audience profiles (tech_pro/lifestyle), Heavy CJK fonts, automatic loudness normalisation (dynaudnorm+compressor+loudnorm), primary-speed control, karaoke/word-level subtitles; exporting one master into three platform deliverables (xhs 3:4 / douyin 9:16 / wxch ≤60s); generating titles + 200-500 char captions + tags + publish-time hints; exporting to JianYing/CapCut; generating Remotion voiceover animations. Refuses pipeline-internal tokens (speed multipliers, model names, debug strings) on output frames. Requires ffmpeg and a whisper backend (mlx-whisper on Apple Silicon, faster-whisper elsewhere). Pillow needed for chapter cards. librosa optional for real beat detection. Remotion workflow additionally requires Node.js."
+argument-hint: "Provide the path(s) to voice-over audio + optional b-roll videos to process"
 metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
 ---
 
-# Auto Video Editing（自动视频剪辑）
+# Video Editing Skill — 小红书内容引擎（V3）
 
-根据语音内容，将口播/脱口秀类视频按句子自动切分，然后按用户选择合成带字幕的最终视频。
+不是另一个剪辑工具。是一条 **从口播 → 重组故事 → 平台守门 → 自动丰富 → 渲染 → 三平台导出 → 标题文案** 的端到端流水线，按小红书/抖音/视频号的算法和审核规则调过参。
+
+## V3 完整流水线（一图看懂）
+
+```
+口播音频 + 无声素材
+   │
+   ├─→ transcribe.py            转写 + 词级时间戳 + 口误标记
+   ├─→ rewrite_script.py        LLM 重组 5 段式（hook/pain/turn/value/cta）
+   ├─→ content_guard.py         80+ 条平台雷区 lint
+   ├─→ auto_enrich.py           B-roll / 章节卡 / 贴纸 / BGM 卡点
+   ├─→ render_final.py          单次编码渲染（Heavy 字幕 + 响度规范化）
+   ├─→ multi_export.py          小红书 3:4 / 抖音 9:16 / 视频号 ≤60s
+   └─→ generate_caption.py      标题 + 200-500 字正文 + 3-6 tags + 发布时段
+```
+
+**每天做一条短视频的完整提示词模板**：[docs/prompts/15-xhs-daily-tech-video.md](docs/prompts/15-xhs-daily-tech-video.md)（推荐入口）。
+
+## V3 新增脚本一览（按调用顺序）
+
+| 脚本 | 职责 | 关键 CLI |
+|---|---|---|
+| `_internal_text_guard.py` | 拦截内部 token 进画面 | 内部模块，render_final 自动调 |
+| `content_guard.py` | 平台雷区 lint | `--script` `--title` `--caption` `--strict` |
+| `rewrite_script.py` | LLM 5 段式重组 + 验证 | `--transcript` `--structure` `--hook-template` `--emit-prompt` / `--llm-output` |
+| `auto_broll.py` | B-roll 调度 | `--transcript` `--assets` `--max-single-shot` |
+| `auto_chapter_cards.py` | 章节卡 PNG | `--script` `--audio` `--style` `--output-dir` |
+| `auto_stickers.py` | 情绪→贴纸 | `--transcript` `--min-interval` |
+| `beat_sync.py` | BGM 卡点 | `--bgm` `--cuts` `--window` |
+| `auto_enrich.py` | 编排上面四个 | `--transcript` `--clean-script` `--bgm` `--output` |
+| `multi_export.py` | 三平台导出 | `<input.mp4>` `--platforms xhs douyin wxch` |
+| `generate_caption.py` | 标题/正文/tag | `--script` `--profile` `--output` |
+| `profiles/__init__.py` | 受众档位加载 | `load_profile("tech_pro")` |
+
+## V3 新增 render_final.py 标志位
+
+| 标志 | 默认 | 说明 |
+|---|---|---|
+| `--profile tech_pro` | 关 | 加载 [scripts/profiles/tech_pro.yaml](scripts/profiles/tech_pro.yaml) 的节奏/字幕/BGM 默认值 |
+| `--primary-speed 1.25` | 1.0 | 主输出速度。`--speed` 仍可加额外变种 |
+| `--no-loudnorm` | 不传 = 开启响度规范化 | 关闭 `dynaudnorm + acompressor + loudnorm` |
+| `--no-content-guard` | 不传 = 开启 lint | 关闭平台规则检查（不推荐） |
+| `--subtitle-style karaoke` | normal | 逐词卡拉 OK 字幕 |
+
+## V3 Day58 production 教训（已编码进默认行为）
+
+| 教训 | V3 怎么解决 |
+|---|---|
+| 顶部漏 `1.25x` 这种内部 token | `_internal_text_guard` 自动拒绝，规则在 [scripts/_internal_text_guard.py](scripts/_internal_text_guard.py) |
+| 字幕 Hiragino W3 太细 | `find_chinese_font()` 默认排序：Source Han Sans Heavy > Smiley Sans > STHeiti Medium > PingFang Semibold |
+| 加速后中段听不清 | render_final 默认 `dynaudnorm=f=250:g=15 + acompressor=threshold=-18dB:ratio=3 + loudnorm=I=-16:TP=-1.5:LRA=11` |
+| 1.25× 想做主输出但 `--speed` 还留 1.0× | 新增 `--primary-speed` 一等公民 |
+| 字幕里 Whisper 错词（ChatGPTT 等） | `rewrite_script.py` 走清稿优先，原 Whisper 词只供时间戳 |
+| 平台违规词被发现才知道（限流） | `content_guard.py` 渲染前自动 lint |
+
+---
+
+# 旧版（V2）参考资料
+
+下面是 V2 时代的工作流文档。仍然有效，但日常使用推荐先看 docs/prompts/15。
+
+## Prerequisites（前置要求）
+
+在执行任何操作之前，先运行环境检测：
+
+```bash
+python3 scripts/utils.py
+```
+
+这会自动检测平台（macOS/Linux/WSL/Windows）、GPU 类型、可用编码器、Whisper 引擎，并给出诊断报告。
 
 ## Prerequisites（前置要求）
 
