@@ -34,6 +34,14 @@ def test_missing_profile_raises():
         load_profile("nonexistent_profile_xyz")
 
 
+def test_fonts_presets_loadable():
+    from profiles import load_fonts_preset
+    tech = load_fonts_preset("tech_ai")
+    assert tech["primary"] == "Smiley Sans"
+    business = load_fonts_preset("business_serious")
+    assert "Source Han Sans" in business["primary"]
+
+
 def test_required_fields_present():
     """Every profile must define duration, cut, subtitle, audio, aspect."""
     for name in list_profiles():

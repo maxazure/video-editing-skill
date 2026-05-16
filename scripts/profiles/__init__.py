@@ -137,8 +137,23 @@ def load_profile(name: str) -> Dict[str, Any]:
 
 
 def list_profiles() -> List[str]:
+    """List audience profile names. Skips underscore-prefixed YAML files
+    (those are companion configs like _fonts.yaml, not audience profiles)."""
     out = []
     for entry in os.listdir(_PROFILES_DIR):
-        if entry.endswith(".yaml"):
+        if entry.endswith(".yaml") and not entry.startswith("_"):
             out.append(entry[:-5])
     return sorted(out)
+
+
+def load_fonts_preset(preset: str = "tech_ai") -> dict:
+    """Load `_fonts.yaml` and return the named preset's font mapping."""
+    path = os.path.join(_PROFILES_DIR, "_fonts.yaml")
+    if not os.path.isfile(path):
+        raise FileNotFoundError(path)
+    with open(path, encoding="utf-8") as f:
+        data = _yaml_safe_load(f.read())
+    presets = data.get("presets", {})
+    if preset not in presets:
+        raise KeyError(f"font preset {preset!r} not found; available: {list(presets)}")
+    return presets[preset]
