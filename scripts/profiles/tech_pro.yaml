@@ -1,0 +1,53 @@
+# Audience profile: AI / creators / small-team founder / efficiency tools
+# Synthesised from 千瓜 2025 user research, 亿邦动力 2025 三平台算法报告,
+# and 量子位/36 氪 报道 about 小红书's科技赛道 expansion.
+#
+# Used by render_final.py via `--profile tech_pro` to set sensible defaults
+# without the user having to pass a dozen flags.
+
+audience:
+  name_zh: 科技/创业向
+  age_band: "25-35"
+  city_tier: "1+new-tier-1"
+  gender_mix: "male≈40-50%, female≈50-60%"  # higher male share than platform avg
+
+duration:
+  default_seconds: 90
+  max_seconds: 180
+  warn_above_seconds: 180   # render still proceeds; just emits a notice
+
+cut:
+  hook_interval_seconds: 0.6   # 0-3s region: 3-5 quick cuts to anchor attention
+  body_interval_seconds: 2.5
+  slow_interval_seconds: 4.0   # emotional/summary segments
+  transition_duration_seconds: 0.5
+
+subtitle:
+  max_chars_per_line: 14
+  min_duration_seconds: 1.2
+  max_duration_seconds: 3.0
+  mode: sentence            # short-form info-density default; flip to "word" for karaoke
+  font_preference:
+    - "Source Han Sans SC Heavy"
+    - "Smiley Sans"
+    - "Heiti SC Medium"
+    - "PingFang SC Semibold"
+  font_size_at_1080p: 64
+  stroke_px: 4
+
+audio:
+  bgm_gain_below_voice_db: -16   # info-density assumption; vlog profile uses -10
+  mute_bgm_when_density_above_chars_per_sec: 2.5
+  loudnorm: "I=-16:TP=-1.5:LRA=11"
+  use_dynaudnorm: true
+  use_compressor: true
+
+aspect:
+  primary_for_render: "9:16"        # 1080×1920 — also good for douyin/wechat
+  preferred_for_xhs_export: "3:4"   # 1080×1440 — fills the Xiaohongshu feed
+  reject_horizontal: true           # 16:9 only allowed as secondary export
+
+publishing:
+  preferred_windows:
+    - "weekday 07:30-08:30"   # commute slot, CTR boost for职场/effort content
+    - "weekday 21:00-22:30"   # evening wind-down, longest dwell time

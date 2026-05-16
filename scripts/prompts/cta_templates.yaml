@@ -1,0 +1,38 @@
+# Closing call-to-action templates for Xiaohongshu shorts.
+# Algorithm weights (CES score, 2025-2026): follow 8 > comment/share 4 > like/save 1.
+# The post-first-2-hours interaction signal sets the long-tail recommendation pool.
+#
+# Selection rule the rewriter applies:
+#   structure=pain_solve   → save_bait + comment_lure
+#   structure=story_reversal → resonance_seek
+#   structure=listicle     → save_bait + cliffhanger
+
+- id: save_bait
+  label: 收藏诱因
+  weight: 1
+  pattern_zh: "建议截图保存，下次找不到这条"
+  pattern_en: "Screenshot this — you'll come back later"
+
+- id: comment_lure
+  label: 评论诱饵
+  weight: 4
+  pattern_zh: "你是{A}还是{B}，评论区告诉我"
+  pattern_en: "Are you {A} or {B}? Drop it in the comments"
+
+- id: cliffhanger
+  label: 续集悬念
+  weight: 8
+  pattern_zh: "想看下集请点赞过{N}"
+  pattern_en: "Hit {N} likes and I'll do part 2"
+
+- id: resource_drop
+  label: 资源领取
+  weight: 4
+  pattern_zh: "想要完整{resource}评论 1 我私你"
+  pattern_en: "Comment '1' for the full {resource}"
+
+- id: resonance_seek
+  label: 共鸣求证
+  weight: 4
+  pattern_zh: "只有我这样吗？评论区抱抱"
+  pattern_en: "Just me? Drop a 🤝 if you feel this too"

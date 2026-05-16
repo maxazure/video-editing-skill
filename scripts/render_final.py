@@ -38,6 +38,7 @@ from burn_subtitles import (
 )
 from generate_cover_image import generate_cover as generate_cover_image
 from _internal_text_guard import check_visible_text
+from content_guard import enforce as enforce_platform_rules, HardBlock
 
 # --- Caption style presets ---
 CAPTION_PRESETS = {
@@ -496,6 +497,10 @@ def main():
     parser.add_argument("--no-cover", action="store_true")
     parser.add_argument("--no-loudnorm", action="store_true",
                         help="Disable the default dynaudnorm+compressor+loudnorm chain on the speech track")
+    parser.add_argument("--no-content-guard", action="store_true",
+                        help="Disable the Xiaohongshu/RED platform-rule lint (not recommended)")
+    parser.add_argument("--profile", default=None,
+                        help="Audience profile (tech_pro, lifestyle, ...). Sets sensible defaults for cut/subtitle/audio.")
     parser.add_argument("--speed", nargs="*", type=float, default=[],
                         help="Additional speed variants to render (e.g. --speed 1.25 1.5)")
     parser.add_argument("--primary-speed", type=float, default=1.0,
@@ -518,6 +523,21 @@ def main():
 
     config = load_config(args.config)
 
+    # Audience profile — overlays sensible defaults from scripts/profiles/<name>.yaml
+    # onto fields the user didn't pass via CLI. The CLI / config always wins; profile
+    # only fills in blanks.
+    if args.profile:
+        try:
+            from profiles import load_profile
+            prof = load_profile(args.profile)
+            print(f"[profile] {args.profile} — {prof.get('audience', {}).get('name_zh', '')}")
+            # Apply: subtitle font size if user kept the default
+            if args.font_size == 48 and "subtitle" in prof:
+                args.font_size = prof["subtitle"].get("font_size_at_1080p", args.font_size)
+                print(f"  font_size := {args.font_size}")
+        except (FileNotFoundError, ImportError) as exc:
+            print(f"[profile] warning: {exc}", file=sys.stderr)
+
     # Guard visible-text fields BEFORE any expensive work — no speed/model/engine/debug
     # tokens may reach the frame. (User-facing content only; this catches accidents
     # like "DAY 58 — 1.25x".)
@@ -529,6 +549,18 @@ def main():
         check_visible_text(badge.get("text") if isinstance(badge, dict) else badge)
     for card in config.get("end_cards", []) or []:
         check_visible_text(card.get("text") if isinstance(card, dict) else card)
+
+    # Platform content-rule lint (Xiaohongshu/RED). Hard violations stop the render.
+    if not args.no_content_guard:
+        title_texts = [config.get("title") or "", config.get("subtitle") or ""]
+        for ch in config.get("chapters", []) or []:
+            title_texts.append(ch.get("title", "") if isinstance(ch, dict) else ch)
+        try:
+            enforce_platform_rules(title_texts, strict=True, context="title")
+        except HardBlock as exc:
+            print(f"\n🚫 Content guard refused export: {exc}", file=sys.stderr)
+            print("   Override with --no-content-guard if you really mean it.", file=sys.stderr)
+            sys.exit(2)
 
     clips = resolve_clips(config)
 
