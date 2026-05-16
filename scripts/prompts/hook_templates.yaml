@@ -1,0 +1,68 @@
+# Xiaohongshu/RED short-form opening-hook templates (前 3 秒钩子).
+# Each template is a structured rewrite pattern the Story Engine can choose
+# based on the input transcript. Synthesised from 2025-2026 platform research
+# (see docs/plans/2026-05-17-v3-xhs-improvements.md, Phase 2 sources).
+#
+# Slots:
+#   id            — stable identifier used in metadata/A-B tests
+#   label         — human-readable category
+#   when          — selection rule the rewriter applies to detect candidacy
+#   pattern_zh    — fill-in template (Chinese)
+#   pattern_en    — fill-in template (English)
+#   max_chars_zh  — hard length cap when filled (Xiaohongshu prefers ≤ 15 chars)
+
+- id: anti_consensus
+  label: 反常识否定
+  when: "transcript mentions 正确做法 / 应该 / 秘诀"
+  pattern_zh: "千万别再{topic}了，{percentage}% 的人都做错"
+  pattern_en: "Stop {topic}-ing — {percentage}% of people get this wrong"
+  max_chars_zh: 15
+
+- id: pain_relate
+  label: 痛点共鸣
+  when: "transcript opens with problem description"
+  pattern_zh: "你是不是也总是{pain}？我之前也一样"
+  pattern_en: "Are you stuck with {pain}? I was too"
+  max_chars_zh: 15
+
+- id: number_result
+  label: 数字成绩
+  when: "transcript has quantifiable result"
+  pattern_zh: "{duration}我{outcome}，靠这{N}件事"
+  pattern_en: "{duration}: {outcome}, by doing just {N} things"
+  max_chars_zh: 18
+
+- id: suspense_question
+  label: 悬念问句
+  when: "transcript contains 原因是 / 其实是"
+  pattern_zh: "为什么{action}总失败？没人告诉你这件事"
+  pattern_en: "Why does {action} keep failing? No one tells you this"
+  max_chars_zh: 18
+
+- id: identity_tag
+  label: 身份标签
+  when: "user provides persona field"
+  pattern_zh: "作为一个{identity}，我想说..."
+  pattern_en: "As a {identity}, here's what I think..."
+  max_chars_zh: 15
+
+- id: contrast_reverse
+  label: 反差对比
+  when: "transcript has 以前 X / 现在 Y pattern"
+  pattern_zh: "{before}到{after}，我只做对了一件事"
+  pattern_en: "From {before} to {after} — one thing I did right"
+  max_chars_zh: 16
+
+- id: benefit_save
+  label: 利益承诺
+  when: "video duration > 60s"
+  pattern_zh: "看完这条，省你{N}小时"
+  pattern_en: "Watch this — save yourself {N} hours"
+  max_chars_zh: 13
+
+- id: scene_immersion
+  label: 场景代入
+  when: "transcript has strong time/place anchor"
+  pattern_zh: "{time}，我又一次{action}"
+  pattern_en: "{time}, again — I {action}"
+  max_chars_zh: 14

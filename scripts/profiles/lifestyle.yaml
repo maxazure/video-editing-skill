@@ -1,0 +1,49 @@
+# Audience profile: lifestyle / vlog / 穿搭/家居/美食 (中性向)
+# Less info-density than tech_pro; more BGM, slower pacing, more emotion.
+
+audience:
+  name_zh: 生活方式向
+  age_band: "20-32"
+  city_tier: "1+2"
+  gender_mix: "female≈70-80%"
+
+duration:
+  default_seconds: 60
+  max_seconds: 120
+  warn_above_seconds: 120
+
+cut:
+  hook_interval_seconds: 0.8
+  body_interval_seconds: 2.0
+  slow_interval_seconds: 5.0
+  transition_duration_seconds: 0.6
+
+subtitle:
+  max_chars_per_line: 12
+  min_duration_seconds: 1.5
+  max_duration_seconds: 3.5
+  mode: sentence
+  font_preference:
+    - "Smiley Sans"
+    - "ZCOOL XiaoWei"
+    - "PingFang SC Semibold"
+  font_size_at_1080p: 56
+  stroke_px: 3
+
+audio:
+  bgm_gain_below_voice_db: -10   # BGM is part of the vibe, not just bedding
+  mute_bgm_when_density_above_chars_per_sec: 3.5
+  loudnorm: "I=-16:TP=-1.5:LRA=11"
+  use_dynaudnorm: true
+  use_compressor: true
+
+aspect:
+  primary_for_render: "9:16"
+  preferred_for_xhs_export: "3:4"
+  reject_horizontal: true
+
+publishing:
+  preferred_windows:
+    - "weekday 12:00-13:30"  # lunch break
+    - "weekday 20:00-22:30"  # evening
+    - "weekend 10:00-12:00"
