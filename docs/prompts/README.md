@@ -31,6 +31,7 @@
 | 16 | [Content Guard 平台雷区 lint](16-content-guard.md) | 自动检测违禁词/导流/医美/财富诱导，导出前拦截 |
 | 17 | [一条视频 × 三平台导出](17-multi-platform.md) | 主视频 → 小红书 3:4 / 抖音 / 视频号 三版本 |
 | 18 | [Auto-Enrich 自动丰富](18-auto-enrich.md) | 自动 B-roll / 章节卡 / 贴纸 / BGM 卡点 |
+| 19 | [AI 生图（gpt-image-2 / Codex imagegen）](19-imagegen.md) | 抽象概念自动配图，提示词适配 gpt-image-2 |
 
 ## 快速上手
 
@@ -60,3 +61,4 @@
 | 担心标题/正文触发平台限流 | [16-Content Guard](16-content-guard.md) |
 | 一次发小红书+抖音+视频号 | [17-三平台导出](17-multi-platform.md) |
 | 想让视频更"有质感"自动加丰富度 | [18-Auto-Enrich](18-auto-enrich.md) |
+| 抽象概念想用 AI 生图（注意力机制/复利…） | [19-imagegen](19-imagegen.md) |

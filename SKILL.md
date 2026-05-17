@@ -1,6 +1,6 @@
 ---
 name: video-editing
-description: "Xiaohongshu/RED-tuned content engine for short-form video. Use when: producing daily 小红书/抖音/视频号 videos from raw voice-over + b-roll materials; transcribing speech with mlx-whisper/faster-whisper; rewriting transcripts into 5-field (hook/pain/turn/value/cta) story structures using 8 hook + 5 CTA templates; running platform-rule content lint (80+ regex for 广告法极限词/导流外站/医美/财富诱导); auto-scheduling B-roll cutaways, chapter title cards, emoji stickers, and BGM beat-sync (librosa); rendering with audience profiles (tech_pro/lifestyle), Heavy CJK fonts, automatic loudness normalisation (dynaudnorm+compressor+loudnorm), primary-speed control, karaoke/word-level subtitles; exporting one master into three platform deliverables (xhs 3:4 / douyin 9:16 / wxch ≤60s); generating titles + 200-500 char captions + tags + publish-time hints; exporting to JianYing/CapCut; generating Remotion voiceover animations. Refuses pipeline-internal tokens (speed multipliers, model names, debug strings) on output frames. Requires ffmpeg and a whisper backend (mlx-whisper on Apple Silicon, faster-whisper elsewhere). Pillow needed for chapter cards. librosa optional for real beat detection. Remotion workflow additionally requires Node.js."
+description: "Xiaohongshu/RED-tuned content engine for short-form video. Use when: producing daily 小红书/抖音/视频号 videos from raw voice-over + b-roll materials; transcribing speech with mlx-whisper/faster-whisper; rewriting transcripts into 5-field (hook/pain/turn/value/cta) story structures using 8 hook + 5 CTA templates; running platform-rule content lint (80+ regex for 广告法极限词/导流外站/医美/财富诱导); auto-scheduling B-roll cutaways, chapter title cards, emoji stickers, and BGM beat-sync (librosa); detecting abstract-concept opportunities and emitting gpt-image-2-shaped prompts that the Codex built-in `imagegen` tool can run directly (no API key needed); rendering with audience profiles (tech_pro/lifestyle), Heavy CJK fonts, automatic loudness normalisation (dynaudnorm+compressor+loudnorm), primary-speed control, karaoke/word-level subtitles; exporting one master into three platform deliverables (xhs 3:4 / douyin 9:16 / wxch ≤60s); generating titles + 200-500 char captions + tags + publish-time hints; exporting to JianYing/CapCut; generating Remotion voiceover animations. Refuses pipeline-internal tokens (speed multipliers, model names, debug strings) on output frames. Requires ffmpeg and a whisper backend (mlx-whisper on Apple Silicon, faster-whisper elsewhere). Pillow needed for chapter cards. librosa optional for real beat detection. Remotion workflow additionally requires Node.js. Image generation routes through Codex `imagegen` (gpt-image-2) when in Codex; falls back to scripts/image_gen.py + OPENAI_API_KEY (gpt-image-1.5) elsewhere."
 argument-hint: "Provide the path(s) to voice-over audio + optional b-roll videos to process"
 metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
 ---
@@ -17,7 +17,8 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ transcribe.py            转写 + 词级时间戳 + 口误标记
    ├─→ rewrite_script.py        LLM 重组 5 段式（hook/pain/turn/value/cta）
    ├─→ content_guard.py         80+ 条平台雷区 lint
-   ├─→ auto_enrich.py           B-roll / 章节卡 / 贴纸 / BGM 卡点
+   ├─→ auto_enrich.py           B-roll / 章节卡 / 贴纸 / BGM 卡点 / imagegen 提示词
+   │       └─→ Codex imagegen   gpt-image-2 自动生图（抽象概念配图）
    ├─→ render_final.py          单次编码渲染（Heavy 字幕 + 响度规范化）
    ├─→ multi_export.py          小红书 3:4 / 抖音 9:16 / 视频号 ≤60s
    └─→ generate_caption.py      标题 + 200-500 字正文 + 3-6 tags + 发布时段
@@ -37,6 +38,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `auto_stickers.py` | 情绪→贴纸 | `--transcript` `--min-interval` |
 | `beat_sync.py` | BGM 卡点 | `--bgm` `--cuts` `--window` |
 | `auto_enrich.py` | 编排上面四个 | `--transcript` `--clean-script` `--bgm` `--output` |
+| `imagegen_hint.py` | 检测抽象概念 → 产 gpt-image-2 提示词 | `--transcript` `--clean-script` `--codex-md` |
 | `multi_export.py` | 三平台导出 | `<input.mp4>` `--platforms xhs douyin wxch` |
 | `generate_caption.py` | 标题/正文/tag | `--script` `--profile` `--output` |
 | `profiles/__init__.py` | 受众档位加载 | `load_profile("tech_pro")` |

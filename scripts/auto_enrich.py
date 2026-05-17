@@ -24,6 +24,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from auto_broll import schedule_broll  # noqa: E402
 from auto_chapter_cards import parse_chapters_from_md, schedule_cards  # noqa: E402
 from auto_stickers import schedule_stickers  # noqa: E402
+from imagegen_hint import detect_opportunities as detect_imagegen_opportunities  # noqa: E402
 
 
 def build_plan(
@@ -42,9 +43,18 @@ def build_plan(
     broll = schedule_broll(transcript, available_assets=assets)
     stickers = schedule_stickers(transcript)
     chapters = []
+    clean_text = None
     if clean_script_path:
         titles = parse_chapters_from_md(clean_script_path)
         chapters = schedule_cards(titles, total_duration=total_duration)
+        if os.path.isfile(clean_script_path):
+            with open(clean_script_path, encoding="utf-8") as f:
+                clean_text = f.read()
+
+    # Detect AI image-generation opportunities (abstract concepts, visual metaphors).
+    # The cues are advisory — the next step (typically a Codex agent) decides
+    # which ones to actually generate via the built-in `imagegen` tool.
+    imagegen_cues = detect_imagegen_opportunities(transcript, clean_text)
 
     if bgm_path:
         try:
@@ -66,6 +76,7 @@ def build_plan(
         "broll": [dataclasses.asdict(c) for c in broll],
         "stickers": [dataclasses.asdict(c) for c in stickers],
         "chapter_cards": [dataclasses.asdict(c) for c in chapters],
+        "imagegen": [dataclasses.asdict(c) for c in imagegen_cues],
     }
 
 
@@ -99,6 +110,7 @@ def main() -> int:
     print(f"   broll:    {len(plan['broll'])}")
     print(f"   stickers: {len(plan['stickers'])}")
     print(f"   chapters: {len(plan['chapter_cards'])}")
+    print(f"   imagegen: {len(plan['imagegen'])}")
     return 0
 
 

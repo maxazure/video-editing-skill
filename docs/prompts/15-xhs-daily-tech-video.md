@@ -55,6 +55,11 @@
      --bgm origin/<bgm>.mp3 \
      --output work/enrich_plan.json
 
+4b. # 如果 enrich_plan.json 的 imagegen[] 非空 → 用 Codex 内置 imagegen 生图：
+    # 把每条 prompt_en 喂给 imagegen，1024x1536 high quality，存到 work/imagegen/
+    # （不需要 OPENAI_API_KEY；Codex 自动路由到 gpt-image-2）
+    # 详见 docs/prompts/19-imagegen.md
+
 5. python3 scripts/content_guard.py \
      --script work/clean_script.md \
      --title "<候选标题>" \

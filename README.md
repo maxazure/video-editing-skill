@@ -126,7 +126,8 @@ NVIDIA GPU 配置详见 [docs/install-nvidia.md](#linux-gpu-配置) 段（README
 | [`auto_chapter_cards.py`](scripts/auto_chapter_cards.py) | `## ` 章节标题 / 静音 ≥1.5s 边界 / Pillow PNG 渲染 |
 | [`beat_sync.py`](scripts/beat_sync.py) | librosa beat_track + ±200ms snap（缺时回落固定网格） |
 | [`auto_stickers.py`](scripts/auto_stickers.py) | 情绪关键词→emoji 池（excited 🚀✨🔥 / doubt 🤔 / data 📈 等） |
-| [`auto_enrich.py`](scripts/auto_enrich.py) | 编排上面四个，输出综合 plan JSON |
+| [`auto_enrich.py`](scripts/auto_enrich.py) | 编排上面四个，输出综合 plan JSON（含 imagegen cues） |
+| [`imagegen_hint.py`](scripts/imagegen_hint.py) | 检测抽象概念 → 产出 gpt-image-2 适配的提示词，给 Codex `imagegen` 工具直接用 |
 
 ### 🎚️ 渲染层（V3 强化）
 [`scripts/render_final.py`](scripts/render_final.py)
@@ -289,6 +290,7 @@ scripts/
 ├── auto_chapter_cards.py       章节卡渲染                       [V3]
 ├── beat_sync.py                BGM 卡点                         [V3]
 ├── auto_stickers.py            情绪→贴纸                        [V3]
+├── imagegen_hint.py            抽象概念→gpt-image-2 提示词       [V3]
 ├── auto_enrich.py              丰富度编排                       [V3]
 ├── render_final.py             单次编码渲染（V3 强化）
 ├── burn_subtitles.py           字幕 ASS 生成
@@ -301,7 +303,8 @@ scripts/
 ├── generate_caption.py         标题/正文/标签                   [V3]
 ├── prompts/
 │   ├── hook_templates.yaml     8 钩子模板                       [V3]
-│   └── cta_templates.yaml      5 CTA 模板                       [V3]
+│   ├── cta_templates.yaml      5 CTA 模板                       [V3]
+│   └── imagegen_templates.yaml gpt-image-2 提示词模板 + 7 sample [V3]
 └── profiles/
     ├── __init__.py             加载器                           [V3]
     ├── tech_pro.yaml           AI/创业 profile                   [V3]
