@@ -6,9 +6,9 @@
 # plus a Constraints clause.
 #
 # When running inside Codex, the agent should call the built-in `imagegen`
-# tool with these prompts as-is. When running elsewhere, the CLI fallback is
-# `scripts/image_gen.py generate --prompt "<text>" --size 1024x1536` against
-# gpt-image-1.5 (requires OPENAI_API_KEY).
+# tool with these prompts as-is (no OpenAI API key needed; routes to
+# gpt-image-2). Outside Codex, callers should use the OpenAI Python SDK
+# directly — this file is a prompt library, not a client.
 #
 # Sources synthesised from:
 #   - OpenAI Cookbook prompting guide (cookbook.openai.com)

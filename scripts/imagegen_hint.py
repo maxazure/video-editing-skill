@@ -10,11 +10,15 @@ This script does NOT call any image API itself. It is a planner:
 
 When the next step is **Codex** (the OpenAI CLI), the agent should call its
 built-in `imagegen` tool with each prompt — no API key needed; Codex routes
-to gpt-image-2 internally. When running outside Codex, fall back to:
+to gpt-image-2 internally. When running outside Codex, callers can use the
+OpenAI Python SDK directly:
 
-    python3 scripts/image_gen.py generate \
-      --prompt "<prompt>" --size 1024x1536 --quality high
-      # requires OPENAI_API_KEY; uses gpt-image-1.5
+    # pip install openai; export OPENAI_API_KEY=sk-...
+    client.images.generate(model="gpt-image-1", prompt=cue["prompt_en"],
+                           size="1024x1536", quality="high")
+
+This script intentionally does not bundle an OpenAI client — image rendering
+is left to the host environment (Codex agent or user-managed Python).
 
 References:
   - OpenAI Cookbook prompting guide

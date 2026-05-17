@@ -17,7 +17,11 @@
    │     极限词 / 导流 / 医美 / 财富诱导 ...
    │
    ├─→ auto_enrich.py           调度 B-roll / 章节卡 / 贴纸 / BGM 卡点
-   │     transition / entity match / silence boundary / beat snap
+   │     │ transition / entity match / silence boundary / beat snap
+   │     │
+   │     └─→ imagegen_hint.py   抽象概念检测 → gpt-image-2 提示词
+   │           ↓                 (Codex 内置 imagegen 工具直接执行；无 API key)
+   │           Codex imagegen   注意力机制 / 复利 / 信息茧房 等自动配图
    │
    ├─→ render_final.py          单次编码渲染
    │     Heavy 字幕 + 自动响度规范化 + speed + 内部 token 守卫
@@ -47,7 +51,7 @@ cd ~/projects/video-editing-skill
 python3 scripts/utils.py
 
 # 4. 跑一遍测试套件确认 OK
-pytest tests/           # 131 个测试，应该 <2 秒
+pytest tests/           # 151 个测试，应该 <2 秒
 ```
 
 每天做一条视频的完整模板：**[docs/prompts/15-xhs-daily-tech-video.md](docs/prompts/15-xhs-daily-tech-video.md)**
@@ -78,7 +82,7 @@ pytest tests/           # 131 个测试，应该 <2 秒
 pip install mlx-whisper -i https://pypi.tuna.tsinghua.edu.cn/simple
 ```
 
-NVIDIA GPU 配置详见 [docs/install-nvidia.md](#linux-gpu-配置) 段（README 末尾）。
+NVIDIA GPU 配置详见本文末尾的 [Linux GPU 配置](#linux-gpu-配置) 段。
 
 ### 可选
 
@@ -88,6 +92,17 @@ NVIDIA GPU 配置详见 [docs/install-nvidia.md](#linux-gpu-配置) 段（README
 | `librosa` | BGM 真实节拍检测 | 用 120 bpm 固定网格 |
 | `pyyaml` | profile YAML 读取加速 | 用内置 fallback parser |
 | `spacy + zh_core_web_sm` | 高级 B-roll 命名实体识别（V3.2+ 路线图） | 用关键词列表匹配 |
+
+### AI 图像生成（gpt-image-2）
+
+| 运行环境 | 路径 | 凭证 |
+|---|---|---|
+| **Codex CLI**（推荐） | 用 Codex 内置 `imagegen` 工具，自动路由 gpt-image-2 | **无需** OpenAI API key |
+| **Claude Code / 其他** | 用 OpenAI Python SDK（`openai.images.generate`），或任何能调 gpt-image-1.5/2 的工具 | 需要 `OPENAI_API_KEY` |
+
+本 skill 只负责**产出提示词**（`imagegen_hint.py`）+ **提供模板库**（`prompts/imagegen_templates.yaml`）—— 不内置 OpenAI 客户端。在 Codex 里 agent 直接调内置 `imagegen`；其他环境用户自行接入。
+
+完整规则详见 [docs/prompts/19-imagegen.md](docs/prompts/19-imagegen.md)。
 
 ---
 
@@ -127,7 +142,17 @@ NVIDIA GPU 配置详见 [docs/install-nvidia.md](#linux-gpu-配置) 段（README
 | [`beat_sync.py`](scripts/beat_sync.py) | librosa beat_track + ±200ms snap（缺时回落固定网格） |
 | [`auto_stickers.py`](scripts/auto_stickers.py) | 情绪关键词→emoji 池（excited 🚀✨🔥 / doubt 🤔 / data 📈 等） |
 | [`auto_enrich.py`](scripts/auto_enrich.py) | 编排上面四个，输出综合 plan JSON（含 imagegen cues） |
-| [`imagegen_hint.py`](scripts/imagegen_hint.py) | 检测抽象概念 → 产出 gpt-image-2 适配的提示词，给 Codex `imagegen` 工具直接用 |
+
+### 🎨 AI 图像生成（gpt-image-2 / Codex imagegen）
+[`scripts/imagegen_hint.py`](scripts/imagegen_hint.py) · [`scripts/prompts/imagegen_templates.yaml`](scripts/prompts/imagegen_templates.yaml) · [详细文档](docs/prompts/19-imagegen.md)
+
+抽象概念（注意力机制 / 复利 / 信息茧房 / 长尾效应 …）自动检测 + 适配 **gpt-image-2** 七槽位提示词结构。
+
+- **Codex 环境**：检测到的 prompt 直接喂给 Codex 内置 `imagegen` 工具——**无需** OpenAI API key，Codex 自动路由到 gpt-image-2
+- **其他环境**：用 OpenAI Python SDK 自己接（`openai.OpenAI().images.generate(...)`，需 `OPENAI_API_KEY`）。本 skill 只产 prompt，不内置客户端
+- **内置 7 个 sample**：注意力机制 / 信息茧房 / 复利 / 长尾效应 / 数据柱状图 / 章节标题卡 / 早晨笔记本 B-roll（每个都带双语 prompt + why-it-works）
+- **5 个 structure 槽位**：chapter_background / chapter_title_card / broll_fallback / data_visualization / abstract_concept
+- **gpt-image-2 规则全部编码**：引号 = 精确文字渲染、约束写进 prose（无 negative-prompt 字段）、具体相机+光圈+光照（避免 "AI 味"）、默认拒绝人脸/人手特写、中文标题不走 gpt-image-2
 
 ### 🎚️ 渲染层（V3 强化）
 [`scripts/render_final.py`](scripts/render_final.py)
@@ -196,12 +221,16 @@ python3 $SKILL/scripts/rewrite_script.py \
   --llm-output $WORK/work/llm.json \
   --output $WORK/work/clean_script.md
 
-# 3. 自动丰富
+# 3. 自动丰富（plan 里会有 broll / stickers / chapter_cards / imagegen 四列）
 python3 $SKILL/scripts/auto_enrich.py \
   --transcript $WORK/work/transcript.json \
   --clean-script $WORK/work/clean_script.md \
   --bgm $WORK/origin/bgm.mp3 \
   --output $WORK/work/enrich_plan.json
+
+# 3b. 如果 imagegen[] 非空，在 Codex 里直接调内置 imagegen 工具
+#     把每条 prompt_en 用 imagegen 生成 1024x1536，存到 $WORK/work/imagegen/
+#     不需要 OPENAI_API_KEY；详见 docs/prompts/19-imagegen.md
 
 # 4. 渲染
 python3 $SKILL/scripts/render_final.py \
@@ -226,7 +255,7 @@ python3 $SKILL/scripts/generate_caption.py \
 ## 测试
 
 ```bash
-pytest tests/           # 131 测试，<2 秒
+pytest tests/           # 151 测试，<2 秒
 ```
 
 按模块跑：
@@ -236,6 +265,7 @@ pytest tests/test_rewrite_script.py -v      # Story Engine
 pytest tests/test_auto_broll.py -v          # B-roll 调度
 pytest tests/test_multi_export.py -v        # 多平台比例转换
 pytest tests/test_generate_caption.py -v    # 文案合成
+pytest tests/test_imagegen_hint.py -v       # gpt-image-2 提示词检测
 ```
 
 ---
@@ -251,6 +281,7 @@ pytest tests/test_generate_caption.py -v    # 文案合成
 | **16** | **[Content Guard](docs/prompts/16-content-guard.md)** | **担心标题/正文限流** |
 | **17** | **[三平台导出](docs/prompts/17-multi-platform.md)** | **一次发小红书/抖音/视频号** |
 | **18** | **[Auto-Enrich](docs/prompts/18-auto-enrich.md)** | **想让视频更"有质感"** |
+| **19** | **[AI 生图（gpt-image-2 / Codex imagegen）](docs/prompts/19-imagegen.md)** | **抽象概念自动配图** |
 
 完整列表见 [docs/prompts/README.md](docs/prompts/README.md)。
 
@@ -346,15 +377,18 @@ ffmpeg -hwaccels  # 应该列出 qsv
 
 ## 贡献
 
-V3 路线图后续可能加：
+V3.2+ 路线图后续可能加：
 
-- spaCy 中文 NER + CLIP embedding → 更精准的 B-roll 匹配
-- librosa beat → 真节拍替代固定网格回落
-- zxing-cpp QR 扫描 + 外站 logo OCR → 画面级 lint
-- 自动接 `enrich_plan.json` 到 `render_final.py`（目前还要手工塞 cues）
-- minimax-image 集成（AI 生图补抽象概念画面）
+- 自动接 `enrich_plan.json`（含 broll / chapter / sticker / imagegen cues）到 `render_final.py`——目前还要手工塞 cues
+- spaCy 中文 NER → 更精准的 B-roll 实体匹配（升级当前的关键词列表）
+- CLIP embedding 跨段比对 → 自动匹配最贴合段落内容的素材
+- librosa real beat detection 作为默认（当前回落到 120 bpm 固定网格）
+- zxing-cpp QR 码扫描 + 外站 logo OCR → 画面级 Content Guard
+- gpt-image-2 character anchor 一致性（多张图同一人物形象保持一致）
 
-PR 欢迎。新功能必须带测试，每个新脚本至少 5 个测试。
+V3 已完成：Phase 1-5 + imagegen 集成（[#9](https://github.com/maxazure/video-editing-skill/pull/9) [#11](https://github.com/maxazure/video-editing-skill/pull/11) [#12](https://github.com/maxazure/video-editing-skill/pull/12) [#13](https://github.com/maxazure/video-editing-skill/pull/13) [#14](https://github.com/maxazure/video-editing-skill/pull/14) [#15](https://github.com/maxazure/video-editing-skill/pull/15) [#16](https://github.com/maxazure/video-editing-skill/pull/16)）。
+
+PR 欢迎。新功能必须带测试，每个新脚本至少 5 个测试，全套 <2 秒跑完。
 
 ---
 
