@@ -5,9 +5,9 @@ argument-hint: "Provide the path(s) to voice-over audio + optional b-roll videos
 metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
 ---
 
-# Video Editing Skill — 小红书内容引擎（V3）
+# Video Editing Skill — 视频剪辑技能（V3）
 
-不是另一个剪辑工具。是一条 **从口播 → 重组故事 → 平台守门 → 自动丰富 → 渲染 → 三平台导出 → 标题文案** 的端到端流水线，按小红书/抖音/视频号的算法和审核规则调过参。
+适配 **小红书 / 抖音 / 微信视频号** 三大主流平台。一条 **从口播 → 重组故事 → 平台守门 → 自动丰富 → 渲染 → 三平台导出 → 标题文案** 的端到端流水线，按各平台的算法、比例、时长、审核规则调过参——不只是剪辑工具。
 
 ## V3 完整流水线（一图看懂）
 
