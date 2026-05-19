@@ -23,6 +23,8 @@
    │           ↓                 (Codex 内置 imagegen 工具直接执行；无 API key)
    │           Codex imagegen   注意力机制 / 复利 / 信息茧房 等自动配图
    │
+   ├─→ jump_cut.py              自适应静音检测 → cut list → 去停顿成片
+   │
    ├─→ render_final.py          单次编码渲染
    │     Heavy 字幕 + 自动响度规范化 + speed + 内部 token 守卫
    │
@@ -53,7 +55,7 @@ cd ~/projects/video-editing-skill
 python3 scripts/utils.py
 
 # 4. 跑一遍测试套件确认 OK
-pytest tests/           # 151 个测试，应该 <2 秒
+pytest tests/           # 157+ 个测试，应该 <2 秒
 ```
 
 每天做一条视频的完整模板：**[docs/prompts/15-xhs-daily-tech-video.md](docs/prompts/15-xhs-daily-tech-video.md)**
@@ -146,6 +148,24 @@ NVIDIA GPU 配置详见本文末尾的 [Linux GPU 配置](#linux-gpu-配置) 段
 | [`beat_sync.py`](scripts/beat_sync.py) | librosa beat_track + ±200ms snap（缺时回落固定网格） |
 | [`auto_stickers.py`](scripts/auto_stickers.py) | 情绪关键词→emoji 池（excited 🚀✨🔥 / doubt 🤔 / data 📈 等） |
 | [`auto_enrich.py`](scripts/auto_enrich.py) | 编排上面四个，输出综合 plan JSON（含 imagegen cues） |
+
+### ✂️ Jump Cut — 自动去停顿
+[`scripts/jump_cut.py`](scripts/jump_cut.py) · [详细文档](docs/prompts/21-jump-cut.md)
+
+借鉴视频生成/剪辑类 skill 里常见的 `remove_silence / jumpcut` 闭环，但默认先产出可审计 cut list，避免直接误切人声：
+
+| 能力 | 说明 |
+|---|---|
+| 自适应阈值 | 先跑 `loudnorm=print_format=json`，用 `input_thresh` 作为 `silencedetect` 阈值 |
+| 可审计 cut list | 输出 `detected_silences` / `removed_segments` / `keep_segments` / `speedup_ratio` |
+| 安全 padding | 默认每个切点保留 0.08s，避免咬字被切掉 |
+| 单次编码渲染 | 用 `trim/atrim + concat` 一次输出，不产生中间重编码文件 |
+
+常用：
+```bash
+python3 scripts/jump_cut.py input/talking.mp4 --dry-run --cut-list output/talking.jumpcut.json
+python3 scripts/jump_cut.py input/talking.mp4 --output output/talking.jumpcut.mp4 --cut-list output/talking.jumpcut.json
+```
 
 ### 🎨 AI 图像生成（gpt-image-2 / Codex imagegen）
 [`scripts/imagegen_hint.py`](scripts/imagegen_hint.py) · [`scripts/prompts/imagegen_templates.yaml`](scripts/prompts/imagegen_templates.yaml) · [详细文档](docs/prompts/19-imagegen.md)

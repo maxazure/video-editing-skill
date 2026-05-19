@@ -61,6 +61,14 @@
     # （不需要 OPENAI_API_KEY；Codex 自动路由到 gpt-image-2）
     # 详见 docs/prompts/19-imagegen.md
 
+4c. # 如果输入是完整口播视频、访谈或录屏，且停顿很多，可先生成去停顿 cut list：
+    python3 scripts/jump_cut.py origin/<talking_video>.mp4 \
+      --dry-run \
+      --cut-list work/jumpcut.json
+    # 先检查 work/jumpcut.json 的 removed_segments，确认没有误切人声；
+    # 需要独立去停顿成片时再加 --output output/day<NN>_jumpcut.mp4。
+    # 详见 docs/prompts/21-jump-cut.md
+
 5. python3 scripts/content_guard.py \
      --script work/clean_script.md \
      --title "<候选标题>" \
