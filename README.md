@@ -24,11 +24,13 @@
    │           Codex imagegen   注意力机制 / 复利 / 信息茧房 等自动配图
    │
    ├─→ jump_cut.py              自适应静音检测 → cut list → 去停顿成片
+   │     └─→ timeline_view.py   切点 filmstrip + waveform 人工复核图
    │
    ├─→ render_final.py          单次编码渲染
    │     Heavy 字幕 + 自动响度规范化 + speed + 内部 token 守卫
    │
    ├─→ render_qa.py             渲染后黑屏/静帧/静音/尺寸质检
+   │     └─→ timeline_view.py   QA 可疑区间可视化复盘
    │
    ├─→ multi_export.py          小红书 3:4 / 抖音 9:16 / 视频号 ≤60s
    │
@@ -55,7 +57,7 @@ cd ~/projects/video-editing-skill
 python3 scripts/utils.py
 
 # 4. 跑一遍测试套件确认 OK
-pytest tests/           # 157+ 个测试，应该 <2 秒
+pytest tests/           # 171 个测试，应该 <2 秒
 ```
 
 每天做一条视频的完整模板：**[docs/prompts/15-xhs-daily-tech-video.md](docs/prompts/15-xhs-daily-tech-video.md)**
@@ -164,7 +166,19 @@ NVIDIA GPU 配置详见本文末尾的 [Linux GPU 配置](#linux-gpu-配置) 段
 常用：
 ```bash
 python3 scripts/jump_cut.py input/talking.mp4 --dry-run --cut-list output/talking.jumpcut.json
+python3 scripts/timeline_view.py input/talking.mp4 --cut-list output/talking.jumpcut.json --output-dir output/verify/cuts
 python3 scripts/jump_cut.py input/talking.mp4 --output output/talking.jumpcut.mp4 --cut-list output/talking.jumpcut.json
+```
+
+### 🔎 Timeline View — 切点/可疑区间复盘图
+[`scripts/timeline_view.py`](scripts/timeline_view.py) · [详细文档](docs/prompts/22-timeline-view.md)
+
+借鉴视频剪辑类 skill 的 `timeline_view` 工作台：在跳切前后或 QA 报警区间生成一张 PNG，上半部分是 filmstrip，下半部分是 waveform，方便快速判断“切点是否咬字、画面是否突跳、静音是否自然”。
+
+常用：
+```bash
+python3 scripts/timeline_view.py output/day58_master.mp4 --at 42.5 --radius 1.5 --output output/verify/42_5s.png
+python3 scripts/timeline_view.py origin/talking.mp4 --cut-list work/jumpcut.json --output-dir output/verify/cuts --limit 12
 ```
 
 ### 🎨 AI 图像生成（gpt-image-2 / Codex imagegen）
@@ -208,6 +222,7 @@ python3 scripts/jump_cut.py input/talking.mp4 --output output/talking.jumpcut.mp
 ```bash
 python3 scripts/render_qa.py output/day58_master.mp4 --platform douyin --json output/day58_qa.json
 python3 scripts/render_qa.py output/day58_xhs.mp4 --platform xhs
+python3 scripts/timeline_view.py output/day58_master.mp4 --at 42.5 --radius 1.5 --output output/verify/qa_42_5s.png
 ```
 
 ### 📦 多平台导出
@@ -289,6 +304,11 @@ python3 $SKILL/scripts/render_qa.py \
   $WORK/output/day${DAY}_master.mp4 --platform douyin \
   --json $WORK/output/day${DAY}_master_qa.json
 
+# 5b. 如果 QA 有 WARN/FAIL，或想抽查关键切点，生成可视化复盘图
+python3 $SKILL/scripts/timeline_view.py \
+  $WORK/output/day${DAY}_master.mp4 --at 42.5 --radius 1.5 \
+  --output $WORK/output/verify/day${DAY}_42_5s.png
+
 # 6. 多平台
 python3 $SKILL/scripts/multi_export.py \
   $WORK/output/day${DAY}_master.mp4 --output-dir $WORK/output/
@@ -310,7 +330,7 @@ python3 $SKILL/scripts/generate_caption.py \
 ## 测试
 
 ```bash
-pytest tests/           # 151 测试，<2 秒
+pytest tests/           # 171 测试，<2 秒
 ```
 
 按模块跑：
@@ -320,9 +340,16 @@ pytest tests/test_rewrite_script.py -v      # Story Engine
 pytest tests/test_auto_broll.py -v          # B-roll 调度
 pytest tests/test_multi_export.py -v        # 多平台比例转换
 pytest tests/test_render_qa.py -v           # 渲染后质检
+pytest tests/test_timeline_view.py -v       # 切点/QA 可视化复盘图
 pytest tests/test_generate_caption.py -v    # 文案合成
 pytest tests/test_imagegen_hint.py -v       # gpt-image-2 提示词检测
 ```
+
+### 本次自动化更新记录（2026-05-19 UTC）
+
+- **新增能力**：参考 GitHub 上 `browser-use/video-use` 的 `timeline_view` 复盘工作台、`remotion-dev/skills` 的单帧/预览验证习惯，以及 `Agents365-ai/video-podcast-maker` 的 Remotion Studio 预览迭代思路，新增 `scripts/timeline_view.py`。
+- **使用方式**：单点复盘用 `python3 scripts/timeline_view.py output/master.mp4 --at 42.5 --radius 1.5 --output output/verify/42_5s.png`；跳切批量复盘用 `--cut-list work/jumpcut.json --output-dir output/verify/cuts`。
+- **验证结果**：`pytest tests/test_timeline_view.py -v` 通过 7 项；`python3 -m compileall scripts tests` 通过；合成 4 秒视频实测 `--at` 输出 1600×1120 PNG，`--cut-list` 批量输出 2 张 PNG；全量 `.venv/bin/python -m pytest tests` 通过 `171 passed in 1.65s`。
 
 ---
 
@@ -338,6 +365,9 @@ pytest tests/test_imagegen_hint.py -v       # gpt-image-2 提示词检测
 | **17** | **[三平台导出](docs/prompts/17-multi-platform.md)** | **一次发小红书/抖音/视频号** |
 | **18** | **[Auto-Enrich](docs/prompts/18-auto-enrich.md)** | **想让视频更"有质感"** |
 | **19** | **[AI 生图（gpt-image-2 / Codex imagegen）](docs/prompts/19-imagegen.md)** | **抽象概念自动配图** |
+| **20** | **[Render QA](docs/prompts/20-render-qa.md)** | **渲染后机器质检** |
+| **21** | **[Jump Cut](docs/prompts/21-jump-cut.md)** | **自动去停顿** |
+| **22** | **[Timeline View](docs/prompts/22-timeline-view.md)** | **切点/可疑区间人工复盘图** |
 
 完整列表见 [docs/prompts/README.md](docs/prompts/README.md)。
 
@@ -381,6 +411,7 @@ scripts/
 ├── auto_enrich.py              丰富度编排                       [V3]
 ├── render_final.py             单次编码渲染（V3 强化）
 ├── render_qa.py                渲染后黑屏/静帧/静音/尺寸质检       [V3]
+├── timeline_view.py            filmstrip+waveform 可视化复盘图     [V3]
 ├── burn_subtitles.py           字幕 ASS 生成
 ├── generate_cover.py           封面生成
 ├── generate_cover_image.py     Chrome-rendered 封面

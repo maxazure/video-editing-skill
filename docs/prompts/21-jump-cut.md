@@ -18,7 +18,16 @@ python3 scripts/jump_cut.py input/talking.mp4 \
   --cut-list output/talking.jumpcut.json
 ```
 
-确认 JSON 里的 `removed_segments` 没有误切人声后再渲染：
+生成切点复盘图，快速查看每段删除区域附近的画面和波形：
+
+```bash
+python3 scripts/timeline_view.py input/talking.mp4 \
+  --cut-list output/talking.jumpcut.json \
+  --output-dir output/verify/jumpcut \
+  --limit 12
+```
+
+确认 JSON 里的 `removed_segments` 和 `output/verify/jumpcut/*.png` 没有误切人声后再渲染：
 
 ```bash
 python3 scripts/jump_cut.py input/talking.mp4 \

@@ -65,9 +65,14 @@
     python3 scripts/jump_cut.py origin/<talking_video>.mp4 \
       --dry-run \
       --cut-list work/jumpcut.json
+    python3 scripts/timeline_view.py origin/<talking_video>.mp4 \
+      --cut-list work/jumpcut.json \
+      --output-dir output/verify/jumpcut \
+      --limit 12
     # 先检查 work/jumpcut.json 的 removed_segments，确认没有误切人声；
+    # 再查看 output/verify/jumpcut/*.png 的 filmstrip + waveform；
     # 需要独立去停顿成片时再加 --output output/day<NN>_jumpcut.mp4。
-    # 详见 docs/prompts/21-jump-cut.md
+    # 详见 docs/prompts/21-jump-cut.md 和 docs/prompts/22-timeline-view.md
 
 5. python3 scripts/content_guard.py \
      --script work/clean_script.md \
@@ -88,22 +93,28 @@
      --platform douyin \
      --json output/day<NN>_master_qa.json
 
-8. python3 scripts/multi_export.py \
+8. # 如果 render_qa 有 WARN/FAIL，或要抽查 hook / 转场 / 片尾：
+   python3 scripts/timeline_view.py output/day<NN>_master.mp4 \
+     --at <可疑秒数> \
+     --radius 1.5 \
+     --output output/verify/day<NN>_<秒数>s.png
+
+9. python3 scripts/multi_export.py \
      output/day<NN>_master.mp4 \
      --output-dir output/ \
      --platforms xhs douyin wxch
 
-9. python3 scripts/render_qa.py \
+10. python3 scripts/render_qa.py \
      output/day<NN>_master_xhs.mp4 \
      --platform xhs \
      --json output/day<NN>_xhs_qa.json
 
-10. python3 scripts/render_qa.py \
+11. python3 scripts/render_qa.py \
      output/day<NN>_master_douyin.mp4 \
      --platform douyin \
      --json output/day<NN>_douyin_qa.json
 
-11. python3 scripts/generate_caption.py \
+12. python3 scripts/generate_caption.py \
      --script work/clean_script.md \
      --profile tech_pro \
      --output output/day<NN>_caption.json
@@ -114,6 +125,7 @@
 - enrich_plan.json 里 broll/sticker/chapter 总数（确认丰富度足够）
 - content_guard 的输出（必须 ✅ 无违规）
 - render_qa 的输出（必须没有 FAIL；WARN 要解释）
+- 如有 jump_cut 或 QA WARN/FAIL，给我 timeline_view PNG 路径和人工判断
 
 注意事项：
 - 永远不要在画面上漏 1.25x / mlx-whisper / loudnorm 这类内部 token
@@ -135,8 +147,10 @@ day<NN>/
 │   ├── llm.json            # LLM 返回的 JSON
 │   ├── clean_script.md     # 5 字段重组后的清稿
 │   ├── enrich_plan.json    # broll/sticker/chapter cues
+│   ├── jumpcut.json        # 可选：去停顿 cut list
 │   └── render_config.json  # 喂给 render_final 的配置
 └── output/
+    ├── verify/                         # 可选：timeline_view PNG
     ├── day<NN>_master.mp4              # 9:16 主版本
     ├── day<NN>_master_xhs.mp4          # 3:4 小红书发布版
     ├── day<NN>_master_douyin.mp4       # 9:16 抖音版

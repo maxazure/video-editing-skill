@@ -34,6 +34,7 @@
 | 19 | [AI 生图（gpt-image-2 / Codex imagegen）](19-imagegen.md) | 抽象概念自动配图，提示词适配 gpt-image-2 |
 | 20 | [Render QA 渲染后质检](20-render-qa.md) | 检查尺寸/音频/黑屏/静帧/静音，批量留 QA JSON |
 | 21 | [Jump Cut 自动去停顿](21-jump-cut.md) | 自适应静音检测，先出 cut list，再一次渲染去停顿成片 |
+| 22 | [Timeline View 切点/可疑区间复盘图](22-timeline-view.md) | 生成 filmstrip + waveform PNG，人工复核切点和 QA 报警 |
 
 ## 快速上手
 
@@ -66,3 +67,4 @@
 | 抽象概念想用 AI 生图（注意力机制/复利…） | [19-imagegen](19-imagegen.md) |
 | 渲染后想确认没有黑屏/静帧/静音/尺寸错 | [20-Render QA](20-render-qa.md) |
 | 口播停顿太多想自动剪紧 | [21-Jump Cut](21-jump-cut.md) |
+| 想人工看切点附近画面和波形 | [22-Timeline View](22-timeline-view.md) |

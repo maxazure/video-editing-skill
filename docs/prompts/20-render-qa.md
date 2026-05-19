@@ -52,4 +52,13 @@ python3 scripts/render_qa.py output/day58_master.mp4 \
 - `WARN`：有可解释风险，例如片尾自然静音；发布前人工看一眼
 - `FAIL`：先回到 render config / 素材 / 音频链路修复，再重新渲染
 
+如果需要“看一眼”的证据图，用 `timeline_view.py` 对可疑秒数生成 filmstrip + waveform：
+
+```bash
+python3 scripts/timeline_view.py output/day58_master.mp4 \
+  --at 42.5 \
+  --radius 1.5 \
+  --output output/verify/day58_42_5s.png
+```
+
 批量工作流里建议把 `*_qa.json` 和最终视频一起归档，这样之后能快速定位是源素材问题、渲染问题，还是平台派生导出问题。
