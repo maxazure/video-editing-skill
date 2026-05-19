@@ -26,6 +26,8 @@
    ├─→ render_final.py          单次编码渲染
    │     Heavy 字幕 + 自动响度规范化 + speed + 内部 token 守卫
    │
+   ├─→ render_qa.py             渲染后黑屏/静帧/静音/尺寸质检
+   │
    ├─→ multi_export.py          小红书 3:4 / 抖音 9:16 / 视频号 ≤60s
    │
    └─→ generate_caption.py      标题 + 200-500 字正文 + 3-6 tags + 发布时段建议
@@ -100,6 +102,8 @@ NVIDIA GPU 配置详见本文末尾的 [Linux GPU 配置](#linux-gpu-配置) 段
 | **Codex CLI**（推荐） | 用 Codex 内置 `imagegen` 工具，自动路由 gpt-image-2 | **无需** OpenAI API key |
 | **Claude Code / 其他** | 用 OpenAI Python SDK（`openai.images.generate`），或任何能调 gpt-image-1.5/2 的工具 | 需要 `OPENAI_API_KEY` |
 
+生图优先使用 Codex 内置 `image_gen` 工具，即 OpenAI GPT Image 2（`gpt-image-2`）。
+
 本 skill 只负责**产出提示词**（`imagegen_hint.py`）+ **提供模板库**（`prompts/imagegen_templates.yaml`）—— 不内置 OpenAI 客户端。在 Codex 里 agent 直接调内置 `imagegen`；其他环境用户自行接入。
 
 完整规则详见 [docs/prompts/19-imagegen.md](docs/prompts/19-imagegen.md)。
@@ -167,6 +171,25 @@ NVIDIA GPU 配置详见本文末尾的 [Linux GPU 配置](#linux-gpu-配置) 段
 | 平台 lint | 自动；`--no-content-guard` 关 |
 | 字幕风格 | `--subtitle-style normal/karaoke/bold_pop/neon/minimal/yellow_pop` |
 
+### ✅ Render QA — 渲染后质检回路
+[`scripts/render_qa.py`](scripts/render_qa.py)
+
+借鉴 Remotion/视频生成类技能常见的“render → inspect → fix”闭环，渲染完成后用 `ffprobe`/`ffmpeg` 自动检查：
+
+| 检查 | 目的 |
+|---|---|
+| video/audio stream | 防止导出空壳、无声视频 |
+| duration / dimensions / fps | 防止平台尺寸错、时长异常 |
+| `blackdetect` | 发现误裁、素材丢失导致的黑屏 |
+| `freezedetect` | 发现长时间卡帧/静帧 |
+| `silencedetect` | 发现人声链路丢失或长静音 |
+
+常用：
+```bash
+python3 scripts/render_qa.py output/day58_master.mp4 --platform douyin --json output/day58_qa.json
+python3 scripts/render_qa.py output/day58_xhs.mp4 --platform xhs
+```
+
 ### 📦 多平台导出
 [`scripts/multi_export.py`](scripts/multi_export.py) · [详细文档](docs/prompts/17-multi-platform.md)
 
@@ -229,6 +252,7 @@ python3 $SKILL/scripts/auto_enrich.py \
   --output $WORK/work/enrich_plan.json
 
 # 3b. 如果 imagegen[] 非空，在 Codex 里直接调内置 imagegen 工具
+#     生图优先使用 Codex 内置 `image_gen` 工具，即 OpenAI GPT Image 2（`gpt-image-2`）。
 #     把每条 prompt_en 用 imagegen 生成 1024x1536，存到 $WORK/work/imagegen/
 #     不需要 OPENAI_API_KEY；详见 docs/prompts/19-imagegen.md
 
@@ -240,11 +264,22 @@ python3 $SKILL/scripts/render_final.py \
   --subtitle-style karaoke \
   --output $WORK/output/day${DAY}_master.mp4
 
-# 5. 多平台
+# 5. 主片质检
+python3 $SKILL/scripts/render_qa.py \
+  $WORK/output/day${DAY}_master.mp4 --platform douyin \
+  --json $WORK/output/day${DAY}_master_qa.json
+
+# 6. 多平台
 python3 $SKILL/scripts/multi_export.py \
   $WORK/output/day${DAY}_master.mp4 --output-dir $WORK/output/
 
-# 6. 文案
+# 7. 平台导出质检
+python3 $SKILL/scripts/render_qa.py \
+  $WORK/output/day${DAY}_xhs.mp4 --platform xhs
+python3 $SKILL/scripts/render_qa.py \
+  $WORK/output/day${DAY}_douyin.mp4 --platform douyin
+
+# 8. 文案
 python3 $SKILL/scripts/generate_caption.py \
   --script $WORK/work/clean_script.md --profile tech_pro \
   --output $WORK/output/day${DAY}_caption.json
@@ -264,6 +299,7 @@ pytest tests/test_content_guard.py -v       # 80+ 规则的 38 个测试
 pytest tests/test_rewrite_script.py -v      # Story Engine
 pytest tests/test_auto_broll.py -v          # B-roll 调度
 pytest tests/test_multi_export.py -v        # 多平台比例转换
+pytest tests/test_render_qa.py -v           # 渲染后质检
 pytest tests/test_generate_caption.py -v    # 文案合成
 pytest tests/test_imagegen_hint.py -v       # gpt-image-2 提示词检测
 ```
@@ -324,6 +360,7 @@ scripts/
 ├── imagegen_hint.py            抽象概念→gpt-image-2 提示词       [V3]
 ├── auto_enrich.py              丰富度编排                       [V3]
 ├── render_final.py             单次编码渲染（V3 强化）
+├── render_qa.py                渲染后黑屏/静帧/静音/尺寸质检       [V3]
 ├── burn_subtitles.py           字幕 ASS 生成
 ├── generate_cover.py           封面生成
 ├── generate_cover_image.py     Chrome-rendered 封面

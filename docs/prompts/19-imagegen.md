@@ -2,6 +2,8 @@
 
 V3 加入了对 OpenAI **gpt-image-2** 的支持。当抽象概念（注意力机制、信息茧房、复利…）出现在口播里时，自动产出适配 gpt-image-2 提示词格式的生图请求；Codex agent 可以直接调内置的 `imagegen` 工具完成生图。
 
+生图优先使用 Codex 内置 `image_gen` 工具，即 OpenAI GPT Image 2（`gpt-image-2`）。
+
 ## 何时让 AI 生图
 
 | 场景 | 建议 | 备选 |

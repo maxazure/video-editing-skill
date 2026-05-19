@@ -56,6 +56,7 @@
      --output work/enrich_plan.json
 
 4b. # 如果 enrich_plan.json 的 imagegen[] 非空 → 用 Codex 内置 imagegen 生图：
+    # 生图优先使用 Codex 内置 `image_gen` 工具，即 OpenAI GPT Image 2（`gpt-image-2`）。
     # 把每条 prompt_en 喂给 imagegen，1024x1536 high quality，存到 work/imagegen/
     # （不需要 OPENAI_API_KEY；Codex 自动路由到 gpt-image-2）
     # 详见 docs/prompts/19-imagegen.md
@@ -74,12 +75,27 @@
      --subtitle-style karaoke \
      --output output/day<NN>_master.mp4
 
-7. python3 scripts/multi_export.py \
+7. python3 scripts/render_qa.py \
+     output/day<NN>_master.mp4 \
+     --platform douyin \
+     --json output/day<NN>_master_qa.json
+
+8. python3 scripts/multi_export.py \
      output/day<NN>_master.mp4 \
      --output-dir output/ \
      --platforms xhs douyin wxch
 
-8. python3 scripts/generate_caption.py \
+9. python3 scripts/render_qa.py \
+     output/day<NN>_master_xhs.mp4 \
+     --platform xhs \
+     --json output/day<NN>_xhs_qa.json
+
+10. python3 scripts/render_qa.py \
+     output/day<NN>_master_douyin.mp4 \
+     --platform douyin \
+     --json output/day<NN>_douyin_qa.json
+
+11. python3 scripts/generate_caption.py \
      --script work/clean_script.md \
      --profile tech_pro \
      --output output/day<NN>_caption.json
@@ -89,6 +105,7 @@
 - caption.json 里的 title + caption_body + tags + publish_time_hint
 - enrich_plan.json 里 broll/sticker/chapter 总数（确认丰富度足够）
 - content_guard 的输出（必须 ✅ 无违规）
+- render_qa 的输出（必须没有 FAIL；WARN 要解释）
 
 注意事项：
 - 永远不要在画面上漏 1.25x / mlx-whisper / loudnorm 这类内部 token
@@ -116,6 +133,9 @@ day<NN>/
     ├── day<NN>_master_xhs.mp4          # 3:4 小红书发布版
     ├── day<NN>_master_douyin.mp4       # 9:16 抖音版
     ├── day<NN>_master_wxch.mp4         # 9:16 ≤60s 视频号版
+    ├── day<NN>_master_qa.json          # 主片 QA
+    ├── day<NN>_xhs_qa.json             # 小红书版 QA
+    ├── day<NN>_douyin_qa.json          # 抖音版 QA
     ├── day<NN>_caption.json            # 标题 + 正文 + 标签
     └── multi_export_manifest.json
 ```
