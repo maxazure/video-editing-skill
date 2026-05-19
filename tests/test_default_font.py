@@ -40,9 +40,10 @@ def test_macos_system_picker_prefers_stheiti_medium_over_pingfang_regular():
     if not os.path.isfile("/System/Library/Fonts/STHeiti Medium.ttc"):
         return
     path, name = _find_system_font("macos")
-    # Path or name must indicate a Medium/Heavy/Bold weight
+    # Path/name should indicate a strong weight, or be one of the curated
+    # display CJK fonts that are intentionally preferred for short-form video.
     combined = f"{path or ''} {name or ''}".lower()
-    assert any(w in combined for w in ("medium", "heavy", "bold", "semibold")), (
+    assert any(w in combined for w in ("medium", "heavy", "bold", "semibold", "smiley")), (
         f"_find_system_font on macOS should prefer Medium weight when available. "
         f"Got path={path!r} name={name!r}"
     )
