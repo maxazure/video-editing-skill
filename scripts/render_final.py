@@ -25,6 +25,7 @@ import argparse
 import copy
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -72,6 +73,8 @@ OUTPUT_FORMATS = {
     "horizontal": {"width": 1920, "height": 1080, "label": "16:9 (YouTube/B站)"},
 }
 
+VERSION_SUFFIX_RE = re.compile(r"^(?P<stem>.+?)(?:_V(?P<version>\d+))?$")
+
 
 def build_reformat_filter(src_w, src_h, dst_w, dst_h):
     """Build ffmpeg filter to reformat video dimensions via center-crop."""
@@ -83,6 +86,32 @@ def build_reformat_filter(src_w, src_h, dst_w, dst_h):
         return f"scale=-1:{dst_h},crop={dst_w}:{dst_h}"
     else:
         return f"scale={dst_w}:-1,crop={dst_w}:{dst_h}"
+
+
+def _version_family(path):
+    """Return (directory, base stem, extension) for a versioned output family."""
+    directory, filename = os.path.split(os.path.abspath(path))
+    stem, ext = os.path.splitext(filename)
+    match = VERSION_SUFFIX_RE.match(stem)
+    if match:
+        stem = match.group("stem")
+    return directory, stem, ext
+
+
+def next_versioned_output_path(path):
+    """Return the next available `<stem>_V<N><ext>` path without overwriting."""
+    directory, stem, ext = _version_family(path)
+    os.makedirs(directory or ".", exist_ok=True)
+
+    max_version = 0
+    if os.path.isdir(directory):
+        pattern = re.compile(rf"^{re.escape(stem)}_V(?P<version>\d+){re.escape(ext)}$")
+        for name in os.listdir(directory):
+            match = pattern.match(name)
+            if match:
+                max_version = max(max_version, int(match.group("version")))
+
+    return os.path.join(directory, f"{stem}_V{max_version + 1}{ext}")
 
 
 def load_config(config_path):
@@ -695,6 +724,9 @@ def main():
     parser.add_argument("--primary-speed", type=float, default=1.0,
                         help="Primary output speed (default 1.0). When set, the main output is "
                              "rendered at this speed instead of 1.0; --speed values become extra variants.")
+    parser.add_argument("--versioned-output", action="store_true",
+                        help="Write to the next <name>_V<N>.mp4 path instead of overwriting --output. "
+                             "Can also be enabled with config versioned_output: true.")
     parser.add_argument("--cover-duration", type=float, default=None,
                         help="Cover freeze duration in seconds (default: from config or 2.0)")
     parser.add_argument("--cleanup", action="store_true", help="Remove temp files after render")
@@ -819,6 +851,10 @@ def main():
     encode_args = get_ffmpeg_encode_args()
     output_path = os.path.abspath(args.output)
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+    if args.versioned_output or config.get("versioned_output"):
+        requested_output = output_path
+        output_path = next_versioned_output_path(output_path)
+        print(f"[output] versioned: {requested_output} → {output_path}")
     temp_files = []
     failed_speeds = []
 
@@ -1188,7 +1224,7 @@ def main():
             print(f"  {int(m)}:{int(s):02d} {ch.get('title', '')}")
 
     # --- Multi-platform format export ---
-    base_output = args.output
+    base_output = output_path
     if args.formats and os.path.isfile(base_output):
         for fmt_name in args.formats:
             fmt = OUTPUT_FORMATS[fmt_name]

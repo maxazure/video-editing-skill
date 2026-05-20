@@ -28,6 +28,7 @@
    │
    ├─→ render_final.py          单次编码渲染 + enrich_plan 自动接入
    │     B-roll / 章节卡 / 贴纸 / 生成图 overlay + Heavy 字幕 + 响度规范化
+   │     可选 --versioned-output：输出 _V<N>，避免覆盖旧成片
    │
    ├─→ render_qa.py             渲染后黑屏/静帧/静音/尺寸质检
    │     └─→ timeline_view.py   QA 可疑区间可视化复盘
@@ -57,7 +58,7 @@ cd ~/projects/video-editing-skill
 python3 scripts/utils.py
 
 # 4. 跑一遍测试套件确认 OK
-pytest tests/           # 176 个测试，应该 <2 秒
+pytest tests/           # 180 个测试，应该 <2 秒
 ```
 
 每天做一条视频的完整模板：**[docs/prompts/15-xhs-daily-tech-video.md](docs/prompts/15-xhs-daily-tech-video.md)**
@@ -207,6 +208,49 @@ python3 scripts/timeline_view.py origin/talking.mp4 --cut-list work/jumpcut.json
 | 平台 lint | 自动；`--no-content-guard` 关 |
 | 字幕风格 | `--subtitle-style normal/karaoke/bold_pop/neon/minimal/yellow_pop` |
 | 自动丰富接入 | `--enrich-plan work/enrich_plan.json` |
+| 版本化输出 | `--versioned-output` 或 config `"versioned_output": true` |
+
+### 🧾 Versioned Output — 成片不覆盖旧版本
+[`scripts/render_final.py`](scripts/render_final.py) · [详细文档](docs/prompts/23-versioned-output.md)
+
+借鉴 GitHub 上视频技能的“每次渲染保留新版本”工作流：`--versioned-output` 会把请求的 `output/day58_master.mp4` 写到下一个 `output/day58_master_V<N>.mp4`，避免 `ffmpeg -y` 覆盖上一版成片。`--formats` 会跟随实际版本文件生成 `day58_master_V3_vertical.mp4` 这类多比例输出。
+
+常用：
+```bash
+python3 scripts/render_final.py \
+  --config work/render_config.json \
+  --enrich-plan work/enrich_plan.json \
+  --output output/day58_master.mp4 \
+  --versioned-output \
+  --formats vertical horizontal
+```
+
+配置式开启：
+```json
+{
+  "versioned_output": true,
+  "clips": [
+    {"video": "origin/talking.mp4", "segment_id": 1, "transcript": "work/transcript.json"}
+  ]
+}
+```
+
+### 2026-05-21 自动化升级记录
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`hoodini/ai-agents-skills`](https://github.com/hoodini/ai-agents-skills) 的 Yuv-Viral-Video | 明确要求每次输出 `_V<N>`，旧成片不被覆盖 | 新增 `render_final.py --versioned-output` |
+| [`video-db/skills`](https://github.com/video-db/skills) | “See → Understand → Act”、搜索/编辑/导出一体化 | 已有 transcribe/enrich/render/QA 链路，暂不引入外部服务 |
+| [`higgsfield-ai/skills`](https://github.com/higgsfield-ai/skills) | 生成后评分与 branded video mode | 本项目已有平台 lint 与 caption 规则，后续可加 hook/retention 评分 |
+| [`smixs/visual-skills`](https://github.com/smixs/visual-skills) | 视频生成强调 shot card、连续性与模型路由 | 本项目已有 gpt-image-2 路由；视频生成路由保持 Dreamina/即梦外部 skill |
+
+新增/调整能力：`next_versioned_output_path()` 会扫描同目录已有 `*_V<N>.mp4`，自动选下一个版本；CLI 增加 `--versioned-output`，配置文件支持 `"versioned_output": true`；多平台 `--formats` 改为基于实际版本主文件导出。
+
+使用方式：在最终渲染命令加 `--versioned-output`，或在 render config 写入 `"versioned_output": true`。
+
+验证结果：新增/相关测试 12 项通过；完整 `.venv/bin/python -m pytest tests -q` 通过 180 项；`python3 -m compileall scripts tests` 通过；真实 1 秒 ffmpeg 合成验证了 `master.mp4` 会输出为 `master_V1.mp4`。
 
 ### ✅ Render QA — 渲染后质检回路
 [`scripts/render_qa.py`](scripts/render_qa.py)
