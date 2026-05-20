@@ -26,8 +26,8 @@
    ├─→ jump_cut.py              自适应静音检测 → cut list → 去停顿成片
    │     └─→ timeline_view.py   切点 filmstrip + waveform 人工复核图
    │
-   ├─→ render_final.py          单次编码渲染
-   │     Heavy 字幕 + 自动响度规范化 + speed + 内部 token 守卫
+   ├─→ render_final.py          单次编码渲染 + enrich_plan 自动接入
+   │     B-roll / 章节卡 / 贴纸 / 生成图 overlay + Heavy 字幕 + 响度规范化
    │
    ├─→ render_qa.py             渲染后黑屏/静帧/静音/尺寸质检
    │     └─→ timeline_view.py   QA 可疑区间可视化复盘
@@ -57,7 +57,7 @@ cd ~/projects/video-editing-skill
 python3 scripts/utils.py
 
 # 4. 跑一遍测试套件确认 OK
-pytest tests/           # 171 个测试，应该 <2 秒
+pytest tests/           # 176 个测试，应该 <2 秒
 ```
 
 每天做一条视频的完整模板：**[docs/prompts/15-xhs-daily-tech-video.md](docs/prompts/15-xhs-daily-tech-video.md)**
@@ -151,6 +151,8 @@ NVIDIA GPU 配置详见本文末尾的 [Linux GPU 配置](#linux-gpu-配置) 段
 | [`auto_stickers.py`](scripts/auto_stickers.py) | 情绪关键词→emoji 池（excited 🚀✨🔥 / doubt 🤔 / data 📈 等） |
 | [`auto_enrich.py`](scripts/auto_enrich.py) | 编排上面四个，输出综合 plan JSON（含 imagegen cues） |
 
+`render_final.py --enrich-plan work/enrich_plan.json` 会把 plan 里的 B-roll、章节卡、贴纸和已生成图片 cue 自动接回单次渲染；没有实际文件的 imagegen cue 会保留为提示，不会阻塞导出。
+
 ### ✂️ Jump Cut — 自动去停顿
 [`scripts/jump_cut.py`](scripts/jump_cut.py) · [详细文档](docs/prompts/21-jump-cut.md)
 
@@ -204,6 +206,7 @@ python3 scripts/timeline_view.py origin/talking.mp4 --cut-list work/jumpcut.json
 | 内部 token 拦截 | 自动；任何 `1.25x`/`mlx-whisper`/`loudnorm` 出现在画面文本字段都退出 |
 | 平台 lint | 自动；`--no-content-guard` 关 |
 | 字幕风格 | `--subtitle-style normal/karaoke/bold_pop/neon/minimal/yellow_pop` |
+| 自动丰富接入 | `--enrich-plan work/enrich_plan.json` |
 
 ### ✅ Render QA — 渲染后质检回路
 [`scripts/render_qa.py`](scripts/render_qa.py)
@@ -294,6 +297,7 @@ python3 $SKILL/scripts/auto_enrich.py \
 # 4. 渲染
 python3 $SKILL/scripts/render_final.py \
   --config $WORK/work/render_config.json \
+  --enrich-plan $WORK/work/enrich_plan.json \
   --profile tech_pro \
   --primary-speed 1.25 \
   --subtitle-style karaoke \
@@ -330,7 +334,7 @@ python3 $SKILL/scripts/generate_caption.py \
 ## 测试
 
 ```bash
-pytest tests/           # 171 测试，<2 秒
+pytest tests/           # 176 测试，<2 秒
 ```
 
 按模块跑：
@@ -340,10 +344,18 @@ pytest tests/test_rewrite_script.py -v      # Story Engine
 pytest tests/test_auto_broll.py -v          # B-roll 调度
 pytest tests/test_multi_export.py -v        # 多平台比例转换
 pytest tests/test_render_qa.py -v           # 渲染后质检
+pytest tests/test_render_enrich_plan.py -v  # enrich_plan 自动接入渲染
 pytest tests/test_timeline_view.py -v       # 切点/QA 可视化复盘图
 pytest tests/test_generate_caption.py -v    # 文案合成
 pytest tests/test_imagegen_hint.py -v       # gpt-image-2 提示词检测
 ```
+
+### 本次自动化更新记录（2026-05-20 UTC）
+
+- **调研来源**：GitHub 搜索并对比 `znyupup/ai-video-editing-skill` 的 `edit_plan.json + Dashboard`、`FireRedTeam/FireRed-OpenStoryline` 的节点化 workflow schema、`taylorzhou16/video-gen` 的 storyboard JSON / 一致性 review，以及 `6missedcalls/video-editing-skill` 的轻量 ffmpeg 编排。
+- **新增能力**：`render_final.py` 新增 `--enrich-plan`，可直接读取 `auto_enrich.py` 输出，把 B-roll cue 转成定时视频 overlay，把章节卡/贴纸转成 ASS badge，把带实际文件路径的 imagegen cue 转成定时图片 overlay；同时修复 `text_badges` 已检查但未写入字幕 ASS 的问题，普通字幕和 karaoke 字幕都支持 badge。
+- **使用方式**：`python3 scripts/render_final.py --config work/render_config.json --enrich-plan work/enrich_plan.json --output output/master.mp4`。`broll[].suggested_asset`、`chapter_cards[].png`、`imagegen[].image_path/generated_path` 支持相对 `enrich_plan.json` 的路径；没有生成文件的 imagegen cue 只提示，不阻塞。
+- **验证结果**：新增 `tests/test_render_enrich_plan.py` 5 项通过；相关回归 `tests/test_auto_enrich.py tests/test_render_guard_integration.py tests/test_render_content_guard_integration.py tests/test_audio_chain.py tests/test_primary_speed.py` 共 15 项通过；全量 `.venv/bin/python -m pytest tests` 通过 `176 passed in 1.94s`；`python3 -m compileall scripts tests` 通过；合成 4 秒视频实测 `--enrich-plan` 成功应用 1 个 B-roll、1 个章节卡图片 overlay、1 个 badge 并输出有效 MP4。
 
 ### 本次自动化更新记录（2026-05-19 UTC）
 
@@ -409,7 +421,7 @@ scripts/
 ├── auto_stickers.py            情绪→贴纸                        [V3]
 ├── imagegen_hint.py            抽象概念→gpt-image-2 提示词       [V3]
 ├── auto_enrich.py              丰富度编排                       [V3]
-├── render_final.py             单次编码渲染（V3 强化）
+├── render_final.py             单次编码渲染 + enrich_plan 接入（V3 强化）
 ├── render_qa.py                渲染后黑屏/静帧/静音/尺寸质检       [V3]
 ├── timeline_view.py            filmstrip+waveform 可视化复盘图     [V3]
 ├── burn_subtitles.py           字幕 ASS 生成
@@ -467,7 +479,6 @@ ffmpeg -hwaccels  # 应该列出 qsv
 
 V3.2+ 路线图后续可能加：
 
-- 自动接 `enrich_plan.json`（含 broll / chapter / sticker / imagegen cues）到 `render_final.py`——目前还要手工塞 cues
 - spaCy 中文 NER → 更精准的 B-roll 实体匹配（升级当前的关键词列表）
 - CLIP embedding 跨段比对 → 自动匹配最贴合段落内容的素材
 - librosa real beat detection 作为默认（当前回落到 120 bpm 固定网格）

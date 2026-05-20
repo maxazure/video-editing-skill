@@ -83,6 +83,7 @@
 
 6. python3 scripts/render_final.py \
      --config work/render_config.json \
+     --enrich-plan work/enrich_plan.json \
      --profile tech_pro \
      --primary-speed 1.25 \
      --subtitle-style karaoke \

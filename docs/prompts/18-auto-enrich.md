@@ -103,7 +103,23 @@ python3 scripts/beat_sync.py \
 
 ## 把 enrich plan 接回 render
 
-> 截至当前 PR，`render_final.py` 还**不会自动读 enrich_plan.json**。你需要手工把 plan 里的 chapter cards 和 sticker 字段塞到 render config 的 `text_badges` / `end_cards` / `overlays` 里。后续 PR 会做自动接管。
+`render_final.py` 可以直接读取 `enrich_plan.json`：
+
+```bash
+python3 scripts/render_final.py \
+  --config work/render_config.json \
+  --enrich-plan work/enrich_plan.json \
+  --output output/master.mp4
+```
+
+接入规则：
+
+- `broll[].suggested_asset` → 定时视频 overlay，保留原人声音频
+- `chapter_cards[]` → `chapters` 时间轴 + ASS `text_badges`
+- `chapter_cards[].png` / `image_path` → 定时图片 overlay
+- `stickers[]` → ASS `text_badges`，普通字幕和 karaoke 字幕都支持
+- `imagegen[].image_path` / `generated_path` → 定时图片 overlay
+- 没有实际图片文件的 `imagegen[]` 只作为提示输出，不阻塞渲染
 
 ## 可选重型依赖
 

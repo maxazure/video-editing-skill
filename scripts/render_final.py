@@ -22,6 +22,7 @@ The config JSON format:
 """
 
 import argparse
+import copy
 import json
 import os
 import subprocess
@@ -94,6 +95,177 @@ def load_config(config_path):
     except FileNotFoundError:
         print(f"Error: Config file not found: {config_path}", file=sys.stderr)
         sys.exit(1)
+
+
+def load_enrich_plan(plan_path):
+    try:
+        with open(plan_path, encoding="utf-8") as f:
+            return json.load(f)
+    except json.JSONDecodeError as e:
+        print(f"Error: Invalid JSON in {plan_path}: {e}", file=sys.stderr)
+        sys.exit(1)
+    except FileNotFoundError:
+        print(f"Error: Enrich plan not found: {plan_path}", file=sys.stderr)
+        sys.exit(1)
+
+
+def _resolve_plan_path(path, base_dir):
+    if not path:
+        return None
+    if os.path.isabs(path):
+        return path
+    candidate = os.path.abspath(os.path.join(base_dir, path))
+    if os.path.exists(candidate):
+        return candidate
+    return os.path.abspath(path)
+
+
+def _float_or_default(value, default):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _cue_time_range(cue, *, start_key="start", end_key="end", duration_key="duration", default_duration=1.0):
+    start = _float_or_default(cue.get(start_key), 0.0)
+    if end_key in cue:
+        end = _float_or_default(cue.get(end_key), start + default_duration)
+    else:
+        duration = _float_or_default(cue.get(duration_key), default_duration)
+        end = start + duration
+    if end <= start:
+        end = start + default_duration
+    return start, end
+
+
+def merge_enrich_plan(config, plan, *, plan_base_dir):
+    """Merge auto_enrich.py output into a render config.
+
+    The plan is additive and non-destructive: existing render_config fields stay
+    intact, while plan cues are translated to render_final-native overlays.
+    """
+    merged = copy.deepcopy(config)
+    stats = {
+        "broll_overlays": 0,
+        "text_badges": 0,
+        "chapters": 0,
+        "image_overlays": 0,
+        "missing_broll_assets": 0,
+        "missing_image_assets": 0,
+        "advisory_imagegen": 0,
+    }
+
+    text_badges = list(merged.get("text_badges") or [])
+    chapters = list(merged.get("chapters") or [])
+    broll_overlays = list(merged.get("broll_overlays") or [])
+    image_overlays = list(merged.get("image_overlays") or [])
+
+    for cue in plan.get("broll") or []:
+        asset = (
+            cue.get("suggested_asset")
+            or cue.get("asset")
+            or cue.get("path")
+            or cue.get("video")
+        )
+        asset_path = _resolve_plan_path(asset, plan_base_dir)
+        if not asset_path or not os.path.isfile(asset_path):
+            stats["missing_broll_assets"] += 1
+            continue
+        start, end = _cue_time_range(cue, default_duration=2.0)
+        broll_overlays.append({
+            "video": asset_path,
+            "start": start,
+            "end": end,
+            "source_start": _float_or_default(
+                cue.get("source_start", cue.get("broll_start", 0.0)), 0.0,
+            ),
+            "reason": cue.get("reason"),
+        })
+        stats["broll_overlays"] += 1
+
+    for cue in plan.get("chapter_cards") or []:
+        title = (cue.get("title") or "").strip()
+        if not title:
+            continue
+        start, end = _cue_time_range(cue, default_duration=1.0)
+        chapters.append({"title": title, "start": start, "end": end})
+        stats["chapters"] += 1
+
+        image_path = _resolve_plan_path(
+            cue.get("png") or cue.get("image_path") or cue.get("asset_path"),
+            plan_base_dir,
+        )
+        if image_path and os.path.isfile(image_path):
+            image_overlays.append({
+                "image": image_path,
+                "start": start,
+                "end": end,
+                "fit": "cover",
+                "reason": "chapter-card",
+            })
+            stats["image_overlays"] += 1
+        else:
+            text_badges.append({
+                "text": title,
+                "start": start,
+                "end": end,
+                "fade_in": 180,
+                "fade_out": 220,
+                "source": "enrich_plan:chapter_card",
+            })
+            stats["text_badges"] += 1
+
+    for cue in plan.get("stickers") or []:
+        sticker = (cue.get("sticker") or "").strip()
+        if not sticker:
+            continue
+        start, end = _cue_time_range(cue, default_duration=1.4)
+        text_badges.append({
+            "text": sticker,
+            "start": start,
+            "end": end,
+            "fade_in": 120,
+            "fade_out": 120,
+            "source": "enrich_plan:sticker",
+            "emotion": cue.get("emotion"),
+        })
+        stats["text_badges"] += 1
+
+    for cue in plan.get("imagegen") or []:
+        image_path = _resolve_plan_path(
+            cue.get("image_path")
+            or cue.get("generated_path")
+            or cue.get("asset_path")
+            or cue.get("path"),
+            plan_base_dir,
+        )
+        start = _float_or_default(cue.get("timing_seconds", cue.get("start")), 0.0)
+        duration = _float_or_default(cue.get("duration"), 2.5)
+        if image_path and os.path.isfile(image_path):
+            image_overlays.append({
+                "image": image_path,
+                "start": start,
+                "end": start + duration,
+                "fit": "cover",
+                "reason": cue.get("reason", "imagegen"),
+            })
+            stats["image_overlays"] += 1
+        else:
+            stats["advisory_imagegen"] += 1
+            if image_path:
+                stats["missing_image_assets"] += 1
+
+    if text_badges:
+        merged["text_badges"] = text_badges
+    if chapters:
+        merged["chapters"] = chapters
+    if broll_overlays:
+        merged["broll_overlays"] = broll_overlays
+    if image_overlays:
+        merged["image_overlays"] = image_overlays
+    merged["_enrich_plan_stats"] = stats
+    return merged
 
 
 def resolve_clips(config):
@@ -292,7 +464,7 @@ def _build_karaoke_line(clip, seg_start):
 def build_karaoke_ass(clips, font_name, font_size, video_width, video_height,
                       speed=1.0, cover_duration=0.0, end_cards=None,
                       highlight_color="#FFFF00", base_color="#FFFFFF",
-                      base_alpha="80"):
+                      base_alpha="80", text_badges=None):
     """Build ASS subtitle file with karaoke word-by-word highlighting.
 
     Uses ASS \\kf tags: text starts in SecondaryColour (base/dim) and fills
@@ -334,6 +506,7 @@ WrapStyle: 0
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: Karaoke,{font_name},{font_size},{primary},{secondary},&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,3,1,2,{margin_lr},{margin_lr},{margin_v},1
 Style: EndCard,{font_name},{end_card_fs},&H00FFFFFF,&H000000FF,&H00000000,&H00000000,1,0,0,0,100,100,2,0,0,0,0,5,{margin_lr},{margin_lr},0,1
+Style: Badge,{font_name},{int(font_size * 1.2)},&H00FFFFFF,&H000000FF,&H00000000,&H96000000,1,0,0,0,100,100,2,0,3,4,0,5,{margin_lr},{margin_lr},0,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -350,6 +523,19 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         karaoke_text = _build_karaoke_line(clip, clip["start"])
         dialogues.append(f"Dialogue: 0,{start_t},{end_t},Karaoke,,0,0,0,,{karaoke_text}")
         offset += scaled_dur
+
+    if text_badges:
+        for badge in text_badges:
+            b_start = badge["start"] / speed + cover_duration
+            b_end = badge["end"] / speed + cover_duration
+            b_text = escape_ass_text(badge["text"]).replace("\n", "\\N")
+            fade_in = badge.get("fade_in", 200)
+            fade_out = badge.get("fade_out", 200)
+            start_t = fmt_time(b_start)
+            end_t = fmt_time(b_end)
+            dialogues.append(
+                f"Dialogue: 1,{start_t},{end_t},Badge,,0,0,0,,{{\\fad({fade_in},{fade_out})}}{b_text}"
+            )
 
     # End cards (same as normal mode)
     end_cards_duration = 0.0
@@ -490,6 +676,9 @@ def generate_cover_png(video_path, title, width, height, temp_files,
 def main():
     parser = argparse.ArgumentParser(description="Single-pass video renderer")
     parser.add_argument("--config", required=True, help="Path to render config JSON")
+    parser.add_argument("--enrich-plan", default=None,
+                        help="Optional auto_enrich.py JSON. Merges B-roll, stickers, "
+                             "chapter cards, and generated image cues into the render.")
     parser.add_argument("--output", required=True, help="Output video path")
     parser.add_argument("--font-path", default=None, help="Custom font path")
     parser.add_argument("--font-size", type=int, default=48, help="Subtitle font size")
@@ -522,6 +711,27 @@ def main():
     args = parser.parse_args()
 
     config = load_config(args.config)
+    if args.enrich_plan:
+        plan = load_enrich_plan(args.enrich_plan)
+        config = merge_enrich_plan(
+            config, plan, plan_base_dir=os.path.dirname(os.path.abspath(args.enrich_plan)),
+        )
+        stats = config.get("_enrich_plan_stats", {})
+        print(
+            "[enrich] applied "
+            f"broll={stats.get('broll_overlays', 0)}, "
+            f"badges={stats.get('text_badges', 0)}, "
+            f"chapters={stats.get('chapters', 0)}, "
+            f"image_overlays={stats.get('image_overlays', 0)}"
+        )
+        skipped = stats.get("missing_broll_assets", 0) + stats.get("missing_image_assets", 0)
+        if skipped:
+            print(f"[enrich] skipped missing media assets: {skipped}", file=sys.stderr)
+        if stats.get("advisory_imagegen", 0):
+            print(
+                f"[enrich] advisory imagegen cues without generated files: "
+                f"{stats['advisory_imagegen']}"
+            )
 
     # Audience profile — overlays sensible defaults from scripts/profiles/<name>.yaml
     # onto fields the user didn't pass via CLI. The CLI / config always wins; profile
@@ -682,6 +892,7 @@ def main():
                     highlight_color=highlight_color,
                     base_color=base_color,
                     base_alpha=base_alpha,
+                    text_badges=config.get("text_badges"),
                 )
             else:
                 ass_content, _, end_cards_duration = build_merged_ass(
@@ -689,6 +900,7 @@ def main():
                     speed=speed, cover_duration=cover_duration,
                     end_cards=end_cards,
                     subtitle_style=subtitle_style,
+                    text_badges=config.get("text_badges"),
                 )
             fd, ass_path = tempfile.mkstemp(suffix=".ass", prefix=f"sub_{label}_")
             with os.fdopen(fd, "w", encoding="utf-8") as f:
@@ -696,26 +908,29 @@ def main():
             temp_files.append(ass_path)
 
         # --- Build video filter chain on [merged_v] ---
-        vf_parts = []
+        # Keep B-roll/image overlays before subtitles so cutaways do not cover
+        # readable captions. Persistent HUD overlays still render last.
+        pre_vf_parts = []
 
         # Speed adjustment (before cover padding so cover stays at normal speed)
         if speed != 1.0:
-            vf_parts.append(f"setpts=PTS/{speed}")
+            pre_vf_parts.append(f"setpts=PTS/{speed}")
 
         # Cover: freeze first frame for cover_duration seconds
         if cover_duration > 0:
-            vf_parts.append(
+            pre_vf_parts.append(
                 f"tpad=start_duration={cover_duration}:start_mode=clone"
             )
 
         # Subtitles (ASS timing already includes cover offset)
+        subtitle_filter = None
         if ass_path:
             escaped_ass = escape_ffmpeg_path(ass_path)
             if font_path:
                 fonts_dir = escape_ffmpeg_path(os.path.dirname(font_path))
-                vf_parts.append(f"ass='{escaped_ass}':fontsdir='{fonts_dir}'")
+                subtitle_filter = f"ass='{escaped_ass}':fontsdir='{fonts_dir}'"
             else:
-                vf_parts.append(f"ass='{escaped_ass}'")
+                subtitle_filter = f"ass='{escaped_ass}'"
 
         # --- Build audio filter chain on [merged_a] ---
         af_parts = []
@@ -752,22 +967,23 @@ def main():
             bgm_total = effective_duration + cover_duration + end_cards_duration
 
         cover_input_idx = None
+        cover_overlay_op = None
         if cover_png_path and cover_duration > 0:
             cover_input_idx = len(input_files) + len(extra_inputs)
             extra_inputs.append(("cover", cover_input_idx, cover_png_path))
-            vf_parts.append(
-                f"[cover_img]overlay=0:0:enable='lte(t,{cover_duration:.4f})'")
+            cover_overlay_op = f"[cover_img]overlay=0:0:enable='lte(t,{cover_duration:.4f})'"
 
         overlay_input_idx = None
+        persistent_overlay_op = None
         overlay_path = config.get("video_overlay")
         if overlay_path and os.path.isfile(overlay_path):
             overlay_input_idx = len(input_files) + len(extra_inputs)
             extra_inputs.append(("overlay", overlay_input_idx, os.path.abspath(overlay_path)))
-            vf_parts.append(
-                f"[overlay_img]overlay=0:0:enable='gt(t,{cover_duration:.4f})'")
+            persistent_overlay_op = f"[overlay_img]overlay=0:0:enable='gt(t,{cover_duration:.4f})'"
 
         rec_blink = config.get("rec_blink")
         rec_dot_input_idx = None
+        rec_dot_overlay_op = None
         if rec_blink:
             dot_path = rec_blink.get("dot_image")
             if dot_path and os.path.isfile(dot_path):
@@ -777,9 +993,27 @@ def main():
                 by = rec_blink.get("y", 55)
                 period = rec_blink.get("period", 1.0)
                 half = period / 2
-                vf_parts.append(
+                rec_dot_overlay_op = (
                     f"[rec_dot]overlay={bx}:{by}:enable='if(gt(t,{cover_duration:.1f}),gte(mod(t,{period:.2f}),{half:.2f}),0)'"
                 )
+
+        timed_broll_inputs = []
+        for cue in config.get("broll_overlays", []) or []:
+            video_path = cue.get("video")
+            if not video_path or not os.path.isfile(video_path):
+                continue
+            input_idx = len(input_files) + len(extra_inputs)
+            extra_inputs.append(("broll", input_idx, os.path.abspath(video_path)))
+            timed_broll_inputs.append((cue, input_idx))
+
+        timed_image_inputs = []
+        for cue in config.get("image_overlays", []) or []:
+            image_path = cue.get("image")
+            if not image_path or not os.path.isfile(image_path):
+                continue
+            input_idx = len(input_files) + len(extra_inputs)
+            extra_inputs.append(("image_overlay", input_idx, os.path.abspath(image_path)))
+            timed_image_inputs.append((cue, input_idx))
 
         # --- Assemble full filter_complex ---
         filter_lines = [base_filter]
@@ -803,29 +1037,80 @@ def main():
             merged_v_label = "[merged_v]"
             merged_a_label = "[merged_a]"
 
-        if vf_parts:
-            # Count how many overlay operations we have at the end
-            overlay_count = sum(1 for x in [cover_input_idx, overlay_input_idx, rec_dot_input_idx] if x is not None)
-            if overlay_count > 0:
-                pre_parts = vf_parts[:-overlay_count]
-                overlay_parts = vf_parts[-overlay_count:]
+        if cover_input_idx is not None:
+            filter_lines.append(f"[{cover_input_idx}:v]scale={width}:{height},format=rgba[cover_img]")
+        if overlay_input_idx is not None:
+            filter_lines.append(f"[{overlay_input_idx}:v]scale={width}:{height},format=rgba[overlay_img]")
+        if rec_dot_input_idx is not None:
+            filter_lines.append(f"[{rec_dot_input_idx}:v]format=rgba[rec_dot]")
 
-                current_label = merged_v_label
-                if pre_parts:
-                    pre_chain = ",".join(pre_parts)
-                    filter_lines.append(f"{current_label}{pre_chain}[pre_v]")
-                    current_label = "[pre_v]"
+        current_v_label = merged_v_label
+        video_stage_idx = 0
 
-                for oi, opart in enumerate(overlay_parts):
-                    out_label = f"[ov{oi}]" if oi < len(overlay_parts) - 1 else "[final_v]"
-                    filter_lines.append(f"{current_label}{opart}{out_label}")
-                    current_label = out_label
+        if pre_vf_parts:
+            pre_chain = ",".join(pre_vf_parts)
+            filter_lines.append(f"{current_v_label}{pre_chain}[pre_v]")
+            current_v_label = "[pre_v]"
+
+        for ov_idx, (cue, input_idx) in enumerate(timed_broll_inputs):
+            cue_start, cue_end = _cue_time_range(cue, default_duration=2.0)
+            start_out = cover_duration + cue_start / speed
+            end_out = cover_duration + cue_end / speed
+            duration_out = max(0.05, end_out - start_out)
+            source_start = _float_or_default(cue.get("source_start", cue.get("broll_start", 0.0)), 0.0)
+            prep_label = f"broll_src_{ov_idx}"
+            out_label = f"[vstage{video_stage_idx}]"
+            filter_lines.append(
+                f"[{input_idx}:v]trim=start={source_start:.4f}:duration={duration_out:.4f},"
+                f"setpts=PTS-STARTPTS+{start_out:.4f}/TB,"
+                f"scale={width}:{height}:force_original_aspect_ratio=increase,"
+                f"crop={width}:{height},setsar=1,format=rgba[{prep_label}]"
+            )
+            filter_lines.append(
+                f"{current_v_label}[{prep_label}]overlay=0:0:"
+                f"enable='between(t,{start_out:.4f},{end_out:.4f})'{out_label}"
+            )
+            current_v_label = out_label
+            video_stage_idx += 1
+
+        for ov_idx, (cue, input_idx) in enumerate(timed_image_inputs):
+            cue_start, cue_end = _cue_time_range(cue, default_duration=2.5)
+            start_out = cover_duration + cue_start / speed
+            end_out = cover_duration + cue_end / speed
+            prep_label = f"image_ov_{ov_idx}"
+            out_label = f"[vstage{video_stage_idx}]"
+            fit = cue.get("fit", "cover")
+            if fit == "contain":
+                image_filter = (
+                    f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
+                    f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,format=rgba"
+                )
             else:
-                vf_chain = ",".join(vf_parts)
-                filter_lines.append(f"{merged_v_label}{vf_chain}[final_v]")
-            map_v = "[final_v]"
-        else:
-            map_v = merged_v_label
+                image_filter = (
+                    f"scale={width}:{height}:force_original_aspect_ratio=increase,"
+                    f"crop={width}:{height},format=rgba"
+                )
+            filter_lines.append(f"[{input_idx}:v]{image_filter}[{prep_label}]")
+            filter_lines.append(
+                f"{current_v_label}[{prep_label}]overlay=0:0:"
+                f"enable='between(t,{start_out:.4f},{end_out:.4f})'{out_label}"
+            )
+            current_v_label = out_label
+            video_stage_idx += 1
+
+        if subtitle_filter:
+            filter_lines.append(f"{current_v_label}{subtitle_filter}[sub_v]")
+            current_v_label = "[sub_v]"
+
+        for opart in [cover_overlay_op, persistent_overlay_op, rec_dot_overlay_op]:
+            if not opart:
+                continue
+            out_label = f"[vstage{video_stage_idx}]"
+            filter_lines.append(f"{current_v_label}{opart}{out_label}")
+            current_v_label = out_label
+            video_stage_idx += 1
+
+        map_v = current_v_label
 
         if af_parts:
             af_chain = ",".join(af_parts)
@@ -853,23 +1138,6 @@ def main():
             map_a = "[final_a]"
         else:
             map_a = voice_label
-
-        # Add cover image scaling/labeling if needed
-        if cover_input_idx is not None:
-            cover_prep = f"[{cover_input_idx}:v]scale={width}:{height},format=rgba[cover_img]"
-            filter_lines.insert(1, cover_prep)
-
-        # Add persistent overlay image scaling/labeling if needed
-        if overlay_input_idx is not None:
-            overlay_prep = f"[{overlay_input_idx}:v]scale={width}:{height},format=rgba[overlay_img]"
-            filter_lines.insert(1 + (1 if cover_input_idx is not None else 0), overlay_prep)
-
-        # Add REC dot image prep if needed
-        if rec_dot_input_idx is not None:
-            prep_idx = 1 + sum(1 for x in [cover_input_idx, overlay_input_idx] if x is not None)
-            # BGM filter lines are appended (not inserted), so no offset needed here
-            dot_prep = f"[{rec_dot_input_idx}:v]format=rgba[rec_dot]"
-            filter_lines.insert(prep_idx, dot_prep)
 
         full_filter = ";\n".join(filter_lines)
 
