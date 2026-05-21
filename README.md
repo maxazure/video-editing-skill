@@ -23,6 +23,12 @@
    │           ↓                 (Codex 内置 imagegen 工具直接执行；无 API key)
    │           Codex imagegen   注意力机制 / 复利 / 信息茧房 等自动配图
    │
+   ├─→ storyboard_plan.py       transcript/clean_script → shot cards
+   │                            生成路由 / 连续性锚点 / Dreamina 额度提醒
+   │
+   ├─→ storyboard_assets.py     shot cards → 素材任务清单 / ready 预检
+   │                            imagegen / Dreamina / motion / broll 状态表
+   │
    ├─→ jump_cut.py              自适应静音检测 → cut list → 去停顿成片
    │     └─→ timeline_view.py   切点 filmstrip + waveform 人工复核图
    │
@@ -58,7 +64,7 @@ cd ~/projects/video-editing-skill
 python3 scripts/utils.py
 
 # 4. 跑一遍测试套件确认 OK
-pytest tests/           # 180 个测试，应该 <2 秒
+pytest tests/           # 190 个测试，应该 <3 秒
 ```
 
 每天做一条视频的完整模板：**[docs/prompts/15-xhs-daily-tech-video.md](docs/prompts/15-xhs-daily-tech-video.md)**
@@ -153,6 +159,38 @@ NVIDIA GPU 配置详见本文末尾的 [Linux GPU 配置](#linux-gpu-配置) 段
 | [`auto_enrich.py`](scripts/auto_enrich.py) | 编排上面四个，输出综合 plan JSON（含 imagegen cues） |
 
 `render_final.py --enrich-plan work/enrich_plan.json` 会把 plan 里的 B-roll、章节卡、贴纸和已生成图片 cue 自动接回单次渲染；没有实际文件的 imagegen cue 会保留为提示，不会阻塞导出。
+
+### 🎞️ Storyboard Plan — 分镜与生成路由
+[`scripts/storyboard_plan.py`](scripts/storyboard_plan.py) · [`scripts/storyboard_assets.py`](scripts/storyboard_assets.py) · [分镜文档](docs/prompts/24-storyboard-plan.md) · [素材清单文档](docs/prompts/25-storyboard-assets.md)
+
+借鉴 GitHub 上视频生成类项目的 storyboard / shot continuity / provider routing 思路，但保持本项目的轻量原则：脚本只做本地规划，不提交任何付费生成任务。
+
+| 输出 | 说明 |
+|---|---|
+| `storyboard_plan.json` | 每个 shot 的时间码、source segments、section、narration、keywords、visual first/motion/last frame |
+| `generation_route` | `codex_imagegen` / `dreamina_video` / `remotion_hyperframes` / `media_library_broll` + fallback + why |
+| `continuity.anchors` | 系列色彩、比例、字幕安全区、上一镜头引用、关键词线索 |
+| `storyboard_plan.md` | 适合人工 review 的 shot cards，含 prompt 和检查项 |
+| `storyboard_assets.json` | 每个 shot 对应素材是否 ready、需要生成/审批/渲染/搜索 |
+
+常用：
+```bash
+python3 scripts/storyboard_plan.py \
+  --transcript work/transcript.json \
+  --clean-script work/clean_script.md \
+  --output work/storyboard_plan.json \
+  --markdown work/storyboard_plan.md \
+  --max-shots 8 \
+  --target-aspect 9:16
+
+python3 scripts/storyboard_assets.py \
+  --storyboard-plan work/storyboard_plan.json \
+  --asset-root work \
+  --output work/storyboard_assets.json \
+  --markdown work/storyboard_assets.md
+```
+
+路由规则：抽象概念优先 `codex_imagegen`；数字/指标优先 `remotion_hyperframes`；动作/场景变化推荐 `dreamina_video` 但只标记为需确认，因为 Dreamina/即梦生成可能消耗 credits；其他先走本地素材库 B-roll。`storyboard_assets.py --strict` 会在素材未 ready 时返回退出码 2，适合渲染前拦截。生图优先使用 Codex 内置 `image_gen` 工具，即 OpenAI GPT Image 2（`gpt-image-2`）。
 
 ### ✂️ Jump Cut — 自动去停顿
 [`scripts/jump_cut.py`](scripts/jump_cut.py) · [详细文档](docs/prompts/21-jump-cut.md)
@@ -252,6 +290,27 @@ python3 scripts/render_final.py \
 
 验证结果：新增/相关测试 12 项通过；完整 `.venv/bin/python -m pytest tests -q` 通过 180 项；`python3 -m compileall scripts tests` 通过；真实 1 秒 ffmpeg 合成验证了 `master.mp4` 会输出为 `master_V1.mp4`。
 
+### 2026-05-22 自动化升级记录
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`calesthio/OpenMontage`](https://github.com/calesthio/OpenMontage) | provider scoring、pipeline manifest、decision log、post-render gates | 新增本地 shot-card 路由，不直接接云端 provider |
+| [`HKUDS/ViMax`](https://github.com/HKUDS/ViMax) | shot-level storyboard、first/last frame、motion description、continuity | 新增 first/motion/last frame 和 continuity anchors |
+| [`trilogy-group/ttv-pipeline`](https://github.com/trilogy-group/ttv-pipeline) | keyframe/chaining mode、长视频分段、backend fallback | 新增 route fallback 与 Dreamina 额度提醒 |
+| [`vericontext/vibeframe`](https://github.com/vericontext/vibeframe) | brief → storyboard/design → validate/build 的 agent-native 项目循环 | 新增 `storyboard_plan.md` 供 agent/human review |
+| [`dseditor/AI-storyboard-generator`](https://github.com/dseditor/AI-storyboard-generator) | cut count、图片/视频重生成、ComfyUI 工作流配置 | 新增 `--max-shots` 和每镜头 prompt card |
+| [`Forget-C/Jellyfish`](https://github.com/Forget-C/Jellyfish) | shot preparation、候选资产确认、统一 readiness state、任务状态 | 新增 `storyboard_assets.py` 素材 readiness manifest |
+| [`samagra14/mediagateway`](https://github.com/samagra14/mediagateway) | 多 provider 状态、gallery 管理、成本统计 | 新增 `paid_credit_tasks` 与 `needs_approval` 状态 |
+| [`aaurelions/vidosy`](https://github.com/aaurelions/vidosy) | JSON 驱动视频结构与 media assets 约定 | 新增 `work/imagegen` / `work/generated_video` / `work/motion` 默认路径 |
+
+新增/调整能力：`scripts/storyboard_plan.py` 可把 `transcript.json` 和可选 `clean_script.md` 转为 `storyboard_plan.json` / `storyboard_plan.md`，为每个 shot 标注时间码、叙事段落、画面语言、生成路由、fallback、连续性锚点和 review checks；`scripts/storyboard_assets.py` 可把分镜转成素材 readiness manifest，标出 `ready` / `candidate_found` / `needs_generation` / `needs_approval` / `needs_render` / `search_needed`，其中 `dreamina_video` 只做规划并明确提示可能消耗 credits。
+
+使用方式：先跑 `python3 scripts/storyboard_plan.py --transcript work/transcript.json --clean-script work/clean_script.md --output work/storyboard_plan.json --markdown work/storyboard_plan.md --max-shots 8 --target-aspect 9:16`，再跑 `python3 scripts/storyboard_assets.py --storyboard-plan work/storyboard_plan.json --asset-root work --output work/storyboard_assets.json --markdown work/storyboard_assets.md --strict` 做渲染前素材预检。
+
+验证结果：新增 `tests/test_storyboard_plan.py` 5 项和 `tests/test_storyboard_assets.py` 5 项通过；`.venv/bin/python -m pytest tests/test_storyboard_assets.py tests/test_storyboard_plan.py -q` 通过 10 项；完整 `.venv/bin/python -m pytest tests -q` 通过 `190 passed in 1.51s`；`python3 -m compileall scripts tests` 通过。
+
 ### ✅ Render QA — 渲染后质检回路
 [`scripts/render_qa.py`](scripts/render_qa.py)
 
@@ -333,10 +392,27 @@ python3 $SKILL/scripts/auto_enrich.py \
   --bgm $WORK/origin/bgm.mp3 \
   --output $WORK/work/enrich_plan.json
 
-# 3b. 如果 imagegen[] 非空，在 Codex 里直接调内置 imagegen 工具
+# 3b. 先生成分镜 shot cards，审查 B-roll / 生图 / 生成视频 / 动效路由
+python3 $SKILL/scripts/storyboard_plan.py \
+  --transcript $WORK/work/transcript.json \
+  --clean-script $WORK/work/clean_script.md \
+  --output $WORK/work/storyboard_plan.json \
+  --markdown $WORK/work/storyboard_plan.md \
+  --max-shots 8 \
+  --target-aspect 9:16
+
+# 3c. 素材任务清单与预检：哪些已 ready，哪些要生图/审批/渲染/搜索
+python3 $SKILL/scripts/storyboard_assets.py \
+  --storyboard-plan $WORK/work/storyboard_plan.json \
+  --asset-root $WORK/work \
+  --output $WORK/work/storyboard_assets.json \
+  --markdown $WORK/work/storyboard_assets.md
+
+# 3d. 如果 imagegen[] 或 storyboard_assets 里的 needs_generation 非空，在 Codex 里直接调内置 imagegen 工具
 #     生图优先使用 Codex 内置 `image_gen` 工具，即 OpenAI GPT Image 2（`gpt-image-2`）。
 #     把每条 prompt_en 用 imagegen 生成 1024x1536，存到 $WORK/work/imagegen/
 #     不需要 OPENAI_API_KEY；详见 docs/prompts/19-imagegen.md
+#     如果 storyboard_assets 里有 needs_approval，提交 Dreamina/即梦前先确认，因为可能消耗 credits。
 
 # 4. 渲染
 python3 $SKILL/scripts/render_final.py \
@@ -378,7 +454,7 @@ python3 $SKILL/scripts/generate_caption.py \
 ## 测试
 
 ```bash
-pytest tests/           # 176 测试，<2 秒
+pytest tests/           # 190 测试，<3 秒
 ```
 
 按模块跑：
@@ -392,6 +468,8 @@ pytest tests/test_render_enrich_plan.py -v  # enrich_plan 自动接入渲染
 pytest tests/test_timeline_view.py -v       # 切点/QA 可视化复盘图
 pytest tests/test_generate_caption.py -v    # 文案合成
 pytest tests/test_imagegen_hint.py -v       # gpt-image-2 提示词检测
+pytest tests/test_storyboard_plan.py -v     # 分镜 shot cards + 生成路由
+pytest tests/test_storyboard_assets.py -v   # 分镜素材 readiness manifest
 ```
 
 ### 本次自动化更新记录（2026-05-20 UTC）
@@ -424,6 +502,9 @@ pytest tests/test_imagegen_hint.py -v       # gpt-image-2 提示词检测
 | **20** | **[Render QA](docs/prompts/20-render-qa.md)** | **渲染后机器质检** |
 | **21** | **[Jump Cut](docs/prompts/21-jump-cut.md)** | **自动去停顿** |
 | **22** | **[Timeline View](docs/prompts/22-timeline-view.md)** | **切点/可疑区间人工复盘图** |
+| **23** | **[Versioned Output](docs/prompts/23-versioned-output.md)** | **避免覆盖旧成片** |
+| **24** | **[Storyboard Plan](docs/prompts/24-storyboard-plan.md)** | **分镜 shot cards + 生成路由** |
+| **25** | **[Storyboard Assets](docs/prompts/25-storyboard-assets.md)** | **分镜素材任务清单 + ready 预检** |
 
 完整列表见 [docs/prompts/README.md](docs/prompts/README.md)。
 
@@ -465,6 +546,8 @@ scripts/
 ├── auto_stickers.py            情绪→贴纸                        [V3]
 ├── imagegen_hint.py            抽象概念→gpt-image-2 提示词       [V3]
 ├── auto_enrich.py              丰富度编排                       [V3]
+├── storyboard_plan.py          分镜 shot cards + 生成路由         [V3]
+├── storyboard_assets.py        分镜素材任务清单 + ready 预检       [V3]
 ├── render_final.py             单次编码渲染 + enrich_plan 接入（V3 强化）
 ├── render_qa.py                渲染后黑屏/静帧/静音/尺寸质检       [V3]
 ├── timeline_view.py            filmstrip+waveform 可视化复盘图     [V3]

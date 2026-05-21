@@ -47,3 +47,6 @@ media/
 media_index.json
 media_index.db
 media_index.json.bak
+
+# Research artifacts from automation runs
+research-archive/

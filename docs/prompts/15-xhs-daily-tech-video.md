@@ -61,7 +61,27 @@
     # （不需要 OPENAI_API_KEY；Codex 自动路由到 gpt-image-2）
     # 详见 docs/prompts/19-imagegen.md
 
-4c. # 如果输入是完整口播视频、访谈或录屏，且停顿很多，可先生成去停顿 cut list：
+4c. # 生成分镜 shot cards，先审查生成路由和连续性，再决定是否消耗视频生成额度：
+    python3 scripts/storyboard_plan.py \
+      --transcript work/transcript.json \
+      --clean-script work/clean_script.md \
+      --output work/storyboard_plan.json \
+      --markdown work/storyboard_plan.md \
+      --max-shots 8 \
+      --target-aspect 9:16
+    # codex_imagegen 用 Codex 内置 image_gen；dreamina_video 只是建议，提交 Dreamina/即梦前先确认 credits。
+    # 详见 docs/prompts/24-storyboard-plan.md
+
+4d. # 把分镜转成素材清单，先审查哪些素材 ready、需要生成、需要审批或要补 B-roll：
+    python3 scripts/storyboard_assets.py \
+      --storyboard-plan work/storyboard_plan.json \
+      --asset-root work \
+      --output work/storyboard_assets.json \
+      --markdown work/storyboard_assets.md
+    # 渲染前可加 --strict；如果有 needs_approval，提交 Dreamina/即梦前必须确认 credits。
+    # 详见 docs/prompts/25-storyboard-assets.md
+
+4e. # 如果输入是完整口播视频、访谈或录屏，且停顿很多，可先生成去停顿 cut list：
     python3 scripts/jump_cut.py origin/<talking_video>.mp4 \
       --dry-run \
       --cut-list work/jumpcut.json
@@ -148,6 +168,10 @@ day<NN>/
 │   ├── llm.json            # LLM 返回的 JSON
 │   ├── clean_script.md     # 5 字段重组后的清稿
 │   ├── enrich_plan.json    # broll/sticker/chapter cues
+│   ├── storyboard_plan.json # 分镜 shot cards + 生成路由
+│   ├── storyboard_plan.md   # 人工 review 版分镜卡
+│   ├── storyboard_assets.json # 素材任务清单 + ready/paid 预检
+│   ├── storyboard_assets.md   # 人工 review 版素材表
 │   ├── jumpcut.json        # 可选：去停顿 cut list
 │   └── render_config.json  # 喂给 render_final 的配置
 └── output/
