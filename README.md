@@ -10,6 +10,9 @@
    ├─→ transcribe.py            转写 + 词级时间戳 + 口误标记
    │                            (mlx-whisper / faster-whisper / openai-whisper)
    │
+   ├─→ rough_cut.py             ASR 粗剪 → 去纯口头禅 / 相邻重复句
+   │                            输出可审计 cut list，可选单次 concat 渲染
+   │
    ├─→ rewrite_script.py        LLM 重组为 5 段式 (hook/pain/turn/value[]/cta)
    │     ↑ 8 hook 模板 + 5 CTA 模板 + 3 故事结构
    │
@@ -64,7 +67,7 @@ cd ~/projects/video-editing-skill
 python3 scripts/utils.py
 
 # 4. 跑一遍测试套件确认 OK
-pytest tests/           # 190 个测试，应该 <3 秒
+pytest tests/           # 195 个测试，应该 <3 秒
 ```
 
 每天做一条视频的完整模板：**[docs/prompts/15-xhs-daily-tech-video.md](docs/prompts/15-xhs-daily-tech-video.md)**
@@ -192,6 +195,25 @@ python3 scripts/storyboard_assets.py \
 
 路由规则：抽象概念优先 `codex_imagegen`；数字/指标优先 `remotion_hyperframes`；动作/场景变化推荐 `dreamina_video` 但只标记为需确认，因为 Dreamina/即梦生成可能消耗 credits；其他先走本地素材库 B-roll。`storyboard_assets.py --strict` 会在素材未 ready 时返回退出码 2，适合渲染前拦截。生图优先使用 Codex 内置 `image_gen` 工具，即 OpenAI GPT Image 2（`gpt-image-2`）。
 
+### ✂️ ASR Rough Cut — 自动去口头禅/重复句
+[`scripts/rough_cut.py`](scripts/rough_cut.py) · [详细文档](docs/prompts/26-rough-cut.md)
+
+借鉴 FireRed-OpenStoryline 的 ASR speech rough cut 思路，但保持本项目的本地可审计方式：不调用 LLM，直接利用 `transcribe.py --detect-fillers` 的结果和相邻 transcript 相似度，先输出计划，再选择是否渲染。
+
+| 能力 | 说明 |
+|---|---|
+| 纯口头禅移除 | 读取 `filler_words[].is_filler_only`，也能用内置中英文 filler 词表兜底 |
+| 相邻重复句检测 | 用归一化文本相似度识别口误重说，默认保守阈值 `0.88` |
+| 可审计计划 | 输出 `decisions` / `removed_segments` / `keep_segments` / `speedup_ratio` |
+| 单次编码渲染 | 复用 `jump_cut.py` 的 concat 渲染命令，不产生多代中间文件 |
+
+常用：
+```bash
+python3 scripts/rough_cut.py --transcript work/transcript.json --cut-list work/rough_cut.json
+python3 scripts/rough_cut.py --transcript work/transcript.json --input origin/talking.mp4 --output output/talking.roughcut.mp4 --cut-list work/rough_cut.json
+python3 scripts/timeline_view.py origin/talking.mp4 --cut-list work/rough_cut.json --output-dir output/verify/rough_cut
+```
+
 ### ✂️ Jump Cut — 自动去停顿
 [`scripts/jump_cut.py`](scripts/jump_cut.py) · [详细文档](docs/prompts/21-jump-cut.md)
 
@@ -311,6 +333,23 @@ python3 scripts/render_final.py \
 
 验证结果：新增 `tests/test_storyboard_plan.py` 5 项和 `tests/test_storyboard_assets.py` 5 项通过；`.venv/bin/python -m pytest tests/test_storyboard_assets.py tests/test_storyboard_plan.py -q` 通过 10 项；完整 `.venv/bin/python -m pytest tests -q` 通过 `190 passed in 1.51s`；`python3 -m compileall scripts tests` 通过。
 
+### 2026-05-23 自动化升级记录
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`FireRedTeam/FireRed-OpenStoryline`](https://github.com/FireRedTeam/FireRed-OpenStoryline) | ASR speech rough cut：按时间戳去口头禅、卡壳和重复表达，并把结果交给后续 timeline | 新增本地 `rough_cut.py`，用 transcript/filler metadata 生成可审计 cut list |
+| [`WyattBlue/auto-editor`](https://github.com/WyattBlue/auto-editor) | 自动剪辑输出可交换时间线，强调先生成 timeline 再渲染/交给 NLE | `rough_cut.py` 先产 `decisions` / `keep_segments`，再可选渲染 |
+| [`AcademySoftwareFoundation/OpenTimelineIO`](https://github.com/AcademySoftwareFoundation/OpenTimelineIO) | editorial timeline interchange 与 adapter 生态 | 本次暂不引入 OTIO 依赖，保留 JSON cut list 作为轻量交换层 |
+| [`calesthio/OpenMontage`](https://github.com/calesthio/OpenMontage) | pipeline artifact / review gate / tool contract | 新增 rough cut 计划里的 `review_hint`，继续走 timeline_view 人工复核 |
+
+新增/调整能力：`scripts/rough_cut.py` 可读取 `transcript.json`，自动移除纯口头禅片段和相邻重复句，输出 `rough_cut.json`，其中包含每个删除决策、合并后的移除区间、保留区间、预计输出时长和节奏压缩比例；传入 `--input/--output` 时可直接复用现有 concat 渲染能力。
+
+使用方式：先跑 `python3 scripts/transcribe.py origin/voice.wav --language zh --word-timestamps --detect-fillers`，再跑 `python3 scripts/rough_cut.py --transcript work/transcript.json --cut-list work/rough_cut.json` 审查计划；确认后用 `python3 scripts/rough_cut.py --transcript work/transcript.json --input origin/talking.mp4 --output output/talking.roughcut.mp4 --cut-list work/rough_cut.json` 渲染。
+
+验证结果：新增 `tests/test_rough_cut.py` 5 项通过；`python3 -m compileall scripts tests` 通过；完整 `.venv/bin/python -m pytest tests -q` 通过 `195 passed in 1.42s`；`docs/prompts/26-rough-cut.md` 记录完整使用方式。
+
 ### ✅ Render QA — 渲染后质检回路
 [`scripts/render_qa.py`](scripts/render_qa.py)
 
@@ -375,6 +414,11 @@ SKILL=~/projects/video-editing-skill
 # 1. 转写
 python3 $SKILL/scripts/transcribe.py $WORK/origin/voice.mp3 \
   --word-timestamps --detect-fillers
+
+# 1b. 可选：按 ASR 去纯口头禅/重复句，先审查 cut list 再渲染
+python3 $SKILL/scripts/rough_cut.py \
+  --transcript $WORK/work/transcript.json \
+  --cut-list $WORK/work/rough_cut.json
 
 # 2. 重组（手动喂 prompt 给 LLM，落地 JSON 后回放）
 python3 $SKILL/scripts/rewrite_script.py \
@@ -454,7 +498,7 @@ python3 $SKILL/scripts/generate_caption.py \
 ## 测试
 
 ```bash
-pytest tests/           # 190 测试，<3 秒
+pytest tests/           # 195 测试，<3 秒
 ```
 
 按模块跑：
@@ -465,6 +509,7 @@ pytest tests/test_auto_broll.py -v          # B-roll 调度
 pytest tests/test_multi_export.py -v        # 多平台比例转换
 pytest tests/test_render_qa.py -v           # 渲染后质检
 pytest tests/test_render_enrich_plan.py -v  # enrich_plan 自动接入渲染
+pytest tests/test_rough_cut.py -v           # ASR 粗剪：口头禅/重复句 cut list
 pytest tests/test_timeline_view.py -v       # 切点/QA 可视化复盘图
 pytest tests/test_generate_caption.py -v    # 文案合成
 pytest tests/test_imagegen_hint.py -v       # gpt-image-2 提示词检测
@@ -505,6 +550,7 @@ pytest tests/test_storyboard_assets.py -v   # 分镜素材 readiness manifest
 | **23** | **[Versioned Output](docs/prompts/23-versioned-output.md)** | **避免覆盖旧成片** |
 | **24** | **[Storyboard Plan](docs/prompts/24-storyboard-plan.md)** | **分镜 shot cards + 生成路由** |
 | **25** | **[Storyboard Assets](docs/prompts/25-storyboard-assets.md)** | **分镜素材任务清单 + ready 预检** |
+| **26** | **[ASR Rough Cut](docs/prompts/26-rough-cut.md)** | **去口头禅/重复句粗剪** |
 
 完整列表见 [docs/prompts/README.md](docs/prompts/README.md)。
 
@@ -534,6 +580,7 @@ scripts/
 ├── utils.py                    平台/字体/编码器自检
 ├── _internal_text_guard.py     内部 token 拦截器
 ├── transcribe.py               Whisper 转写
+├── rough_cut.py                transcript 粗剪：去口头禅/重复句      [V3]
 ├── extract_audio.py            音频提取
 ├── split_video.py              按句切片（V2 兼容）
 ├── media_library.py            素材库索引（CLIP-ready）

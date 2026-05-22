@@ -1,6 +1,6 @@
 ---
 name: video-editing
-description: "Xiaohongshu/RED-tuned content engine for short-form video. Use when: producing daily 小红书/抖音/视频号 videos from raw voice-over + b-roll materials; transcribing speech with mlx-whisper/faster-whisper; rewriting transcripts into 5-field (hook/pain/turn/value/cta) story structures using 8 hook + 5 CTA templates; running platform-rule content lint (80+ regex for 广告法极限词/导流外站/医美/财富诱导); auto-scheduling B-roll cutaways, chapter title cards, emoji stickers, and BGM beat-sync (librosa); detecting abstract-concept opportunities and emitting gpt-image-2-shaped prompts that the Codex built-in `imagegen` tool can run directly (no API key needed); building storyboard_plan shot cards from transcript/clean_script with generation routing (codex_imagegen / dreamina_video / remotion_hyperframes / media_library_broll), continuity anchors, first/motion/last-frame prompts, and paid-credit approval notes before generating video assets; turning storyboard plans into asset manifests with ready / candidate_found / needs_generation / needs_approval / needs_render / search_needed states so generated media, local motion cards, and B-roll are reviewed before render; ingesting auto_enrich JSON via render_final.py --enrich-plan so B-roll, chapter cards, stickers, and generated images feed the final render without manual config copying; removing talking-head pauses with adaptive loudnorm/silencedetect jump cuts and auditable cut lists; generating filmstrip+waveform timeline-view PNGs for cut-boundary or render-QA human review; rendering with audience profiles (tech_pro/lifestyle), Heavy CJK fonts, automatic loudness normalisation (dynaudnorm+compressor+loudnorm), primary-speed control, karaoke/word-level subtitles, and optional --versioned-output `_V<N>` files that avoid overwriting previous renders; running post-render QA for dimensions/audio/black frames/frozen video/silence; exporting one master into three platform deliverables (xhs 3:4 / douyin 9:16 / wxch ≤60s); generating titles + 200-500 char captions + tags + publish-time hints; exporting to JianYing/CapCut; generating Remotion voiceover animations. Refuses pipeline-internal tokens (speed multipliers, model names, debug strings) on output frames. Requires ffmpeg and a whisper backend (mlx-whisper on Apple Silicon, faster-whisper elsewhere). Pillow needed for chapter cards. librosa optional for real beat detection. Remotion workflow additionally requires Node.js. Image generation routes through Codex `imagegen` (gpt-image-2) when in Codex; outside Codex, callers use the OpenAI Python SDK directly with their own OPENAI_API_KEY (this skill does not bundle an OpenAI client)."
+description: "Xiaohongshu/RED-tuned content engine for short-form video. Use when: producing daily 小红书/抖音/视频号 videos from raw voice-over + b-roll materials; transcribing speech with mlx-whisper/faster-whisper; planning ASR rough cuts from transcript filler metadata and adjacent repeated sentences; rewriting transcripts into 5-field (hook/pain/turn/value/cta) story structures using 8 hook + 5 CTA templates; running platform-rule content lint (80+ regex for 广告法极限词/导流外站/医美/财富诱导); auto-scheduling B-roll cutaways, chapter title cards, emoji stickers, and BGM beat-sync (librosa); detecting abstract-concept opportunities and emitting gpt-image-2-shaped prompts that the Codex built-in `imagegen` tool can run directly (no API key needed); building storyboard_plan shot cards from transcript/clean_script with generation routing (codex_imagegen / dreamina_video / remotion_hyperframes / media_library_broll), continuity anchors, first/motion/last-frame prompts, and paid-credit approval notes before generating video assets; turning storyboard plans into asset manifests with ready / candidate_found / needs_generation / needs_approval / needs_render / search_needed states so generated media, local motion cards, and B-roll are reviewed before render; ingesting auto_enrich JSON via render_final.py --enrich-plan so B-roll, chapter cards, stickers, and generated images feed the final render without manual config copying; removing talking-head pauses with adaptive loudnorm/silencedetect jump cuts and auditable cut lists; generating filmstrip+waveform timeline-view PNGs for cut-boundary or render-QA human review; rendering with audience profiles (tech_pro/lifestyle), Heavy CJK fonts, automatic loudness normalisation (dynaudnorm+compressor+loudnorm), primary-speed control, karaoke/word-level subtitles, and optional --versioned-output `_V<N>` files that avoid overwriting previous renders; running post-render QA for dimensions/audio/black frames/frozen video/silence; exporting one master into three platform deliverables (xhs 3:4 / douyin 9:16 / wxch ≤60s); generating titles + 200-500 char captions + tags + publish-time hints; exporting to JianYing/CapCut; generating Remotion voiceover animations. Refuses pipeline-internal tokens (speed multipliers, model names, debug strings) on output frames. Requires ffmpeg and a whisper backend (mlx-whisper on Apple Silicon, faster-whisper elsewhere). Pillow needed for chapter cards. librosa optional for real beat detection. Remotion workflow additionally requires Node.js. Image generation routes through Codex `imagegen` (gpt-image-2) when in Codex; outside Codex, callers use the OpenAI Python SDK directly with their own OPENAI_API_KEY (this skill does not bundle an OpenAI client)."
 argument-hint: "Provide the path(s) to voice-over audio + optional b-roll videos to process"
 metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
 ---
@@ -15,6 +15,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 口播音频 + 无声素材
    │
    ├─→ transcribe.py            转写 + 词级时间戳 + 口误标记
+   ├─→ rough_cut.py             ASR 粗剪：去纯口头禅 / 相邻重复句
    ├─→ rewrite_script.py        LLM 重组 5 段式（hook/pain/turn/value/cta）
    ├─→ content_guard.py         80+ 条平台雷区 lint
    ├─→ auto_enrich.py           B-roll / 章节卡 / 贴纸 / BGM 卡点 / imagegen 提示词
@@ -40,6 +41,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 |---|---|---|
 | `_internal_text_guard.py` | 拦截内部 token 进画面 | 内部模块，render_final 自动调 |
 | `content_guard.py` | 平台雷区 lint | `--script` `--title` `--caption` `--strict` |
+| `rough_cut.py` | transcript 粗剪：去口头禅/重复句 | `--transcript` `--cut-list` / `--input` `--output` |
 | `rewrite_script.py` | LLM 5 段式重组 + 验证 | `--transcript` `--structure` `--hook-template` `--emit-prompt` / `--llm-output` |
 | `auto_broll.py` | B-roll 调度 | `--transcript` `--assets` `--max-single-shot` |
 | `auto_chapter_cards.py` | 章节卡 PNG | `--script` `--audio` `--style` `--output-dir` |
@@ -394,6 +396,26 @@ Whisper 常见的识别错误类型：
 5. 对于口误/乱码片段，在展示片段列表时（Phase 3）标注为建议跳过
 
 **注意**：此步骤必须在 Phase 5（渲染）之前完成，因为字幕文字来源于 transcript.json。修正后再渲染，才能保证最终视频中的字幕文字正确。
+
+### Phase 2.6: ASR Rough Cut（口头禅/重复句粗剪，可选）
+
+如果 transcript 中纯口头禅、卡壳重说或相邻重复句较多，先用 [rough_cut.py](./scripts/rough_cut.py) 生成可审计粗剪计划：
+
+```bash
+python3 scripts/rough_cut.py --transcript work/transcript.json --cut-list work/rough_cut.json
+```
+
+确认计划后可直接渲染粗剪版：
+
+```bash
+python3 scripts/rough_cut.py \
+  --transcript work/transcript.json \
+  --input origin/talking.mp4 \
+  --output output/talking.roughcut.mp4 \
+  --cut-list work/rough_cut.json
+```
+
+`rough_cut.py` 会输出 `decisions` / `removed_segments` / `keep_segments` / `speedup_ratio`。它不调用 LLM，不提交任何付费任务；只用 `transcribe.py --detect-fillers` 的 filler metadata 和相邻文本相似度做保守粗剪。激进切点应再用 `timeline_view.py --cut-list work/rough_cut.json` 复核。
 
 ### Phase 3: User Interaction（用户交互）
 

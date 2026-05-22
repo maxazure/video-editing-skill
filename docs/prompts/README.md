@@ -38,6 +38,7 @@
 | 23 | [Versioned Output 成片版本化](23-versioned-output.md) | `render_final.py --versioned-output` 自动写入 `_V<N>`，避免覆盖旧成片 |
 | 24 | [Storyboard Plan 分镜与生成路由](24-storyboard-plan.md) | transcript/clean script → shot cards、生成路由、连续性锚点 |
 | 25 | [Storyboard Assets 素材清单与预检](25-storyboard-assets.md) | storyboard_plan → 素材状态表、paid approval、ready 检查 |
+| 26 | [ASR Rough Cut 口头禅/重复句粗剪](26-rough-cut.md) | transcript/filler metadata → 可审计 cut list，可选直接渲染 |
 
 ## 快速上手
 
@@ -74,3 +75,4 @@
 | 不想每次渲染覆盖上一版成片 | [23-Versioned Output](23-versioned-output.md) |
 | 生成图/生成视频前想先审分镜和路由 | [24-Storyboard Plan](24-storyboard-plan.md) |
 | 渲染前想确认分镜素材是否都 ready | [25-Storyboard Assets](25-storyboard-assets.md) |
+| 口头禅、卡壳和重复句太多 | [26-ASR Rough Cut](26-rough-cut.md) |
