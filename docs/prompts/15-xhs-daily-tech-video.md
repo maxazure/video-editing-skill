@@ -125,6 +125,12 @@
      --output-dir output/ \
      --platforms xhs douyin wxch
 
+9b. # 可选：如果要交给 Premiere / FCP / Resolve 继续精修：
+    python3 scripts/export_edl.py \
+      --config work/render_config.json \
+      --output work/day<NN>_edit.edl \
+      --fps 30
+
 10. python3 scripts/render_qa.py \
      output/day<NN>_master_xhs.mp4 \
      --platform xhs \
@@ -173,6 +179,8 @@ day<NN>/
 │   ├── storyboard_assets.json # 素材任务清单 + ready/paid 预检
 │   ├── storyboard_assets.md   # 人工 review 版素材表
 │   ├── jumpcut.json        # 可选：去停顿 cut list
+│   ├── day<NN>_edit.edl    # 可选：NLE handoff
+│   ├── day<NN>_edit.edl.json # 可选：EDL manifest
 │   └── render_config.json  # 喂给 render_final 的配置
 └── output/
     ├── verify/                         # 可选：timeline_view PNG

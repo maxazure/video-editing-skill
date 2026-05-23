@@ -42,6 +42,9 @@
    ├─→ render_qa.py             渲染后黑屏/静帧/静音/尺寸质检
    │     └─→ timeline_view.py   QA 可疑区间可视化复盘
    │
+   ├─→ export_edl.py            render_config / cut list → EDL + manifest
+   │                            交给 Premiere / Final Cut Pro / Resolve
+   │
    ├─→ multi_export.py          小红书 3:4 / 抖音 9:16 / 视频号 ≤60s
    │
    └─→ generate_caption.py      标题 + 200-500 字正文 + 3-6 tags + 发布时段建议
@@ -67,7 +70,7 @@ cd ~/projects/video-editing-skill
 python3 scripts/utils.py
 
 # 4. 跑一遍测试套件确认 OK
-pytest tests/           # 195 个测试，应该 <3 秒
+pytest tests/           # 202 个测试，约 3 秒
 ```
 
 每天做一条视频的完整模板：**[docs/prompts/15-xhs-daily-tech-video.md](docs/prompts/15-xhs-daily-tech-video.md)**
@@ -295,6 +298,27 @@ python3 scripts/render_final.py \
 }
 ```
 
+### 🧭 NLE Handoff — EDL 导出
+[`scripts/export_edl.py`](scripts/export_edl.py) · [详细文档](docs/prompts/27-export-edl.md)
+
+借鉴自动剪辑/生成类项目常见的“先产 timeline，再交给专业剪辑软件继续精修”工作流：`export_edl.py` 可把本项目的 `render_config.json` 或 `rough_cut.py` / `jump_cut.py` 产生的 `keep_segments` 导出成单轨 CMX 3600 风格 EDL，同时写一个 JSON manifest 保留绝对源路径和精确秒数。
+
+常用：
+```bash
+python3 scripts/export_edl.py \
+  --config work/render_config.json \
+  --output work/day58_edit.edl \
+  --fps 30 \
+  --title DAY58_EDIT
+
+python3 scripts/export_edl.py \
+  --cut-list work/rough_cut.json \
+  --output work/rough_cut.edl \
+  --fps 30
+```
+
+适合把自动粗剪交给 Premiere / Final Cut Pro / DaVinci Resolve 做调色、混音、精剪或协作复核。复杂字幕、overlay、章节卡和 B-roll 仍以 `render_final.py` / `export_capcut.py` 为准。
+
 ### 2026-05-21 自动化升级记录
 
 本次联网研究的 GitHub 参考：
@@ -349,6 +373,23 @@ python3 scripts/render_final.py \
 使用方式：先跑 `python3 scripts/transcribe.py origin/voice.wav --language zh --word-timestamps --detect-fillers`，再跑 `python3 scripts/rough_cut.py --transcript work/transcript.json --cut-list work/rough_cut.json` 审查计划；确认后用 `python3 scripts/rough_cut.py --transcript work/transcript.json --input origin/talking.mp4 --output output/talking.roughcut.mp4 --cut-list work/rough_cut.json` 渲染。
 
 验证结果：新增 `tests/test_rough_cut.py` 5 项通过；`python3 -m compileall scripts tests` 通过；完整 `.venv/bin/python -m pytest tests -q` 通过 `195 passed in 1.42s`；`docs/prompts/26-rough-cut.md` 记录完整使用方式。
+
+### 2026-05-24 自动化升级记录
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`WyattBlue/auto-editor`](https://github.com/WyattBlue/auto-editor) | 自动剪辑后可导出 Premiere / Resolve / Final Cut Pro / Shotcut / Kdenlive 等时间线 | 新增本地 EDL handoff，不改变现有渲染链路 |
+| [`AcademySoftwareFoundation/OpenTimelineIO`](https://github.com/AcademySoftwareFoundation/OpenTimelineIO) | editorial timeline interchange，支持 FCP XML / AAF / CMX 3600 EDL 等 adapter 生态 | 不引入重依赖，先实现单轨 CMX 3600 风格 EDL + manifest |
+| [`Memories-ai-labs/vea-open-source`](https://github.com/Memories-ai-labs/vea-open-source) | agent 产出 FCPXML，并可交给 DaVinci Resolve 渲染 | 本项目补上 NLE 交接产物，保留专业软件精修入口 |
+| [`geerlingguy/final-cut-it-out`](https://github.com/geerlingguy/final-cut-it-out) | 用 ffmpeg 检测 silence 后在 Final Cut Pro 时间线上移除片段 | 本项目保持非破坏式：先导出 EDL/manifest，由人确认后进 NLE |
+
+新增/调整能力：`scripts/export_edl.py` 可读取 `render_config.json`、`rough_cut.py` 或 `jump_cut.py` 的 `keep_segments`，生成单轨 EDL 和 `<output>.json` manifest；支持 `--fps`、`--title`、`--source` 和可选 `--include-transcript-comments`。
+
+使用方式：从成片配置导出用 `python3 scripts/export_edl.py --config work/render_config.json --output work/day58_edit.edl --fps 30`；从粗剪 cut list 导出用 `python3 scripts/export_edl.py --cut-list work/rough_cut.json --output work/rough_cut.edl`。
+
+验证结果：新增 `tests/test_export_edl.py` 7 项通过；完整 `.venv/bin/python -m pytest tests -q` 通过 `202 passed in 3.18s`；`python3 -m compileall scripts tests` 通过；`git diff --check` 通过；research archive validator 通过（4 个 repo、4 份 file tree）。
 
 ### ✅ Render QA — 渲染后质检回路
 [`scripts/render_qa.py`](scripts/render_qa.py)
@@ -481,6 +522,12 @@ python3 $SKILL/scripts/timeline_view.py \
 python3 $SKILL/scripts/multi_export.py \
   $WORK/output/day${DAY}_master.mp4 --output-dir $WORK/output/
 
+# 6b. 可选：交给专业剪辑软件继续精修/调色/混音
+python3 $SKILL/scripts/export_edl.py \
+  --config $WORK/work/render_config.json \
+  --output $WORK/work/day${DAY}_edit.edl \
+  --fps 30
+
 # 7. 平台导出质检
 python3 $SKILL/scripts/render_qa.py \
   $WORK/output/day${DAY}_xhs.mp4 --platform xhs
@@ -498,7 +545,7 @@ python3 $SKILL/scripts/generate_caption.py \
 ## 测试
 
 ```bash
-pytest tests/           # 195 测试，<3 秒
+pytest tests/           # 202 测试，约 3 秒
 ```
 
 按模块跑：
@@ -515,6 +562,7 @@ pytest tests/test_generate_caption.py -v    # 文案合成
 pytest tests/test_imagegen_hint.py -v       # gpt-image-2 提示词检测
 pytest tests/test_storyboard_plan.py -v     # 分镜 shot cards + 生成路由
 pytest tests/test_storyboard_assets.py -v   # 分镜素材 readiness manifest
+pytest tests/test_export_edl.py -v          # NLE handoff EDL + manifest
 ```
 
 ### 本次自动化更新记录（2026-05-20 UTC）
@@ -551,6 +599,7 @@ pytest tests/test_storyboard_assets.py -v   # 分镜素材 readiness manifest
 | **24** | **[Storyboard Plan](docs/prompts/24-storyboard-plan.md)** | **分镜 shot cards + 生成路由** |
 | **25** | **[Storyboard Assets](docs/prompts/25-storyboard-assets.md)** | **分镜素材任务清单 + ready 预检** |
 | **26** | **[ASR Rough Cut](docs/prompts/26-rough-cut.md)** | **去口头禅/重复句粗剪** |
+| **27** | **[NLE Handoff](docs/prompts/27-export-edl.md)** | **导出 EDL 给 Premiere/FCP/Resolve** |
 
 完整列表见 [docs/prompts/README.md](docs/prompts/README.md)。
 
@@ -603,6 +652,7 @@ scripts/
 ├── generate_cover_image.py     Chrome-rendered 封面
 ├── add_chapter_bar.py          章节进度条
 ├── export_capcut.py            剪映工程导出
+├── export_edl.py               NLE handoff EDL + manifest          [V3]
 ├── generate_standup_timeline.py Remotion timeline
 ├── multi_export.py             三平台导出                       [V3]
 ├── generate_caption.py         标题/正文/标签                   [V3]
