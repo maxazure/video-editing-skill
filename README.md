@@ -42,7 +42,7 @@
    │     B-roll / 章节卡 / 贴纸 / 生成图 / 点击聚焦 overlay + Heavy 字幕 + 响度规范化
    │     可选 --versioned-output：输出 _V<N>，避免覆盖旧成片
    │
-   ├─→ render_qa.py             渲染后黑屏/静帧/静音/尺寸质检
+   ├─→ render_qa.py             渲染后黑屏/静帧/静音/尺寸质检 + review packet
    │     └─→ timeline_view.py   QA 可疑区间可视化复盘
    │
    ├─→ export_edl.py            render_config / cut list → EDL + manifest
@@ -73,7 +73,7 @@ cd ~/projects/video-editing-skill
 python3 scripts/utils.py
 
 # 4. 跑一遍测试套件确认 OK
-pytest tests/           # 208 个测试，约 3 秒
+pytest tests/           # 210 个测试，约 3 秒
 ```
 
 每天做一条视频的完整模板：**[docs/prompts/15-xhs-daily-tech-video.md](docs/prompts/15-xhs-daily-tech-video.md)**
@@ -345,7 +345,24 @@ python3 scripts/export_edl.py \
 
 适合把自动粗剪交给 Premiere / Final Cut Pro / DaVinci Resolve 做调色、混音、精剪或协作复核。复杂字幕、overlay、章节卡和 B-roll 仍以 `render_final.py` / `export_capcut.py` 为准。
 
-### 2026-05-25 自动化升级记录
+### 2026-05-25 自动化升级记录（Render QA Review Packet）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`video-db/skills`](https://github.com/video-db/skills) | 视频理解后返回可搜索 moment、可播放 evidence clip 和可分享输出 | 新增本地 QA review packet，不引入外部服务 |
+| [`remotion-dev/skills`](https://github.com/remotion-dev/skills/blob/main/skills/remotion/SKILL.md) | 把渲染后检查做成明确的 inspect/fix 闭环 | `render_qa.py` 现在可直接生成 Markdown/JSON 复核包 |
+| [`heygen-com/skills`](https://github.com/heygen-com/skills) | 通过可复用状态文件把 avatar/video/translate 串成生产链 | 本项目继续沿用 JSON/Markdown artifact 串联，不新增供应商状态 |
+| [`libtv-labs/libtv-skills`](https://github.com/libtv-labs/libtv-skills/blob/main/skills/libtv-skill/SKILL.md) / [`Wan-Video/Wan-skills`](https://github.com/Wan-Video/Wan-skills) | 异步生成、轮询和下载结果的任务化交付 | 本次先补渲染后 evidence handoff；生成任务仍交给 storyboard/Dreamina 路由 |
+
+新增/调整能力：`scripts/render_qa.py` 增加 `--review-dir`，可把黑屏、静帧、静音检测出的可疑区间汇总成 `render_qa_review.json` 和 `render_qa_review.md`；加 `--review-clips` 时会为每个可疑区间抽取带上下文的短 MP4 到 `clips/`。新增 `build_review_segments()` / `write_review_packet()`，便于自动化流水线复用。
+
+使用方式：`python3 scripts/render_qa.py output/day58_master.mp4 --platform douyin --json output/day58_qa.json --review-dir output/verify/day58_qa --review-clips`；只想生成复核表、不抽视频片段时去掉 `--review-clips`。可用 `--review-padding 1.0` 调整前后文秒数，用 `--max-review-segments 12` 控制证据数量。
+
+验证结果：新增/更新 `tests/test_render_qa.py`，`.venv/bin/python -m pytest tests/test_render_qa.py -q` 通过 `9 passed in 0.02s`；完整 `.venv/bin/python -m pytest tests -q` 通过 `210 passed in 2.20s`；`.venv/bin/python -m compileall scripts tests` 通过；`git diff --check` 通过；2 秒黑屏/静音合成视频 smoke 验证 `--review-dir --review-clips` 会写出 Markdown、JSON 和 2 个证据 MP4。
+
+### 2026-05-25 自动化升级记录（Screen Focus）
 
 本次联网研究的 GitHub 参考：
 
@@ -437,7 +454,7 @@ python3 scripts/export_edl.py \
 ### ✅ Render QA — 渲染后质检回路
 [`scripts/render_qa.py`](scripts/render_qa.py)
 
-借鉴 Remotion/视频生成类技能常见的“render → inspect → fix”闭环，渲染完成后用 `ffprobe`/`ffmpeg` 自动检查：
+借鉴 Remotion/视频生成类技能常见的“render → inspect → fix”闭环，以及 VideoDB 类项目的 playable evidence handoff，渲染完成后用 `ffprobe`/`ffmpeg` 自动检查并可生成复核包：
 
 | 检查 | 目的 |
 |---|---|
@@ -451,8 +468,15 @@ python3 scripts/export_edl.py \
 ```bash
 python3 scripts/render_qa.py output/day58_master.mp4 --platform douyin --json output/day58_qa.json
 python3 scripts/render_qa.py output/day58_xhs.mp4 --platform xhs
+python3 scripts/render_qa.py output/day58_master.mp4 \
+  --platform douyin \
+  --json output/day58_qa.json \
+  --review-dir output/verify/day58_qa \
+  --review-clips
 python3 scripts/timeline_view.py output/day58_master.mp4 --at 42.5 --radius 1.5 --output output/verify/qa_42_5s.png
 ```
+
+`--review-dir` 会写 `render_qa_review.json` 和 `render_qa_review.md`，把黑屏、静帧、静音的可疑区间按 FAIL/WARN 排序；`--review-clips` 会额外抽取短 MP4 证据片段。只需要审阅清单时不加 `--review-clips`。
 
 ### 📦 多平台导出
 [`scripts/multi_export.py`](scripts/multi_export.py) · [详细文档](docs/prompts/17-multi-platform.md)
@@ -564,9 +588,11 @@ python3 $SKILL/scripts/render_final.py \
 # 5. 主片质检
 python3 $SKILL/scripts/render_qa.py \
   $WORK/output/day${DAY}_master.mp4 --platform douyin \
-  --json $WORK/output/day${DAY}_master_qa.json
+  --json $WORK/output/day${DAY}_master_qa.json \
+  --review-dir $WORK/output/verify/day${DAY}_qa \
+  --review-clips
 
-# 5b. 如果 QA 有 WARN/FAIL，或想抽查关键切点，生成可视化复盘图
+# 5b. 如果 QA 有 WARN/FAIL，先看 review packet；想抽查关键切点再生成可视化复盘图
 python3 $SKILL/scripts/timeline_view.py \
   $WORK/output/day${DAY}_master.mp4 --at 42.5 --radius 1.5 \
   --output $WORK/output/verify/day${DAY}_42_5s.png
@@ -598,7 +624,7 @@ python3 $SKILL/scripts/generate_caption.py \
 ## 测试
 
 ```bash
-pytest tests/           # 208 测试，约 3 秒
+pytest tests/           # 210 测试，约 3 秒
 ```
 
 按模块跑：

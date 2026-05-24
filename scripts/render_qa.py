@@ -12,6 +12,7 @@ Runs ffprobe/ffmpeg-based checks after rendering:
 Usage:
   python3 scripts/render_qa.py output/day58_master.mp4 --platform douyin
   python3 scripts/render_qa.py output/*.mp4 --json qa_report.json
+  python3 scripts/render_qa.py output/day58_master.mp4 --review-dir output/verify/day58_qa --review-clips
 """
 
 import argparse
@@ -30,6 +31,9 @@ PLATFORM_DIMENSIONS = {
     "douyin": (1080, 1920),
     "wxch": (1080, 1920),
 }
+
+REVIEW_SEGMENT_CHECKS = {"black_frames", "frozen_video", "silence"}
+STATUS_ORDER = {"fail": 0, "warn": 1, "pass": 2}
 
 
 @dataclass
@@ -205,6 +209,258 @@ def _check_segment_budget(name: str, segments: List[Segment], limit: float) -> C
     return Check(name=name, status="pass", message=f"No {name} segments detected")
 
 
+def _duration_from_checks(item: Dict[str, Any]) -> Optional[float]:
+    for check in item.get("checks", []):
+        if check.get("name") == "duration":
+            return _float_or_none((check.get("details") or {}).get("seconds"))
+    return None
+
+
+def _slug(value: str) -> str:
+    value = re.sub(r"[^A-Za-z0-9._-]+", "_", value.strip())
+    value = value.strip("._-")
+    return value or "video"
+
+
+def build_review_segments(
+    report: Dict[str, Any],
+    *,
+    padding: float = 0.75,
+    max_segments: int = 24,
+) -> List[Dict[str, Any]]:
+    """Collect segment-level QA evidence that should be reviewed by a human."""
+    records: List[Dict[str, Any]] = []
+    for file_index, item in enumerate(report.get("files", []), start=1):
+        media_duration = _duration_from_checks(item)
+        source_path = item.get("path") or f"video_{file_index}"
+        source_stem = _slug(os.path.splitext(os.path.basename(source_path))[0])
+
+        for check in item.get("checks", []):
+            issue = check.get("name")
+            if issue not in REVIEW_SEGMENT_CHECKS:
+                continue
+            segments = (check.get("details") or {}).get("segments") or []
+            for segment_index, segment in enumerate(segments, start=1):
+                start = _float_or_none(segment.get("start")) or 0.0
+                end = _float_or_none(segment.get("end"))
+                duration = _float_or_none(segment.get("duration"))
+                if end is None:
+                    end = start + (duration or 0.0)
+                if duration is None:
+                    duration = max(0.0, end - start)
+
+                review_start = max(0.0, start - padding)
+                review_end = max(review_start, end + padding)
+                if media_duration is not None:
+                    review_end = min(media_duration, review_end)
+
+                issue_slug = _slug(str(issue))
+                records.append({
+                    "id": f"{source_stem}_{issue_slug}_{segment_index:02d}",
+                    "path": source_path,
+                    "file_index": file_index,
+                    "issue": issue,
+                    "status": check.get("status") or "warn",
+                    "message": check.get("message") or "",
+                    "start": round(start, 3),
+                    "end": round(end, 3),
+                    "duration": round(duration, 3),
+                    "review_start": round(review_start, 3),
+                    "review_end": round(review_end, 3),
+                    "review_duration": round(max(0.0, review_end - review_start), 3),
+                    "clip_path": None,
+                })
+
+    records.sort(key=lambda r: (
+        STATUS_ORDER.get(r.get("status", "warn"), 1),
+        r.get("file_index", 0),
+        r.get("review_start", 0.0),
+        r.get("issue", ""),
+    ))
+    return records[:max_segments]
+
+
+def _extract_review_clip(source: str, dest: str, start: float, end: float) -> Optional[str]:
+    duration = max(0.05, end - start)
+    copy_cmd = [
+        "ffmpeg",
+        "-hide_banner",
+        "-nostats",
+        "-y",
+        "-ss",
+        f"{start:.3f}",
+        "-i",
+        source,
+        "-t",
+        f"{duration:.3f}",
+        "-map",
+        "0:v:0",
+        "-map",
+        "0:a?",
+        "-c",
+        "copy",
+        "-avoid_negative_ts",
+        "make_zero",
+        dest,
+    ]
+    result = _run(copy_cmd)
+    if result.returncode == 0:
+        return None
+
+    encode_cmd = [
+        "ffmpeg",
+        "-hide_banner",
+        "-nostats",
+        "-y",
+        "-ss",
+        f"{start:.3f}",
+        "-i",
+        source,
+        "-t",
+        f"{duration:.3f}",
+        "-map",
+        "0:v:0",
+        "-map",
+        "0:a?",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-crf",
+        "22",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "128k",
+        "-movflags",
+        "+faststart",
+        dest,
+    ]
+    fallback = _run(encode_cmd)
+    if fallback.returncode == 0:
+        return None
+    return (fallback.stderr or result.stderr or "ffmpeg clip extraction failed").strip()
+
+
+def _non_pass_checks(report: Dict[str, Any]) -> List[Dict[str, str]]:
+    rows: List[Dict[str, str]] = []
+    for item in report.get("files", []):
+        for check in item.get("checks", []):
+            if check.get("status") == "pass":
+                continue
+            rows.append({
+                "path": str(item.get("path") or ""),
+                "status": str(check.get("status") or ""),
+                "check": str(check.get("name") or ""),
+                "message": str(check.get("message") or ""),
+            })
+    return rows
+
+
+def _format_review_markdown(report: Dict[str, Any], manifest: Dict[str, Any], review_dir: str) -> str:
+    lines = [
+        "# Render QA Review Packet",
+        "",
+        f"- Status: **{report.get('status', 'unknown').upper()}**",
+        f"- Files checked: {len(report.get('files', []))}",
+        f"- Segment evidence: {len(manifest.get('segments', []))}",
+        "",
+    ]
+
+    non_pass = _non_pass_checks(report)
+    if non_pass:
+        lines += [
+            "## Non-pass Checks",
+            "",
+            "| Status | Check | Source | Message |",
+            "|---|---|---|---|",
+        ]
+        for row in non_pass:
+            lines.append(f"| {row['status']} | `{row['check']}` | `{row['path']}` | {row['message']} |")
+        lines.append("")
+
+    segments = manifest.get("segments", [])
+    if segments:
+        lines += [
+            "## Segment Evidence",
+            "",
+            "| ID | Status | Issue | Source | Original | Review Window | Clip |",
+            "|---|---|---|---|---:|---:|---|",
+        ]
+        for segment in segments:
+            clip = ""
+            if segment.get("clip_path"):
+                clip = os.path.relpath(segment["clip_path"], review_dir)
+            elif segment.get("clip_error"):
+                clip = "clip extraction failed"
+            lines.append(
+                "| {id} | {status} | `{issue}` | `{path}` | {start:.2f}-{end:.2f}s | "
+                "{review_start:.2f}-{review_end:.2f}s | {clip} |".format(
+                    id=segment["id"],
+                    status=segment["status"],
+                    issue=segment["issue"],
+                    path=segment["path"],
+                    start=segment["start"],
+                    end=segment["end"],
+                    review_start=segment["review_start"],
+                    review_end=segment["review_end"],
+                    clip=clip,
+                )
+            )
+        lines.append("")
+        lines += [
+            "Review the clips or the listed time windows before publishing. If a segment is intentional, keep this packet with the release files as the QA record.",
+            "",
+        ]
+    else:
+        lines += [
+            "No segment-level black-frame, freeze, or silence evidence was detected.",
+            "",
+        ]
+
+    return "\n".join(lines)
+
+
+def write_review_packet(
+    report: Dict[str, Any],
+    review_dir: str,
+    *,
+    padding: float = 0.75,
+    max_segments: int = 24,
+    make_clips: bool = False,
+) -> Dict[str, str]:
+    os.makedirs(review_dir, exist_ok=True)
+    segments = build_review_segments(report, padding=padding, max_segments=max_segments)
+    clips_dir = os.path.join(review_dir, "clips")
+
+    if make_clips and segments:
+        os.makedirs(clips_dir, exist_ok=True)
+        for segment in segments:
+            dest = os.path.join(clips_dir, f"{segment['id']}.mp4")
+            if not os.path.isfile(segment["path"]):
+                segment["clip_error"] = "source file missing"
+                continue
+            error = _extract_review_clip(segment["path"], dest, segment["review_start"], segment["review_end"])
+            if error:
+                segment["clip_error"] = error
+            else:
+                segment["clip_path"] = dest
+
+    manifest = {
+        "schema": "render_qa_review.v1",
+        "status": report.get("status"),
+        "source_report": report,
+        "segments": segments,
+    }
+    manifest_path = os.path.join(review_dir, "render_qa_review.json")
+    markdown_path = os.path.join(review_dir, "render_qa_review.md")
+    with open(manifest_path, "w", encoding="utf-8") as f:
+        json.dump(manifest, f, ensure_ascii=False, indent=2)
+    with open(markdown_path, "w", encoding="utf-8") as f:
+        f.write(_format_review_markdown(report, manifest, review_dir))
+    return {"json": manifest_path, "markdown": markdown_path}
+
+
 def evaluate_media(
     path: str,
     meta: Dict[str, Any],
@@ -335,6 +591,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--max-black-seconds", type=float, default=0.5, help="Fail if total black frames exceed this")
     p.add_argument("--max-freeze-seconds", type=float, default=2.0, help="Fail if total frozen video exceeds this")
     p.add_argument("--max-silence-seconds", type=float, default=3.0, help="Fail if total silence exceeds this")
+    p.add_argument("--review-dir", help="Write a QA review packet (manifest + Markdown) to this directory")
+    p.add_argument("--review-padding", type=float, default=0.75, help="Seconds of context around each QA segment")
+    p.add_argument("--max-review-segments", type=int, default=24, help="Maximum segment evidence rows in the review packet")
+    p.add_argument("--review-clips", action="store_true", help="Also extract short MP4 clips for each segment evidence row")
     return p
 
 
@@ -365,6 +625,16 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     if args.json_path:
         with open(args.json_path, "w", encoding="utf-8") as f:
             json.dump(report, f, ensure_ascii=False, indent=2)
+
+    if args.review_dir:
+        paths = write_review_packet(
+            report,
+            args.review_dir,
+            padding=args.review_padding,
+            max_segments=args.max_review_segments,
+            make_clips=args.review_clips,
+        )
+        print(f"Review packet: {paths['markdown']}")
 
     return 1 if status == "fail" else 0
 

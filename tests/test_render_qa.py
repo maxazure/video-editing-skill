@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 
@@ -5,10 +6,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(
 
 from render_qa import (  # noqa: E402
     Segment,
+    build_review_segments,
     evaluate_media,
     parse_blackdetect,
     parse_freezedetect,
     parse_silencedetect,
+    write_review_packet,
 )
 
 
@@ -124,3 +127,62 @@ def test_evaluate_no_audio_can_be_allowed_as_warning():
     )
     assert report["status"] == "warn"
     assert any(c["name"] == "audio_stream" and c["status"] == "warn" for c in report["checks"])
+
+
+def test_build_review_segments_adds_padded_evidence_windows():
+    report = {
+        "status": "fail",
+        "files": [{
+            "path": "/tmp/final.mp4",
+            "status": "fail",
+            "checks": [
+                {"name": "duration", "status": "pass", "message": "Duration 12.00s", "details": {"seconds": 12.0}},
+                {
+                    "name": "black_frames",
+                    "status": "fail",
+                    "message": "black_frames detected 0.80s, over 0.50s budget",
+                    "details": {"segments": [{"start": 0.2, "end": 1.0, "duration": 0.8}]},
+                },
+            ],
+        }],
+    }
+
+    segments = build_review_segments(report, padding=0.5)
+
+    assert len(segments) == 1
+    assert segments[0]["id"] == "final_black_frames_01"
+    assert segments[0]["review_start"] == 0.0
+    assert segments[0]["review_end"] == 1.5
+    assert segments[0]["issue"] == "black_frames"
+
+
+def test_write_review_packet_without_clips(tmp_path):
+    report = {
+        "status": "warn",
+        "files": [{
+            "path": "/tmp/final.mp4",
+            "status": "warn",
+            "checks": [
+                {"name": "duration", "status": "pass", "message": "Duration 20.00s", "details": {"seconds": 20.0}},
+                {
+                    "name": "silence",
+                    "status": "warn",
+                    "message": "silence detected 2.20s within budget",
+                    "details": {"segments": [{"start": 10.0, "end": 12.2, "duration": 2.2}]},
+                },
+            ],
+        }],
+    }
+
+    paths = write_review_packet(report, str(tmp_path), padding=1.0, make_clips=False)
+
+    assert os.path.isfile(paths["json"])
+    assert os.path.isfile(paths["markdown"])
+    with open(paths["json"], encoding="utf-8") as f:
+        manifest = json.load(f)
+    assert manifest["schema"] == "render_qa_review.v1"
+    assert manifest["segments"][0]["clip_path"] is None
+    with open(paths["markdown"], encoding="utf-8") as f:
+        markdown = f.read()
+    assert "Segment Evidence" in markdown
+    assert "final_silence_01" in markdown
