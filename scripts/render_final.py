@@ -180,6 +180,7 @@ def merge_enrich_plan(config, plan, *, plan_base_dir):
         "text_badges": 0,
         "chapters": 0,
         "image_overlays": 0,
+        "focus_events": 0,
         "missing_broll_assets": 0,
         "missing_image_assets": 0,
         "advisory_imagegen": 0,
@@ -189,6 +190,7 @@ def merge_enrich_plan(config, plan, *, plan_base_dir):
     chapters = list(merged.get("chapters") or [])
     broll_overlays = list(merged.get("broll_overlays") or [])
     image_overlays = list(merged.get("image_overlays") or [])
+    focus_events = list(merged.get("focus_events") or [])
 
     for cue in plan.get("broll") or []:
         asset = (
@@ -261,6 +263,26 @@ def merge_enrich_plan(config, plan, *, plan_base_dir):
         })
         stats["text_badges"] += 1
 
+    for cue in plan.get("focus_events") or []:
+        start, end = _cue_time_range(cue, start_key="start", default_duration=1.2)
+        focus_event = copy.deepcopy(cue)
+        focus_event["start"] = start
+        focus_event["end"] = end
+        focus_events.append(focus_event)
+        stats["focus_events"] += 1
+
+        label = str(focus_event.get("label") or "").strip()
+        if label and focus_event.get("show_label", True):
+            text_badges.append({
+                "text": label,
+                "start": start,
+                "end": end,
+                "fade_in": 100,
+                "fade_out": 140,
+                "source": "enrich_plan:screen_focus",
+            })
+            stats["text_badges"] += 1
+
     for cue in plan.get("imagegen") or []:
         image_path = _resolve_plan_path(
             cue.get("image_path")
@@ -293,6 +315,8 @@ def merge_enrich_plan(config, plan, *, plan_base_dir):
         merged["broll_overlays"] = broll_overlays
     if image_overlays:
         merged["image_overlays"] = image_overlays
+    if focus_events:
+        merged["focus_events"] = focus_events
     merged["_enrich_plan_stats"] = stats
     return merged
 
@@ -681,6 +705,121 @@ def build_trim_filter(clips, target_w=None, target_h=None):
     return ";\n".join(filters), input_files
 
 
+def _clamp(value, low, high):
+    return max(low, min(high, value))
+
+
+def _safe_filter_color(value):
+    color = str(value or "red@0.85").strip()
+    if re.match(r"^[A-Za-z0-9#@.]+$", color):
+        return color
+    return "red@0.85"
+
+
+def normalize_focus_event(cue, *, default_duration=1.2, default_zoom=1.75):
+    """Normalize a screen-focus cue for render-time filter construction."""
+    start = _float_or_default(cue.get("start", cue.get("time", cue.get("timestamp"))), 0.0)
+    if "end" in cue:
+        end = _float_or_default(cue.get("end"), start + default_duration)
+    else:
+        end = start + _float_or_default(cue.get("duration"), default_duration)
+    if end <= start:
+        end = start + default_duration
+
+    x = _float_or_default(cue.get("x", cue.get("norm_x", 0.5)), 0.5)
+    y = _float_or_default(cue.get("y", cue.get("norm_y", 0.5)), 0.5)
+    source_w = _float_or_default(cue.get("source_width"), 0.0)
+    source_h = _float_or_default(cue.get("source_height"), 0.0)
+    if (x > 1.0 or y > 1.0) and source_w > 0 and source_h > 0:
+        x /= source_w
+        y /= source_h
+
+    zoom = _clamp(_float_or_default(cue.get("zoom"), default_zoom), 1.05, 4.0)
+    return {
+        "start": start,
+        "end": end,
+        "x": _clamp(x, 0.0, 1.0),
+        "y": _clamp(y, 0.0, 1.0),
+        "zoom": zoom,
+        "transition": _clamp(_float_or_default(cue.get("transition"), 0.16), 0.0, 0.8),
+        "marker": cue.get("marker", True),
+        "marker_color": _safe_filter_color(cue.get("marker_color", "red@0.85")),
+        "marker_size": _clamp(_float_or_default(cue.get("marker_size"), 0.13), 0.04, 0.35),
+    }
+
+
+def build_focus_filter_ops(
+    current_v_label,
+    focus_events,
+    *,
+    width,
+    height,
+    cover_duration,
+    speed,
+    stage_idx,
+):
+    """Build timed crop/scale overlays for click-focus zooms."""
+    filter_lines = []
+    label = current_v_label
+    next_stage = stage_idx
+
+    for cue in focus_events or []:
+        event = normalize_focus_event(cue)
+        start_out = cover_duration + event["start"] / speed
+        end_out = cover_duration + event["end"] / speed
+        if end_out <= start_out:
+            continue
+
+        crop_w = max(2, min(width, int(round(width / event["zoom"]))))
+        crop_h = max(2, min(height, int(round(height / event["zoom"]))))
+        center_x = event["x"] * width
+        center_y = event["y"] * height
+        crop_x = int(round(_clamp(center_x - crop_w / 2, 0, width - crop_w)))
+        crop_y = int(round(_clamp(center_y - crop_h / 2, 0, height - crop_h)))
+        focus_x = int(round((center_x - crop_x) * width / crop_w))
+        focus_y = int(round((center_y - crop_y) * height / crop_h))
+
+        base_label = f"[focus_base_{next_stage}]"
+        src_label = f"[focus_src_{next_stage}]"
+        zoom_label = f"[focus_zoom_{next_stage}]"
+        out_label = f"[vstage{next_stage}]"
+        filter_lines.append(f"{label}split=2{base_label}{src_label}")
+
+        zoom_filters = [
+            f"crop={crop_w}:{crop_h}:{crop_x}:{crop_y}",
+            f"scale={width}:{height}:flags=lanczos",
+            "setsar=1",
+            "format=rgba",
+        ]
+        if event["marker"]:
+            box = int(round(min(width, height) * event["marker_size"]))
+            box = max(40, min(box, min(width, height)))
+            box_x = int(round(_clamp(focus_x - box / 2, 0, width - box)))
+            box_y = int(round(_clamp(focus_y - box / 2, 0, height - box)))
+            thickness = max(4, int(round(box * 0.06)))
+            zoom_filters.append(
+                f"drawbox=x={box_x}:y={box_y}:w={box}:h={box}:"
+                f"color={event['marker_color']}:t={thickness}"
+            )
+        duration = end_out - start_out
+        transition = min(event["transition"], duration / 2)
+        if transition > 0:
+            zoom_filters.append(f"fade=t=in:st={start_out:.4f}:d={transition:.4f}:alpha=1")
+            zoom_filters.append(
+                f"fade=t=out:st={max(start_out, end_out - transition):.4f}:"
+                f"d={transition:.4f}:alpha=1"
+            )
+        filter_lines.append(f"{src_label}{','.join(zoom_filters)}{zoom_label}")
+        filter_lines.append(
+            f"{base_label}{zoom_label}overlay=0:0:"
+            f"enable='between(t,{start_out:.4f},{end_out:.4f})'{out_label}"
+        )
+        label = out_label
+        next_stage += 1
+
+    return filter_lines, label, next_stage
+
+
 def generate_cover_png(video_path, title, width, height, temp_files,
                        style="bold", subtitle=None, use_frame=False):
     """Generate cover PNG using headless Chrome.
@@ -705,9 +844,10 @@ def generate_cover_png(video_path, title, width, height, temp_files,
 def main():
     parser = argparse.ArgumentParser(description="Single-pass video renderer")
     parser.add_argument("--config", required=True, help="Path to render config JSON")
-    parser.add_argument("--enrich-plan", default=None,
-                        help="Optional auto_enrich.py JSON. Merges B-roll, stickers, "
-                             "chapter cards, and generated image cues into the render.")
+    parser.add_argument("--enrich-plan", action="append", default=[],
+                        help="Optional enrich-plan JSON. Repeatable. Merges B-roll, "
+                             "stickers, chapter cards, generated image cues, and "
+                             "screen focus events into the render.")
     parser.add_argument("--output", required=True, help="Output video path")
     parser.add_argument("--font-path", default=None, help="Custom font path")
     parser.add_argument("--font-size", type=int, default=48, help="Subtitle font size")
@@ -743,18 +883,19 @@ def main():
     args = parser.parse_args()
 
     config = load_config(args.config)
-    if args.enrich_plan:
-        plan = load_enrich_plan(args.enrich_plan)
+    for enrich_plan_path in args.enrich_plan:
+        plan = load_enrich_plan(enrich_plan_path)
         config = merge_enrich_plan(
-            config, plan, plan_base_dir=os.path.dirname(os.path.abspath(args.enrich_plan)),
+            config, plan, plan_base_dir=os.path.dirname(os.path.abspath(enrich_plan_path)),
         )
         stats = config.get("_enrich_plan_stats", {})
         print(
-            "[enrich] applied "
+            f"[enrich] {os.path.basename(enrich_plan_path)} applied "
             f"broll={stats.get('broll_overlays', 0)}, "
             f"badges={stats.get('text_badges', 0)}, "
             f"chapters={stats.get('chapters', 0)}, "
-            f"image_overlays={stats.get('image_overlays', 0)}"
+            f"image_overlays={stats.get('image_overlays', 0)}, "
+            f"focus={stats.get('focus_events', 0)}"
         )
         skipped = stats.get("missing_broll_assets", 0) + stats.get("missing_image_assets", 0)
         if skipped:
@@ -789,6 +930,8 @@ def main():
         check_visible_text(chapter.get("title") if isinstance(chapter, dict) else chapter)
     for badge in config.get("text_badges", []) or []:
         check_visible_text(badge.get("text") if isinstance(badge, dict) else badge)
+    for focus in config.get("focus_events", []) or []:
+        check_visible_text(focus.get("label") if isinstance(focus, dict) else None)
     for card in config.get("end_cards", []) or []:
         check_visible_text(card.get("text") if isinstance(card, dict) else card)
 
@@ -1133,6 +1276,17 @@ def main():
             )
             current_v_label = out_label
             video_stage_idx += 1
+
+        focus_lines, current_v_label, video_stage_idx = build_focus_filter_ops(
+            current_v_label,
+            config.get("focus_events"),
+            width=width,
+            height=height,
+            cover_duration=cover_duration,
+            speed=speed,
+            stage_idx=video_stage_idx,
+        )
+        filter_lines.extend(focus_lines)
 
         if subtitle_filter:
             filter_lines.append(f"{current_v_label}{subtitle_filter}[sub_v]")

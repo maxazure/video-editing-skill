@@ -32,11 +32,14 @@
    ├─→ storyboard_assets.py     shot cards → 素材任务清单 / ready 预检
    │                            imagegen / Dreamina / motion / broll 状态表
    │
+   ├─→ screen_focus.py          录屏点击/热点 → focus_events 聚焦计划
+   │                            render_final 自动放大、标记、标签
+   │
    ├─→ jump_cut.py              自适应静音检测 → cut list → 去停顿成片
    │     └─→ timeline_view.py   切点 filmstrip + waveform 人工复核图
    │
    ├─→ render_final.py          单次编码渲染 + enrich_plan 自动接入
-   │     B-roll / 章节卡 / 贴纸 / 生成图 overlay + Heavy 字幕 + 响度规范化
+   │     B-roll / 章节卡 / 贴纸 / 生成图 / 点击聚焦 overlay + Heavy 字幕 + 响度规范化
    │     可选 --versioned-output：输出 _V<N>，避免覆盖旧成片
    │
    ├─→ render_qa.py             渲染后黑屏/静帧/静音/尺寸质检
@@ -70,7 +73,7 @@ cd ~/projects/video-editing-skill
 python3 scripts/utils.py
 
 # 4. 跑一遍测试套件确认 OK
-pytest tests/           # 202 个测试，约 3 秒
+pytest tests/           # 208 个测试，约 3 秒
 ```
 
 每天做一条视频的完整模板：**[docs/prompts/15-xhs-daily-tech-video.md](docs/prompts/15-xhs-daily-tech-video.md)**
@@ -164,7 +167,7 @@ NVIDIA GPU 配置详见本文末尾的 [Linux GPU 配置](#linux-gpu-配置) 段
 | [`auto_stickers.py`](scripts/auto_stickers.py) | 情绪关键词→emoji 池（excited 🚀✨🔥 / doubt 🤔 / data 📈 等） |
 | [`auto_enrich.py`](scripts/auto_enrich.py) | 编排上面四个，输出综合 plan JSON（含 imagegen cues） |
 
-`render_final.py --enrich-plan work/enrich_plan.json` 会把 plan 里的 B-roll、章节卡、贴纸和已生成图片 cue 自动接回单次渲染；没有实际文件的 imagegen cue 会保留为提示，不会阻塞导出。
+`render_final.py --enrich-plan work/enrich_plan.json` 会把 plan 里的 B-roll、章节卡、贴纸和已生成图片 cue 自动接回单次渲染；`--enrich-plan` 可重复传入，用来叠加 `screen_focus_plan.json` 这类独立计划。没有实际文件的 imagegen cue 会保留为提示，不会阻塞导出。
 
 ### 🎞️ Storyboard Plan — 分镜与生成路由
 [`scripts/storyboard_plan.py`](scripts/storyboard_plan.py) · [`scripts/storyboard_assets.py`](scripts/storyboard_assets.py) · [分镜文档](docs/prompts/24-storyboard-plan.md) · [素材清单文档](docs/prompts/25-storyboard-assets.md)
@@ -197,6 +200,28 @@ python3 scripts/storyboard_assets.py \
 ```
 
 路由规则：抽象概念优先 `codex_imagegen`；数字/指标优先 `remotion_hyperframes`；动作/场景变化推荐 `dreamina_video` 但只标记为需确认，因为 Dreamina/即梦生成可能消耗 credits；其他先走本地素材库 B-roll。`storyboard_assets.py --strict` 会在素材未 ready 时返回退出码 2，适合渲染前拦截。生图优先使用 Codex 内置 `image_gen` 工具，即 OpenAI GPT Image 2（`gpt-image-2`）。
+
+### 🔍 Screen Focus — 录屏点击聚焦
+[`scripts/screen_focus.py`](scripts/screen_focus.py) · [详细文档](docs/prompts/28-screen-focus.md)
+
+借鉴 Screen Studio/Recordly/JianYing 类工具里的自动点击放大体验，但保持本项目的轻量方式：不录屏、不申请桌面权限，只把手工或工具导出的点击/热点事件转成可审计 `focus_events` enrich plan。
+
+常用：
+```bash
+python3 scripts/screen_focus.py \
+  --events work/clicks.json \
+  --screen-width 1920 \
+  --screen-height 1080 \
+  --output work/screen_focus_plan.json \
+  --markdown work/screen_focus_plan.md
+
+python3 scripts/render_final.py \
+  --config work/render_config.json \
+  --enrich-plan work/screen_focus_plan.json \
+  --output output/tutorial_master.mp4
+```
+
+`focus_events[]` 支持像素或 0-1 坐标、`duration`、`zoom`、`transition`、`marker_color` 和 `label`；`render_final.py` 会在对应时间段淡入放大裁切画面，并把 label 合并为 timed badge，适合软件教程、产品演示和操作录屏。
 
 ### ✂️ ASR Rough Cut — 自动去口头禅/重复句
 [`scripts/rough_cut.py`](scripts/rough_cut.py) · [详细文档](docs/prompts/26-rough-cut.md)
@@ -270,7 +295,8 @@ python3 scripts/timeline_view.py origin/talking.mp4 --cut-list work/jumpcut.json
 | 内部 token 拦截 | 自动；任何 `1.25x`/`mlx-whisper`/`loudnorm` 出现在画面文本字段都退出 |
 | 平台 lint | 自动；`--no-content-guard` 关 |
 | 字幕风格 | `--subtitle-style normal/karaoke/bold_pop/neon/minimal/yellow_pop` |
-| 自动丰富接入 | `--enrich-plan work/enrich_plan.json` |
+| 自动丰富接入 | `--enrich-plan work/enrich_plan.json`，可重复传入 |
+| 点击聚焦 | `--enrich-plan work/screen_focus_plan.json`，读取 `focus_events[]` |
 | 版本化输出 | `--versioned-output` 或 config `"versioned_output": true` |
 
 ### 🧾 Versioned Output — 成片不覆盖旧版本
@@ -318,6 +344,23 @@ python3 scripts/export_edl.py \
 ```
 
 适合把自动粗剪交给 Premiere / Final Cut Pro / DaVinci Resolve 做调色、混音、精剪或协作复核。复杂字幕、overlay、章节卡和 B-roll 仍以 `render_final.py` / `export_capcut.py` 为准。
+
+### 2026-05-25 自动化升级记录
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`luoluoluo22/jianying-editor-skill`](https://github.com/luoluoluo22/jianying-editor-skill) | 剪映自动化覆盖录屏、智能变焦、红圈提示这类教程视频高频需求 | 新增本地 `screen_focus.py`，不依赖剪映桌面控制 |
+| [`njraladdin/screen-demo`](https://github.com/njraladdin/screen-demo) | Screen Studio 替代品，强调录屏后的 zoom animation、cursor tracking、背景包装 | 新增点击/热点 → zoom cue 的可审计计划 |
+| [`webadderall/Recordly`](https://github.com/webadderall/Recordly) | 自动 zoom suggestions、cursor polish、styled frame，面向产品 walkthrough | `focus_events[]` 可叠加到现有 enrich-plan 渲染链路 |
+| [`Itz-Hex/hypr-obs-mouse-follow`](https://github.com/Itz-Hex/hypr-obs-mouse-follow) | OBS 录制时跟随鼠标并平滑放大，适合教程录屏 | 本项目改为后期渲染时裁切放大，避免录制端绑定 |
+
+新增/调整能力：`scripts/screen_focus.py` 可读取 JSON/CSV/inline 点击事件，把像素或 0-1 坐标标准化为 `screen_focus_plan.v1`，输出 `focus_events[]` 和 Markdown 复核表；`render_final.py --enrich-plan` 现在可重复传入，并能把 `focus_events` 转成 timed zoom crop、提示框和可选 label badge。
+
+使用方式：先跑 `python3 scripts/screen_focus.py --events work/clicks.json --screen-width 1920 --screen-height 1080 --output work/screen_focus_plan.json --markdown work/screen_focus_plan.md`；渲染时追加 `--enrich-plan work/screen_focus_plan.json`，或和 `work/enrich_plan.json` 一起重复传入。
+
+验证结果：新增 `tests/test_screen_focus.py` 6 项通过；相关回归 `tests/test_render_enrich_plan.py` 5 项通过；完整 `.venv/bin/python -m pytest tests -q` 通过 `208 passed in 3.10s`；`python3 -m compileall scripts tests` 通过；`git diff --check` 通过；inline `--event` smoke 输出了有效 `screen_focus_plan.v1`，2 秒合成视频实测 `focus_events` 可成功渲染为有效 MP4。
 
 ### 2026-05-21 自动化升级记录
 
@@ -499,7 +542,17 @@ python3 $SKILL/scripts/storyboard_assets.py \
 #     不需要 OPENAI_API_KEY；详见 docs/prompts/19-imagegen.md
 #     如果 storyboard_assets 里有 needs_approval，提交 Dreamina/即梦前先确认，因为可能消耗 credits。
 
+# 3e. 可选：软件教程/产品演示录屏，导入点击热点并生成自动聚焦计划
+python3 $SKILL/scripts/screen_focus.py \
+  --events $WORK/work/clicks.json \
+  --screen-width 1920 \
+  --screen-height 1080 \
+  --output $WORK/work/screen_focus_plan.json \
+  --markdown $WORK/work/screen_focus_plan.md
+
 # 4. 渲染
+#    如果生成了 screen_focus_plan.json，可额外追加：
+#    --enrich-plan $WORK/work/screen_focus_plan.json
 python3 $SKILL/scripts/render_final.py \
   --config $WORK/work/render_config.json \
   --enrich-plan $WORK/work/enrich_plan.json \
@@ -545,7 +598,7 @@ python3 $SKILL/scripts/generate_caption.py \
 ## 测试
 
 ```bash
-pytest tests/           # 202 测试，约 3 秒
+pytest tests/           # 208 测试，约 3 秒
 ```
 
 按模块跑：
@@ -563,6 +616,7 @@ pytest tests/test_imagegen_hint.py -v       # gpt-image-2 提示词检测
 pytest tests/test_storyboard_plan.py -v     # 分镜 shot cards + 生成路由
 pytest tests/test_storyboard_assets.py -v   # 分镜素材 readiness manifest
 pytest tests/test_export_edl.py -v          # NLE handoff EDL + manifest
+pytest tests/test_screen_focus.py -v        # 录屏点击聚焦计划 + render 接入
 ```
 
 ### 本次自动化更新记录（2026-05-20 UTC）
@@ -600,6 +654,7 @@ pytest tests/test_export_edl.py -v          # NLE handoff EDL + manifest
 | **25** | **[Storyboard Assets](docs/prompts/25-storyboard-assets.md)** | **分镜素材任务清单 + ready 预检** |
 | **26** | **[ASR Rough Cut](docs/prompts/26-rough-cut.md)** | **去口头禅/重复句粗剪** |
 | **27** | **[NLE Handoff](docs/prompts/27-export-edl.md)** | **导出 EDL 给 Premiere/FCP/Resolve** |
+| **28** | **[Screen Focus](docs/prompts/28-screen-focus.md)** | **录屏点击/热点自动聚焦** |
 
 完整列表见 [docs/prompts/README.md](docs/prompts/README.md)。
 
@@ -644,6 +699,7 @@ scripts/
 ├── auto_enrich.py              丰富度编排                       [V3]
 ├── storyboard_plan.py          分镜 shot cards + 生成路由         [V3]
 ├── storyboard_assets.py        分镜素材任务清单 + ready 预检       [V3]
+├── screen_focus.py             录屏点击/热点聚焦计划              [V3]
 ├── render_final.py             单次编码渲染 + enrich_plan 接入（V3 强化）
 ├── render_qa.py                渲染后黑屏/静帧/静音/尺寸质检       [V3]
 ├── timeline_view.py            filmstrip+waveform 可视化复盘图     [V3]
