@@ -31,6 +31,7 @@
    │
    ├─→ storyboard_assets.py     shot cards → 素材任务清单 / ready 预检
    │                            imagegen / Dreamina / motion / broll 状态表
+   │                            可选接入 media_library.py recommend 排名候选素材
    │
    ├─→ screen_focus.py          录屏点击/热点 → focus_events 聚焦计划
    │                            render_final 自动放大、标记、标签
@@ -73,7 +74,7 @@ cd ~/projects/video-editing-skill
 python3 scripts/utils.py
 
 # 4. 跑一遍测试套件确认 OK
-pytest tests/           # 210 个测试，约 3 秒
+pytest tests/           # 214 个测试，约 3 秒
 ```
 
 每天做一条视频的完整模板：**[docs/prompts/15-xhs-daily-tech-video.md](docs/prompts/15-xhs-daily-tech-video.md)**
@@ -180,7 +181,7 @@ NVIDIA GPU 配置详见本文末尾的 [Linux GPU 配置](#linux-gpu-配置) 段
 | `generation_route` | `codex_imagegen` / `dreamina_video` / `remotion_hyperframes` / `media_library_broll` + fallback + why |
 | `continuity.anchors` | 系列色彩、比例、字幕安全区、上一镜头引用、关键词线索 |
 | `storyboard_plan.md` | 适合人工 review 的 shot cards，含 prompt 和检查项 |
-| `storyboard_assets.json` | 每个 shot 对应素材是否 ready、需要生成/审批/渲染/搜索 |
+| `storyboard_assets.json` | 每个 shot 对应素材是否 ready、需要生成/审批/渲染/搜索；B-roll 可带 `candidate_scores` 排名理由 |
 
 常用：
 ```bash
@@ -195,11 +196,42 @@ python3 scripts/storyboard_plan.py \
 python3 scripts/storyboard_assets.py \
   --storyboard-plan work/storyboard_plan.json \
   --asset-root work \
+  --media-library . \
   --output work/storyboard_assets.json \
   --markdown work/storyboard_assets.md
 ```
 
-路由规则：抽象概念优先 `codex_imagegen`；数字/指标优先 `remotion_hyperframes`；动作/场景变化推荐 `dreamina_video` 但只标记为需确认，因为 Dreamina/即梦生成可能消耗 credits；其他先走本地素材库 B-roll。`storyboard_assets.py --strict` 会在素材未 ready 时返回退出码 2，适合渲染前拦截。生图优先使用 Codex 内置 `image_gen` 工具，即 OpenAI GPT Image 2（`gpt-image-2`）。
+路由规则：抽象概念优先 `codex_imagegen`；数字/指标优先 `remotion_hyperframes`；动作/场景变化推荐 `dreamina_video` 但只标记为需确认，因为 Dreamina/即梦生成可能消耗 credits；其他先走本地素材库 B-roll。传 `--media-library <project_dir>` 时，`storyboard_assets.py` 会从 `media_index.json` / `media_index.db` 里按标签、文件名、时长和画幅推荐候选，并在 Markdown 表里显示分数。`storyboard_assets.py --strict` 会在素材未 ready 时返回退出码 2，适合渲染前拦截。生图优先使用 Codex 内置 `image_gen` 工具，即 OpenAI GPT Image 2（`gpt-image-2`）。
+
+### 🗂️ Media Library Recommend — 本地 B-roll 候选推荐
+[`scripts/media_library.py`](scripts/media_library.py)
+
+借鉴终端视频编辑工具里的 transcript-aware B-roll 选择思路，但只做本地索引和透明打分，不下载 stock、不调用外部视觉模型。推荐结果会保留 `score`、`reasons`、`absolute_path`，方便 agent 或人工先确认再接入 `render_config` / `enrich_plan`。
+
+常用：
+```bash
+# 先建立或刷新素材库索引
+python3 scripts/media_library.py init .
+python3 scripts/media_library.py scan .
+
+# 给某个分镜或口播段找 B-roll 候选
+python3 scripts/media_library.py recommend "AI workflow dashboard" \
+  --project-dir . \
+  --category broll \
+  --target-duration 3 \
+  --target-aspect 9:16 \
+  --json
+
+# 让 storyboard_assets 的素材预检表直接带候选排名
+python3 scripts/storyboard_assets.py \
+  --storyboard-plan work/storyboard_plan.json \
+  --asset-root work \
+  --media-library . \
+  --output work/storyboard_assets.json \
+  --markdown work/storyboard_assets.md
+```
+
+打分规则：tag 命中权重大于文件名命中，其次是路径、metadata、关联 transcript；`category=broll`、视频类型、时长覆盖 cue、画幅接近目标比例会加分；默认过滤索引里已经不存在的文件，`--include-missing` 可用于清理 stale index。
 
 ### 🔍 Screen Focus — 录屏点击聚焦
 [`scripts/screen_focus.py`](scripts/screen_focus.py) · [详细文档](docs/prompts/28-screen-focus.md)
@@ -344,6 +376,23 @@ python3 scripts/export_edl.py \
 ```
 
 适合把自动粗剪交给 Premiere / Final Cut Pro / DaVinci Resolve 做调色、混音、精剪或协作复核。复杂字幕、overlay、章节卡和 B-roll 仍以 `render_final.py` / `export_capcut.py` 为准。
+
+### 2026-05-26 自动化升级记录（Media Library Recommend）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`calesthio/OpenMontage`](https://github.com/calesthio/OpenMontage) | agentic production pipeline、质量门禁、artifact 交付清晰 | 保持本地 JSON/Markdown artifact，不引入云端生成依赖 |
+| [`vericontext/vibeframe`](https://github.com/vericontext/vibeframe) | `media/`、storyboard、build/review report 串成 agent-native 项目循环 | `storyboard_assets.py --media-library` 把素材索引结果写进 readiness manifest |
+| [`AKMessi/vex`](https://github.com/AKMessi/vex) | transcript-aware B-roll / generated visual scoring，强调先规划再合成 | 新增透明 `score` / `reasons` 的本地候选排名 |
+| [`DojoCodingLabs/remotion-superpowers`](https://github.com/DojoCodingLabs/remotion-superpowers) | stock footage、视频 review loop、短视频 preset 集成 | 本项目只推荐本地素材；下载/生成仍走已有 storyboard / Dreamina / imagegen 路由 |
+
+新增/调整能力：`scripts/media_library.py` 新增 `recommend` 子命令，可从 `media_index.json` / `media_index.db` 中按查询词、tag、文件名、metadata、关联 transcript、时长覆盖和目标画幅给本地素材打分；`scripts/storyboard_assets.py` 新增 `--media-library`，会把 `media_library_broll` shot 的 ranked B-roll 候选写入 `candidate_paths` 和 `candidate_scores`，Markdown 复核表会显示候选分数。
+
+使用方式：先用 `python3 scripts/media_library.py scan .` 建索引，再跑 `python3 scripts/media_library.py recommend "AI workflow dashboard" --project-dir . --category broll --target-duration 3 --target-aspect 9:16 --json`；分镜预检时加 `--media-library .`，例如 `python3 scripts/storyboard_assets.py --storyboard-plan work/storyboard_plan.json --asset-root work --media-library . --output work/storyboard_assets.json --markdown work/storyboard_assets.md`。
+
+验证结果：新增 `tests/test_media_library_recommend.py` 3 项，并更新 `tests/test_storyboard_assets.py`；`.venv/bin/python -m pytest tests/test_media_library_recommend.py tests/test_storyboard_assets.py -q` 通过 `9 passed in 0.11s`；完整 `.venv/bin/python -m pytest tests -q` 通过 `214 passed in 2.21s`；`.venv/bin/python -m compileall scripts tests` 通过；`git diff --check` 通过；`python3 scripts/media_library.py recommend --help` smoke 验证 CLI 参数正常。
 
 ### 2026-05-25 自动化升级记录（Render QA Review Packet）
 

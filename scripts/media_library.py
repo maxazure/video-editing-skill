@@ -18,6 +18,7 @@ Usage:
 import argparse
 import json
 import os
+import re
 import sqlite3
 import sys
 import uuid
@@ -41,6 +42,7 @@ SUPPORTED_AUDIO_EXTS = {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg"}
 SUPPORTED_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
 
 AUTO_UPGRADE_THRESHOLD = 200
+_TOKEN_RE = re.compile(r"[\w\u4e00-\u9fff]+", re.UNICODE)
 
 # Directory name mappings for classification (English and Chinese)
 _DIR_CATEGORY_MAP = {
@@ -374,6 +376,249 @@ def _find_transcript(video_path):
     return None
 
 
+def _resolve_item_path(project_dir, item_path):
+    """Return an absolute path for an indexed item path."""
+    if not item_path:
+        return ""
+    path = os.path.expanduser(str(item_path))
+    if os.path.isabs(path):
+        return os.path.abspath(path)
+    return os.path.abspath(os.path.join(project_dir, path))
+
+
+def _flatten_text(value):
+    """Convert nested tags/metadata into searchable lowercase text."""
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.lower()
+    if isinstance(value, (int, float)):
+        return str(value).lower()
+    if isinstance(value, dict):
+        return " ".join(
+            f"{_flatten_text(k)} {_flatten_text(v)}" for k, v in value.items()
+        ).lower()
+    if isinstance(value, (list, tuple, set)):
+        return " ".join(_flatten_text(v) for v in value).lower()
+    return str(value).lower()
+
+
+def _query_tokens(query):
+    tokens = []
+    for token in _TOKEN_RE.findall(str(query or "").lower()):
+        if len(token) >= 2 and token not in tokens:
+            tokens.append(token)
+    return tokens
+
+
+def _parse_aspect(value):
+    """Parse an aspect value such as 9:16, 1.777, or None."""
+    if value in (None, ""):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value) if float(value) > 0 else None
+    text = str(value).strip().lower()
+    if ":" in text:
+        left, right = text.split(":", 1)
+        try:
+            w = float(left)
+            h = float(right)
+            return w / h if w > 0 and h > 0 else None
+        except ValueError:
+            return None
+    try:
+        parsed = float(text)
+        return parsed if parsed > 0 else None
+    except ValueError:
+        return None
+
+
+def score_media_candidate(item, query, *, target_duration=None, target_aspect=None):
+    """Score one indexed media item for a natural-language B-roll query.
+
+    Returns (score, reasons). The scoring is intentionally transparent so an
+    agent can show why a candidate was suggested before linking it into a render.
+    """
+    tokens = _query_tokens(query)
+    full_query = str(query or "").strip().lower()
+    path_text = _flatten_text(item.get("path"))
+    filename_text = os.path.splitext(os.path.basename(path_text))[0].replace("-", " ")
+    tags_text = _flatten_text(item.get("tags"))
+    metadata_text = _flatten_text(item.get("metadata"))
+    transcript_text = _flatten_text(item.get("transcript_path"))
+    category_text = _flatten_text(item.get("category"))
+
+    score = 0.0
+    reasons = []
+    matched_query = False
+
+    for token in tokens:
+        matched = False
+        if token in tags_text:
+            score += 5.0
+            reasons.append(f"tag:{token}")
+            matched = True
+            matched_query = True
+        if token in filename_text:
+            score += 3.0
+            reasons.append(f"filename:{token}")
+            matched = True
+            matched_query = True
+        elif token in path_text:
+            score += 2.0
+            reasons.append(f"path:{token}")
+            matched = True
+            matched_query = True
+        if token in metadata_text:
+            score += 2.0
+            reasons.append(f"metadata:{token}")
+            matched = True
+            matched_query = True
+        if token in transcript_text:
+            score += 1.5
+            reasons.append(f"transcript:{token}")
+            matched = True
+            matched_query = True
+        if not matched and token in category_text:
+            score += 0.5
+            reasons.append(f"category:{token}")
+            matched_query = True
+
+    if full_query and len(full_query) >= 3:
+        if full_query in tags_text:
+            score += 3.0
+            reasons.append("exact-tag-query")
+            matched_query = True
+        if full_query in path_text:
+            score += 2.0
+            reasons.append("exact-path-query")
+            matched_query = True
+
+    if tokens and not matched_query:
+        return 0.0, []
+
+    if item.get("category") == "broll":
+        score += 1.0
+        reasons.append("category:broll")
+    if item.get("type") == "video":
+        score += 0.5
+        reasons.append("type:video")
+
+    duration = item.get("duration")
+    if target_duration and duration:
+        try:
+            duration = float(duration)
+            target = float(target_duration)
+            if duration >= target:
+                score += 1.0
+                reasons.append("duration-covers-cue")
+            if target * 0.5 <= duration <= target * 4:
+                score += 0.5
+                reasons.append("duration-close")
+        except (TypeError, ValueError):
+            pass
+
+    aspect = _parse_aspect(target_aspect)
+    width = item.get("width")
+    height = item.get("height")
+    if aspect and width and height:
+        try:
+            candidate_aspect = float(width) / float(height)
+            if abs(candidate_aspect - aspect) <= 0.12:
+                score += 1.0
+                reasons.append("aspect-match")
+        except (TypeError, ValueError, ZeroDivisionError):
+            pass
+
+    return score, reasons
+
+
+def recommend_assets(
+    project_dir,
+    query,
+    *,
+    media_type=None,
+    category=None,
+    limit=5,
+    min_duration=None,
+    max_duration=None,
+    target_duration=None,
+    target_aspect=None,
+    existing_only=True,
+):
+    """Return ranked media candidates from media_index.json/sqlite.
+
+    The returned paths include both the stored project-relative path and an
+    absolute path, making the result usable from storyboard manifests.
+    """
+    project_dir = os.path.abspath(project_dir)
+    index = open_index(project_dir)
+    try:
+        items = index.get_all()
+    finally:
+        if hasattr(index, "close"):
+            index.close()
+
+    results = []
+    for item in items:
+        if media_type and item.get("type") != media_type:
+            continue
+        if category and item.get("category") != category:
+            continue
+        abs_path = _resolve_item_path(project_dir, item.get("path"))
+        if existing_only and (not abs_path or not os.path.exists(abs_path)):
+            continue
+
+        duration = item.get("duration")
+        if duration is not None:
+            try:
+                duration_float = float(duration)
+            except (TypeError, ValueError):
+                duration_float = None
+            if min_duration is not None and duration_float is not None and duration_float < min_duration:
+                continue
+            if max_duration is not None and duration_float is not None and duration_float > max_duration:
+                continue
+
+        score, reasons = score_media_candidate(
+            item,
+            query,
+            target_duration=target_duration,
+            target_aspect=target_aspect,
+        )
+        if score <= 0:
+            continue
+        result = {
+            "path": item.get("path"),
+            "absolute_path": abs_path,
+            "type": item.get("type"),
+            "category": item.get("category"),
+            "duration": item.get("duration"),
+            "width": item.get("width"),
+            "height": item.get("height"),
+            "tags": item.get("tags") or [],
+            "score": round(score, 3),
+            "reasons": reasons,
+            "transcript_path": item.get("transcript_path"),
+        }
+        results.append(result)
+
+    def _sort_key(result):
+        duration = result.get("duration")
+        try:
+            duration_value = float(duration) if duration is not None else 10**9
+        except (TypeError, ValueError):
+            duration_value = 10**9
+        duration_delta = (
+            abs(duration_value - float(target_duration))
+            if target_duration and duration_value != 10**9
+            else duration_value
+        )
+        return (-float(result.get("score", 0)), duration_delta, str(result.get("path") or ""))
+
+    return sorted(results, key=_sort_key)[: max(0, int(limit))]
+
+
 _SKIP_DIRS = {".git", ".venv", "node_modules", "__pycache__", ".DS_Store"}
 
 
@@ -593,6 +838,60 @@ def cmd_search(args):
         index.close()
 
 
+def cmd_recommend(args):
+    """Recommend ranked assets for a storyboard/transcript query."""
+    project_dir = os.path.abspath(args.project_dir)
+    results = recommend_assets(
+        project_dir,
+        args.query,
+        media_type=args.type,
+        category=args.category,
+        limit=args.limit,
+        min_duration=args.min_duration,
+        max_duration=args.max_duration,
+        target_duration=args.target_duration,
+        target_aspect=args.target_aspect,
+        existing_only=not args.include_missing,
+    )
+    payload = {
+        "query": args.query,
+        "project_dir": project_dir,
+        "filters": {
+            "type": args.type,
+            "category": args.category,
+            "limit": args.limit,
+            "min_duration": args.min_duration,
+            "max_duration": args.max_duration,
+            "target_duration": args.target_duration,
+            "target_aspect": args.target_aspect,
+            "existing_only": not args.include_missing,
+        },
+        "results": results,
+    }
+
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return
+
+    if not results:
+        print(f"No ranked candidates for: {args.query}")
+        return
+
+    print(f"Recommended {len(results)} asset(s) for '{args.query}':\n")
+    for result in results:
+        duration = result.get("duration")
+        duration_text = ""
+        if duration not in (None, ""):
+            try:
+                duration_text = f" {float(duration):.1f}s"
+            except (TypeError, ValueError):
+                duration_text = ""
+        print(
+            f"  {result['score']:>5.1f}  {result.get('absolute_path')}"
+            f"{duration_text}  [{', '.join(result.get('reasons') or [])}]"
+        )
+
+
 def cmd_upgrade(args):
     """Force upgrade from JSON to SQLite backend."""
     project_dir = os.path.abspath(args.project_dir)
@@ -632,6 +931,33 @@ def main():
     p_search.add_argument("--project-dir", default=".",
                           help="Project root directory (default: .)")
 
+    # recommend
+    p_recommend = subparsers.add_parser(
+        "recommend",
+        help="Rank indexed media for a storyboard/transcript query",
+    )
+    p_recommend.add_argument("query", help="Natural-language query or storyboard B-roll cue")
+    p_recommend.add_argument("--project-dir", default=".",
+                             help="Project root directory (default: .)")
+    p_recommend.add_argument("--type", choices=["video", "audio", "image", "other"],
+                             default=None, help="Optional media type filter")
+    p_recommend.add_argument("--category", default=None,
+                             help="Optional category filter, e.g. broll")
+    p_recommend.add_argument("--limit", type=int, default=5,
+                             help="Maximum candidates to return")
+    p_recommend.add_argument("--min-duration", type=float, default=None,
+                             help="Skip shorter media when duration metadata exists")
+    p_recommend.add_argument("--max-duration", type=float, default=None,
+                             help="Skip longer media when duration metadata exists")
+    p_recommend.add_argument("--target-duration", type=float, default=None,
+                             help="Prefer media that covers this cue duration")
+    p_recommend.add_argument("--target-aspect", default=None,
+                             help="Prefer an aspect ratio such as 9:16 or 1.777")
+    p_recommend.add_argument("--include-missing", action="store_true",
+                             help="Include stale index entries whose files no longer exist")
+    p_recommend.add_argument("--json", action="store_true",
+                             help="Emit machine-readable recommendation JSON")
+
     # upgrade
     p_upgrade = subparsers.add_parser("upgrade", help="Upgrade JSON → SQLite")
     p_upgrade.add_argument("project_dir", nargs="?", default=".",
@@ -648,6 +974,7 @@ def main():
         "scan": cmd_scan,
         "status": cmd_status,
         "search": cmd_search,
+        "recommend": cmd_recommend,
         "upgrade": cmd_upgrade,
     }
 

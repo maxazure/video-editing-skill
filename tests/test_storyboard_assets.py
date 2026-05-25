@@ -81,6 +81,44 @@ def test_broll_candidates_are_reported(tmp_path):
     assert item["candidate_paths"] and item["candidate_paths"][0].endswith("workflow-desk.mp4")
 
 
+def test_media_library_candidates_are_ranked_in_manifest(tmp_path):
+    broll_dir = tmp_path / "media" / "broll"
+    broll_dir.mkdir(parents=True)
+    (broll_dir / "workflow-dashboard.mp4").write_bytes(b"fake video")
+    (tmp_path / "media_index.json").write_text(
+        json.dumps(
+            {
+                "meta": {"backend": "json", "count": 1},
+                "items": [
+                    {
+                        "path": "media/broll/workflow-dashboard.mp4",
+                        "type": "video",
+                        "category": "broll",
+                        "tags": ["workflow", "dashboard"],
+                        "duration": 4.0,
+                        "width": 1080,
+                        "height": 1920,
+                    }
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    manifest = build_asset_manifest(
+        _manual_broll_plan(),
+        asset_root=str(tmp_path / "work"),
+        media_library_project=str(tmp_path),
+    )
+    item = manifest["items"][0]
+
+    assert item["status"] == "candidate_found"
+    assert item["candidate_paths"][0].endswith("workflow-dashboard.mp4")
+    assert item["candidate_scores"][0]["score"] > 0
+    assert "tag:workflow" in item["candidate_scores"][0]["reasons"]
+
+
 def test_emit_markdown_includes_status_table_and_credit_note(tmp_path):
     plan = build_storyboard_plan(_sample_transcript(), max_shots=5)
     manifest = build_asset_manifest(plan, asset_root=str(tmp_path))

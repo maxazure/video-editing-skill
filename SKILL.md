@@ -1,6 +1,6 @@
 ---
 name: video-editing
-description: "Xiaohongshu/RED-tuned content engine for short-form video. Use when: producing daily 小红书/抖音/视频号 videos from raw voice-over + b-roll materials; transcribing speech with mlx-whisper/faster-whisper; planning ASR rough cuts from transcript filler metadata and adjacent repeated sentences; rewriting transcripts into 5-field (hook/pain/turn/value/cta) story structures using 8 hook + 5 CTA templates; running platform-rule content lint (80+ regex for 广告法极限词/导流外站/医美/财富诱导); auto-scheduling B-roll cutaways, chapter title cards, emoji stickers, and BGM beat-sync (librosa); detecting abstract-concept opportunities and emitting gpt-image-2-shaped prompts that the Codex built-in `imagegen` tool can run directly (no API key needed); building storyboard_plan shot cards from transcript/clean_script with generation routing (codex_imagegen / dreamina_video / remotion_hyperframes / media_library_broll), continuity anchors, first/motion/last-frame prompts, and paid-credit approval notes before generating video assets; turning storyboard plans into asset manifests with ready / candidate_found / needs_generation / needs_approval / needs_render / search_needed states so generated media, local motion cards, and B-roll are reviewed before render; building screen-focus click/hotspot zoom plans for software tutorials and product demos; ingesting repeatable enrich-plan JSON via render_final.py --enrich-plan so B-roll, chapter cards, stickers, generated images, and focus_events feed the final render without manual config copying; removing talking-head pauses with adaptive loudnorm/silencedetect jump cuts and auditable cut lists; generating filmstrip+waveform timeline-view PNGs for cut-boundary or render-QA human review; rendering with audience profiles (tech_pro/lifestyle), Heavy CJK fonts, automatic loudness normalisation (dynaudnorm+compressor+loudnorm), primary-speed control, karaoke/word-level subtitles, and optional --versioned-output `_V<N>` files that avoid overwriting previous renders; running post-render QA for dimensions/audio/black frames/frozen video/silence and writing review packets with segment evidence plus optional clips; exporting one master into three platform deliverables (xhs 3:4 / douyin 9:16 / wxch ≤60s); generating titles + 200-500 char captions + tags + publish-time hints; exporting to JianYing/CapCut; exporting render_config or rough/jump cut lists to CMX 3600-style EDL + manifest for Premiere/Final Cut Pro/Resolve handoff; generating Remotion voiceover animations. Refuses pipeline-internal tokens (speed multipliers, model names, debug strings) on output frames. Requires ffmpeg and a whisper backend (mlx-whisper on Apple Silicon, faster-whisper elsewhere). Pillow needed for chapter cards. librosa optional for real beat detection. Remotion workflow additionally requires Node.js. Image generation routes through Codex `imagegen` (gpt-image-2) when in Codex; outside Codex, callers use the OpenAI Python SDK directly with their own OPENAI_API_KEY (this skill does not bundle an OpenAI client)."
+description: "Xiaohongshu/RED-tuned content engine for short-form video. Use when: producing daily 小红书/抖音/视频号 videos from raw voice-over + b-roll materials; transcribing speech with mlx-whisper/faster-whisper; planning ASR rough cuts from transcript filler metadata and adjacent repeated sentences; rewriting transcripts into 5-field (hook/pain/turn/value/cta) story structures using 8 hook + 5 CTA templates; running platform-rule content lint (80+ regex for 广告法极限词/导流外站/医美/财富诱导); auto-scheduling B-roll cutaways, chapter title cards, emoji stickers, and BGM beat-sync (librosa); detecting abstract-concept opportunities and emitting gpt-image-2-shaped prompts that the Codex built-in `imagegen` tool can run directly (no API key needed); building storyboard_plan shot cards from transcript/clean_script with generation routing (codex_imagegen / dreamina_video / remotion_hyperframes / media_library_broll), continuity anchors, first/motion/last-frame prompts, and paid-credit approval notes before generating video assets; turning storyboard plans into asset manifests with ready / candidate_found / needs_generation / needs_approval / needs_render / search_needed states so generated media, local motion cards, and B-roll are reviewed before render; ranking indexed local B-roll candidates by tags, filename, duration, aspect, and transparent score reasons via media_library.py recommend; building screen-focus click/hotspot zoom plans for software tutorials and product demos; ingesting repeatable enrich-plan JSON via render_final.py --enrich-plan so B-roll, chapter cards, stickers, generated images, and focus_events feed the final render without manual config copying; removing talking-head pauses with adaptive loudnorm/silencedetect jump cuts and auditable cut lists; generating filmstrip+waveform timeline-view PNGs for cut-boundary or render-QA human review; rendering with audience profiles (tech_pro/lifestyle), Heavy CJK fonts, automatic loudness normalisation (dynaudnorm+compressor+loudnorm), primary-speed control, karaoke/word-level subtitles, and optional --versioned-output `_V<N>` files that avoid overwriting previous renders; running post-render QA for dimensions/audio/black frames/frozen video/silence and writing review packets with segment evidence plus optional clips; exporting one master into three platform deliverables (xhs 3:4 / douyin 9:16 / wxch ≤60s); generating titles + 200-500 char captions + tags + publish-time hints; exporting to JianYing/CapCut; exporting render_config or rough/jump cut lists to CMX 3600-style EDL + manifest for Premiere/Final Cut Pro/Resolve handoff; generating Remotion voiceover animations. Refuses pipeline-internal tokens (speed multipliers, model names, debug strings) on output frames. Requires ffmpeg and a whisper backend (mlx-whisper on Apple Silicon, faster-whisper elsewhere). Pillow needed for chapter cards. librosa optional for real beat detection. Remotion workflow additionally requires Node.js. Image generation routes through Codex `imagegen` (gpt-image-2) when in Codex; outside Codex, callers use the OpenAI Python SDK directly with their own OPENAI_API_KEY (this skill does not bundle an OpenAI client)."
 argument-hint: "Provide the path(s) to voice-over audio + optional b-roll videos to process"
 metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
 ---
@@ -22,6 +22,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    │       └─→ Codex imagegen   gpt-image-2 自动生图（抽象概念配图）
    ├─→ storyboard_plan.py       分镜 shot cards / 生成路由 / 连续性锚点
    ├─→ storyboard_assets.py     素材任务清单 / ready 预检 / paid 额度提醒
+   │                            可选 media_library.py recommend 排名 B-roll 候选
    ├─→ screen_focus.py          录屏点击/热点 → 自动聚焦计划
    ├─→ jump_cut.py              自适应去停顿 + 可审计 cut list（口播/访谈可选）
    ├─→ render_final.py          单次编码渲染（enrich_plan/focus_events + Heavy 字幕 + 响度规范化）
@@ -46,6 +47,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `rough_cut.py` | transcript 粗剪：去口头禅/重复句 | `--transcript` `--cut-list` / `--input` `--output` |
 | `rewrite_script.py` | LLM 5 段式重组 + 验证 | `--transcript` `--structure` `--hook-template` `--emit-prompt` / `--llm-output` |
 | `auto_broll.py` | B-roll 调度 | `--transcript` `--assets` `--max-single-shot` |
+| `media_library.py` | 本地素材库索引 + B-roll 候选推荐 | `init` `scan` `search` `recommend --category broll --json` |
 | `auto_chapter_cards.py` | 章节卡 PNG | `--script` `--audio` `--style` `--output-dir` |
 | `auto_stickers.py` | 情绪→贴纸 | `--transcript` `--min-interval` |
 | `beat_sync.py` | BGM 卡点 | `--bgm` `--cuts` `--window` |
@@ -330,6 +332,18 @@ python3 scripts/media_library.py status
 python3 scripts/media_library.py search "关键词"
 ```
 
+**推荐 B-roll 候选**：
+```bash
+python3 scripts/media_library.py recommend "AI workflow dashboard" \
+  --project-dir . \
+  --category broll \
+  --target-duration 3 \
+  --target-aspect 9:16 \
+  --json
+```
+
+推荐结果包含 `score`、`reasons`、`absolute_path`，用于人工/agent 先确认再写入 `render_config` 或 `enrich_plan`。默认过滤已经不存在的索引文件；需要清理 stale index 时可加 `--include-missing`。
+
 ### Phase 1: Audio Extraction（音频提取）
 
 对每个输入视频文件，使用 [extract_audio.py](./scripts/extract_audio.py) 提取音频：
@@ -539,13 +553,14 @@ AI agent 应分析 transcript 识别话题转换点（语义断裂、过渡词�
 **Storyboard Plan 分镜与生成路由**（生成素材前推荐）：
 - 运行 `storyboard_plan.py --transcript work/transcript.json --clean-script work/clean_script.md --output work/storyboard_plan.json --markdown work/storyboard_plan.md`
 - 输出每个 shot 的时间码、narration、first/motion/last-frame 描述、`codex_imagegen` / `dreamina_video` / `remotion_hyperframes` / `media_library_broll` 路由、fallback 和 continuity anchors
-- 再运行 `storyboard_assets.py --storyboard-plan work/storyboard_plan.json --asset-root work --output work/storyboard_assets.json --markdown work/storyboard_assets.md --strict`，渲染前确认素材 `ready`
+- 再运行 `storyboard_assets.py --storyboard-plan work/storyboard_plan.json --asset-root work --media-library . --output work/storyboard_assets.json --markdown work/storyboard_assets.md --strict`，渲染前确认素材 `ready`
 - `dreamina_video` 只表示适合视频生成，不会自动提交任务；提交 Dreamina/即梦前必须确认，因为可能消耗 credits
 - 生图优先使用 Codex 内置 `image_gen` 工具，即 OpenAI GPT Image 2（`gpt-image-2`）。
 
 **Storyboard Assets 素材清单与预检**（分镜后、渲染前推荐）：
-- 运行 `storyboard_assets.py --storyboard-plan work/storyboard_plan.json --asset-root work --output work/storyboard_assets.json --markdown work/storyboard_assets.md`
+- 运行 `storyboard_assets.py --storyboard-plan work/storyboard_plan.json --asset-root work --media-library . --output work/storyboard_assets.json --markdown work/storyboard_assets.md`
 - 输出每个 shot 的素材状态：`ready` / `candidate_found` / `needs_generation` / `needs_approval` / `needs_render` / `search_needed`
+- 如果传入 `--media-library`，`media_library_broll` shot 会从素材索引里生成 `candidate_paths` + `candidate_scores`，按 tag、文件名、metadata、时长和画幅透明排名
 - 加 `--strict` 时，任何素材未 ready 都会返回退出码 2，适合放在最终渲染前
 - `needs_approval` 代表 Dreamina/即梦等可能消耗 credits 的任务，必须先确认再提交；生图优先使用 Codex 内置 `image_gen` 工具，即 OpenAI GPT Image 2（`gpt-image-2`）。
 

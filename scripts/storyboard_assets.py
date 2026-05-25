@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
+from media_library import recommend_assets
 from storyboard_plan import ROUTING_SENTENCE
 
 
@@ -149,6 +150,43 @@ def _scan_candidates(
     return candidates
 
 
+def _media_index_candidates(
+    shot: Dict[str, Any],
+    *,
+    media_project_dir: Optional[str],
+    target_aspect: Optional[str],
+    limit: int = 5,
+) -> Tuple[List[str], List[Dict[str, Any]]]:
+    if not media_project_dir:
+        return [], []
+    prompts = shot.get("prompts") or {}
+    query = str(prompts.get("broll_query") or "").strip()
+    if not query:
+        query = " ".join(str(token) for token in (shot.get("keywords") or []))
+    if not query.strip():
+        return [], []
+
+    results = recommend_assets(
+        media_project_dir,
+        query,
+        category="broll",
+        limit=limit,
+        target_duration=shot.get("duration"),
+        target_aspect=target_aspect,
+    )
+    paths = [str(result.get("absolute_path")) for result in results if result.get("absolute_path")]
+    scored = [
+        {
+            "path": result.get("absolute_path"),
+            "score": result.get("score"),
+            "reasons": result.get("reasons") or [],
+            "tags": result.get("tags") or [],
+        }
+        for result in results
+    ]
+    return paths, scored
+
+
 def _default_broll_dirs(asset_root: Path) -> List[Path]:
     return [
         asset_root / "broll",
@@ -164,10 +202,12 @@ def build_asset_manifest(
     *,
     asset_root: str,
     broll_dirs: Optional[Sequence[str]] = None,
+    media_library_project: Optional[str] = None,
 ) -> Dict[str, Any]:
     root = Path(asset_root).expanduser().resolve()
     explicit_broll_dirs = [_abs(d, root).resolve() for d in (broll_dirs or [])]
     search_dirs = explicit_broll_dirs or _default_broll_dirs(root)
+    target_aspect = str((plan.get("target") or {}).get("aspect") or "")
     items: List[Dict[str, Any]] = []
     status_counts: Dict[str, int] = {}
     paid_count = 0
@@ -182,6 +222,7 @@ def build_asset_manifest(
         explicit_path = _explicit_asset_path(shot, root)
         resolved = None
         candidates: List[str] = []
+        candidate_scores: List[Dict[str, Any]] = []
 
         if explicit_path and explicit_path.exists():
             resolved = explicit_path
@@ -193,7 +234,13 @@ def build_asset_manifest(
                 status = "ready"
                 next_action = "Expected asset exists; link it into render_config/enrich_plan if not already linked."
             elif route == "media_library_broll":
-                candidates = _scan_candidates(shot, search_dirs, spec["exts"])  # type: ignore[index]
+                candidates, candidate_scores = _media_index_candidates(
+                    shot,
+                    media_project_dir=media_library_project,
+                    target_aspect=target_aspect,
+                )
+                if not candidates:
+                    candidates = _scan_candidates(shot, search_dirs, spec["exts"])  # type: ignore[index]
                 if candidates:
                     status = "candidate_found"
                     next_action = "Review the candidate file and link the chosen path into render_config/enrich_plan."
@@ -225,6 +272,7 @@ def build_asset_manifest(
             "expected_path": str(expected),
             "resolved_path": str(resolved) if resolved else "",
             "candidate_paths": candidates,
+            "candidate_scores": candidate_scores,
             "requires_paid_credits": paid,
             "approval_note": route_info.get("approval_note") or (
                 "Dreamina/即梦 generation may consume credits; confirm before submitting."
@@ -284,7 +332,13 @@ def emit_markdown(manifest: Dict[str, Any]) -> str:
         else:
             asset_bits.append(f"`{item.get('expected_path', '')}`")
         if item.get("candidate_paths"):
-            preview = ", ".join(f"`{p}`" for p in item["candidate_paths"][:3])
+            scores = {score.get("path"): score for score in item.get("candidate_scores") or []}
+            preview_bits = []
+            for path in item["candidate_paths"][:3]:
+                score = scores.get(path, {}).get("score")
+                suffix = f" ({score})" if score is not None else ""
+                preview_bits.append(f"`{path}`{suffix}")
+            preview = ", ".join(preview_bits)
             asset_bits.append(f"candidates: {preview}")
         if item.get("approval_note"):
             asset_bits.append(str(item["approval_note"]))
@@ -308,6 +362,10 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     parser.add_argument("--storyboard-plan", required=True, help="Input storyboard_plan.json.")
     parser.add_argument("--asset-root", default="work", help="Root for generated/reviewed assets.")
     parser.add_argument("--broll-dir", action="append", default=[], help="Optional B-roll search directory.")
+    parser.add_argument(
+        "--media-library",
+        help="Optional project directory containing media_index.json/db for ranked B-roll candidates.",
+    )
     parser.add_argument("--output", required=True, help="Output manifest JSON.")
     parser.add_argument("--markdown", help="Optional Markdown review table.")
     parser.add_argument(
@@ -322,6 +380,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         plan,
         asset_root=args.asset_root,
         broll_dirs=args.broll_dir,
+        media_library_project=args.media_library,
     )
 
     os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)
