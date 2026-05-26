@@ -46,6 +46,9 @@
    ├─→ render_qa.py             渲染后黑屏/静帧/静音/尺寸质检 + review packet
    │     └─→ timeline_view.py   QA 可疑区间可视化复盘
    │
+   ├─→ subtitle_pack.py         SRT / VTT / ASS / JSON 字幕交付包
+   │                            支持 render_config 串接、加速倍率、片头 offset 对齐
+   │
    ├─→ export_edl.py            render_config / cut list → EDL + manifest
    │                            交给 Premiere / Final Cut Pro / Resolve
    │
@@ -74,7 +77,7 @@ cd ~/projects/video-editing-skill
 python3 scripts/utils.py
 
 # 4. 跑一遍测试套件确认 OK
-pytest tests/           # 214 个测试，约 3 秒
+pytest tests/           # 218 个测试，约 3 秒
 ```
 
 每天做一条视频的完整模板：**[docs/prompts/15-xhs-daily-tech-video.md](docs/prompts/15-xhs-daily-tech-video.md)**
@@ -255,6 +258,29 @@ python3 scripts/render_final.py \
 
 `focus_events[]` 支持像素或 0-1 坐标、`duration`、`zoom`、`transition`、`marker_color` 和 `label`；`render_final.py` 会在对应时间段淡入放大裁切画面，并把 label 合并为 timed badge，适合软件教程、产品演示和操作录屏。
 
+### 📝 Subtitle Pack — SRT/VTT/ASS 字幕交付
+[`scripts/subtitle_pack.py`](scripts/subtitle_pack.py) · [详细文档](docs/prompts/29-subtitle-pack.md)
+
+借鉴 VideoLingo / Twick / ffsubsync 这类字幕工具对“可上传字幕文件、单行可读切分、时间线对齐”的重视，但保持本项目轻量：不重新转写、不调翻译/配音服务，只把现有 `transcript.json` 或 `render_config.json` 变成可校对、可上传的 sidecar 字幕包。
+
+常用：
+```bash
+python3 scripts/subtitle_pack.py \
+  --transcript work/day58_transcript.json \
+  --output-dir output/subtitles \
+  --basename day58 \
+  --formats srt vtt ass json
+
+python3 scripts/subtitle_pack.py \
+  --config work/render_config.json \
+  --output-dir output/subtitles \
+  --basename day58_master \
+  --speed 1.25 \
+  --offset 2.0
+```
+
+`--transcript` 默认保留原始时间码；`--config` 默认按 `render_final.py` 的 clips 顺序串接时间线。`--speed` 对齐 `--primary-speed`，`--offset` 对齐封面/片头秒数；中文默认 18 字单行、英文默认 42 字单行，也可用 `--max-chars` 覆盖。
+
 ### ✂️ ASR Rough Cut — 自动去口头禅/重复句
 [`scripts/rough_cut.py`](scripts/rough_cut.py) · [详细文档](docs/prompts/26-rough-cut.md)
 
@@ -376,6 +402,24 @@ python3 scripts/export_edl.py \
 ```
 
 适合把自动粗剪交给 Premiere / Final Cut Pro / DaVinci Resolve 做调色、混音、精剪或协作复核。复杂字幕、overlay、章节卡和 B-roll 仍以 `render_final.py` / `export_capcut.py` 为准。
+
+### 2026-05-27 自动化升级记录（Subtitle Pack）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`Huanshere/VideoLingo`](https://github.com/Huanshere/VideoLingo) | 关注字幕切分、对齐、单行字幕、翻译/配音交付质量 | 新增本地字幕包导出；本次不引入翻译/配音依赖 |
+| [`smacke/ffsubsync`](https://github.com/smacke/ffsubsync) | 把字幕文件和视频对齐当作独立交付能力 | 支持 `--speed` / `--offset`，让 sidecar 字幕对齐最终成片 |
+| [`ncounterspecialist/twick`](https://github.com/ncounterspecialist/twick) | AI captions + timed tracks 可接入编辑器/SDK | 输出 SRT/VTT/ASS/JSON，方便平台上传、网页播放和人工校对 |
+| [`vericontext/vibeframe`](https://github.com/vericontext/vibeframe) | agent-native 项目产物保留 build/review report | JSON manifest 保留 cue 来源、时序参数和 warning |
+| [`harry0703/MoneyPrinterTurbo`](https://github.com/harry0703/MoneyPrinterTurbo/blob/main/README-en.md) | topic-to-video 流水线包含字幕、素材和 BGM 交付 | 本项目已有完整短视频流水线，本次补齐平台字幕 sidecar |
+
+新增/调整能力：新增 `scripts/subtitle_pack.py`，可从 `transcript.json` 或 `render_config.json` 导出 SRT、VTT、ASS 和 JSON manifest；默认中文 18 字单行、英文 42 字单行，优先按标点/词边界切分；如果 transcript 带 `words[]`，会用词级时间戳生成更准的 cue；`--config` 会按最终 clips 串接时间线，`--speed` 和 `--offset` 用来对齐 `render_final.py --primary-speed` 和片头封面秒数。
+
+使用方式：原始转写字幕用 `python3 scripts/subtitle_pack.py --transcript work/day58_transcript.json --output-dir output/subtitles --basename day58 --formats srt vtt ass json`；最终成片字幕用 `python3 scripts/subtitle_pack.py --config work/render_config.json --output-dir output/subtitles --basename day58_master --speed 1.25 --offset 2.0`。详细示例见 [docs/prompts/29-subtitle-pack.md](docs/prompts/29-subtitle-pack.md)。
+
+验证结果：新增 `tests/test_subtitle_pack.py` 4 项；`.venv/bin/python -m pytest tests/test_subtitle_pack.py -q` 通过 `4 passed in 0.06s`；完整 `.venv/bin/python -m pytest tests -q` 通过 `218 passed in 3.28s`；`.venv/bin/python -m compileall scripts tests` 通过；`git diff --check` 通过；`.venv/bin/python scripts/subtitle_pack.py --help` smoke 验证 CLI 参数正常。
 
 ### 2026-05-26 自动化升级记录（Media Library Recommend）
 
@@ -646,6 +690,14 @@ python3 $SKILL/scripts/timeline_view.py \
   $WORK/output/day${DAY}_master.mp4 --at 42.5 --radius 1.5 \
   --output $WORK/output/verify/day${DAY}_42_5s.png
 
+# 5c. 可选：导出平台可上传字幕 sidecar
+python3 $SKILL/scripts/subtitle_pack.py \
+  --config $WORK/work/render_config.json \
+  --output-dir $WORK/output/subtitles \
+  --basename day${DAY}_master \
+  --speed 1.25 \
+  --offset 2.0
+
 # 6. 多平台
 python3 $SKILL/scripts/multi_export.py \
   $WORK/output/day${DAY}_master.mp4 --output-dir $WORK/output/
@@ -673,7 +725,7 @@ python3 $SKILL/scripts/generate_caption.py \
 ## 测试
 
 ```bash
-pytest tests/           # 210 测试，约 3 秒
+pytest tests/           # 218 测试，约 3 秒
 ```
 
 按模块跑：
@@ -692,6 +744,7 @@ pytest tests/test_storyboard_plan.py -v     # 分镜 shot cards + 生成路由
 pytest tests/test_storyboard_assets.py -v   # 分镜素材 readiness manifest
 pytest tests/test_export_edl.py -v          # NLE handoff EDL + manifest
 pytest tests/test_screen_focus.py -v        # 录屏点击聚焦计划 + render 接入
+pytest tests/test_subtitle_pack.py -v       # SRT/VTT/ASS/JSON 字幕交付包
 ```
 
 ### 本次自动化更新记录（2026-05-20 UTC）
@@ -730,6 +783,7 @@ pytest tests/test_screen_focus.py -v        # 录屏点击聚焦计划 + render 
 | **26** | **[ASR Rough Cut](docs/prompts/26-rough-cut.md)** | **去口头禅/重复句粗剪** |
 | **27** | **[NLE Handoff](docs/prompts/27-export-edl.md)** | **导出 EDL 给 Premiere/FCP/Resolve** |
 | **28** | **[Screen Focus](docs/prompts/28-screen-focus.md)** | **录屏点击/热点自动聚焦** |
+| **29** | **[Subtitle Pack](docs/prompts/29-subtitle-pack.md)** | **导出 SRT/VTT/ASS/JSON 字幕包** |
 
 完整列表见 [docs/prompts/README.md](docs/prompts/README.md)。
 
@@ -778,6 +832,7 @@ scripts/
 ├── render_final.py             单次编码渲染 + enrich_plan 接入（V3 强化）
 ├── render_qa.py                渲染后黑屏/静帧/静音/尺寸质检       [V3]
 ├── timeline_view.py            filmstrip+waveform 可视化复盘图     [V3]
+├── subtitle_pack.py            SRT/VTT/ASS/JSON 字幕交付包        [V3]
 ├── burn_subtitles.py           字幕 ASS 生成
 ├── generate_cover.py           封面生成
 ├── generate_cover_image.py     Chrome-rendered 封面
