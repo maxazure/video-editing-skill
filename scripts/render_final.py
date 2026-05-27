@@ -156,6 +156,27 @@ def _float_or_default(value, default):
         return default
 
 
+def _bool_or_default(value, default=False):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off"}:
+            return False
+    return default
+
+
+def _bounded_float(value, default, *, min_value=None, max_value=None):
+    parsed = _float_or_default(value, default)
+    if min_value is not None:
+        parsed = max(min_value, parsed)
+    if max_value is not None:
+        parsed = min(max_value, parsed)
+    return parsed
+
+
 def _cue_time_range(cue, *, start_key="start", end_key="end", duration_key="duration", default_duration=1.0):
     start = _float_or_default(cue.get(start_key), 0.0)
     if end_key in cue:
@@ -166,6 +187,76 @@ def _cue_time_range(cue, *, start_key="start", end_key="end", duration_key="dura
     if end <= start:
         end = start + default_duration
     return start, end
+
+
+def build_bgm_mix_filter_ops(
+    *,
+    bgm_input_idx,
+    voice_label,
+    bgm_total,
+    bgm_volume,
+    bgm_fade_in=0.0,
+    bgm_fade_out=0.0,
+    ducking=False,
+    duck_threshold=0.03,
+    duck_ratio=8.0,
+    duck_attack=20.0,
+    duck_release=250.0,
+    duck_makeup=1.0,
+):
+    """Return filter_complex lines that prepare BGM and mix it with speech.
+
+    When ducking is enabled, the speech track is split so one copy remains the
+    audible voice while the other copy sidechains the BGM compressor.
+    """
+    bgm_total = _bounded_float(bgm_total, 0.0, min_value=0.05)
+    bgm_volume = _bounded_float(bgm_volume, 0.15, min_value=0.0, max_value=1.0)
+    bgm_fade_in = _bounded_float(bgm_fade_in, 0.0, min_value=0.0)
+    bgm_fade_out = _bounded_float(bgm_fade_out, 0.0, min_value=0.0)
+
+    lines = []
+    bgm_filters = [
+        "aloop=loop=-1:size=2147483647",
+        f"atrim=duration={bgm_total:.4f}",
+        "asetpts=PTS-STARTPTS",
+        f"volume={bgm_volume:.3f}",
+    ]
+    if bgm_fade_in > 0:
+        bgm_filters.append(f"afade=t=in:st=0:d={min(bgm_fade_in, bgm_total):.4f}")
+    if bgm_fade_out > 0:
+        fade_start = max(0, bgm_total - bgm_fade_out)
+        bgm_filters.append(
+            f"afade=t=out:st={fade_start:.4f}:d={min(bgm_fade_out, bgm_total):.4f}"
+        )
+
+    bgm_base_label = "[bgm_base]" if ducking else "[bgm_a]"
+    lines.append(f"[{bgm_input_idx}:a]{','.join(bgm_filters)}{bgm_base_label}")
+
+    if ducking:
+        duck_threshold = _bounded_float(duck_threshold, 0.03, min_value=0.0001, max_value=1.0)
+        duck_ratio = _bounded_float(duck_ratio, 8.0, min_value=1.0, max_value=20.0)
+        duck_attack = _bounded_float(duck_attack, 20.0, min_value=0.01, max_value=2000.0)
+        duck_release = _bounded_float(duck_release, 250.0, min_value=0.01, max_value=9000.0)
+        duck_makeup = _bounded_float(duck_makeup, 1.0, min_value=1.0, max_value=64.0)
+        lines.append(f"{voice_label}asplit=2[voice_mix][voice_sc]")
+        lines.append(
+            "[bgm_base][voice_sc]"
+            f"sidechaincompress=threshold={duck_threshold:.4f}:"
+            f"ratio={duck_ratio:.2f}:"
+            f"attack={duck_attack:.2f}:"
+            f"release={duck_release:.2f}:"
+            f"makeup={duck_makeup:.2f}"
+            "[bgm_a]"
+        )
+        lines.append(
+            "[voice_mix][bgm_a]amix=inputs=2:duration=first:dropout_transition=0[final_a]"
+        )
+    else:
+        lines.append(
+            f"{voice_label}[bgm_a]amix=inputs=2:duration=first:dropout_transition=0[final_a]"
+        )
+
+    return lines, "[final_a]"
 
 
 def merge_enrich_plan(config, plan, *, plan_base_dir):
@@ -874,6 +965,26 @@ def main():
                         help="Background music file path (overrides config)")
     parser.add_argument("--bgm-volume", type=float, default=None,
                         help="BGM volume 0.0-1.0 (default: from config or 0.15)")
+    parser.add_argument("--bgm-fade-in", type=float, default=None,
+                        help="BGM fade-in seconds (default: from config or 0)")
+    parser.add_argument("--bgm-fade-out", type=float, default=None,
+                        help="BGM fade-out seconds (default: from config or 3)")
+    bgm_duck_group = parser.add_mutually_exclusive_group()
+    bgm_duck_group.add_argument("--bgm-ducking", dest="bgm_ducking",
+                                action="store_true",
+                                help="Enable voice-aware BGM ducking via sidechain compression")
+    bgm_duck_group.add_argument("--no-bgm-ducking", dest="bgm_ducking",
+                                action="store_false",
+                                help="Disable BGM ducking even if config enables it")
+    parser.set_defaults(bgm_ducking=None)
+    parser.add_argument("--bgm-duck-threshold", type=float, default=None,
+                        help="BGM ducking sidechain threshold, 0.0001-1.0 (default: config or 0.03)")
+    parser.add_argument("--bgm-duck-ratio", type=float, default=None,
+                        help="BGM ducking compression ratio, 1-20 (default: config or 8)")
+    parser.add_argument("--bgm-duck-attack", type=float, default=None,
+                        help="BGM ducking attack in milliseconds (default: config or 20)")
+    parser.add_argument("--bgm-duck-release", type=float, default=None,
+                        help="BGM ducking release in milliseconds (default: config or 250)")
     parser.add_argument("--subtitle-style", default=None,
                         choices=["normal", "karaoke", "bold_pop", "neon", "minimal", "yellow_pop"],
                         help="Subtitle style (default: from config or 'normal')")
@@ -1036,9 +1147,40 @@ def main():
         print(f"Warning: BGM file not found: {bgm_path}", file=sys.stderr)
         bgm_path = None
     bgm_volume = args.bgm_volume if args.bgm_volume is not None else config.get("bgm_volume", 0.15)
-    bgm_fade_out = config.get("bgm_fade_out", 3.0)
+    bgm_fade_in = args.bgm_fade_in if args.bgm_fade_in is not None else config.get("bgm_fade_in", 0.0)
+    bgm_fade_out = args.bgm_fade_out if args.bgm_fade_out is not None else config.get("bgm_fade_out", 3.0)
+    bgm_ducking = (
+        args.bgm_ducking
+        if args.bgm_ducking is not None
+        else _bool_or_default(config.get("bgm_ducking"), False)
+    )
+    bgm_duck_threshold = (
+        args.bgm_duck_threshold
+        if args.bgm_duck_threshold is not None
+        else config.get("bgm_duck_threshold", 0.03)
+    )
+    bgm_duck_ratio = (
+        args.bgm_duck_ratio
+        if args.bgm_duck_ratio is not None
+        else config.get("bgm_duck_ratio", 8.0)
+    )
+    bgm_duck_attack = (
+        args.bgm_duck_attack
+        if args.bgm_duck_attack is not None
+        else config.get("bgm_duck_attack", 20.0)
+    )
+    bgm_duck_release = (
+        args.bgm_duck_release
+        if args.bgm_duck_release is not None
+        else config.get("bgm_duck_release", 250.0)
+    )
     if bgm_path:
-        print(f"BGM: {os.path.basename(bgm_path)} (volume={bgm_volume}, fade_out={bgm_fade_out}s)")
+        mix_mode = "ducking" if bgm_ducking else "static"
+        print(
+            f"BGM: {os.path.basename(bgm_path)} "
+            f"(volume={bgm_volume}, fade_in={bgm_fade_in}s, "
+            f"fade_out={bgm_fade_out}s, mix={mix_mode})"
+        )
 
     for idx, speed in enumerate(all_speeds):
         # The first speed in all_speeds is always the primary output (writes to
@@ -1309,23 +1451,22 @@ def main():
         else:
             voice_label = merged_a_label
 
-        # BGM: loop, trim, volume, fade out, then amix with voice
+        # BGM: loop, trim, gain/fades, optional voice-aware ducking, then mix.
         if bgm_input_idx is not None:
-            bgm_filters = [
-                f"aloop=loop=-1:size=2147483647",
-                f"atrim=duration={bgm_total:.4f}",
-                f"asetpts=PTS-STARTPTS",
-                f"volume={bgm_volume:.2f}",
-            ]
-            if bgm_fade_out > 0:
-                fade_start = max(0, bgm_total - bgm_fade_out)
-                bgm_filters.append(f"afade=t=out:st={fade_start:.4f}:d={bgm_fade_out:.4f}")
-            bgm_chain = ",".join(bgm_filters)
-            filter_lines.append(f"[{bgm_input_idx}:a]{bgm_chain}[bgm_a]")
-            filter_lines.append(
-                f"{voice_label}[bgm_a]amix=inputs=2:duration=first:dropout_transition=0[final_a]"
+            bgm_lines, map_a = build_bgm_mix_filter_ops(
+                bgm_input_idx=bgm_input_idx,
+                voice_label=voice_label,
+                bgm_total=bgm_total,
+                bgm_volume=bgm_volume,
+                bgm_fade_in=bgm_fade_in,
+                bgm_fade_out=bgm_fade_out,
+                ducking=bgm_ducking,
+                duck_threshold=bgm_duck_threshold,
+                duck_ratio=bgm_duck_ratio,
+                duck_attack=bgm_duck_attack,
+                duck_release=bgm_duck_release,
             )
-            map_a = "[final_a]"
+            filter_lines.extend(bgm_lines)
         else:
             map_a = voice_label
 

@@ -40,7 +40,7 @@
    │     └─→ timeline_view.py   切点 filmstrip + waveform 人工复核图
    │
    ├─→ render_final.py          单次编码渲染 + enrich_plan 自动接入
-   │     B-roll / 章节卡 / 贴纸 / 生成图 / 点击聚焦 overlay + Heavy 字幕 + 响度规范化
+   │     B-roll / 章节卡 / 贴纸 / 生成图 / 点击聚焦 overlay + BGM ducking + Heavy 字幕 + 响度规范化
    │     可选 --versioned-output：输出 _V<N>，避免覆盖旧成片
    │
    ├─→ render_qa.py             渲染后黑屏/静帧/静音/尺寸质检 + review packet
@@ -77,7 +77,7 @@ cd ~/projects/video-editing-skill
 python3 scripts/utils.py
 
 # 4. 跑一遍测试套件确认 OK
-pytest tests/           # 218 个测试，约 3 秒
+pytest tests/           # 221 个测试，约 3 秒
 ```
 
 每天做一条视频的完整模板：**[docs/prompts/15-xhs-daily-tech-video.md](docs/prompts/15-xhs-daily-tech-video.md)**
@@ -355,7 +355,34 @@ python3 scripts/timeline_view.py origin/talking.mp4 --cut-list work/jumpcut.json
 | 字幕风格 | `--subtitle-style normal/karaoke/bold_pop/neon/minimal/yellow_pop` |
 | 自动丰富接入 | `--enrich-plan work/enrich_plan.json`，可重复传入 |
 | 点击聚焦 | `--enrich-plan work/screen_focus_plan.json`，读取 `focus_events[]` |
+| BGM 自动 ducking | `--bgm-ducking` 或 config `"bgm_ducking": true` |
 | 版本化输出 | `--versioned-output` 或 config `"versioned_output": true` |
+
+背景音乐常用配置：
+```json
+{
+  "bgm": "work/origin/bgm.mp3",
+  "bgm_volume": 0.15,
+  "bgm_fade_in": 1.0,
+  "bgm_fade_out": 3.0,
+  "bgm_ducking": true,
+  "bgm_duck_threshold": 0.03,
+  "bgm_duck_ratio": 8.0,
+  "bgm_duck_attack": 20.0,
+  "bgm_duck_release": 250.0
+}
+```
+
+CLI 覆盖：
+```bash
+python3 scripts/render_final.py \
+  --config work/render_config.json \
+  --bgm work/origin/bgm.mp3 \
+  --bgm-ducking \
+  --bgm-fade-in 1 \
+  --bgm-fade-out 3 \
+  --output output/day58_master.mp4
+```
 
 ### 🧾 Versioned Output — 成片不覆盖旧版本
 [`scripts/render_final.py`](scripts/render_final.py) · [详细文档](docs/prompts/23-versioned-output.md)
@@ -402,6 +429,23 @@ python3 scripts/export_edl.py \
 ```
 
 适合把自动粗剪交给 Premiere / Final Cut Pro / DaVinci Resolve 做调色、混音、精剪或协作复核。复杂字幕、overlay、章节卡和 B-roll 仍以 `render_final.py` / `export_capcut.py` 为准。
+
+### 2026-05-28 自动化升级记录（BGM Ducking Mix）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`calesthio/OpenMontage`](https://github.com/calesthio/OpenMontage) | production pipeline 明确把 audio mixer、ducking、fades 和 narration/music balance 作为后期质量门禁 | 新增 `render_final.py` 的 BGM sidechain ducking，不引入云端音乐/混音依赖 |
+| [`aaurelions/vidosy`](https://github.com/aaurelions/vidosy) | JSON 驱动的 background music、scene narration、fade in/out、volume control | 保留本项目 render_config 风格，补齐 `bgm_fade_in` 和 `bgm_ducking` 配置 |
+| [`remotion-dev/template-prompt-to-video`](https://github.com/remotion-dev/template-prompt-to-video) | timeline 同步 `Elements / Text / Audio`，把音频作为一等时间线产物 | 继续在单次 FFmpeg render 中处理，不新增 Remotion 依赖 |
+| [`wilwaldon/Claude-Code-Video-Toolkit`](https://github.com/wilwaldon/Claude-Code-Video-Toolkit) | 视频 agent 技能强调 FFmpeg post-processing、归一化、压缩和批处理 | 复用 FFmpeg `sidechaincompress`，保持本地可审计 filter_complex |
+
+新增/调整能力：`scripts/render_final.py` 新增可选 BGM 自动 ducking。配置 `"bgm_ducking": true` 或 CLI 传 `--bgm-ducking` 后，渲染层会把处理后人声分成 `voice_mix` / `voice_sc` 两路，用 `voice_sc` 触发 `sidechaincompress` 压低 BGM，再与 `voice_mix` 混合；默认不开启，旧的静态 `amix` 行为不变。同时新增 `bgm_fade_in` / `--bgm-fade-in`，并可通过 `bgm_duck_threshold`、`bgm_duck_ratio`、`bgm_duck_attack`、`bgm_duck_release` 细调。
+
+使用方式：配置式写入 `"bgm": "work/origin/bgm.mp3", "bgm_volume": 0.15, "bgm_fade_in": 1.0, "bgm_fade_out": 3.0, "bgm_ducking": true`；命令式用 `python3 scripts/render_final.py --config work/render_config.json --bgm work/origin/bgm.mp3 --bgm-ducking --bgm-fade-in 1 --bgm-fade-out 3 --output output/master.mp4`。信息密度高的口播建议保留默认 `threshold=0.03 / ratio=8 / attack=20ms / release=250ms`。
+
+验证结果：新增/更新 `tests/test_audio_chain.py`，覆盖 help flags、默认静态 BGM 混音、ducking sidechain filter；`.venv/bin/python -m pytest tests/test_audio_chain.py -q` 通过 `6 passed in 0.12s`；完整 `.venv/bin/python -m pytest tests -q` 通过 `221 passed in 3.40s`；`.venv/bin/python -m compileall scripts tests` 通过；`git diff --check` 通过；research archive validator 通过（4 个 repo、4 份 file tree、1 份 code manifest）。
 
 ### 2026-05-27 自动化升级记录（Subtitle Pack）
 
@@ -725,7 +769,7 @@ python3 $SKILL/scripts/generate_caption.py \
 ## 测试
 
 ```bash
-pytest tests/           # 218 测试，约 3 秒
+pytest tests/           # 221 测试，约 3 秒
 ```
 
 按模块跑：
@@ -736,6 +780,7 @@ pytest tests/test_auto_broll.py -v          # B-roll 调度
 pytest tests/test_multi_export.py -v        # 多平台比例转换
 pytest tests/test_render_qa.py -v           # 渲染后质检
 pytest tests/test_render_enrich_plan.py -v  # enrich_plan 自动接入渲染
+pytest tests/test_audio_chain.py -v         # 响度链 + BGM ducking 混音
 pytest tests/test_rough_cut.py -v           # ASR 粗剪：口头禅/重复句 cut list
 pytest tests/test_timeline_view.py -v       # 切点/QA 可视化复盘图
 pytest tests/test_generate_caption.py -v    # 文案合成
