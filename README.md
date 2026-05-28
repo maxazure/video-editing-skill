@@ -33,6 +33,8 @@
    │                            imagegen / Dreamina / motion / broll 状态表
    │                            可选接入 media_library.py recommend 排名候选素材
    │
+   ├─→ provider_decision.py     provider 打分 / 预算 cap / paid 审批 / 命令依赖预检
+   │
    ├─→ screen_focus.py          录屏点击/热点 → focus_events 聚焦计划
    │                            render_final 自动放大、标记、标签
    │
@@ -77,7 +79,7 @@ cd ~/projects/video-editing-skill
 python3 scripts/utils.py
 
 # 4. 跑一遍测试套件确认 OK
-pytest tests/           # 221 个测试，约 3 秒
+pytest tests/           # 228 个测试，约 3 秒
 ```
 
 每天做一条视频的完整模板：**[docs/prompts/15-xhs-daily-tech-video.md](docs/prompts/15-xhs-daily-tech-video.md)**
@@ -202,9 +204,49 @@ python3 scripts/storyboard_assets.py \
   --media-library . \
   --output work/storyboard_assets.json \
   --markdown work/storyboard_assets.md
+
+python3 scripts/provider_decision.py \
+  --asset-manifest work/storyboard_assets.json \
+  --output work/provider_decision.json \
+  --markdown work/provider_decision.md \
+  --budget-cap 3.00 \
+  --single-action-approval 0.50 \
+  --strict
 ```
 
 路由规则：抽象概念优先 `codex_imagegen`；数字/指标优先 `remotion_hyperframes`；动作/场景变化推荐 `dreamina_video` 但只标记为需确认，因为 Dreamina/即梦生成可能消耗 credits；其他先走本地素材库 B-roll。传 `--media-library <project_dir>` 时，`storyboard_assets.py` 会从 `media_index.json` / `media_index.db` 里按标签、文件名、时长和画幅推荐候选，并在 Markdown 表里显示分数。`storyboard_assets.py --strict` 会在素材未 ready 时返回退出码 2，适合渲染前拦截。生图优先使用 Codex 内置 `image_gen` 工具，即 OpenAI GPT Image 2（`gpt-image-2`）。
+
+### 🧾 Provider Decision Log — 生成供应商选择预检
+[`scripts/provider_decision.py`](scripts/provider_decision.py) · [详细文档](docs/prompts/30-provider-decision.md)
+
+借鉴 OpenMontage 这类 agentic video production 项目的 provider scoring / decision log / budget governance 思路，但保持本项目轻量：只读 `storyboard_assets.json`，不调用外部 provider，不提交任何 paid generation。
+
+| 能力 | 说明 |
+|---|---|
+| 7 维 provider 打分 | task fit / output quality / control / reliability / cost efficiency / latency / continuity |
+| paid-credit 审批门 | Dreamina/即梦视频生成默认 `needs_approval`，`--strict` 返回 2 |
+| 预算 cap | `--budget-cap` 累计估算超限时标记 `budget_blocked` |
+| 命令可用性 | 检查 `dreamina` / `node` 等本机依赖，缺失时降分并提示 |
+| fallback 降级提醒 | primary route 不可用而改选 fallback 时标记 `fallback_selected` |
+| 人工 review artifact | 输出 `provider_decision.json` + `provider_decision.md`，保留所有候选 provider 和理由 |
+
+常用：
+```bash
+python3 scripts/provider_decision.py \
+  --asset-manifest work/storyboard_assets.json \
+  --output work/provider_decision.json \
+  --markdown work/provider_decision.md \
+  --budget-cap 3.00 \
+  --single-action-approval 0.50 \
+  --strict
+
+# 按实际账号成本覆盖默认估算
+python3 scripts/provider_decision.py \
+  --asset-manifest work/storyboard_assets.json \
+  --output work/provider_decision.json \
+  --route-cost dreamina_video=1.20 \
+  --budget-cap 5.00
+```
 
 ### 🗂️ Media Library Recommend — 本地 B-roll 候选推荐
 [`scripts/media_library.py`](scripts/media_library.py)
@@ -429,6 +471,24 @@ python3 scripts/export_edl.py \
 ```
 
 适合把自动粗剪交给 Premiere / Final Cut Pro / DaVinci Resolve 做调色、混音、精剪或协作复核。复杂字幕、overlay、章节卡和 B-roll 仍以 `render_final.py` / `export_capcut.py` 为准。
+
+### 2026-05-29 自动化升级记录（Provider Decision Log）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`calesthio/OpenMontage`](https://github.com/calesthio/OpenMontage) | provider scoring、decision audit trail、budget controls，把成本/审批作为生成前门禁 | 新增轻量 `provider_decision.py`，只做本地预检与日志，不引入云 provider |
+| [`resemble-ai/remotion-resemble-skill`](https://github.com/resemble-ai/remotion-resemble-skill) | 生成前检查凭证，TTS/字幕/Remotion 串联清晰 | 本项目把命令可用性和审批状态写入 provider decision log |
+| [`Agents365-ai/video-podcast-maker`](https://github.com/Agents365-ai/video-podcast-maker) | 多 TTS provider、Remotion Studio 预览、平台化输出，强调人先确认脚本/样式 | 本项目继续保留人工 review artifact，生成前先看 provider/预算/审批 |
+| [`luoluoluo22/jianying-editor-skill`](https://github.com/luoluoluo22/jianying-editor-skill) | 剪映自动化规则细，云视频/云音乐/TTS 路由和导出 SOP 明确 | 本项目不绑定剪映桌面，但补齐生成任务的 provider 路由审计 |
+| [`remotion-dev/skills`](https://github.com/remotion-dev/skills/blob/main/skills/remotion/SKILL.md) | Remotion 预览、单帧检查、字幕/FFmpeg 子规则清楚 | 本项目把 `node`/本地 motion card 依赖纳入 provider 可用性检查 |
+
+新增/调整能力：新增 `scripts/provider_decision.py` 和 [docs/prompts/30-provider-decision.md](docs/prompts/30-provider-decision.md)。它读取 `storyboard_assets.json`，对 `codex_imagegen`、`dreamina_video`、`remotion_hyperframes`、`media_library_broll` 等候选 provider 做 7 维评分（task fit / quality / control / reliability / cost efficiency / latency / continuity），输出 `provider_decision.json` 与 `provider_decision.md`；`--strict` 会在需要 paid-credit 审批、超过 `--budget-cap`、缺少 `dreamina`/`node` 等依赖或 primary route 降级到 fallback 时返回 2。选择逻辑会优先尊重 storyboard 的 primary route，只有 primary 不可用时才降级到 fallback。
+
+使用方式：先跑 `storyboard_assets.py` 生成素材状态，再跑 `python3 scripts/provider_decision.py --asset-manifest work/storyboard_assets.json --output work/provider_decision.json --markdown work/provider_decision.md --budget-cap 3.00 --single-action-approval 0.50 --strict`。如果账号真实成本不同，可用 `--route-cost dreamina_video=1.20` 覆盖默认估算。
+
+验证结果：新增 `tests/test_provider_decision.py` 7 项；`.venv/bin/python -m pytest tests/test_provider_decision.py tests/test_storyboard_assets.py tests/test_storyboard_plan.py -q` 通过 `18 passed in 0.14s`；完整 `.venv/bin/python -m pytest tests -q` 通过 `228 passed in 2.21s`；`.venv/bin/python -m compileall scripts tests` 通过；`.venv/bin/python scripts/provider_decision.py --help` smoke 通过；`git diff --check` 通过。
 
 ### 2026-05-28 自动化升级记录（BGM Ducking Mix）
 
@@ -873,6 +933,7 @@ scripts/
 ├── auto_enrich.py              丰富度编排                       [V3]
 ├── storyboard_plan.py          分镜 shot cards + 生成路由         [V3]
 ├── storyboard_assets.py        分镜素材任务清单 + ready 预检       [V3]
+├── provider_decision.py        provider 打分 + 预算/审批预检       [V3]
 ├── screen_focus.py             录屏点击/热点聚焦计划              [V3]
 ├── render_final.py             单次编码渲染 + enrich_plan 接入（V3 强化）
 ├── render_qa.py                渲染后黑屏/静帧/静音/尺寸质检       [V3]
