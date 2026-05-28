@@ -1,6 +1,6 @@
 ---
 name: video-editing
-description: "Xiaohongshu/RED-tuned content engine for short-form video. Use when: producing daily 小红书/抖音/视频号 videos from raw voice-over + b-roll materials; transcribing speech with mlx-whisper/faster-whisper; planning ASR rough cuts from transcript filler metadata and adjacent repeated sentences; rewriting transcripts into 5-field (hook/pain/turn/value/cta) story structures using 8 hook + 5 CTA templates; running platform-rule content lint (80+ regex for 广告法极限词/导流外站/医美/财富诱导); auto-scheduling B-roll cutaways, chapter title cards, emoji stickers, and BGM beat-sync (librosa); detecting abstract-concept opportunities and emitting gpt-image-2-shaped prompts that the Codex built-in `imagegen` tool can run directly (no API key needed); building storyboard_plan shot cards from transcript/clean_script with generation routing (codex_imagegen / dreamina_video / remotion_hyperframes / media_library_broll), continuity anchors, first/motion/last-frame prompts, and paid-credit approval notes before generating video assets; turning storyboard plans into asset manifests with ready / candidate_found / needs_generation / needs_approval / needs_render / search_needed states so generated media, local motion cards, and B-roll are reviewed before render; scoring storyboard asset providers with provider_decision.py across task fit, quality, control, reliability, cost, latency, continuity, command availability, budget caps, and paid-credit approval gates before generation; ranking indexed local B-roll candidates by tags, filename, duration, aspect, and transparent score reasons via media_library.py recommend; building screen-focus click/hotspot zoom plans for software tutorials and product demos; ingesting repeatable enrich-plan JSON via render_final.py --enrich-plan so B-roll, chapter cards, stickers, generated images, and focus_events feed the final render without manual config copying; removing talking-head pauses with adaptive loudnorm/silencedetect jump cuts and auditable cut lists; generating filmstrip+waveform timeline-view PNGs for cut-boundary or render-QA human review; rendering with audience profiles (tech_pro/lifestyle), Heavy CJK fonts, automatic loudness normalisation (dynaudnorm+compressor+loudnorm), optional voice-aware BGM ducking/fade-in, primary-speed control, karaoke/word-level subtitles, and optional --versioned-output `_V<N>` files that avoid overwriting previous renders; exporting readable SRT/VTT/ASS/JSON subtitle sidecars from transcript or render_config with speed/offset alignment; running post-render QA for dimensions/audio/black frames/frozen video/silence and writing review packets with segment evidence plus optional clips; exporting one master into three platform deliverables (xhs 3:4 / douyin 9:16 / wxch ≤60s); generating titles + 200-500 char captions + tags + publish-time hints; exporting to JianYing/CapCut; exporting render_config or rough/jump cut lists to CMX 3600-style EDL + manifest for Premiere/Final Cut Pro/Resolve handoff; generating Remotion voiceover animations. Refuses pipeline-internal tokens (speed multipliers, model names, debug strings) on output frames. Requires ffmpeg and a whisper backend (mlx-whisper on Apple Silicon, faster-whisper elsewhere). Pillow needed for chapter cards. librosa optional for real beat detection. Remotion workflow additionally requires Node.js. Image generation routes through Codex `imagegen` (gpt-image-2) when in Codex; outside Codex, callers use the OpenAI Python SDK directly with their own OPENAI_API_KEY (this skill does not bundle an OpenAI client)."
+description: "Xiaohongshu/RED-tuned content engine for short-form video. Use when: producing daily 小红书/抖音/视频号 videos from raw voice-over + b-roll materials; transcribing speech with mlx-whisper/faster-whisper; planning ASR rough cuts from transcript filler metadata and adjacent repeated sentences; picking scored long-video highlight candidates with hook/value/turn/data signals, warnings, Markdown review tables, and optional render_config handoff; rewriting transcripts into 5-field (hook/pain/turn/value/cta) story structures using 8 hook + 5 CTA templates; running platform-rule content lint (80+ regex for 广告法极限词/导流外站/医美/财富诱导); auto-scheduling B-roll cutaways, chapter title cards, emoji stickers, and BGM beat-sync (librosa); detecting abstract-concept opportunities and emitting gpt-image-2-shaped prompts that the Codex built-in `imagegen` tool can run directly (no API key needed); building storyboard_plan shot cards from transcript/clean_script with generation routing (codex_imagegen / dreamina_video / remotion_hyperframes / media_library_broll), continuity anchors, first/motion/last-frame prompts, and paid-credit approval notes before generating video assets; turning storyboard plans into asset manifests with ready / candidate_found / needs_generation / needs_approval / needs_render / search_needed states so generated media, local motion cards, and B-roll are reviewed before render; scoring storyboard asset providers with provider_decision.py across task fit, quality, control, reliability, cost, latency, continuity, command availability, budget caps, and paid-credit approval gates before generation; ranking indexed local B-roll candidates by tags, filename, duration, aspect, and transparent score reasons via media_library.py recommend; building screen-focus click/hotspot zoom plans for software tutorials and product demos; ingesting repeatable enrich-plan JSON via render_final.py --enrich-plan so B-roll, chapter cards, stickers, generated images, and focus_events feed the final render without manual config copying; removing talking-head pauses with adaptive loudnorm/silencedetect jump cuts and auditable cut lists; generating filmstrip+waveform timeline-view PNGs for cut-boundary or render-QA human review; rendering with audience profiles (tech_pro/lifestyle), Heavy CJK fonts, automatic loudness normalisation (dynaudnorm+compressor+loudnorm), optional voice-aware BGM ducking/fade-in, primary-speed control, karaoke/word-level subtitles, and optional --versioned-output `_V<N>` files that avoid overwriting previous renders; exporting readable SRT/VTT/ASS/JSON subtitle sidecars from transcript or render_config with speed/offset alignment; running post-render QA for dimensions/audio/black frames/frozen video/silence and writing review packets with segment evidence plus optional clips; exporting one master into three platform deliverables (xhs 3:4 / douyin 9:16 / wxch ≤60s); generating titles + 200-500 char captions + tags + publish-time hints; exporting to JianYing/CapCut; exporting render_config or rough/jump cut lists to CMX 3600-style EDL + manifest for Premiere/Final Cut Pro/Resolve handoff; generating Remotion voiceover animations. Refuses pipeline-internal tokens (speed multipliers, model names, debug strings) on output frames. Requires ffmpeg and a whisper backend (mlx-whisper on Apple Silicon, faster-whisper elsewhere). Pillow needed for chapter cards. librosa optional for real beat detection. Remotion workflow additionally requires Node.js. Image generation routes through Codex `imagegen` (gpt-image-2) when in Codex; outside Codex, callers use the OpenAI Python SDK directly with their own OPENAI_API_KEY (this skill does not bundle an OpenAI client)."
 argument-hint: "Provide the path(s) to voice-over audio + optional b-roll videos to process"
 metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
 ---
@@ -16,6 +16,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    │
    ├─→ transcribe.py            转写 + 词级时间戳 + 口误标记
    ├─→ rough_cut.py             ASR 粗剪：去纯口头禅 / 相邻重复句
+   ├─→ highlight_picker.py      长视频精华候选：score / hook / reason / render_config
    ├─→ rewrite_script.py        LLM 重组 5 段式（hook/pain/turn/value/cta）
    ├─→ content_guard.py         80+ 条平台雷区 lint
    ├─→ auto_enrich.py           B-roll / 章节卡 / 贴纸 / BGM 卡点 / imagegen 提示词
@@ -47,6 +48,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `_internal_text_guard.py` | 拦截内部 token 进画面 | 内部模块，render_final 自动调 |
 | `content_guard.py` | 平台雷区 lint | `--script` `--title` `--caption` `--strict` |
 | `rough_cut.py` | transcript 粗剪：去口头禅/重复句 | `--transcript` `--cut-list` / `--input` `--output` |
+| `highlight_picker.py` | transcript → 长视频精华候选 + render_config | `--transcript` `--output` `--markdown` `--render-config` `--strict` |
 | `rewrite_script.py` | LLM 5 段式重组 + 验证 | `--transcript` `--structure` `--hook-template` `--emit-prompt` / `--llm-output` |
 | `auto_broll.py` | B-roll 调度 | `--transcript` `--assets` `--max-single-shot` |
 | `media_library.py` | 本地素材库索引 + B-roll 候选推荐 | `init` `scan` `search` `recommend --category broll --json` |
@@ -441,6 +443,24 @@ python3 scripts/rough_cut.py \
 
 `rough_cut.py` 会输出 `decisions` / `removed_segments` / `keep_segments` / `speedup_ratio`。它不调用 LLM，不提交任何付费任务；只用 `transcribe.py --detect-fillers` 的 filler metadata 和相邻文本相似度做保守粗剪。激进切点应再用 `timeline_view.py --cut-list work/rough_cut.json` 复核。
 
+### Phase 2.7: Highlight Picker（长视频精华候选，可选）
+
+如果是长口播、访谈、课程或直播回放，先用 [highlight_picker.py](./scripts/highlight_picker.py) 从 transcript 里挑出 scored candidates，再进入人工选择或渲染：
+
+```bash
+python3 scripts/highlight_picker.py \
+  --transcript work/transcript.json \
+  --video origin/long-talk.mp4 \
+  --output work/highlight_candidates.json \
+  --markdown work/highlight_candidates.md \
+  --render-config work/highlight_render_config.json \
+  --platform xhs \
+  --num-clips 3 \
+  --strict
+```
+
+`highlight_picker.py` 不调用 LLM、不提交任何付费任务；它用 hook question / contrarian / pain / turn / practical value / data / emotion / CTA 等透明信号给滑动 transcript 窗口打分，输出 `score_breakdown`、`signals`、`warnings`、`reason` 和可复核 Markdown。`--render-config` 输出的 clips 可直接交给 `render_final.py`，但有 `weak opening hook` 或 `may end mid-thought` warning 时应先人工调整。
+
 ### Phase 3: User Interaction（用户交互）
 
 **展示片段列表给用户**，格式如下：
@@ -480,7 +500,7 @@ python3 scripts/rough_cut.py \
 - 转录文字与前一片段高度重复的片段（口误重说）
 
 **长视频自动拆短片**（视频 > 3 分钟时）：
-AI agent 应分析 transcript 识别话题转换点（语义断裂、过渡词如"接下来"、"另外"），将片段按话题分组为独立短视频（每个 30-90 秒），并为每组计算整体吸引力评分：
+优先运行 `highlight_picker.py` 生成候选表；如果脚本不可用，再由 AI agent 分析 transcript 识别话题转换点（语义断裂、过渡词如"接下来"、"另外"），将片段按话题分组为独立短视频（每个 30-90 秒），并为每组计算整体吸引力评分：
 
 ```
 推荐短视频拆分方案：

@@ -13,6 +13,9 @@
    ├─→ rough_cut.py             ASR 粗剪 → 去纯口头禅 / 相邻重复句
    │                            输出可审计 cut list，可选单次 concat 渲染
    │
+   ├─→ highlight_picker.py      长视频 → 精华候选
+   │                            hook/value/turn/data 透明打分 + render_config
+   │
    ├─→ rewrite_script.py        LLM 重组为 5 段式 (hook/pain/turn/value[]/cta)
    │     ↑ 8 hook 模板 + 5 CTA 模板 + 3 故事结构
    │
@@ -79,7 +82,7 @@ cd ~/projects/video-editing-skill
 python3 scripts/utils.py
 
 # 4. 跑一遍测试套件确认 OK
-pytest tests/           # 228 个测试，约 3 秒
+pytest tests/           # 233 个测试，约 3 秒
 ```
 
 每天做一条视频的完整模板：**[docs/prompts/15-xhs-daily-tech-video.md](docs/prompts/15-xhs-daily-tech-video.md)**
@@ -342,6 +345,39 @@ python3 scripts/rough_cut.py --transcript work/transcript.json --input origin/ta
 python3 scripts/timeline_view.py origin/talking.mp4 --cut-list work/rough_cut.json --output-dir output/verify/rough_cut
 ```
 
+### 🎯 Highlight Picker — 长视频精华候选
+[`scripts/highlight_picker.py`](scripts/highlight_picker.py) · [详细文档](docs/prompts/31-highlight-picker.md)
+
+借鉴 GitHub 上 OpusClip-style 开源项目的 highlight scoring / hook reason / JSON handoff 思路，但保持本项目轻量：不调用 LLM、不下载素材、不渲染，只把 transcript 变成可审计候选。
+
+| 能力 | 说明 |
+|---|---|
+| 平台时长默认值 | 小红书 20-90s；抖音/视频号/TikTok/Shorts 15-60s；Reels 15-90s |
+| 透明打分 | hook question / contrarian / pain / turn / practical value / data / emotion / CTA |
+| 去重 | 重叠候选按分数保留最强一条，避免同一段反复输出 |
+| Review artifact | 输出 JSON + Markdown，包含 score breakdown、signals、warnings、reason |
+| 渲染串接 | 可选 `--render-config` 直接产出 `render_final.py` 可读 clips |
+
+常用：
+```bash
+python3 scripts/highlight_picker.py \
+  --transcript work/long_transcript.json \
+  --video origin/long-talk.mp4 \
+  --output work/highlight_candidates.json \
+  --markdown work/highlight_candidates.md \
+  --render-config work/highlight_render_config.json \
+  --platform xhs \
+  --num-clips 3 \
+  --strict
+
+python3 scripts/render_final.py \
+  --config work/highlight_render_config.json \
+  --output output/highlight_master.mp4 \
+  --versioned-output
+```
+
+`--strict` 会在最佳候选低于 `--min-score` 时返回 2，适合自动化里先拦住弱 hook 或半句话结尾的片段，让人先改选/补写再渲染。
+
 ### ✂️ Jump Cut — 自动去停顿
 [`scripts/jump_cut.py`](scripts/jump_cut.py) · [详细文档](docs/prompts/21-jump-cut.md)
 
@@ -471,6 +507,24 @@ python3 scripts/export_edl.py \
 ```
 
 适合把自动粗剪交给 Premiere / Final Cut Pro / DaVinci Resolve 做调色、混音、精剪或协作复核。复杂字幕、overlay、章节卡和 B-roll 仍以 `render_final.py` / `export_capcut.py` 为准。
+
+### 2026-05-29 自动化升级记录（Highlight Picker）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`SamurAIGPT/AI-Youtube-Shorts-Generator`](https://github.com/SamurAIGPT/AI-Youtube-Shorts-Generator) | long-video chunking、virality signals、score/hook/reason JSON、overlap dedupe | 新增本地 `highlight_picker.py`，不调用云端 clipping API |
+| [`Shaarav4795/ClippedAI`](https://github.com/Shaarav4795/ClippedAI) | transcription cache、clip finder、word density/engagement/duration scoring | 采用透明规则打分，保留 `score_breakdown` 方便复核 |
+| [`mutonby/openshorts`](https://github.com/mutonby/openshorts) | transcript + scene boundary 选 15-60s viral moments，再 FFmpeg extract/reframe | 先补 transcript candidate artifact；后续可再接 scene boundary |
+| [`majiayu000/claude-skill-registry` autocut-shorts](https://github.com/majiayu000/claude-skill-registry/tree/main/skills/data/autocut-shorts) | transcript/laughter/sentiment/scene 多信号 virality score + JSON report | 本次先实现无依赖 transcript scoring 和 Markdown review |
+| [`calesthio/OpenMontage`](https://github.com/calesthio/OpenMontage) | pipeline manifest、review focus、quality gate、artifact-first 生产方式 | 保持 JSON/Markdown 审计产物，不把选片逻辑藏进 agent prompt |
+
+新增/调整能力：新增 `scripts/highlight_picker.py`、[docs/prompts/31-highlight-picker.md](docs/prompts/31-highlight-picker.md)，并把 [docs/prompts/08-long-to-short.md](docs/prompts/08-long-to-short.md) 接上本地精华候选流程。脚本读取 `transcript.json`，按平台时长窗口生成候选，对 hook question / contrarian / pain / turn / practical value / data / emotion / CTA、时长、密度、完整性和 filler 风险做透明打分，输出 `highlight_candidates.json` + `highlight_candidates.md`；可选 `--render-config` 直接生成 `render_final.py` 可读 clips。
+
+使用方式：`python3 scripts/highlight_picker.py --transcript work/long_transcript.json --video origin/long-talk.mp4 --output work/highlight_candidates.json --markdown work/highlight_candidates.md --render-config work/highlight_render_config.json --platform xhs --num-clips 3 --strict`。先人工看 Markdown 里的 hook、reason、warnings；确认后用 `python3 scripts/render_final.py --config work/highlight_render_config.json --output output/highlight_master.mp4 --versioned-output` 渲染。
+
+验证结果：新增 `tests/test_highlight_picker.py` 5 项；`.venv/bin/python -m pytest tests/test_highlight_picker.py -q` 通过 `5 passed in 0.05s`；完整 `.venv/bin/python -m pytest tests -q` 通过 `233 passed in 3.58s`；`.venv/bin/python -m compileall scripts tests` 通过；`.venv/bin/python scripts/highlight_picker.py --help` smoke 通过；`git diff --check` 通过；research archive validator 通过（`repo_dirs=1 file_tree_files=1 code_manifest_files=1`）。
 
 ### 2026-05-29 自动化升级记录（Provider Decision Log）
 
@@ -889,6 +943,8 @@ pytest tests/test_subtitle_pack.py -v       # SRT/VTT/ASS/JSON 字幕交付包
 | **27** | **[NLE Handoff](docs/prompts/27-export-edl.md)** | **导出 EDL 给 Premiere/FCP/Resolve** |
 | **28** | **[Screen Focus](docs/prompts/28-screen-focus.md)** | **录屏点击/热点自动聚焦** |
 | **29** | **[Subtitle Pack](docs/prompts/29-subtitle-pack.md)** | **导出 SRT/VTT/ASS/JSON 字幕包** |
+| **30** | **[Provider Decision Log](docs/prompts/30-provider-decision.md)** | **生成 provider、预算和审批预检** |
+| **31** | **[Highlight Picker](docs/prompts/31-highlight-picker.md)** | **长视频精华候选 + render_config** |
 
 完整列表见 [docs/prompts/README.md](docs/prompts/README.md)。
 
@@ -919,6 +975,7 @@ scripts/
 ├── _internal_text_guard.py     内部 token 拦截器
 ├── transcribe.py               Whisper 转写
 ├── rough_cut.py                transcript 粗剪：去口头禅/重复句      [V3]
+├── highlight_picker.py         长视频精华候选 + render_config        [V3]
 ├── extract_audio.py            音频提取
 ├── split_video.py              按句切片（V2 兼容）
 ├── media_library.py            素材库索引（CLIP-ready）

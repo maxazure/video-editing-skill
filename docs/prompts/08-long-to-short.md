@@ -28,6 +28,21 @@
 
 ## 自动拆分（让 AI 判断怎么分）
 
+如果已经有 `transcript.json`，先跑本地候选打分，拿到可复核的短视频候选：
+
+```bash
+python3 scripts/highlight_picker.py \
+  --transcript work/long_transcript.json \
+  --video media/raw/long-talk.mp4 \
+  --output work/highlight_candidates.json \
+  --markdown work/highlight_candidates.md \
+  --render-config work/highlight_render_config.json \
+  --platform xhs \
+  --num-clips 4
+```
+
+先看 `work/highlight_candidates.md`，确认每条都有完整 hook 和收尾，再用 `work/highlight_render_config.json` 进入渲染。
+
 ```
 这个视频比较长（15 分钟），帮我分析内容后自动拆分成几条短视频。
 你来判断按什么话题分比较合理，每条大概 1 分钟。
