@@ -27,6 +27,8 @@ python3 scripts/highlight_picker.py \
 ```bash
 python3 scripts/highlight_picker.py \
   --transcript work/long_transcript.json \
+  --scene-boundaries work/scene_boundaries.json \
+  --scene-snap-tolerance 1.5 \
   --video origin/long-talk.mp4 \
   --output work/highlight_candidates.json \
   --markdown work/highlight_candidates.md \
@@ -39,6 +41,8 @@ python3 scripts/render_final.py \
   --output output/highlight_master.mp4 \
   --versioned-output
 ```
+
+如果先运行了 [32 Scene Boundaries](32-scene-boundaries.md)，`--scene-boundaries` 会让候选片段开头只向前扩展到附近视觉切点、结尾只向后扩展到附近视觉切点，避免吞掉 transcript 字词。扩展信息会写入每个 candidate 的 `scene_snap`，并进入 `render_config`。
 
 ## 打分逻辑
 

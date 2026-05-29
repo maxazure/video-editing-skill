@@ -10,11 +10,14 @@
    ├─→ transcribe.py            转写 + 词级时间戳 + 口误标记
    │                            (mlx-whisper / faster-whisper / openai-whisper)
    │
+   ├─→ scene_boundaries.py      视频画面 → 视觉场景边界
+   │                            ffmpeg scene score + JSON/Markdown review
+   │
    ├─→ rough_cut.py             ASR 粗剪 → 去纯口头禅 / 相邻重复句
    │                            输出可审计 cut list，可选单次 concat 渲染
    │
    ├─→ highlight_picker.py      长视频 → 精华候选
-   │                            hook/value/turn/data 透明打分 + render_config
+   │                            hook/value/turn/data 透明打分 + scene snap + render_config
    │
    ├─→ rewrite_script.py        LLM 重组为 5 段式 (hook/pain/turn/value[]/cta)
    │     ↑ 8 hook 模板 + 5 CTA 模板 + 3 故事结构
@@ -82,7 +85,7 @@ cd ~/projects/video-editing-skill
 python3 scripts/utils.py
 
 # 4. 跑一遍测试套件确认 OK
-pytest tests/           # 233 个测试，约 3 秒
+pytest tests/           # 240 个测试，约 3 秒
 ```
 
 每天做一条视频的完整模板：**[docs/prompts/15-xhs-daily-tech-video.md](docs/prompts/15-xhs-daily-tech-video.md)**
@@ -348,7 +351,7 @@ python3 scripts/timeline_view.py origin/talking.mp4 --cut-list work/rough_cut.js
 ### 🎯 Highlight Picker — 长视频精华候选
 [`scripts/highlight_picker.py`](scripts/highlight_picker.py) · [详细文档](docs/prompts/31-highlight-picker.md)
 
-借鉴 GitHub 上 OpusClip-style 开源项目的 highlight scoring / hook reason / JSON handoff 思路，但保持本项目轻量：不调用 LLM、不下载素材、不渲染，只把 transcript 变成可审计候选。
+借鉴 GitHub 上 OpusClip-style 开源项目的 highlight scoring / hook reason / JSON handoff 思路，但保持本项目轻量：不调用 LLM、不下载素材、不渲染，只把 transcript 变成可审计候选。可选接入 `scene_boundaries.py`，把候选开头/结尾扩展到附近视觉切点，避免卡在镜头中间。
 
 | 能力 | 说明 |
 |---|---|
@@ -356,12 +359,15 @@ python3 scripts/timeline_view.py origin/talking.mp4 --cut-list work/rough_cut.js
 | 透明打分 | hook question / contrarian / pain / turn / practical value / data / emotion / CTA |
 | 去重 | 重叠候选按分数保留最强一条，避免同一段反复输出 |
 | Review artifact | 输出 JSON + Markdown，包含 score breakdown、signals、warnings、reason |
+| 场景对齐 | 可选 `--scene-boundaries`，start 只向前扩展、end 只向后扩展，不吞字 |
 | 渲染串接 | 可选 `--render-config` 直接产出 `render_final.py` 可读 clips |
 
 常用：
 ```bash
 python3 scripts/highlight_picker.py \
   --transcript work/long_transcript.json \
+  --scene-boundaries work/scene_boundaries.json \
+  --scene-snap-tolerance 1.5 \
   --video origin/long-talk.mp4 \
   --output work/highlight_candidates.json \
   --markdown work/highlight_candidates.md \
@@ -377,6 +383,30 @@ python3 scripts/render_final.py \
 ```
 
 `--strict` 会在最佳候选低于 `--min-score` 时返回 2，适合自动化里先拦住弱 hook 或半句话结尾的片段，让人先改选/补写再渲染。
+
+### 🎬 Scene Boundaries — 视觉场景边界
+[`scripts/scene_boundaries.py`](scripts/scene_boundaries.py) · [详细文档](docs/prompts/32-scene-boundaries.md)
+
+借鉴 PySceneDetect / OpenShorts 这类项目把场景边界用于视频拆分、viral moment 识别和 review 的思路，但保持本项目依赖轻：只用已必装的 FFmpeg `select=gt(scene,threshold),showinfo` 检测视觉切点，输出可审计 JSON/Markdown，不引入 OpenCV/PySceneDetect 硬依赖。
+
+常用：
+```bash
+python3 scripts/scene_boundaries.py origin/long-talk.mp4 \
+  --output work/scene_boundaries.json \
+  --markdown work/scene_boundaries.md \
+  --threshold 0.35 \
+  --min-scene-duration 1.0
+
+python3 scripts/highlight_picker.py \
+  --transcript work/long_transcript.json \
+  --scene-boundaries work/scene_boundaries.json \
+  --scene-snap-tolerance 1.5 \
+  --output work/highlight_candidates.json \
+  --markdown work/highlight_candidates.md \
+  --platform xhs
+```
+
+`scene_boundaries.json` 采用 `scene_boundaries.v1`，包含 `boundaries[]` 和 `scenes[]`；`highlight_picker.py` 会把每个 candidate 的 `scene_snap` 写入 JSON、Markdown 和可选 `render_config`。如果切点太密，调高 `--threshold` 或 `--min-scene-duration`。
 
 ### ✂️ Jump Cut — 自动去停顿
 [`scripts/jump_cut.py`](scripts/jump_cut.py) · [详细文档](docs/prompts/21-jump-cut.md)
@@ -507,6 +537,23 @@ python3 scripts/export_edl.py \
 ```
 
 适合把自动粗剪交给 Premiere / Final Cut Pro / DaVinci Resolve 做调色、混音、精剪或协作复核。复杂字幕、overlay、章节卡和 B-roll 仍以 `render_final.py` / `export_capcut.py` 为准。
+
+### 2026-05-30 自动化升级记录（Scene Boundaries）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`Breakthrough/PySceneDetect`](https://github.com/Breakthrough/PySceneDetect) | content/adaptive scene detection、`list-scenes`、`split-video`、首尾帧 review 是成熟剪辑 primitive | 不引入 PySceneDetect/OpenCV 硬依赖，先用 FFmpeg scene score 产出轻量边界 artifact |
+| [`mutonby/openshorts`](https://github.com/mutonby/openshorts) | Clip Generator 把 transcript + PySceneDetect scene boundaries 一起交给 viral moment detection | 新增 `scene_boundaries.py`，并让 `highlight_picker.py` 可选接入视觉切点 |
+| [`SamurAIGPT/AI-Youtube-Shorts-Generator`](https://github.com/SamurAIGPT/AI-Youtube-Shorts-Generator) | score / hook / reason / JSON output / overlap dedupe / crop handoff | 保留本地透明 transcript scoring，同时把 scene snap 写入 JSON、Markdown 和 render_config |
+| [`digitalsamba/claude-code-video-toolkit`](https://github.com/digitalsamba/claude-code-video-toolkit) | agent-native 视频工作流里有明确 scene review 阶段 | 新增 `scene_boundaries.md` 复核表，先看视觉切点再渲染 |
+
+新增/调整能力：新增 `scripts/scene_boundaries.py` 和 [docs/prompts/32-scene-boundaries.md](docs/prompts/32-scene-boundaries.md)。脚本用本地 FFmpeg `select=gt(scene,threshold),showinfo` 检测视觉切点，输出 `scene_boundaries.v1` JSON + Markdown review。`scripts/highlight_picker.py` 新增 `--scene-boundaries` / `--scene-snap-tolerance`，会把候选 start 只向前扩展到附近视觉切点、end 只向后扩展到附近视觉切点，避免吞掉 transcript 字词；`scene_snap` 会进入候选 JSON、Markdown 和可选 `render_config`。
+
+使用方式：先跑 `python3 scripts/scene_boundaries.py origin/long-talk.mp4 --output work/scene_boundaries.json --markdown work/scene_boundaries.md --threshold 0.35 --min-scene-duration 1.0`；再跑 `python3 scripts/highlight_picker.py --transcript work/long_transcript.json --scene-boundaries work/scene_boundaries.json --scene-snap-tolerance 1.5 --video origin/long-talk.mp4 --output work/highlight_candidates.json --markdown work/highlight_candidates.md --render-config work/highlight_render_config.json --platform xhs --num-clips 3 --strict`。
+
+验证结果：新增 `tests/test_scene_boundaries.py` 5 项，并给 `tests/test_highlight_picker.py` 增加 scene snap 覆盖；`.venv/bin/python -m pytest tests/test_scene_boundaries.py tests/test_highlight_picker.py -q` 通过 `12 passed in 0.08s`；完整 `.venv/bin/python -m pytest tests -q` 通过 `240 passed in 2.39s`；`.venv/bin/python -m compileall scripts tests` 通过；`.venv/bin/python scripts/scene_boundaries.py --help` 和 `.venv/bin/python scripts/highlight_picker.py --help` 通过；FFmpeg 合成 3 色视频 smoke 检测出 `2 cuts, 3 scenes`；`git diff --check` 通过；research archive validator 通过（`repo_dirs=4 file_tree_files=4 code_manifest_files=1`）。
 
 ### 2026-05-29 自动化升级记录（Highlight Picker）
 
@@ -779,6 +826,11 @@ python3 $SKILL/scripts/rough_cut.py \
   --transcript $WORK/work/transcript.json \
   --cut-list $WORK/work/rough_cut.json
 
+# 1c. 可选：长视频/多镜头素材先检测视觉场景边界，供 highlight picker 对齐自然切点
+python3 $SKILL/scripts/scene_boundaries.py $WORK/origin/long-talk.mp4 \
+  --output $WORK/work/scene_boundaries.json \
+  --markdown $WORK/work/scene_boundaries.md
+
 # 2. 重组（手动喂 prompt 给 LLM，落地 JSON 后回放）
 python3 $SKILL/scripts/rewrite_script.py \
   --transcript $WORK/work/transcript.json --emit-prompt > $WORK/work/prompt.md
@@ -883,7 +935,7 @@ python3 $SKILL/scripts/generate_caption.py \
 ## 测试
 
 ```bash
-pytest tests/           # 221 测试，约 3 秒
+pytest tests/           # 240 测试，约 3 秒
 ```
 
 按模块跑：
@@ -904,6 +956,7 @@ pytest tests/test_storyboard_assets.py -v   # 分镜素材 readiness manifest
 pytest tests/test_export_edl.py -v          # NLE handoff EDL + manifest
 pytest tests/test_screen_focus.py -v        # 录屏点击聚焦计划 + render 接入
 pytest tests/test_subtitle_pack.py -v       # SRT/VTT/ASS/JSON 字幕交付包
+pytest tests/test_scene_boundaries.py -v    # 视觉场景边界 + highlight scene snap
 ```
 
 ### 本次自动化更新记录（2026-05-20 UTC）
@@ -945,6 +998,7 @@ pytest tests/test_subtitle_pack.py -v       # SRT/VTT/ASS/JSON 字幕交付包
 | **29** | **[Subtitle Pack](docs/prompts/29-subtitle-pack.md)** | **导出 SRT/VTT/ASS/JSON 字幕包** |
 | **30** | **[Provider Decision Log](docs/prompts/30-provider-decision.md)** | **生成 provider、预算和审批预检** |
 | **31** | **[Highlight Picker](docs/prompts/31-highlight-picker.md)** | **长视频精华候选 + render_config** |
+| **32** | **[Scene Boundaries](docs/prompts/32-scene-boundaries.md)** | **视觉场景边界 + highlight 自然切点对齐** |
 
 完整列表见 [docs/prompts/README.md](docs/prompts/README.md)。
 
@@ -976,6 +1030,7 @@ scripts/
 ├── transcribe.py               Whisper 转写
 ├── rough_cut.py                transcript 粗剪：去口头禅/重复句      [V3]
 ├── highlight_picker.py         长视频精华候选 + render_config        [V3]
+├── scene_boundaries.py         视觉场景边界 + highlight scene snap    [V3]
 ├── extract_audio.py            音频提取
 ├── split_video.py              按句切片（V2 兼容）
 ├── media_library.py            素材库索引（CLIP-ready）

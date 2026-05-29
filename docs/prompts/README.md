@@ -44,6 +44,7 @@
 | 29 | [Subtitle Pack 字幕交付包](29-subtitle-pack.md) | transcript/render_config → SRT/VTT/ASS/JSON，支持加速和片头 offset |
 | 30 | [Provider Decision Log 生成供应商选择预检](30-provider-decision.md) | storyboard_assets → provider 打分、预算、审批和命令可用性决策日志 |
 | 31 | [Highlight Picker 长视频精华候选](31-highlight-picker.md) | transcript → scored short-form candidates + render_config |
+| 32 | [Scene Boundaries 视觉场景边界](32-scene-boundaries.md) | FFmpeg scene cuts → highlight picker 自然切点对齐 |
 
 ## 快速上手
 
@@ -86,3 +87,4 @@
 | 平台要上传 SRT/VTT 字幕文件 | [29-Subtitle Pack](29-subtitle-pack.md) |
 | 生成图片/视频前想先看 provider、预算和审批风险 | [30-Provider Decision Log](30-provider-decision.md) |
 | 长视频想先自动挑最值得剪的片段 | [31-Highlight Picker](31-highlight-picker.md) |
+| 长视频剪点想对齐画面切换 | [32-Scene Boundaries](32-scene-boundaries.md) |

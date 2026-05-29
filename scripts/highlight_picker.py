@@ -134,6 +134,13 @@ def write_json(path: str, payload: Mapping[str, Any]) -> None:
         f.write("\n")
 
 
+def load_scene_boundaries(path: str) -> Dict[str, Any]:
+    payload = load_json(path)
+    if not isinstance(payload, dict):
+        raise ValueError("--scene-boundaries must point to a JSON object")
+    return payload
+
+
 def infer_language(transcript: Mapping[str, Any], override: str = "auto") -> str:
     if override and override != "auto":
         return "zh" if override.lower().startswith("zh") else "en"
@@ -382,6 +389,86 @@ def dedupe_candidates(
     return kept
 
 
+def _boundary_points(scene_boundaries: Optional[Mapping[str, Any]]) -> List[float]:
+    if not scene_boundaries:
+        return []
+    points: List[float] = []
+    for raw in scene_boundaries.get("boundaries") or []:
+        try:
+            points.append(float(raw))
+        except (TypeError, ValueError):
+            continue
+    for scene in scene_boundaries.get("scenes") or []:
+        if not isinstance(scene, Mapping):
+            continue
+        for key in ("start", "end"):
+            try:
+                points.append(float(scene[key]))
+            except (KeyError, TypeError, ValueError):
+                continue
+    duration = scene_boundaries.get("source", {}).get("duration") if isinstance(scene_boundaries.get("source"), Mapping) else None
+    try:
+        if duration is not None:
+            points.append(float(duration))
+    except (TypeError, ValueError):
+        pass
+    return sorted(set(_round3(p) for p in points if p >= 0))
+
+
+def _nearest_prior_boundary(value: float, points: Sequence[float], tolerance: float) -> Optional[float]:
+    choices = [p for p in points if p <= value and value - p <= tolerance]
+    return max(choices) if choices else None
+
+
+def _nearest_next_boundary(value: float, points: Sequence[float], tolerance: float) -> Optional[float]:
+    choices = [p for p in points if p >= value and p - value <= tolerance]
+    return min(choices) if choices else None
+
+
+def apply_scene_snap(
+    candidate: Mapping[str, Any],
+    *,
+    boundary_points: Sequence[float],
+    tolerance: float,
+    max_duration: float,
+) -> Dict[str, Any]:
+    """Expand candidate timing to nearby visual scene cuts without dropping transcript."""
+    adjusted = dict(candidate)
+    if not boundary_points or tolerance <= 0:
+        return adjusted
+
+    original_start = float(candidate["start"])
+    original_end = float(candidate["end"])
+    snapped_start = _nearest_prior_boundary(original_start, boundary_points, tolerance)
+    snapped_end = _nearest_next_boundary(original_end, boundary_points, tolerance)
+    start = original_start if snapped_start is None else snapped_start
+    end = original_end if snapped_end is None else snapped_end
+
+    if end - start > max_duration:
+        end = original_end
+    if end - start > max_duration:
+        start = original_start
+    if end <= start:
+        return adjusted
+
+    applied = abs(start - original_start) > 0.0005 or abs(end - original_end) > 0.0005
+    if applied:
+        adjusted["start"] = _round3(start)
+        adjusted["end"] = _round3(end)
+        adjusted["duration"] = _round3(end - start)
+    adjusted["scene_snap"] = {
+        "applied": applied,
+        "tolerance": float(tolerance),
+        "original_start": _round3(original_start),
+        "original_end": _round3(original_end),
+        "snapped_start": _round3(start),
+        "snapped_end": _round3(end),
+        "start_shift": _round3(start - original_start),
+        "end_shift": _round3(end - original_end),
+    }
+    return adjusted
+
+
 def build_highlight_candidates(
     transcript: Mapping[str, Any],
     *,
@@ -393,6 +480,8 @@ def build_highlight_candidates(
     num_clips: int = 5,
     max_candidates: int = 30,
     overlap_threshold: float = 0.50,
+    scene_boundaries: Optional[Mapping[str, Any]] = None,
+    scene_snap_tolerance: float = 1.5,
 ) -> Dict[str, Any]:
     if platform not in PLATFORM_DEFAULTS:
         raise ValueError(f"unsupported platform: {platform}")
@@ -406,6 +495,7 @@ def build_highlight_candidates(
     lang = infer_language(transcript, language)
     segments = normalize_segments(transcript)
     windows = generate_windows(segments, min_duration=min_duration, max_duration=max_duration)
+    scene_points = _boundary_points(scene_boundaries)
     scored: List[Dict[str, Any]] = []
     for index, window in enumerate(windows, start=1):
         score_data = score_window(
@@ -415,7 +505,7 @@ def build_highlight_candidates(
             max_duration=max_duration,
             target_duration=target_duration,
         )
-        scored.append({
+        candidate = {
             "id": f"highlight_{index:04d}",
             "start": _round3(window.start),
             "end": _round3(window.end),
@@ -423,7 +513,15 @@ def build_highlight_candidates(
             "segment_ids": [seg.idx for seg in window.segments],
             "text": window.text,
             **score_data,
-        })
+        }
+        if scene_points:
+            candidate = apply_scene_snap(
+                candidate,
+                boundary_points=scene_points,
+                tolerance=scene_snap_tolerance,
+                max_duration=max_duration,
+            )
+        scored.append(candidate)
 
     deduped = dedupe_candidates(scored, overlap_threshold=overlap_threshold)
     candidates = deduped[:max_candidates]
@@ -450,12 +548,14 @@ def build_highlight_candidates(
             "num_clips": num_clips,
             "max_candidates": max_candidates,
             "overlap_threshold": overlap_threshold,
+            "scene_snap_tolerance": scene_snap_tolerance if scene_points else None,
         },
         "summary": {
             "windows_scored": len(scored),
             "candidates_after_dedupe": len(deduped),
             "selected": len(selected),
             "top_score": selected[0]["score"] if selected else 0,
+            "scene_snapped": sum(1 for item in selected if item.get("scene_snap", {}).get("applied")),
         },
         "selected": selected,
         "candidates": candidates,
@@ -477,18 +577,27 @@ def emit_markdown(plan: Mapping[str, Any]) -> str:
         f"- Duration range: `{plan['params']['min_duration']:.0f}-{plan['params']['max_duration']:.0f}s`",
         f"- Windows scored: `{plan['summary']['windows_scored']}`",
         f"- Selected clips: `{plan['summary']['selected']}`",
+        f"- Scene-snapped clips: `{plan['summary'].get('scene_snapped', 0)}`",
         "",
-        "| Rank | Time | Score | Hook | Why | Warnings |",
-        "| --- | --- | ---: | --- | --- | --- |",
+        "| Rank | Time | Score | Scene Snap | Hook | Why | Warnings |",
+        "| --- | --- | ---: | --- | --- | --- | --- |",
     ]
     for candidate in plan.get("selected", []):
         warnings = "; ".join(candidate.get("warnings") or []) or "-"
+        snap = candidate.get("scene_snap") or {}
+        snap_text = "-"
+        if snap.get("applied"):
+            snap_text = "{start:+.2f}s/{end:+.2f}s".format(
+                start=float(snap.get("start_shift", 0.0)),
+                end=float(snap.get("end_shift", 0.0)),
+            )
         lines.append(
-            "| {rank} | {start}-{end} | {score:.1f} | {hook} | {reason} | {warnings} |".format(
+            "| {rank} | {start}-{end} | {score:.1f} | {snap} | {hook} | {reason} | {warnings} |".format(
                 rank=candidate["rank"],
                 start=format_time(candidate["start"]),
                 end=format_time(candidate["end"]),
                 score=float(candidate["score"]),
+                snap=snap_text,
                 hook=_clip_text(candidate.get("hook_text", ""), 52).replace("|", "\\|"),
                 reason=str(candidate.get("reason", "")).replace("|", "\\|"),
                 warnings=warnings.replace("|", "\\|"),
@@ -500,6 +609,7 @@ def emit_markdown(plan: Mapping[str, Any]) -> str:
         "",
         "- Pick candidates with a real opening hook and a self-contained ending before rendering.",
         "- If `warnings` mention weak hook or mid-thought ending, rewrite or extend the clip manually.",
+        "- If scene snapping is enabled, start times only move backward and end times only move forward to avoid cutting transcript words.",
         "- `--render-config` can create a direct `render_final.py` input when a source video path is supplied.",
     ])
     return "\n".join(lines) + "\n"
@@ -517,6 +627,8 @@ def build_render_config(plan: Mapping[str, Any], video_path: str) -> Dict[str, A
             "highlight_score": candidate["score"],
             "segment_ids": candidate["segment_ids"],
         })
+        if candidate.get("scene_snap"):
+            clips[-1]["scene_snap"] = candidate["scene_snap"]
     return {
         "version": "render_config.v1",
         "source": "highlight_picker.py",
@@ -531,6 +643,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--markdown", help="Optional Markdown review table")
     parser.add_argument("--video", help="Source video path used when writing --render-config")
     parser.add_argument("--render-config", help="Optional render_final.py config containing selected clips")
+    parser.add_argument("--scene-boundaries", help="Optional scene_boundaries JSON from scripts/scene_boundaries.py")
+    parser.add_argument("--scene-snap-tolerance", type=float, default=1.5, help="Seconds to expand a candidate to nearby visual cut points")
     parser.add_argument("--platform", choices=sorted(PLATFORM_DEFAULTS), default="xhs")
     parser.add_argument("--language", default="auto", help="auto, zh, or en")
     parser.add_argument("--num-clips", type=int, default=5)
@@ -547,6 +661,13 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parse_args(argv)
     transcript = load_json(args.transcript)
+    scene_boundaries = None
+    if args.scene_boundaries:
+        try:
+            scene_boundaries = load_scene_boundaries(args.scene_boundaries)
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 1
     try:
         plan = build_highlight_candidates(
             transcript,
@@ -558,6 +679,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             num_clips=max(1, args.num_clips),
             max_candidates=max(1, args.max_candidates),
             overlap_threshold=max(0.0, min(1.0, args.overlap_threshold)),
+            scene_boundaries=scene_boundaries,
+            scene_snap_tolerance=max(0.0, args.scene_snap_tolerance),
         )
     except ValueError as exc:
         print(f"Error: {exc}", file=sys.stderr)
