@@ -41,6 +41,9 @@
    │
    ├─→ provider_decision.py     provider 打分 / 预算 cap / paid 审批 / 命令依赖预检
    │
+   ├─→ transition_bridge.py     相邻分镜 → AI 转场桥接计划
+   │                            尾帧/首帧引用 + Dreamina 审批 + local fallback
+   │
    ├─→ screen_focus.py          录屏点击/热点 → focus_events 聚焦计划
    │                            render_final 自动放大、标记、标签
    │
@@ -85,7 +88,7 @@ cd ~/projects/video-editing-skill
 python3 scripts/utils.py
 
 # 4. 跑一遍测试套件确认 OK
-pytest tests/           # 240 个测试，约 3 秒
+pytest tests/           # 244 个测试，约 4 秒
 ```
 
 每天做一条视频的完整模板：**[docs/prompts/15-xhs-daily-tech-video.md](docs/prompts/15-xhs-daily-tech-video.md)**
@@ -253,6 +256,33 @@ python3 scripts/provider_decision.py \
   --route-cost dreamina_video=1.20 \
   --budget-cap 5.00
 ```
+
+### 🌉 Transition Bridge — 相邻分镜转场计划
+[`scripts/transition_bridge.py`](scripts/transition_bridge.py) · [详细文档](docs/prompts/33-transition-bridge.md)
+
+借鉴 FireRed-OpenStoryline 的 AI transition generation 思路，但保持本项目的 artifact-first 方式：只读取 `storyboard_plan.json` / `storyboard_assets.json`，为相邻分镜输出尾帧/首帧引用、转场 prompt、Dreamina/即梦 paid-credit 审批和本地 fallback，不提交任何生成任务。
+
+| 模式 | 说明 |
+|---|---|
+| `auto` | 只在 section / route / keyword 跳变明显时建议 `dreamina_video` |
+| `ai` | 每个相邻 shot 都生成需审批的 AI 转场 prompt |
+| `default` | 全部使用本地 deterministic crossfade 计划 |
+| `skip` | 不生成转场桥接项 |
+
+常用：
+```bash
+python3 scripts/transition_bridge.py \
+  --storyboard-plan work/storyboard_plan.json \
+  --asset-manifest work/storyboard_assets.json \
+  --asset-root work \
+  --output work/transition_bridge_plan.json \
+  --markdown work/transition_bridge_plan.md \
+  --mode auto \
+  --max-ai-bridges 3 \
+  --strict
+```
+
+`--strict` 会在存在 `needs_approval` 时返回 2，提醒先人工确认 Dreamina/即梦 credits。批准后把生成的桥接视频保存到 `bridges[].expected_path`；不批准时按 `fallback_route` 走本地转场或直切。生图优先使用 Codex 内置 `image_gen` 工具，即 OpenAI GPT Image 2（`gpt-image-2`）。
 
 ### 🗂️ Media Library Recommend — 本地 B-roll 候选推荐
 [`scripts/media_library.py`](scripts/media_library.py)
@@ -537,6 +567,23 @@ python3 scripts/export_edl.py \
 ```
 
 适合把自动粗剪交给 Premiere / Final Cut Pro / DaVinci Resolve 做调色、混音、精剪或协作复核。复杂字幕、overlay、章节卡和 B-roll 仍以 `render_final.py` / `export_capcut.py` 为准。
+
+### 2026-05-31 自动化升级记录（Transition Bridge）
+
+本次联网研究的 GitHub 参考：
+
+| 项目 | 看到的优点 | 本项目落地方式 |
+|---|---|---|
+| [`FireRedTeam/FireRed-OpenStoryline`](https://github.com/FireRedTeam/FireRed-OpenStoryline) | AI transition generation 用前一片段尾帧、后一片段首帧和自然语言描述生成过渡镜头，并明确提示成本较高 | 新增本地 `transition_bridge.py`，只产 prompt / frame refs / paid 审批，不直接扣费 |
+| [`calesthio/OpenMontage`](https://github.com/calesthio/OpenMontage) | pipeline/style playbook 里把 transition family、pacing 和 provider/cost 审批作为生产约束 | `auto` 模式按 section/route/keyword 跳变控制 AI 转场数量，并保留 fallback |
+| [`heygen-com/hyperframes`](https://github.com/heygen-com/hyperframes) | agent-friendly 本地预览/渲染强调确定性和可复核 | 非 AI 场景默认 `deterministic_crossfade` / `straight_cut`，避免把生成转场当成必需品 |
+| [`aaurelions/vidosy`](https://github.com/aaurelions/vidosy) | JSON 驱动的 scenes/audio/render 配置清晰 | 新增 `transition_bridge_plan.v1` JSON + Markdown review artifact |
+
+新增/调整能力：新增 `scripts/transition_bridge.py` 和 [docs/prompts/33-transition-bridge.md](docs/prompts/33-transition-bridge.md)。脚本读取 `storyboard_plan.json`，可选读取 `storyboard_assets.json`，为相邻分镜输出 `transition_bridge_plan.v1`：包含 `need_score`、前一镜尾帧 / 后一镜首帧引用、Dreamina/即梦转场 prompt、`needs_approval` paid-credit 提示、`expected_path` 和本地 `fallback_route`。支持 `--mode auto|ai|default|skip`，其中 `auto` 只对跳变明显的镜头建议 AI 转场，`--strict` 在需要审批时返回 2。
+
+使用方式：先跑 `storyboard_plan.py` 和 `storyboard_assets.py`，再执行 `python3 scripts/transition_bridge.py --storyboard-plan work/storyboard_plan.json --asset-manifest work/storyboard_assets.json --asset-root work --output work/transition_bridge_plan.json --markdown work/transition_bridge_plan.md --mode auto --max-ai-bridges 3 --strict`。如果返回 2，先人工确认值得生成的 Dreamina/即梦转场；不批准时按 `fallback_route` 走本地 crossfade 或直切。生图优先使用 Codex 内置 `image_gen` 工具，即 OpenAI GPT Image 2（`gpt-image-2`）。
+
+验证结果：新增 `tests/test_transition_bridge.py` 4 项；`.venv/bin/python -m pytest tests/test_transition_bridge.py -q` 通过 `4 passed in 0.07s`；相关回归 `.venv/bin/python -m pytest tests/test_transition_bridge.py tests/test_storyboard_assets.py tests/test_storyboard_plan.py tests/test_provider_decision.py -q` 通过 `22 passed in 0.21s`；完整 `.venv/bin/python -m pytest tests -q` 通过 `244 passed in 3.51s`；`.venv/bin/python -m compileall scripts tests` 通过；`.venv/bin/python scripts/transition_bridge.py --help` 通过；`git diff --check` 通过；research archive validator 通过（`repo_dirs=4 file_tree_files=4 code_manifest_files=1`）。
 
 ### 2026-05-30 自动化升级记录（Scene Boundaries）
 
@@ -935,7 +982,7 @@ python3 $SKILL/scripts/generate_caption.py \
 ## 测试
 
 ```bash
-pytest tests/           # 240 测试，约 3 秒
+pytest tests/           # 244 测试，约 4 秒
 ```
 
 按模块跑：
@@ -1046,6 +1093,7 @@ scripts/
 ├── storyboard_plan.py          分镜 shot cards + 生成路由         [V3]
 ├── storyboard_assets.py        分镜素材任务清单 + ready 预检       [V3]
 ├── provider_decision.py        provider 打分 + 预算/审批预检       [V3]
+├── transition_bridge.py        相邻分镜转场桥接计划              [V3]
 ├── screen_focus.py             录屏点击/热点聚焦计划              [V3]
 ├── render_final.py             单次编码渲染 + enrich_plan 接入（V3 强化）
 ├── render_qa.py                渲染后黑屏/静帧/静音/尺寸质检       [V3]
