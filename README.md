@@ -60,6 +60,9 @@
    ├─→ subtitle_pack.py         SRT / VTT / ASS / JSON 字幕交付包
    │                            支持 render_config 串接、加速倍率、片头 offset 对齐
    │
+   ├─→ chapter_markers.py       JSON / Markdown / FFmetadata / YouTube 章节时间戳
+   │                            transcript / clean_script / 章节 JSON → 发布侧章节交付
+   │
    ├─→ export_edl.py            render_config / cut list → EDL + manifest
    │                            交给 Premiere / Final Cut Pro / Resolve
    │
@@ -88,7 +91,7 @@ cd ~/projects/video-editing-skill
 python3 scripts/utils.py
 
 # 4. 跑一遍测试套件确认 OK
-pytest tests/           # 244 个测试，约 4 秒
+pytest tests/           # 251 个测试，约 4 秒
 ```
 
 每天做一条视频的完整模板：**[docs/prompts/15-xhs-daily-tech-video.md](docs/prompts/15-xhs-daily-tech-video.md)**
@@ -359,6 +362,27 @@ python3 scripts/subtitle_pack.py \
 
 `--transcript` 默认保留原始时间码；`--config` 默认按 `render_final.py` 的 clips 顺序串接时间线。`--speed` 对齐 `--primary-speed`，`--offset` 对齐封面/片头秒数；中文默认 18 字单行、英文默认 42 字单行，也可用 `--max-chars` 覆盖。
 
+### 📑 Chapter Markers — 章节时间戳交付
+[`scripts/chapter_markers.py`](scripts/chapter_markers.py) · [详细文档](docs/prompts/34-chapter-markers.md)
+
+借鉴 VidPipe 这类 agentic video pipeline 对章节 sidecar 的重视：长视频/课程/YouTube/B 站交付时，不只给字幕，还给可上传、可 review、可写入 metadata 的章节文件。本项目保持轻量：只读取本地 transcript / clean_script / 显式章节 JSON，不调用 LLM，不改视频文件。
+
+常用：
+```bash
+python3 scripts/chapter_markers.py \
+  --transcript work/transcript.json \
+  --clean-script work/clean_script.md \
+  --output-dir output/chapters
+
+python3 scripts/chapter_markers.py \
+  --chapters work/chapters_draft.json \
+  --duration 720 \
+  --output-dir output/chapters \
+  --strict
+```
+
+输出 `chapters.json`、`chapters.md`、`chapters.ffmetadata`、`chapters-youtube.txt`。`chapters.ffmetadata` 可用 `ffmpeg -map_metadata 1 -codec copy` 写进 MP4/MKV；平台简介仍建议直接贴 `chapters-youtube.txt`。
+
 ### ✂️ ASR Rough Cut — 自动去口头禅/重复句
 [`scripts/rough_cut.py`](scripts/rough_cut.py) · [详细文档](docs/prompts/26-rough-cut.md)
 
@@ -567,6 +591,23 @@ python3 scripts/export_edl.py \
 ```
 
 适合把自动粗剪交给 Premiere / Final Cut Pro / DaVinci Resolve 做调色、混音、精剪或协作复核。复杂字幕、overlay、章节卡和 B-roll 仍以 `render_final.py` / `export_capcut.py` 为准。
+
+### 2026-06-01 自动化升级记录（Chapter Markers）
+
+本次联网研究的 GitHub 参考：
+
+| 项目 | 看到的优点 | 本项目落地方式 |
+|---|---|---|
+| [`htekdev/vidpipe`](https://github.com/htekdev/vidpipe) | pipeline 输出 `chapters.json`、Markdown、FFmetadata、YouTube timestamps，方便长视频发布和 summary 引用 | 新增本地 `chapter_markers.py`，不引入 LLM agent，只做可复核章节 sidecar |
+| [`el-frontend/video-wizard`](https://github.com/el-frontend/video-wizard) | Job History / task queue 让长渲染有状态、进度和错误记录 | 本次不加服务架构；继续保持轻量 CLI artifact |
+| [`MastroMimmo/ffmpeg-skill`](https://github.com/MastroMimmo/ffmpeg-skill) | 高层 FFmpeg wrapper 输出 JSON，并用 palettegen/paletteuse 做高质量 GIF | JSON-first CLI 风格保留；GIF 导出列为后续候选，不抢本次章节交付优先级 |
+| [`remotion-dev/skills`](https://github.com/remotion-dev/skills/blob/main/skills/remotion/SKILL.md) | Remotion Studio + one-frame render check 强调预览/验证闭环 | 本项目已有 render QA/timeline view，本次只补发布侧章节 metadata |
+
+新增/调整能力：新增 `scripts/chapter_markers.py` 和 [docs/prompts/34-chapter-markers.md](docs/prompts/34-chapter-markers.md)。脚本可从 `transcript.json`、`clean_script.md` 的 `## ` 标题，或人工/LLM 给出的章节 JSON 生成 `chapter_markers.v1` manifest，并同时写出 `chapters.md`、`chapters.ffmetadata`、`chapters-youtube.txt`。首章会对齐到 `0:00` 以适配 YouTube/B 站简介章节；`--strict` 在自动修正或章节间隔过短时返回 2。
+
+使用方式：`python3 scripts/chapter_markers.py --transcript work/transcript.json --clean-script work/clean_script.md --output-dir output/chapters`。如果已有人工确认的章节，用 `python3 scripts/chapter_markers.py --chapters work/chapters_draft.json --duration 720 --output-dir output/chapters --strict`。`chapters.ffmetadata` 可配合 `ffmpeg -map_metadata 1 -codec copy` 写入容器 metadata；上传平台仍建议把 `chapters-youtube.txt` 贴进简介。生图优先使用 Codex 内置 `image_gen` 工具，即 OpenAI GPT Image 2（`gpt-image-2`）。
+
+验证结果：新增 `tests/test_chapter_markers.py` 7 项；`.venv/bin/python -m pytest tests/test_chapter_markers.py -q` 通过 `7 passed in 0.05s`；相关回归 `.venv/bin/python -m pytest tests/test_chapter_markers.py tests/test_subtitle_pack.py tests/test_auto_chapter_cards.py -q` 通过 `17 passed in 0.13s`；完整 `.venv/bin/python -m pytest tests -q` 通过 `251 passed in 3.50s`；`.venv/bin/python -m compileall scripts tests` 通过；`.venv/bin/python scripts/chapter_markers.py --help` 通过；`git diff --check` 通过；research archive validator 通过（`repo_dirs=4 file_tree_files=4 code_manifest_files=1`）。
 
 ### 2026-05-31 自动化升级记录（Transition Bridge）
 
@@ -955,6 +996,12 @@ python3 $SKILL/scripts/subtitle_pack.py \
   --speed 1.25 \
   --offset 2.0
 
+# 5d. 可选：导出 YouTube/B站/课程章节时间戳与 FFmetadata
+python3 $SKILL/scripts/chapter_markers.py \
+  --transcript $WORK/work/transcript.json \
+  --clean-script $WORK/work/clean_script.md \
+  --output-dir $WORK/output/chapters
+
 # 6. 多平台
 python3 $SKILL/scripts/multi_export.py \
   $WORK/output/day${DAY}_master.mp4 --output-dir $WORK/output/
@@ -982,7 +1029,7 @@ python3 $SKILL/scripts/generate_caption.py \
 ## 测试
 
 ```bash
-pytest tests/           # 244 测试，约 4 秒
+pytest tests/           # 251 测试，约 4 秒
 ```
 
 按模块跑：
@@ -1003,6 +1050,7 @@ pytest tests/test_storyboard_assets.py -v   # 分镜素材 readiness manifest
 pytest tests/test_export_edl.py -v          # NLE handoff EDL + manifest
 pytest tests/test_screen_focus.py -v        # 录屏点击聚焦计划 + render 接入
 pytest tests/test_subtitle_pack.py -v       # SRT/VTT/ASS/JSON 字幕交付包
+pytest tests/test_chapter_markers.py -v     # JSON/Markdown/FFmetadata/YouTube 章节时间戳
 pytest tests/test_scene_boundaries.py -v    # 视觉场景边界 + highlight scene snap
 ```
 
@@ -1046,6 +1094,8 @@ pytest tests/test_scene_boundaries.py -v    # 视觉场景边界 + highlight sce
 | **30** | **[Provider Decision Log](docs/prompts/30-provider-decision.md)** | **生成 provider、预算和审批预检** |
 | **31** | **[Highlight Picker](docs/prompts/31-highlight-picker.md)** | **长视频精华候选 + render_config** |
 | **32** | **[Scene Boundaries](docs/prompts/32-scene-boundaries.md)** | **视觉场景边界 + highlight 自然切点对齐** |
+| **33** | **[Transition Bridge](docs/prompts/33-transition-bridge.md)** | **相邻分镜转场 prompt + paid 审批** |
+| **34** | **[Chapter Markers](docs/prompts/34-chapter-markers.md)** | **YouTube/B站/课程章节时间戳 + FFmetadata** |
 
 完整列表见 [docs/prompts/README.md](docs/prompts/README.md)。
 
@@ -1099,6 +1149,7 @@ scripts/
 ├── render_qa.py                渲染后黑屏/静帧/静音/尺寸质检       [V3]
 ├── timeline_view.py            filmstrip+waveform 可视化复盘图     [V3]
 ├── subtitle_pack.py            SRT/VTT/ASS/JSON 字幕交付包        [V3]
+├── chapter_markers.py          JSON/Markdown/FFmetadata/YouTube 章节时间戳 [V3]
 ├── burn_subtitles.py           字幕 ASS 生成
 ├── generate_cover.py           封面生成
 ├── generate_cover_image.py     Chrome-rendered 封面
