@@ -47,6 +47,7 @@
 | 32 | [Scene Boundaries 视觉场景边界](32-scene-boundaries.md) | FFmpeg scene cuts → highlight picker 自然切点对齐 |
 | 33 | [Transition Bridge 转场桥接计划](33-transition-bridge.md) | storyboard_plan/assets → 相邻镜头转场 prompt、帧引用和 paid 审批 |
 | 34 | [Chapter Markers 章节元数据交付](34-chapter-markers.md) | transcript/clean_script/章节 JSON → YouTube timestamps + FFmetadata |
+| 35 | [Pipeline Manifest 生产线状态清单](35-pipeline-manifest.md) | 扫描本地 artifact，汇总进度、缺口和发布前门禁 |
 
 ## 快速上手
 

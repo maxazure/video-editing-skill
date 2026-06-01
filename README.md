@@ -68,7 +68,9 @@
    │
    ├─→ multi_export.py          小红书 3:4 / 抖音 9:16 / 视频号 ≤60s
    │
-   └─→ generate_caption.py      标题 + 200-500 字正文 + 3-6 tags + 发布时段建议
+   ├─→ generate_caption.py      标题 + 200-500 字正文 + 3-6 tags + 发布时段建议
+   │
+   └─→ pipeline_manifest.py     汇总 artifact、缺口和发布前门禁
 ```
 
 > **适用场景**：daily 短视频、口播为主的内容（创业/AI/职场/效率/Vlog）、要发小红书/抖音/视频号
@@ -592,6 +594,40 @@ python3 scripts/export_edl.py \
 
 适合把自动粗剪交给 Premiere / Final Cut Pro / DaVinci Resolve 做调色、混音、精剪或协作复核。复杂字幕、overlay、章节卡和 B-roll 仍以 `render_final.py` / `export_capcut.py` 为准。
 
+### 📋 Pipeline Manifest — 生产线状态清单
+[`scripts/pipeline_manifest.py`](scripts/pipeline_manifest.py) · [详细文档](docs/prompts/35-pipeline-manifest.md)
+
+借鉴 GitHub 上 agentic video pipeline 的 job history / run state / build report 思路，但不引入数据库、Web 服务或队列：`pipeline_manifest.py` 只扫描本地项目目录，把 transcript、clean script、render_config、成片、QA、caption，以及 storyboard/provider/transition 的阻塞状态汇总成一个可审计清单。
+
+常用：
+```bash
+python3 scripts/pipeline_manifest.py \
+  --project-dir work/day58 \
+  --target-stage publish_ready \
+  --output work/day58/pipeline_manifest.json \
+  --markdown work/day58/pipeline_manifest.md \
+  --strict
+```
+
+`publish_ready` 默认要求 `transcript` / `clean_script` / `render_config` / `master_video` / `render_qa` / `caption` 都存在；如果发现 `storyboard_assets.json`、`provider_decision.json` 或 `transition_bridge_plan.json` 里仍有 blocking、approval_required、budget_blocked、QA fail 等问题，`--strict` 返回 2。需要把字幕或章节作为强制交付时可加 `--require subtitles --require chapter_markers`。
+
+### 2026-06-02 自动化升级记录（Pipeline Manifest）
+
+本次联网研究的 GitHub 参考：
+
+| 项目 | 看到的优点 | 本项目落地方式 |
+|---|---|---|
+| [`znyupup/ai-video-editing-skill`](https://github.com/znyupup/ai-video-editing-skill) | `edit_plan.json`、`edit_plan_fixed.json`、Dashboard 和 QC frames 让 agent/human 能看懂项目当前状态 | 新增本地 `pipeline_manifest.py`，把本项目分散的 artifact 汇总成状态清单 |
+| [`czmomocha/agents-video-pipeline`](https://github.com/czmomocha/agents-video-pipeline) | `PipelineState` 显式保存 plan/script/storyboard/shots/output/errors/metrics，并规划 checkpointer 断点续跑 | 不引入 LangGraph/checkpointer，只做可重复生成的 run-state JSON |
+| [`el-frontend/video-wizard`](https://github.com/el-frontend/video-wizard) | Job History / queue 记录长任务 status、progress、error 和输出路径 | 不加数据库或 Web UI，用 `--strict` 作为 CLI 发布门禁 |
+| [`Aadi7171/Agentic-video-pipeline`](https://github.com/Aadi7171/Agentic-video-pipeline) | 多 agent 串行产出 script / voice / assets / final manifest URL，阶段边界清晰 | 保留本项目本地 artifact-first 方式，把阶段缺口写入 `next_actions` |
+
+新增/调整能力：新增 `scripts/pipeline_manifest.py` 和 [docs/prompts/35-pipeline-manifest.md](docs/prompts/35-pipeline-manifest.md)。脚本扫描项目目录，输出 `pipeline_manifest.v1` JSON 和 Markdown review 表；支持 `analysis` / `plan_review` / `render_ready` / `publish_ready` 四个 target stage；`--require` 可把 `subtitles`、`chapter_markers`、`platform_exports` 等可选交付变成硬门禁；`--strict` 会在缺少必需 artifact、render QA fail、storyboard/provider/transition 仍有 blocking 或 paid approval 时返回 2。
+
+使用方式：`python3 scripts/pipeline_manifest.py --project-dir work/day58 --target-stage publish_ready --output work/day58/pipeline_manifest.json --markdown work/day58/pipeline_manifest.md --strict`。如果需要强制字幕和章节 sidecar，追加 `--require subtitles --require chapter_markers`；如果返回 2，先看 Markdown 的 `Next Actions`，补齐缺件或解除审批/预算/QA 阻塞后再发布。
+
+验证结果：新增 `tests/test_pipeline_manifest.py` 6 项；`.venv/bin/python -m pytest tests/test_pipeline_manifest.py -q` 通过 `6 passed in 0.14s`；完整 `.venv/bin/python -m pytest tests -q` 通过 `257 passed in 3.39s`；`.venv/bin/python -m compileall scripts tests` 通过；`.venv/bin/python scripts/pipeline_manifest.py --help` 通过；`git diff --check` 通过；research archive validator 通过（`repo_dirs=5 file_tree_files=5 code_manifest_files=1`）。
+
 ### 2026-06-01 自动化升级记录（Chapter Markers）
 
 本次联网研究的 GitHub 参考：
@@ -1022,6 +1058,14 @@ python3 $SKILL/scripts/render_qa.py \
 python3 $SKILL/scripts/generate_caption.py \
   --script $WORK/work/clean_script.md --profile tech_pro \
   --output $WORK/output/day${DAY}_caption.json
+
+# 9. 发布前 artifact 门禁
+python3 $SKILL/scripts/pipeline_manifest.py \
+  --project-dir $WORK \
+  --target-stage publish_ready \
+  --output $WORK/output/pipeline_manifest.json \
+  --markdown $WORK/output/pipeline_manifest.md \
+  --strict
 ```
 
 ---
@@ -1029,7 +1073,7 @@ python3 $SKILL/scripts/generate_caption.py \
 ## 测试
 
 ```bash
-pytest tests/           # 251 测试，约 4 秒
+pytest tests/           # 257 测试，约 4 秒
 ```
 
 按模块跑：
@@ -1052,6 +1096,7 @@ pytest tests/test_screen_focus.py -v        # 录屏点击聚焦计划 + render 
 pytest tests/test_subtitle_pack.py -v       # SRT/VTT/ASS/JSON 字幕交付包
 pytest tests/test_chapter_markers.py -v     # JSON/Markdown/FFmetadata/YouTube 章节时间戳
 pytest tests/test_scene_boundaries.py -v    # 视觉场景边界 + highlight scene snap
+pytest tests/test_pipeline_manifest.py -v   # 生产线 artifact 状态清单/发布门禁
 ```
 
 ### 本次自动化更新记录（2026-05-20 UTC）
@@ -1159,6 +1204,7 @@ scripts/
 ├── generate_standup_timeline.py Remotion timeline
 ├── multi_export.py             三平台导出                       [V3]
 ├── generate_caption.py         标题/正文/标签                   [V3]
+├── pipeline_manifest.py        生产线 artifact 状态清单/发布门禁 [V3]
 ├── prompts/
 │   ├── hook_templates.yaml     8 钩子模板                       [V3]
 │   ├── cta_templates.yaml      5 CTA 模板                       [V3]
