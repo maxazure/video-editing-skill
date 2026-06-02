@@ -33,8 +33,20 @@
      --engine auto --model auto --language zh --word-timestamps --detect-fillers \
      > work/transcript.json
 
-2. python3 scripts/rewrite_script.py \
+1b. python3 scripts/transcript_review.py export \
      --transcript work/transcript.json \
+     --review work/transcript_review.txt \
+     --corrections work/corrections.json
+
+   打开 work/transcript_review.txt，修正 ASR 错词，只改每行前缀后的文字。保存后：
+
+   python3 scripts/transcript_review.py apply \
+     --transcript work/transcript.json \
+     --review work/transcript_review.txt \
+     --output work/transcript_reviewed.json
+
+2. python3 scripts/rewrite_script.py \
+     --transcript work/transcript_reviewed.json \
      --structure pain_solve \
      --hook-template auto \
      --max-duration 150 \
@@ -45,12 +57,12 @@
 
 3. （你输出 JSON 后）保存到 work/llm.json，然后：
    python3 scripts/rewrite_script.py \
-     --transcript work/transcript.json \
+     --transcript work/transcript_reviewed.json \
      --llm-output work/llm.json \
      --output work/clean_script.md
 
 4. python3 scripts/auto_enrich.py \
-     --transcript work/transcript.json \
+     --transcript work/transcript_reviewed.json \
      --clean-script work/clean_script.md \
      --bgm origin/<bgm>.mp3 \
      --output work/enrich_plan.json
@@ -63,7 +75,7 @@
 
 4c. # 生成分镜 shot cards，先审查生成路由和连续性，再决定是否消耗视频生成额度：
     python3 scripts/storyboard_plan.py \
-      --transcript work/transcript.json \
+      --transcript work/transcript_reviewed.json \
       --clean-script work/clean_script.md \
       --output work/storyboard_plan.json \
       --markdown work/storyboard_plan.md \
