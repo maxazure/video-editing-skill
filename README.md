@@ -47,6 +47,9 @@
    ├─→ transition_bridge.py     相邻分镜 → AI 转场桥接计划
    │                            尾帧/首帧引用 + Dreamina 审批 + local fallback
    │
+   ├─→ motion_guard.py          预渲染 motion density 门禁
+   │                            motion ratio / 最长静态段 / unresolved motion blockers
+   │
    ├─→ screen_focus.py          录屏点击/热点 → focus_events 聚焦计划
    │                            render_final 自动放大、标记、标签
    │
@@ -254,6 +257,24 @@ python3 scripts/provider_decision.py \
 ```
 
 路由规则：抽象概念优先 `codex_imagegen`；数字/指标优先 `remotion_hyperframes`；动作/场景变化推荐 `dreamina_video` 但只标记为需确认，因为 Dreamina/即梦生成可能消耗 credits；其他先走本地素材库 B-roll。传 `--media-library <project_dir>` 时，`storyboard_assets.py` 会从 `media_index.json` / `media_index.db` 里按标签、文件名、时长和画幅推荐候选，并在 Markdown 表里显示分数。`storyboard_assets.py --strict` 会在素材未 ready 时返回退出码 2，适合渲染前拦截。生图优先使用 Codex 内置 `image_gen` 工具，即 OpenAI GPT Image 2（`gpt-image-2`）。
+
+### 🧭 Motion Guard — 预渲染动感门禁
+[`scripts/motion_guard.py`](scripts/motion_guard.py) · [详细文档](docs/prompts/37-motion-guard.md)
+
+借鉴 OpenMontage / HyperFrames 这类 agentic video pipeline 的 pre-compose validation 思路：如果这条片子承诺是 motion-led，渲染前先检查分镜或 render_config 是否被静态图、章节卡、未知素材堆成幻灯片。脚本只读本地 JSON，不调用 provider，不消耗 Dreamina/即梦 credits。
+
+常用：
+```bash
+python3 scripts/motion_guard.py \
+  --storyboard-plan work/storyboard_plan.json \
+  --asset-manifest work/storyboard_assets.json \
+  --motion-required \
+  --output work/motion_guard.json \
+  --markdown work/motion_guard.md \
+  --strict
+```
+
+输出 `motion_guard.v1`，包含 `summary.motion_ratio`、`summary.max_still_run`、`summary.unresolved_motion_assets` 和 `summary.blocking`。`--motion-required --strict` 会在 motion ratio 过低、连续静态段过长或 motion 素材未解决时返回 2；`pipeline_manifest.py` 发现已有 `motion_guard.json` 且 `summary.blocking > 0` 时也会把它列为阻塞 gate。
 
 ### 🧾 Provider Decision Log — 生成供应商选择预检
 [`scripts/provider_decision.py`](scripts/provider_decision.py) · [详细文档](docs/prompts/30-provider-decision.md)
@@ -622,7 +643,7 @@ python3 scripts/export_edl.py \
 ### 📋 Pipeline Manifest — 生产线状态清单
 [`scripts/pipeline_manifest.py`](scripts/pipeline_manifest.py) · [详细文档](docs/prompts/35-pipeline-manifest.md)
 
-借鉴 GitHub 上 agentic video pipeline 的 job history / run state / build report 思路，但不引入数据库、Web 服务或队列：`pipeline_manifest.py` 只扫描本地项目目录，把 transcript、clean script、render_config、成片、QA、caption，以及 storyboard/provider/transition 的阻塞状态汇总成一个可审计清单。
+借鉴 GitHub 上 agentic video pipeline 的 job history / run state / build report 思路，但不引入数据库、Web 服务或队列：`pipeline_manifest.py` 只扫描本地项目目录，把 transcript、clean script、render_config、成片、QA、caption，以及 storyboard/provider/transition/motion guard 的阻塞状态汇总成一个可审计清单。
 
 常用：
 ```bash
@@ -634,7 +655,25 @@ python3 scripts/pipeline_manifest.py \
   --strict
 ```
 
-`publish_ready` 默认要求 `transcript` / `clean_script` / `render_config` / `master_video` / `render_qa` / `caption` 都存在；如果发现 `storyboard_assets.json`、`provider_decision.json` 或 `transition_bridge_plan.json` 里仍有 blocking、approval_required、budget_blocked、QA fail 等问题，`--strict` 返回 2。需要把字幕或章节作为强制交付时可加 `--require subtitles --require chapter_markers`。
+`publish_ready` 默认要求 `transcript` / `clean_script` / `render_config` / `master_video` / `render_qa` / `caption` 都存在；如果发现 `storyboard_assets.json`、`provider_decision.json`、`transition_bridge_plan.json` 或 `motion_guard.json` 里仍有 blocking、approval_required、budget_blocked、QA fail 等问题，`--strict` 返回 2。需要把字幕或章节作为强制交付时可加 `--require subtitles --require chapter_markers`。
+
+### 2026-06-04 自动化升级记录（Motion Guard）
+
+本轮 GitHub 搜索：`FireRedTeam/FireRed-OpenStoryline`、`calesthio/OpenMontage`、`heygen-com/hyperframes`、`digitalsamba/claude-code-video-toolkit`、`Agents365-ai/video-podcast-maker`、`luoluoluo22/jianying-editor-skill`。研究归档见 [research-archive/2026-06-04-video-skill-upgrade](research-archive/2026-06-04-video-skill-upgrade/00_START_HERE.md)。
+
+| 项目 | 观察到的优点 | 本项目吸收方式 |
+|---|---|---|
+| [`calesthio/OpenMontage`](https://github.com/calesthio/OpenMontage) | pipeline defs 多次要求 motion-led 承诺不能静默降级为 still-image motion，并在 compose 前做质量门禁 | 新增 `motion_guard.py`，渲染前检查 motion ratio、最长静态段和 unresolved motion blockers |
+| [`heygen-com/hyperframes`](https://github.com/heygen-com/hyperframes) | HTML/video composition 要先 `lint` / `validate` 再 render，强调 runtime validation | 本项目把 motion density 做成 JSON + Markdown gate，并接入 `pipeline_manifest.py` |
+| [`digitalsamba/claude-code-video-toolkit`](https://github.com/digitalsamba/claude-code-video-toolkit) | project lifecycle 有 review 阶段，scene-by-scene preview 后再 render | 本项目保留轻量 artifact-first 路线，用 `motion_guard.md` 做人工 review packet |
+| [`FireRedTeam/FireRed-OpenStoryline`](https://github.com/FireRedTeam/FireRed-OpenStoryline) | 强调可保存/复用编辑 skill、智能 BGM/字体/素材组织和 AI transition | 相关能力已有 provider/transition/storyboard；本轮不重复实现 |
+| [`luoluoluo22/jianying-editor-skill`](https://github.com/luoluoluo22/jianying-editor-skill) | 剪映草稿多轨、智能变焦、网页动效转视频 | 本项目已有 CapCut export 和 screen_focus；本轮聚焦预渲染动感门禁 |
+
+新增/调整能力：新增 `scripts/motion_guard.py`、[docs/prompts/37-motion-guard.md](docs/prompts/37-motion-guard.md) 和 `tests/test_motion_guard.py`；`pipeline_manifest.py` 新增 `motion_guard` artifact gate。脚本可读取 `storyboard_plan.json`、`storyboard_assets.json`、`render_config.json` 和一个或多个 `enrich_plan.json`，输出 `motion_guard.v1` JSON/Markdown；`--motion-required --strict` 会在 motion ratio 不足、最长静态/未知连续段超限、motion 素材仍未 ready 时返回 2。
+
+使用方式：在分镜和素材清单后执行 `python3 scripts/motion_guard.py --storyboard-plan work/storyboard_plan.json --asset-manifest work/storyboard_assets.json --motion-required --output work/motion_guard.json --markdown work/motion_guard.md --strict`。如果只想检查已生成的渲染配置，可用 `--render-config work/render_config.json --enrich-plan work/enrich_plan.json`。失败时优先补本地 B-roll、Remotion/HyperFrames motion card、screen_focus 聚焦镜头，或在确认 credits 后生成 Dreamina/即梦视频。
+
+验证结果：新增 `tests/test_motion_guard.py` 5 项；`.venv/bin/python -m pytest tests/test_motion_guard.py -q` 通过 `5 passed in 0.10s`；相关回归 `.venv/bin/python -m pytest tests/test_motion_guard.py tests/test_pipeline_manifest.py tests/test_storyboard_assets.py tests/test_storyboard_plan.py -q` 通过 `22 passed in 0.44s`；完整 `.venv/bin/python -m pytest tests -q` 通过 `270 passed in 7.32s`；`.venv/bin/python -m compileall scripts tests` 通过；`.venv/bin/python scripts/motion_guard.py --help` 通过；`git diff --check` 通过；research archive validator 通过（`repo_dirs=6 file_tree_files=6`）。
 
 ### 2026-06-03 自动化升级记录（Transcript Review）
 
@@ -1045,7 +1084,16 @@ python3 $SKILL/scripts/storyboard_assets.py \
 #     不需要 OPENAI_API_KEY；详见 docs/prompts/19-imagegen.md
 #     如果 storyboard_assets 里有 needs_approval，提交 Dreamina/即梦前先确认，因为可能消耗 credits。
 
-# 3e. 可选：软件教程/产品演示录屏，导入点击热点并生成自动聚焦计划
+# 3e. motion-led 片子渲染前先跑动感门禁，避免静态图堆成幻灯片
+python3 $SKILL/scripts/motion_guard.py \
+  --storyboard-plan $WORK/work/storyboard_plan.json \
+  --asset-manifest $WORK/work/storyboard_assets.json \
+  --motion-required \
+  --output $WORK/work/motion_guard.json \
+  --markdown $WORK/work/motion_guard.md \
+  --strict
+
+# 3f. 可选：软件教程/产品演示录屏，导入点击热点并生成自动聚焦计划
 python3 $SKILL/scripts/screen_focus.py \
   --events $WORK/work/clicks.json \
   --screen-width 1920 \
@@ -1144,6 +1192,7 @@ pytest tests/test_generate_caption.py -v    # 文案合成
 pytest tests/test_imagegen_hint.py -v       # gpt-image-2 提示词检测
 pytest tests/test_storyboard_plan.py -v     # 分镜 shot cards + 生成路由
 pytest tests/test_storyboard_assets.py -v   # 分镜素材 readiness manifest
+pytest tests/test_motion_guard.py -v        # 预渲染 motion density 门禁
 pytest tests/test_export_edl.py -v          # NLE handoff EDL + manifest
 pytest tests/test_screen_focus.py -v        # 录屏点击聚焦计划 + render 接入
 pytest tests/test_subtitle_pack.py -v       # SRT/VTT/ASS/JSON 字幕交付包
@@ -1244,6 +1293,7 @@ scripts/
 ├── storyboard_assets.py        分镜素材任务清单 + ready 预检       [V3]
 ├── provider_decision.py        provider 打分 + 预算/审批预检       [V3]
 ├── transition_bridge.py        相邻分镜转场桥接计划              [V3]
+├── motion_guard.py             预渲染 motion density 门禁        [V3]
 ├── screen_focus.py             录屏点击/热点聚焦计划              [V3]
 ├── render_final.py             单次编码渲染 + enrich_plan 接入（V3 强化）
 ├── render_qa.py                渲染后黑屏/静帧/静音/尺寸质检       [V3]

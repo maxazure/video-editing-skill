@@ -93,7 +93,18 @@
     # 渲染前可加 --strict；如果有 needs_approval，提交 Dreamina/即梦前必须确认 credits。
     # 详见 docs/prompts/25-storyboard-assets.md
 
-4e. # 如果输入是完整口播视频、访谈或录屏，且停顿很多，可先生成去停顿 cut list：
+4e. # 如果这条片子承诺有运动感 / motion-led，渲染前先拦截“静态图堆成幻灯片”：
+    python3 scripts/motion_guard.py \
+      --storyboard-plan work/storyboard_plan.json \
+      --asset-manifest work/storyboard_assets.json \
+      --motion-required \
+      --output work/motion_guard.json \
+      --markdown work/motion_guard.md \
+      --strict
+    # 如果返回 2，先补 B-roll、motion card、screen_focus 或经确认后生成 Dreamina/即梦视频。
+    # 详见 docs/prompts/37-motion-guard.md
+
+4f. # 如果输入是完整口播视频、访谈或录屏，且停顿很多，可先生成去停顿 cut list：
     python3 scripts/jump_cut.py origin/<talking_video>.mp4 \
       --dry-run \
       --cut-list work/jumpcut.json
@@ -190,6 +201,8 @@ day<NN>/
 │   ├── storyboard_plan.md   # 人工 review 版分镜卡
 │   ├── storyboard_assets.json # 素材任务清单 + ready/paid 预检
 │   ├── storyboard_assets.md   # 人工 review 版素材表
+│   ├── motion_guard.json   # 可选：预渲染动感门禁
+│   ├── motion_guard.md     # 可选：motion density review packet
 │   ├── jumpcut.json        # 可选：去停顿 cut list
 │   ├── day<NN>_edit.edl    # 可选：NLE handoff
 │   ├── day<NN>_edit.edl.json # 可选：EDL manifest

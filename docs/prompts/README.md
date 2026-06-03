@@ -49,6 +49,7 @@
 | 34 | [Chapter Markers 章节元数据交付](34-chapter-markers.md) | transcript/clean_script/章节 JSON → YouTube timestamps + FFmetadata |
 | 35 | [Pipeline Manifest 生产线状态清单](35-pipeline-manifest.md) | 扫描本地 artifact，汇总进度、缺口和发布前门禁 |
 | 36 | [Transcript Review 转录校验回路](36-transcript-review.md) | transcript JSON → 可编辑 review 文件 → 修正后 transcript |
+| 37 | [Motion Guard 预渲染动感门禁](37-motion-guard.md) | storyboard/render_config → motion ratio、最长静态段和 blockers |
 
 ## 快速上手
 
@@ -95,3 +96,4 @@
 | 相邻分镜之间跳得太硬 | [33-Transition Bridge](33-transition-bridge.md) |
 | 想给长视频/课程导出章节时间戳 | [34-Chapter Markers](34-chapter-markers.md) |
 | 想先人工修正 ASR 错词再渲染字幕 | [36-Transcript Review](36-transcript-review.md) |
+| 担心生成图太多导致成片像幻灯片 | [37-Motion Guard](37-motion-guard.md) |

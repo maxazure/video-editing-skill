@@ -106,6 +106,13 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         blocks_when_present=True,
     ),
     ArtifactDef(
+        "motion_guard",
+        "Motion Guard",
+        ("**/motion_guard.json", "**/*_motion_guard.json"),
+        "Run motion_guard.py and replace still-heavy runs before render when motion is required.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "render_config",
         "Render Config",
         ("**/render_config.json", "**/*_render_config.json"),
@@ -269,7 +276,7 @@ def evaluate_category(definition: ArtifactDef, artifacts: Sequence[ArtifactRecor
         if data is None:
             continue
 
-        if definition.category in {"storyboard_assets", "transition_bridge"}:
+        if definition.category in {"storyboard_assets", "transition_bridge", "motion_guard"}:
             blocking = _int_at(data, "summary", "blocking")
             if blocking:
                 status = "blocked"
