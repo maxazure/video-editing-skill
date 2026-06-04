@@ -17,6 +17,24 @@ python3 scripts/multi_export.py \
   --platforms xhs douyin wxch
 ```
 
+如果源视频是横屏真人/访谈，不建议直接中心裁切。先生成主体感知裁切计划，再导出对应平台：
+
+```bash
+python3 scripts/smart_reframe.py origin/talk.mp4 \
+  --detections work/detections.json \
+  --scene-boundaries work/scene_boundaries.json \
+  --platform douyin \
+  --output work/reframe_douyin.json \
+  --markdown work/reframe_douyin.md
+
+python3 scripts/multi_export.py origin/talk.mp4 \
+  --platforms douyin \
+  --reframe-plan work/reframe_douyin.json \
+  --output-dir output/
+```
+
+一份 `reframe_plan` 只匹配一个目标尺寸；要同时导出 3:4 和 9:16，分别生成 `xhs` / `douyin` 两份计划。
+
 输出：
 
 ```
@@ -36,6 +54,8 @@ output/
 | 9:16 → 9:16 | 直接 scale |
 | 16:9 → 9:16 | 左右中心裁切 |
 | 16:9 → 3:4 | 左右中心裁切 |
+
+传入 `--reframe-plan` 后，固定中心裁切会被替换为 `smart_reframe.py` 生成的 `track` / `center` / `letterbox` 计划：人物偏左/偏右时跟随主体，多人过宽时保留全画面并补边。
 
 > 建议主出走 **9:16 1080×1920**（最通用），让 multi_export 去派生 3:4 版本。如果主出是 3:4，再裁到 9:16 会损失内容（顶部钩子区可能被裁掉）。
 
