@@ -45,6 +45,20 @@
      --review work/transcript_review.txt \
      --output work/transcript_reviewed.json
 
+1b. # 如果素材是播客/访谈/双人口播，且已有外部 diarization JSON 或 RTTM：
+    python3 scripts/speaker_turns.py \
+      --transcript work/transcript_reviewed.json \
+      --diarization work/diarization.json \
+      --speaker-map work/speakers.json \
+      --output work/speaker_turns.json \
+      --markdown work/speaker_turns.md \
+      --enrich-plan work/speaker_badges.json \
+      --min-speakers 2 \
+      --strict
+    # 如果只有 RTTM，把 --diarization 换成 --rttm work/audio.rttm。
+    # 渲染时可把 work/speaker_badges.json 作为额外 --enrich-plan。
+    # 详见 docs/prompts/39-speaker-turns.md
+
 2. python3 scripts/rewrite_script.py \
      --transcript work/transcript_reviewed.json \
      --structure pain_solve \
@@ -124,7 +138,8 @@
 
    (任何 HARD violation 必须先去掉再继续；SOFT 警告需要权衡)
 
-6. python3 scripts/render_final.py \
+6. # 如 1b 生成了 speaker_badges.json，可额外加一条 --enrich-plan work/speaker_badges.json
+   python3 scripts/render_final.py \
      --config work/render_config.json \
      --enrich-plan work/enrich_plan.json \
      --profile tech_pro \
@@ -203,6 +218,9 @@ day<NN>/
 │   ├── storyboard_assets.md   # 人工 review 版素材表
 │   ├── motion_guard.json   # 可选：预渲染动感门禁
 │   ├── motion_guard.md     # 可选：motion density review packet
+│   ├── speaker_turns.json  # 可选：播客/访谈说话人回合 review
+│   ├── speaker_turns.md
+│   ├── speaker_badges.json # 可选：说话人 badge enrich plan
 │   ├── jumpcut.json        # 可选：去停顿 cut list
 │   ├── day<NN>_edit.edl    # 可选：NLE handoff
 │   ├── day<NN>_edit.edl.json # 可选：EDL manifest

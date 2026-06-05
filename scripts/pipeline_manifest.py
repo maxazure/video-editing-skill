@@ -75,8 +75,15 @@ ARTIFACTS: Sequence[ArtifactDef] = (
     ArtifactDef(
         "enrich_plan",
         "Enrich Plan",
-        ("**/enrich_plan.json", "**/*_enrich_plan.json", "**/screen_focus_plan.json"),
+        ("**/enrich_plan.json", "**/*_enrich_plan.json", "**/screen_focus_plan.json", "**/speaker_badges.json"),
         "Run auto_enrich.py and optional screen_focus.py before final render.",
+    ),
+    ArtifactDef(
+        "speaker_turns",
+        "Speaker Turns",
+        ("**/speaker_turns.json", "**/*_speaker_turns.json"),
+        "Run speaker_turns.py for podcast/interview speaker review and resolve unlabeled speaker blockers.",
+        blocks_when_present=True,
     ),
     ArtifactDef(
         "storyboard_plan",
@@ -276,7 +283,7 @@ def evaluate_category(definition: ArtifactDef, artifacts: Sequence[ArtifactRecor
         if data is None:
             continue
 
-        if definition.category in {"storyboard_assets", "transition_bridge", "motion_guard"}:
+        if definition.category in {"storyboard_assets", "transition_bridge", "motion_guard", "speaker_turns"}:
             blocking = _int_at(data, "summary", "blocking")
             if blocking:
                 status = "blocked"

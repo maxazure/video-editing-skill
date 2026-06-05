@@ -51,6 +51,7 @@
 | 36 | [Transcript Review 转录校验回路](36-transcript-review.md) | transcript JSON → 可编辑 review 文件 → 修正后 transcript |
 | 37 | [Motion Guard 预渲染动感门禁](37-motion-guard.md) | storyboard/render_config → motion ratio、最长静态段和 blockers |
 | 38 | [Smart Reframe 主体感知裁切](38-smart-reframe.md) | 检测 JSON / scene_boundaries → track / center / letterbox reframe plan |
+| 39 | [Speaker Turns 说话人回合](39-speaker-turns.md) | diarization JSON/RTTM + transcript → speaker turn review + badge enrich plan |
 
 ## 快速上手
 
@@ -99,3 +100,4 @@
 | 想先人工修正 ASR 错词再渲染字幕 | [36-Transcript Review](36-transcript-review.md) |
 | 担心生成图太多导致成片像幻灯片 | [37-Motion Guard](37-motion-guard.md) |
 | 横屏素材转竖屏时不想中心裁掉人物 | [38-Smart Reframe](38-smart-reframe.md) |
+| 播客/访谈想先确认谁在说话 | [39-Speaker Turns](39-speaker-turns.md) |

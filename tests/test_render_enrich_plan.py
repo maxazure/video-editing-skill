@@ -49,6 +49,21 @@ def test_merge_enrich_plan_translates_cues(tmp_path):
     assert merged["_enrich_plan_stats"]["text_badges"] == 2
 
 
+def test_merge_enrich_plan_accepts_raw_text_badges(tmp_path):
+    plan = {
+        "text_badges": [
+            {"text": "Speaker A", "start": 1.0, "duration": 1.5, "speaker": "SPEAKER_00"}
+        ]
+    }
+
+    merged = merge_enrich_plan({"clips": []}, plan, plan_base_dir=str(tmp_path))
+
+    assert merged["text_badges"][0]["text"] == "Speaker A"
+    assert merged["text_badges"][0]["end"] == 2.5
+    assert merged["text_badges"][0]["source"] == "enrich_plan:text_badge"
+    assert merged["_enrich_plan_stats"]["text_badges"] == 1
+
+
 def test_merge_enrich_plan_keeps_imagegen_advisory_when_no_file(tmp_path):
     plan = {"imagegen": [{"timing_seconds": 1.0, "prompt_en": "make a visual metaphor"}]}
     merged = merge_enrich_plan({"clips": []}, plan, plan_base_dir=str(tmp_path))

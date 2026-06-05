@@ -283,6 +283,21 @@ def merge_enrich_plan(config, plan, *, plan_base_dir):
     image_overlays = list(merged.get("image_overlays") or [])
     focus_events = list(merged.get("focus_events") or [])
 
+    for cue in plan.get("text_badges") or []:
+        text = str(cue.get("text") or cue.get("label") or "").strip()
+        if not text:
+            continue
+        start, end = _cue_time_range(cue, default_duration=1.4)
+        badge = copy.deepcopy(cue)
+        badge["text"] = text
+        badge["start"] = start
+        badge["end"] = end
+        badge.setdefault("fade_in", 120)
+        badge.setdefault("fade_out", 160)
+        badge.setdefault("source", "enrich_plan:text_badge")
+        text_badges.append(badge)
+        stats["text_badges"] += 1
+
     for cue in plan.get("broll") or []:
         asset = (
             cue.get("suggested_asset")
@@ -937,8 +952,8 @@ def main():
     parser.add_argument("--config", required=True, help="Path to render config JSON")
     parser.add_argument("--enrich-plan", action="append", default=[],
                         help="Optional enrich-plan JSON. Repeatable. Merges B-roll, "
-                             "stickers, chapter cards, generated image cues, and "
-                             "screen focus events into the render.")
+                             "text badges, stickers, chapter cards, generated image cues, "
+                             "and screen focus events into the render.")
     parser.add_argument("--output", required=True, help="Output video path")
     parser.add_argument("--font-path", default=None, help="Custom font path")
     parser.add_argument("--font-size", type=int, default=48, help="Subtitle font size")
