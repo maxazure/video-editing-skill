@@ -52,6 +52,7 @@
 | 37 | [Motion Guard 预渲染动感门禁](37-motion-guard.md) | storyboard/render_config → motion ratio、最长静态段和 blockers |
 | 38 | [Smart Reframe 主体感知裁切](38-smart-reframe.md) | 检测 JSON / scene_boundaries → track / center / letterbox reframe plan |
 | 39 | [Speaker Turns 说话人回合](39-speaker-turns.md) | diarization JSON/RTTM + transcript → speaker turn review + badge enrich plan |
+| 40 | [Privacy Redaction 视觉隐私遮挡](40-privacy-redaction.md) | 手工框 / 检测 JSON → blur/pixelate/mask review + optional FFmpeg render |
 
 ## 快速上手
 
@@ -101,3 +102,4 @@
 | 担心生成图太多导致成片像幻灯片 | [37-Motion Guard](37-motion-guard.md) |
 | 横屏素材转竖屏时不想中心裁掉人物 | [38-Smart Reframe](38-smart-reframe.md) |
 | 播客/访谈想先确认谁在说话 | [39-Speaker Turns](39-speaker-turns.md) |
+| 视频里有人脸、车牌、微信号或屏幕敏感信息 | [40-Privacy Redaction](40-privacy-redaction.md) |

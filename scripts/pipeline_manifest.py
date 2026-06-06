@@ -148,6 +148,18 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         blocks_when_present=True,
     ),
     ArtifactDef(
+        "privacy_redaction",
+        "Privacy Redaction",
+        (
+            "**/privacy_redaction.json",
+            "**/*_privacy_redaction.json",
+            "**/privacy_redaction_plan.json",
+            "**/*_privacy_redaction_plan.json",
+        ),
+        "Run privacy_redact.py and review/resolve visual privacy blockers before publishing.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "subtitles",
         "Subtitle Pack",
         ("**/subtitles/*.srt", "**/subtitles/*.vtt", "**/subtitles/*.ass", "**/*_subtitles.json"),
@@ -283,7 +295,7 @@ def evaluate_category(definition: ArtifactDef, artifacts: Sequence[ArtifactRecor
         if data is None:
             continue
 
-        if definition.category in {"storyboard_assets", "transition_bridge", "motion_guard", "speaker_turns"}:
+        if definition.category in {"storyboard_assets", "transition_bridge", "motion_guard", "speaker_turns", "privacy_redaction"}:
             blocking = _int_at(data, "summary", "blocking")
             if blocking:
                 status = "blocked"

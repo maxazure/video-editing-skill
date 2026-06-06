@@ -15,7 +15,7 @@ python3 scripts/pipeline_manifest.py \
   --strict
 ```
 
-`--strict` 在缺少必需 artifact、render QA fail、storyboard/provider/transition 仍有阻塞项时返回退出码 2，适合放在自动化发布前。
+`--strict` 在缺少必需 artifact、render QA fail、storyboard/provider/transition/motion/speaker/privacy redaction 仍有阻塞项时返回退出码 2，适合放在自动化发布前。
 
 ## Target Stage
 
@@ -34,6 +34,7 @@ python3 scripts/pipeline_manifest.py \
   --target-stage publish_ready \
   --require subtitles \
   --require chapter_markers \
+  --require privacy_redaction \
   --strict
 ```
 
@@ -44,6 +45,9 @@ python3 scripts/pipeline_manifest.py \
 | `storyboard_assets.json` | `summary.blocking > 0` |
 | `provider_decision.json` | `approval_required` / `budget_blocked` / `selected_missing_requirements` 非 0 |
 | `transition_bridge_plan.json` | `summary.blocking > 0` |
+| `motion_guard.json` | `summary.blocking > 0` |
+| `speaker_turns.json` | `summary.blocking > 0` |
+| `privacy_redaction.json` | `summary.blocking > 0` |
 | `render_qa.json` | `status == fail` 或任一 file `status == fail` |
 
 这些 artifact 即使不是当前 stage 的必需项，只要存在且未解决，也会让 manifest 进入 `blocked`，避免把未审批 paid generation 或失败 QA 漏到发布阶段。

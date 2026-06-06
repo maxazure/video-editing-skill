@@ -80,6 +80,34 @@ def test_optional_provider_decision_blocks_when_unresolved(tmp_path):
     assert "approval_required=1" in provider_gate["notes"]
 
 
+def test_optional_privacy_redaction_blocks_when_unresolved(tmp_path):
+    _publish_ready_project(tmp_path)
+    _write(tmp_path / "work" / "privacy_redaction.json", {
+        "version": "privacy_redaction_plan.v1",
+        "summary": {
+            "total_events": 1,
+            "unreviewed": 1,
+            "blocking": 1,
+        },
+    })
+
+    manifest = build_manifest(str(tmp_path), target_stage="publish_ready")
+
+    assert manifest["status"] == "blocked"
+    assert "privacy_redaction" in manifest["blocked_gates"]
+    privacy_gate = next(g for g in manifest["gates"] if g["category"] == "privacy_redaction")
+    assert "1 blocking item(s) in summary.blocking" in privacy_gate["notes"]
+
+
+def test_privacy_redaction_can_be_required(tmp_path):
+    _publish_ready_project(tmp_path)
+
+    manifest = build_manifest(str(tmp_path), target_stage="publish_ready", required=["privacy_redaction"])
+
+    assert manifest["status"] == "blocked"
+    assert "privacy_redaction" in manifest["missing_required"]
+
+
 def test_markdown_contains_gate_table_and_next_actions(tmp_path):
     manifest = build_manifest(str(tmp_path), target_stage="render_ready")
 
