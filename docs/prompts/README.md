@@ -53,6 +53,7 @@
 | 38 | [Smart Reframe 主体感知裁切](38-smart-reframe.md) | 检测 JSON / scene_boundaries → track / center / letterbox reframe plan |
 | 39 | [Speaker Turns 说话人回合](39-speaker-turns.md) | diarization JSON/RTTM + transcript → speaker turn review + badge enrich plan |
 | 40 | [Privacy Redaction 视觉隐私遮挡](40-privacy-redaction.md) | 手工框 / 检测 JSON → blur/pixelate/mask review + optional FFmpeg render |
+| 41 | [Localization Pack 多语字幕 / 配音交付包](41-localization-pack.md) | transcript/render_config → 翻译审校、SRT 草稿、dubbing tasks 和发布门禁 |
 
 ## 快速上手
 
@@ -103,3 +104,4 @@
 | 横屏素材转竖屏时不想中心裁掉人物 | [38-Smart Reframe](38-smart-reframe.md) |
 | 播客/访谈想先确认谁在说话 | [39-Speaker Turns](39-speaker-turns.md) |
 | 视频里有人脸、车牌、微信号或屏幕敏感信息 | [40-Privacy Redaction](40-privacy-redaction.md) |
+| 中文视频要做英文字幕或配音版 | [41-Localization Pack](41-localization-pack.md) |

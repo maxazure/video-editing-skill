@@ -72,6 +72,9 @@
    ├─→ subtitle_pack.py         SRT / VTT / ASS / JSON 字幕交付包
    │                            支持 render_config 串接、加速倍率、片头 offset 对齐
    │
+   ├─→ localization_pack.py     多语字幕 / 配音交付包
+   │                            translation review / readability / dubbing tasks / voice map
+   │
    ├─→ chapter_markers.py       JSON / Markdown / FFmetadata / YouTube 章节时间戳
    │                            transcript / clean_script / 章节 JSON → 发布侧章节交付
    │
@@ -108,7 +111,7 @@ cd ~/projects/video-editing-skill
 python3 scripts/utils.py
 
 # 4. 跑一遍测试套件确认 OK
-pytest tests/           # 295 个测试，约 7 秒
+pytest tests/           # 301 个测试，约 7 秒
 ```
 
 每天做一条视频的完整模板：**[docs/prompts/15-xhs-daily-tech-video.md](docs/prompts/15-xhs-daily-tech-video.md)**
@@ -468,6 +471,36 @@ python3 scripts/subtitle_pack.py \
 
 `--transcript` 默认保留原始时间码；`--config` 默认按 `render_final.py` 的 clips 顺序串接时间线。`--speed` 对齐 `--primary-speed`，`--offset` 对齐封面/片头秒数；中文默认 18 字单行、英文默认 42 字单行，也可用 `--max-chars` 覆盖。
 
+### 🌍 Localization Pack — 多语字幕 / 配音交付包
+[`scripts/localization_pack.py`](scripts/localization_pack.py) · [详细文档](docs/prompts/41-localization-pack.md)
+
+借鉴 VideoLingo / pyVideoTrans / ComfyUI subtitle audio 这类视频翻译和同步配音工作流：翻译、单行可读性、配音时长和 speaker voice mapping 都应该在发布前有独立 review。本项目仍保持轻量：不调用翻译或 TTS，只把已有 transcript/render_config 变成可交给人、LLM 或外部配音工具的本地交付包。
+
+常用：
+```bash
+python3 scripts/localization_pack.py \
+  --transcript work/transcript_reviewed.json \
+  --target-language en \
+  --output work/localization_pack.json \
+  --markdown work/localization_pack.md \
+  --srt work/localization_en.todo.srt
+
+python3 scripts/localization_pack.py \
+  --transcript work/transcript_reviewed.json \
+  --target-language en \
+  --translations work/localization_en_reviewed.json \
+  --voice-map work/voices.json \
+  --dubbing \
+  --require-translations \
+  --require-voices \
+  --fail-on-readability \
+  --output work/localization_pack.json \
+  --markdown work/localization_pack.md \
+  --strict
+```
+
+输出 `localization_pack.v1`，包含 `segments[]`、`dubbing_tasks[]`、`target_cps`、`estimated_tts_speed`、speaker/voice、warnings 和 `summary.blocking`。需要把英文字幕/配音版纳入发布门禁时，用 `pipeline_manifest.py --require localization_pack`。
+
 ### 📑 Chapter Markers — 章节时间戳交付
 [`scripts/chapter_markers.py`](scripts/chapter_markers.py) · [详细文档](docs/prompts/34-chapter-markers.md)
 
@@ -702,7 +735,7 @@ python3 scripts/export_edl.py \
 ### 📋 Pipeline Manifest — 生产线状态清单
 [`scripts/pipeline_manifest.py`](scripts/pipeline_manifest.py) · [详细文档](docs/prompts/35-pipeline-manifest.md)
 
-借鉴 GitHub 上 agentic video pipeline 的 job history / run state / build report 思路，但不引入数据库、Web 服务或队列：`pipeline_manifest.py` 只扫描本地项目目录，把 transcript、clean script、render_config、成片、QA、caption，以及 storyboard/provider/transition/motion guard/privacy redaction 的阻塞状态汇总成一个可审计清单。
+借鉴 GitHub 上 agentic video pipeline 的 job history / run state / build report 思路，但不引入数据库、Web 服务或队列：`pipeline_manifest.py` 只扫描本地项目目录，把 transcript、clean script、render_config、成片、QA、caption，以及 storyboard/provider/transition/motion guard/privacy redaction/localization pack 的阻塞状态汇总成一个可审计清单。
 
 常用：
 ```bash
@@ -714,7 +747,25 @@ python3 scripts/pipeline_manifest.py \
   --strict
 ```
 
-`publish_ready` 默认要求 `transcript` / `clean_script` / `render_config` / `master_video` / `render_qa` / `caption` 都存在；如果发现 `storyboard_assets.json`、`provider_decision.json`、`transition_bridge_plan.json`、`motion_guard.json`、`speaker_turns.json` 或 `privacy_redaction.json` 里仍有 blocking、approval_required、budget_blocked、QA fail 等问题，`--strict` 返回 2。需要把字幕、章节、说话人或视觉隐私 review 作为强制交付时可加 `--require subtitles --require chapter_markers --require speaker_turns --require privacy_redaction`。
+`publish_ready` 默认要求 `transcript` / `clean_script` / `render_config` / `master_video` / `render_qa` / `caption` 都存在；如果发现 `storyboard_assets.json`、`provider_decision.json`、`transition_bridge_plan.json`、`motion_guard.json`、`speaker_turns.json`、`privacy_redaction.json` 或 `localization_pack.json` 里仍有 blocking、approval_required、budget_blocked、QA fail 等问题，`--strict` 返回 2。需要把字幕、章节、说话人、视觉隐私或多语交付 review 作为强制交付时可加 `--require subtitles --require chapter_markers --require speaker_turns --require privacy_redaction --require localization_pack`。
+
+### 2026-06-08 自动化升级记录（Localization Pack）
+
+本轮 GitHub 搜索：`Huanshere/VideoLingo`、`jianchang512/pyvideotrans`、`weslleylobo/comfyui_subtitle_audio`、`harry0703/MoneyPrinterTurbo`、`calesthio/OpenMontage`、`AKMessi/vex`、`heygen-com/hyperframes`、`fal-ai-community/skills`、`Sogni-AI/sogni-creative-agent-skill`。研究归档见 [research-archive/2026-06-08-video-localization-dubbing](research-archive/2026-06-08-video-localization-dubbing/00_START_HERE.md)。
+
+| 项目 | 观察到的优点 | 本项目吸收方式 |
+|---|---|---|
+| [`Huanshere/VideoLingo`](https://github.com/Huanshere/VideoLingo) | 把字幕切分、术语、三步翻译、单行字幕和配音作为完整 localization workflow | 新增 `localization_pack.py`，把翻译审校和配音任务变成本地 artifact |
+| [`jianchang512/pyvideotrans`](https://github.com/jianchang512/pyvideotrans) | CLI 明确区分 STT / TTS / 字幕翻译 / 视频翻译，并支持多角色配音和音画同步 | 增加 `--dubbing`、`--voice-map`、`--require-voices` 和 TTS speed 风险检查 |
+| [`weslleylobo/comfyui_subtitle_audio`](https://github.com/weslleylobo/comfyui_subtitle_audio) | 从 SRT 读取时间线，按字幕段落生成 TTS，fit 到目标时长后组装音轨 | 输出 `dubbing_tasks[]`，每段保留 start/end/duration、speed_hint 和 max_duration |
+| [`harry0703/MoneyPrinterTurbo`](https://github.com/harry0703/MoneyPrinterTurbo) | topic-to-video 包含脚本、素材、字幕、声音、BGM 和批量生成 | 本项目这些能力已有；本轮只补多语交付缺口 |
+| [`calesthio/OpenMontage`](https://github.com/calesthio/OpenMontage) / [`AKMessi/vex`](https://github.com/AKMessi/vex) / [`heygen-com/hyperframes`](https://github.com/heygen-com/hyperframes) | agentic pipeline、生成视觉、渲染 QA 和可复核状态强 | 继续沿用本项目 JSON/Markdown review + `pipeline_manifest.py` 门禁风格 |
+
+新增/调整能力：新增 `scripts/localization_pack.py`、[docs/prompts/41-localization-pack.md](docs/prompts/41-localization-pack.md) 和 `tests/test_localization_pack.py`；`pipeline_manifest.py` 新增 `localization_pack` 可选 gate。脚本读取 `transcript.json` 或 `render_config.json`，合并可选 `--translations`，输出 `localization_pack.v1` JSON、Markdown review、SRT 草稿和可选 `dubbing_tasks[]`；支持 `--require-translations`、`--fail-on-readability`、`--dubbing`、`--voice-map`、`--require-voices`、`--max-tts-speed` 和 `--strict`。
+
+使用方式：先跑 `python3 scripts/localization_pack.py --transcript work/transcript_reviewed.json --target-language en --output work/localization_pack.json --markdown work/localization_pack.md --srt work/localization_en.todo.srt` 生成待翻译包；填好翻译后跑 `python3 scripts/localization_pack.py --transcript work/transcript_reviewed.json --target-language en --translations work/localization_en_reviewed.json --voice-map work/voices.json --dubbing --require-translations --require-voices --fail-on-readability --output work/localization_pack.json --markdown work/localization_pack.md --strict` 做配音前审查。发布门禁可用 `pipeline_manifest.py --require localization_pack`。
+
+验证结果：新增 `tests/test_localization_pack.py` 5 项，并更新 `tests/test_pipeline_manifest.py` 1 项；局部回归 `.venv/bin/python -m pytest tests/test_localization_pack.py tests/test_pipeline_manifest.py -q` 通过 `14 passed in 0.21s`；完整 `.venv/bin/python -m pytest tests -q` 通过 `301 passed in 3.94s`；`.venv/bin/python -m compileall scripts tests` 通过；`.venv/bin/python scripts/localization_pack.py --help` 和 `.venv/bin/python scripts/pipeline_manifest.py --list-categories` 通过；`git diff --check` 通过；research archive validator 通过（`repo_dirs=9 file_tree_files=9`）。
 
 ### 2026-06-07 自动化升级记录（Privacy Redaction）
 
@@ -1344,6 +1395,7 @@ pytest tests/test_smart_reframe.py -v       # 主体感知裁切计划 + reframe
 pytest tests/test_export_edl.py -v          # NLE handoff EDL + manifest
 pytest tests/test_screen_focus.py -v        # 录屏点击聚焦计划 + render 接入
 pytest tests/test_subtitle_pack.py -v       # SRT/VTT/ASS/JSON 字幕交付包
+pytest tests/test_localization_pack.py -v   # 多语字幕 / 配音交付包
 pytest tests/test_chapter_markers.py -v     # JSON/Markdown/FFmetadata/YouTube 章节时间戳
 pytest tests/test_scene_boundaries.py -v    # 视觉场景边界 + highlight scene snap
 pytest tests/test_pipeline_manifest.py -v   # 生产线 artifact 状态清单/发布门禁
@@ -1398,6 +1450,7 @@ pytest tests/test_privacy_redact.py -v      # 视觉隐私遮挡 review + FFmpeg
 | **38** | **[Smart Reframe](docs/prompts/38-smart-reframe.md)** | **横屏转竖屏主体感知裁切计划** |
 | **39** | **[Speaker Turns](docs/prompts/39-speaker-turns.md)** | **播客/访谈说话人回合 review** |
 | **40** | **[Privacy Redaction](docs/prompts/40-privacy-redaction.md)** | **视觉隐私遮挡 review + 可选渲染** |
+| **41** | **[Localization Pack](docs/prompts/41-localization-pack.md)** | **多语字幕 / 配音交付包** |
 
 完整列表见 [docs/prompts/README.md](docs/prompts/README.md)。
 
@@ -1455,6 +1508,7 @@ scripts/
 ├── privacy_redact.py           视觉隐私遮挡 review + FFmpeg filter [V3]
 ├── timeline_view.py            filmstrip+waveform 可视化复盘图     [V3]
 ├── subtitle_pack.py            SRT/VTT/ASS/JSON 字幕交付包        [V3]
+├── localization_pack.py        多语字幕 / 配音交付包              [V3]
 ├── chapter_markers.py          JSON/Markdown/FFmetadata/YouTube 章节时间戳 [V3]
 ├── burn_subtitles.py           字幕 ASS 生成
 ├── generate_cover.py           封面生成

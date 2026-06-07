@@ -166,6 +166,16 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         "Run subtitle_pack.py when platform sidecar subtitles are needed.",
     ),
     ArtifactDef(
+        "localization_pack",
+        "Localization Pack",
+        (
+            "**/localization_pack.json",
+            "**/*_localization_pack.json",
+        ),
+        "Run localization_pack.py and clear missing translation, readability, dubbing, or voice blockers.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "chapter_markers",
         "Chapter Markers",
         ("**/chapters.json", "**/chapters-youtube.txt", "**/chapters.ffmetadata"),
@@ -295,7 +305,14 @@ def evaluate_category(definition: ArtifactDef, artifacts: Sequence[ArtifactRecor
         if data is None:
             continue
 
-        if definition.category in {"storyboard_assets", "transition_bridge", "motion_guard", "speaker_turns", "privacy_redaction"}:
+        if definition.category in {
+            "storyboard_assets",
+            "transition_bridge",
+            "motion_guard",
+            "speaker_turns",
+            "privacy_redaction",
+            "localization_pack",
+        }:
             blocking = _int_at(data, "summary", "blocking")
             if blocking:
                 status = "blocked"

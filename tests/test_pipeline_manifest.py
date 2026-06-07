@@ -99,6 +99,25 @@ def test_optional_privacy_redaction_blocks_when_unresolved(tmp_path):
     assert "1 blocking item(s) in summary.blocking" in privacy_gate["notes"]
 
 
+def test_optional_localization_pack_blocks_when_unresolved(tmp_path):
+    _publish_ready_project(tmp_path)
+    _write(tmp_path / "work" / "localization_pack.json", {
+        "version": "localization_pack.v1",
+        "summary": {
+            "cue_count": 2,
+            "missing_translations": 1,
+            "blocking": 1,
+        },
+    })
+
+    manifest = build_manifest(str(tmp_path), target_stage="publish_ready")
+
+    assert manifest["status"] == "blocked"
+    assert "localization_pack" in manifest["blocked_gates"]
+    gate = next(g for g in manifest["gates"] if g["category"] == "localization_pack")
+    assert "1 blocking item(s) in summary.blocking" in gate["notes"]
+
+
 def test_privacy_redaction_can_be_required(tmp_path):
     _publish_ready_project(tmp_path)
 
