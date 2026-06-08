@@ -75,6 +75,9 @@
    ├─→ localization_pack.py     多语字幕 / 配音交付包
    │                            translation review / readability / dubbing tasks / voice map
    │
+   ├─→ asset_provenance.py      素材来源 / 授权 / 署名 review
+   │                            media_index / storyboard_assets / render_config → credits + publish gate
+   │
    ├─→ chapter_markers.py       JSON / Markdown / FFmetadata / YouTube 章节时间戳
    │                            transcript / clean_script / 章节 JSON → 发布侧章节交付
    │
@@ -501,6 +504,32 @@ python3 scripts/localization_pack.py \
 
 输出 `localization_pack.v1`，包含 `segments[]`、`dubbing_tasks[]`、`target_cps`、`estimated_tts_speed`、speaker/voice、warnings 和 `summary.blocking`。需要把英文字幕/配音版纳入发布门禁时，用 `pipeline_manifest.py --require localization_pack`。
 
+### 🧾 Asset Provenance — 素材来源 / 授权 / 署名门禁
+[`scripts/asset_provenance.py`](scripts/asset_provenance.py) · [详细文档](docs/prompts/42-asset-provenance.md)
+
+借鉴 ShortGPT / MoneyPrinterTurbo / OpenMontage 这类自动短视频项目对 stock footage、素材库和来源字段的重视，但保持本项目轻量：不调用 Pexels/Pixabay/Unsplash API，不下载素材，只把已经选中的素材、media index 元数据和 sidecar 汇总成可发布前审查的 provenance manifest。
+
+常用：
+```bash
+python3 scripts/asset_provenance.py \
+  --media-library work/day58 \
+  --asset-manifest work/storyboard_assets.json \
+  --render-config work/render_config.json \
+  --enrich-plan work/enrich_plan.json \
+  --output work/asset_provenance.json \
+  --markdown work/asset_provenance.md \
+  --strict
+
+python3 scripts/asset_provenance.py \
+  --asset output/custom_broll.mp4 \
+  --require-known-license \
+  --output work/asset_provenance.json \
+  --markdown work/asset_provenance.md \
+  --strict
+```
+
+输出 `asset_provenance.v1`，包含每个素材的 `provider`、`source_url`、`creator`、`license`、`attribution_required`、issues/warnings 和 `credits[]`。内置 Pexels / Pixabay / Unsplash / 自有素材 / Codex imagegen / Dreamina 的基础策略；CC BY 缺署名、缺文件、外部来源缺授权清理等会写入 `summary.blocking`。需要把素材授权审查纳入发布门禁时，用 `pipeline_manifest.py --require asset_provenance`。生图优先使用 Codex 内置 `image_gen` 工具，即 OpenAI GPT Image 2（`gpt-image-2`）。
+
 ### 📑 Chapter Markers — 章节时间戳交付
 [`scripts/chapter_markers.py`](scripts/chapter_markers.py) · [详细文档](docs/prompts/34-chapter-markers.md)
 
@@ -735,7 +764,7 @@ python3 scripts/export_edl.py \
 ### 📋 Pipeline Manifest — 生产线状态清单
 [`scripts/pipeline_manifest.py`](scripts/pipeline_manifest.py) · [详细文档](docs/prompts/35-pipeline-manifest.md)
 
-借鉴 GitHub 上 agentic video pipeline 的 job history / run state / build report 思路，但不引入数据库、Web 服务或队列：`pipeline_manifest.py` 只扫描本地项目目录，把 transcript、clean script、render_config、成片、QA、caption，以及 storyboard/provider/transition/motion guard/privacy redaction/localization pack 的阻塞状态汇总成一个可审计清单。
+借鉴 GitHub 上 agentic video pipeline 的 job history / run state / build report 思路，但不引入数据库、Web 服务或队列：`pipeline_manifest.py` 只扫描本地项目目录，把 transcript、clean script、render_config、成片、QA、caption，以及 storyboard/provider/transition/motion guard/privacy redaction/localization pack/asset provenance 的阻塞状态汇总成一个可审计清单。
 
 常用：
 ```bash
@@ -747,7 +776,25 @@ python3 scripts/pipeline_manifest.py \
   --strict
 ```
 
-`publish_ready` 默认要求 `transcript` / `clean_script` / `render_config` / `master_video` / `render_qa` / `caption` 都存在；如果发现 `storyboard_assets.json`、`provider_decision.json`、`transition_bridge_plan.json`、`motion_guard.json`、`speaker_turns.json`、`privacy_redaction.json` 或 `localization_pack.json` 里仍有 blocking、approval_required、budget_blocked、QA fail 等问题，`--strict` 返回 2。需要把字幕、章节、说话人、视觉隐私或多语交付 review 作为强制交付时可加 `--require subtitles --require chapter_markers --require speaker_turns --require privacy_redaction --require localization_pack`。
+`publish_ready` 默认要求 `transcript` / `clean_script` / `render_config` / `master_video` / `render_qa` / `caption` 都存在；如果发现 `storyboard_assets.json`、`provider_decision.json`、`transition_bridge_plan.json`、`motion_guard.json`、`speaker_turns.json`、`privacy_redaction.json`、`localization_pack.json` 或 `asset_provenance.json` 里仍有 blocking、approval_required、budget_blocked、QA fail 等问题，`--strict` 返回 2。需要把字幕、章节、说话人、视觉隐私、多语交付或素材授权 review 作为强制交付时可加 `--require subtitles --require chapter_markers --require speaker_turns --require privacy_redaction --require localization_pack --require asset_provenance`。
+
+### 2026-06-09 自动化升级记录（Asset Provenance）
+
+本轮 GitHub 搜索：`RayVentura/ShortGPT`、`harry0703/MoneyPrinterTurbo`、`calesthio/OpenMontage`、`3d0n1/youtube-auto-shorts-generator`、`heygen-com/skills`、`mblanc/storycraft`、`SankaiAI/TwitCanva-Video-Workflow`、`6missedcalls/video-editing-skill`。研究归档见 [research-archive/2026-06-09-video-agent-gap-scan](research-archive/2026-06-09-video-agent-gap-scan/00_START_HERE.md)。
+
+| 项目 | 观察到的优点 | 本项目吸收方式 |
+|---|---|---|
+| [`calesthio/OpenMontage`](https://github.com/calesthio/OpenMontage) | stock corpus 会把 `source` / `source_id` / `source_url` / `license` / `creator` 写进 ClipRecord | 新增 `asset_provenance.py`，把素材来源、授权和署名作为独立 publish gate |
+| [`RayVentura/ShortGPT`](https://github.com/RayVentura/ShortGPT) | 自动生成视频时会从互联网和 Pexels API 获取背景 footage，并维护 asset library | 本项目不自动抓取外部素材，改为审查已选素材的 provenance |
+| [`harry0703/MoneyPrinterTurbo`](https://github.com/harry0703/MoneyPrinterTurbo) | 支持 Pexels / Pixabay / local materials，并强调 royalty-free 素材来源 | 内置 Pexels/Pixabay/Unsplash/自有/生成素材的基础授权策略和 credits 输出 |
+| [`3d0n1/youtube-auto-shorts-generator`](https://github.com/3d0n1/youtube-auto-shorts-generator) | 用 Pexels 给每个脚本段找视频素材 | 通过 `--render-config` / `--enrich-plan` 扫描最终实际使用的素材，而不是只审候选 |
+| [`heygen-com/skills`](https://github.com/heygen-com/skills) / [`mblanc/storycraft`](https://github.com/mblanc/storycraft) | agent video pipeline 强调生成前后都有可复核状态 | 继续沿用 JSON + Markdown review + `pipeline_manifest.py` 门禁风格 |
+
+新增/调整能力：新增 `scripts/asset_provenance.py`、[docs/prompts/42-asset-provenance.md](docs/prompts/42-asset-provenance.md) 和 `tests/test_asset_provenance.py`；`pipeline_manifest.py` 新增 `asset_provenance` 可选 gate。脚本可读取 `media_index.json/db`、`storyboard_assets.json`、`render_config.json`、一个或多个 `enrich_plan.json` 或显式 `--asset`，输出 `asset_provenance.v1` JSON、Markdown review 和 `credits[]`。
+
+使用方式：渲染前或发布前跑 `python3 scripts/asset_provenance.py --media-library work/day58 --asset-manifest work/storyboard_assets.json --render-config work/render_config.json --enrich-plan work/enrich_plan.json --output work/asset_provenance.json --markdown work/asset_provenance.md --strict`。如果这条片子用了外部下载素材，建议给对应媒体写入 `media_index.json` 的 `metadata.provider/source_url/creator/license`，或给文件旁边放 `<asset>.provenance.json` sidecar；需要强制授权齐全时加 `--require-known-license`。发布门禁可用 `pipeline_manifest.py --require asset_provenance`。
+
+验证结果：新增 `tests/test_asset_provenance.py` 8 项，并更新 `tests/test_pipeline_manifest.py` 1 项；局部回归 `.venv/bin/python -m pytest tests/test_asset_provenance.py tests/test_pipeline_manifest.py` 通过 `18 passed in 0.18s`；完整 `.venv/bin/python -m pytest tests` 通过 `310 passed in 3.52s`；`.venv/bin/python -m compileall scripts tests`、`.venv/bin/python scripts/asset_provenance.py --help`、`.venv/bin/python scripts/pipeline_manifest.py --list-categories` 和 `git diff --check` 通过；research archive validator 通过（`repo_dirs=8 file_tree_files=8`）。
 
 ### 2026-06-08 自动化升级记录（Localization Pack）
 
@@ -1451,6 +1498,7 @@ pytest tests/test_privacy_redact.py -v      # 视觉隐私遮挡 review + FFmpeg
 | **39** | **[Speaker Turns](docs/prompts/39-speaker-turns.md)** | **播客/访谈说话人回合 review** |
 | **40** | **[Privacy Redaction](docs/prompts/40-privacy-redaction.md)** | **视觉隐私遮挡 review + 可选渲染** |
 | **41** | **[Localization Pack](docs/prompts/41-localization-pack.md)** | **多语字幕 / 配音交付包** |
+| **42** | **[Asset Provenance](docs/prompts/42-asset-provenance.md)** | **素材来源 / 授权 / 署名门禁** |
 
 完整列表见 [docs/prompts/README.md](docs/prompts/README.md)。
 
@@ -1509,6 +1557,7 @@ scripts/
 ├── timeline_view.py            filmstrip+waveform 可视化复盘图     [V3]
 ├── subtitle_pack.py            SRT/VTT/ASS/JSON 字幕交付包        [V3]
 ├── localization_pack.py        多语字幕 / 配音交付包              [V3]
+├── asset_provenance.py         素材来源 / 授权 / 署名门禁          [V3]
 ├── chapter_markers.py          JSON/Markdown/FFmetadata/YouTube 章节时间戳 [V3]
 ├── burn_subtitles.py           字幕 ASS 生成
 ├── generate_cover.py           封面生成

@@ -118,6 +118,25 @@ def test_optional_localization_pack_blocks_when_unresolved(tmp_path):
     assert "1 blocking item(s) in summary.blocking" in gate["notes"]
 
 
+def test_optional_asset_provenance_blocks_when_unresolved(tmp_path):
+    _publish_ready_project(tmp_path)
+    _write(tmp_path / "work" / "asset_provenance.json", {
+        "version": "asset_provenance.v1",
+        "summary": {
+            "items": 1,
+            "blocking": 1,
+            "missing_license": 1,
+        },
+    })
+
+    manifest = build_manifest(str(tmp_path), target_stage="publish_ready")
+
+    assert manifest["status"] == "blocked"
+    assert "asset_provenance" in manifest["blocked_gates"]
+    gate = next(g for g in manifest["gates"] if g["category"] == "asset_provenance")
+    assert "1 blocking item(s) in summary.blocking" in gate["notes"]
+
+
 def test_privacy_redaction_can_be_required(tmp_path):
     _publish_ready_project(tmp_path)
 

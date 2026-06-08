@@ -176,6 +176,16 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         blocks_when_present=True,
     ),
     ArtifactDef(
+        "asset_provenance",
+        "Asset Provenance",
+        (
+            "**/asset_provenance.json",
+            "**/*_asset_provenance.json",
+        ),
+        "Run asset_provenance.py and clear missing source, license, attribution, or file blockers.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "chapter_markers",
         "Chapter Markers",
         ("**/chapters.json", "**/chapters-youtube.txt", "**/chapters.ffmetadata"),
@@ -312,6 +322,7 @@ def evaluate_category(definition: ArtifactDef, artifacts: Sequence[ArtifactRecor
             "speaker_turns",
             "privacy_redaction",
             "localization_pack",
+            "asset_provenance",
         }:
             blocking = _int_at(data, "summary", "blocking")
             if blocking:
