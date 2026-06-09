@@ -24,6 +24,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ content_guard.py         80+ 条平台雷区 lint
    ├─→ auto_enrich.py           B-roll / 章节卡 / 贴纸 / BGM 卡点 / imagegen 提示词
    │       └─→ Codex imagegen   gpt-image-2 自动生图（抽象概念配图）
+   ├─→ audio_cue_sheet.py       BGM / SFX 音频设计清单 / 生成审批 gate
    ├─→ storyboard_plan.py       分镜 shot cards / 生成路由 / 连续性锚点
    ├─→ storyboard_assets.py     素材任务清单 / ready 预检 / paid 额度提醒
    │                            可选 media_library.py recommend 排名 B-roll 候选
@@ -71,6 +72,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `beat_sync.py` | BGM 卡点 | `--bgm` `--cuts` `--window` |
 | `auto_enrich.py` | 编排上面四个 | `--transcript` `--clean-script` `--bgm` `--output` |
 | `imagegen_hint.py` | 检测抽象概念 → 产 gpt-image-2 提示词 | `--transcript` `--clean-script` `--codex-md` |
+| `audio_cue_sheet.py` | transcript → BGM/SFX cue、生成审批和音频门禁 | `--transcript` `--asset-root` `--require-local-music` `--require-local-sfx` `--strict` |
 | `storyboard_plan.py` | transcript/clean_script → 分镜 shot cards + 生成路由 | `--transcript` `--clean-script` `--output` `--markdown` |
 | `storyboard_assets.py` | storyboard_plan → 素材清单 + ready/paid 预检 | `--storyboard-plan` `--asset-root` `--output` `--strict` |
 | `provider_decision.py` | storyboard_assets → provider 打分、预算、审批和命令可用性决策日志 | `--asset-manifest` `--budget-cap` `--single-action-approval` `--strict` |

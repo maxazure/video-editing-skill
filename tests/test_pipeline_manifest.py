@@ -137,6 +137,25 @@ def test_optional_asset_provenance_blocks_when_unresolved(tmp_path):
     assert "1 blocking item(s) in summary.blocking" in gate["notes"]
 
 
+def test_optional_audio_cue_sheet_blocks_when_unresolved(tmp_path):
+    _publish_ready_project(tmp_path)
+    _write(tmp_path / "work" / "audio_cue_sheet.json", {
+        "version": "audio_cue_sheet.v1",
+        "summary": {
+            "music_cues": 1,
+            "sfx_cues": 2,
+            "blocking": 2,
+        },
+    })
+
+    manifest = build_manifest(str(tmp_path), target_stage="publish_ready")
+
+    assert manifest["status"] == "blocked"
+    assert "audio_cue_sheet" in manifest["blocked_gates"]
+    gate = next(g for g in manifest["gates"] if g["category"] == "audio_cue_sheet")
+    assert "2 blocking item(s) in summary.blocking" in gate["notes"]
+
+
 def test_privacy_redaction_can_be_required(tmp_path):
     _publish_ready_project(tmp_path)
 

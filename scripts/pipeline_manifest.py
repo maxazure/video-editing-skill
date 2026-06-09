@@ -186,6 +186,16 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         blocks_when_present=True,
     ),
     ArtifactDef(
+        "audio_cue_sheet",
+        "Audio Cue Sheet",
+        (
+            "**/audio_cue_sheet.json",
+            "**/*_audio_cue_sheet.json",
+        ),
+        "Run audio_cue_sheet.py and resolve missing local BGM/SFX or generated-audio approvals.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "chapter_markers",
         "Chapter Markers",
         ("**/chapters.json", "**/chapters-youtube.txt", "**/chapters.ffmetadata"),
@@ -323,6 +333,7 @@ def evaluate_category(definition: ArtifactDef, artifacts: Sequence[ArtifactRecor
             "privacy_redaction",
             "localization_pack",
             "asset_provenance",
+            "audio_cue_sheet",
         }:
             blocking = _int_at(data, "summary", "blocking")
             if blocking:
@@ -448,7 +459,7 @@ def build_manifest(
         "next_actions": list(dict.fromkeys(next_actions)),
         "notes": [
             "This manifest is a local run-state summary, not a render queue.",
-            "Optional storyboard/provider/transition artifacts block when present and unresolved.",
+            "Optional storyboard/provider/transition/audio artifacts block when present and unresolved.",
         ],
     }
 

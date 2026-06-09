@@ -38,6 +38,9 @@
    │           ↓                 (Codex 内置 imagegen 工具直接执行；无 API key)
    │           Codex imagegen   注意力机制 / 复利 / 信息茧房 等自动配图
    │
+   ├─→ audio_cue_sheet.py       transcript → BGM / SFX 音频设计清单
+   │                            本地素材优先 / 生成审批 / pipeline gate
+   │
    ├─→ storyboard_plan.py       transcript/clean_script → shot cards
    │                            生成路由 / 连续性锚点 / Dreamina 额度提醒
    │
@@ -114,7 +117,7 @@ cd ~/projects/video-editing-skill
 python3 scripts/utils.py
 
 # 4. 跑一遍测试套件确认 OK
-pytest tests/           # 301 个测试，约 7 秒
+pytest tests/           # 312 个测试，约 4 秒
 ```
 
 每天做一条视频的完整模板：**[docs/prompts/15-xhs-daily-tech-video.md](docs/prompts/15-xhs-daily-tech-video.md)**
@@ -251,6 +254,32 @@ python3 scripts/speaker_turns.py \
 | [`auto_enrich.py`](scripts/auto_enrich.py) | 编排上面四个，输出综合 plan JSON（含 imagegen cues） |
 
 `render_final.py --enrich-plan work/enrich_plan.json` 会把 plan 里的 B-roll、text_badges、章节卡、贴纸和已生成图片 cue 自动接回单次渲染；`--enrich-plan` 可重复传入，用来叠加 `screen_focus_plan.json`、`speaker_badges.json` 这类独立计划。没有实际文件的 imagegen cue 会保留为提示，不会阻塞导出。
+
+### 🎧 Audio Cue Sheet — BGM / SFX 音频设计清单
+[`scripts/audio_cue_sheet.py`](scripts/audio_cue_sheet.py) · [详细文档](docs/prompts/43-audio-cue-sheet.md)
+
+借鉴 OpenMontage / vibeframe / Claude Code Video Toolkit 这类 agentic video 项目对 narration、music、SFX、成本和 review report 的一等公民设计，但保持本项目轻量：只读 transcript 和本地素材目录，不生成音乐、不提交 TTS、不消耗 provider credits。
+
+常用：
+```bash
+python3 scripts/audio_cue_sheet.py \
+  --transcript work/transcript.json \
+  --asset-root media/bgm \
+  --asset-root media/sfx \
+  --output work/audio_cue_sheet.json \
+  --markdown work/audio_cue_sheet.md
+
+python3 scripts/audio_cue_sheet.py \
+  --transcript work/transcript.json \
+  --asset-root media \
+  --require-local-music \
+  --require-local-sfx \
+  --output work/audio_cue_sheet.json \
+  --markdown work/audio_cue_sheet.md \
+  --strict
+```
+
+输出 `audio_cue_sheet.v1`：`voice_track` 记录主口播响度目标，`music[]` 给出全片 BGM mood / BPM / prompt / 本地候选或生成需求，`sfx[]` 根据“但是 / 重点 / 完成 / 风险”等触发词排 whoosh、ping、chime、warning tick。`--strict` 会在要求本地 BGM/SFX 但素材缺失时返回 2；`pipeline_manifest.py` 会自动识别 `audio_cue_sheet.json` 并把 `summary.blocking > 0` 列为 blocking gate。
 
 ### 🎞️ Storyboard Plan — 分镜与生成路由
 [`scripts/storyboard_plan.py`](scripts/storyboard_plan.py) · [`scripts/storyboard_assets.py`](scripts/storyboard_assets.py) · [分镜文档](docs/prompts/24-storyboard-plan.md) · [素材清单文档](docs/prompts/25-storyboard-assets.md)
@@ -777,6 +806,23 @@ python3 scripts/pipeline_manifest.py \
 ```
 
 `publish_ready` 默认要求 `transcript` / `clean_script` / `render_config` / `master_video` / `render_qa` / `caption` 都存在；如果发现 `storyboard_assets.json`、`provider_decision.json`、`transition_bridge_plan.json`、`motion_guard.json`、`speaker_turns.json`、`privacy_redaction.json`、`localization_pack.json` 或 `asset_provenance.json` 里仍有 blocking、approval_required、budget_blocked、QA fail 等问题，`--strict` 返回 2。需要把字幕、章节、说话人、视觉隐私、多语交付或素材授权 review 作为强制交付时可加 `--require subtitles --require chapter_markers --require speaker_turns --require privacy_redaction --require localization_pack --require asset_provenance`。
+
+### 2026-06-10 自动化升级记录（Audio Cue Sheet）
+
+本次联网研究的 GitHub 参考：
+
+| 项目 | 看到的优点 | 本项目吸收方式 |
+|---|---|---|
+| [`calesthio/OpenMontage`](https://github.com/calesthio/OpenMontage) | 把 music、audio mixer、sound-design、预算和 stage gate 明确写进生产流程 | 新增本地 `audio_cue_sheet.py`，把 BGM/SFX 缺口变成 review artifact |
+| [`vericontext/vibeframe`](https://github.com/vericontext/vibeframe) | storyboard cue、music/SFX/narration 生成和 build/review report 统一走 JSON | 输出 `audio_cue_sheet.v1`，保留 cue 来源、状态、route、approval note 和 next actions |
+| [`digitalsamba/claude-code-video-toolkit`](https://github.com/digitalsamba/claude-code-video-toolkit) | 把 voiceover、music、SFX、timing sync 作为项目阶段管理 | 先规划音频，再让 `pipeline_manifest.py` 拦截未解决音频任务 |
+| [`AIDC-AI/Pixelle-Video`](https://github.com/AIDC-AI/Pixelle-Video) | 自动短视频流程显式处理 narration、BGM 和音频/视频时长匹配 | `voice_track` 记录口播主轨时长和响度目标，BGM/SFX 作为次级音频层审查 |
+
+新增/调整能力：新增 `scripts/audio_cue_sheet.py`，可从 `transcript.json` 生成 BGM mood、BPM 范围、music prompt、SFX cue、生成审批和本地素材缺口；扫描 `--asset-root` 下的 `.mp3/.wav/.m4a/.flac/.ogg` 等音频，优先匹配本地 BGM/SFX；新增 `docs/prompts/43-audio-cue-sheet.md`；`pipeline_manifest.py` 新增 `audio_cue_sheet` 可选 gate，发现 `summary.blocking > 0` 会阻塞发布清单。
+
+使用方式：普通 review 用 `python3 scripts/audio_cue_sheet.py --transcript work/transcript.json --asset-root media/bgm --asset-root media/sfx --output work/audio_cue_sheet.json --markdown work/audio_cue_sheet.md`；发布前严格门禁加 `--require-local-music --require-local-sfx --strict`。如果需要生成音乐或音效，先确认 provider credits 和素材授权，再提交生成任务。
+
+验证结果：新增 `tests/test_audio_cue_sheet.py` 7 项，更新 `tests/test_pipeline_manifest.py`；`.venv/bin/python -m pytest tests/test_audio_cue_sheet.py tests/test_pipeline_manifest.py -q` 通过 `18 passed in 0.22s`；完整 `.venv/bin/python -m pytest tests -q` 通过 `312 passed in 3.65s`；`.venv/bin/python -m compileall scripts tests` 通过；`git diff --check` 通过；`.venv/bin/python scripts/audio_cue_sheet.py --help` smoke 验证 CLI 参数正常。
 
 ### 2026-06-09 自动化升级记录（Asset Provenance）
 
@@ -1499,6 +1545,7 @@ pytest tests/test_privacy_redact.py -v      # 视觉隐私遮挡 review + FFmpeg
 | **40** | **[Privacy Redaction](docs/prompts/40-privacy-redaction.md)** | **视觉隐私遮挡 review + 可选渲染** |
 | **41** | **[Localization Pack](docs/prompts/41-localization-pack.md)** | **多语字幕 / 配音交付包** |
 | **42** | **[Asset Provenance](docs/prompts/42-asset-provenance.md)** | **素材来源 / 授权 / 署名门禁** |
+| **43** | **[Audio Cue Sheet](docs/prompts/43-audio-cue-sheet.md)** | **规划 BGM/SFX 和生成审批** |
 
 完整列表见 [docs/prompts/README.md](docs/prompts/README.md)。
 
@@ -1542,6 +1589,7 @@ scripts/
 ├── auto_broll.py               B-roll 调度                      [V3]
 ├── auto_chapter_cards.py       章节卡渲染                       [V3]
 ├── beat_sync.py                BGM 卡点                         [V3]
+├── audio_cue_sheet.py          BGM/SFX 音频设计清单               [V3]
 ├── auto_stickers.py            情绪→贴纸                        [V3]
 ├── imagegen_hint.py            抽象概念→gpt-image-2 提示词       [V3]
 ├── auto_enrich.py              丰富度编排                       [V3]

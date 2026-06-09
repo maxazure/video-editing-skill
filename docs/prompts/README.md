@@ -55,6 +55,7 @@
 | 40 | [Privacy Redaction 视觉隐私遮挡](40-privacy-redaction.md) | 手工框 / 检测 JSON → blur/pixelate/mask review + optional FFmpeg render |
 | 41 | [Localization Pack 多语字幕 / 配音交付包](41-localization-pack.md) | transcript/render_config → 翻译审校、SRT 草稿、dubbing tasks 和发布门禁 |
 | 42 | [Asset Provenance 素材授权 / 署名门禁](42-asset-provenance.md) | media_index/render_config → source/license/credits review + publish gate |
+| 43 | [Audio Cue Sheet 音频设计清单](43-audio-cue-sheet.md) | transcript → BGM/SFX cue、生成审批和音频门禁 |
 
 ## 快速上手
 
@@ -107,3 +108,4 @@
 | 视频里有人脸、车牌、微信号或屏幕敏感信息 | [40-Privacy Redaction](40-privacy-redaction.md) |
 | 中文视频要做英文字幕或配音版 | [41-Localization Pack](41-localization-pack.md) |
 | 用了 Pexels/Pixabay/外部素材，发布前想确认授权和署名 | [42-Asset Provenance](42-asset-provenance.md) |
+| 想先规划 BGM 和音效再渲染 | [43-Audio Cue Sheet](43-audio-cue-sheet.md) |
