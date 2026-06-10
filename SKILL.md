@@ -1,6 +1,6 @@
 ---
 name: video-editing
-description: "Xiaohongshu/RED-tuned content engine for short-form video. Use when: producing daily 小红书/抖音/视频号 videos from raw voice-over + b-roll materials; transcribing speech with mlx-whisper/faster-whisper; exporting editable transcript_review files, applying ASR correction dictionaries, and writing reviewed transcript JSON with redistributed word timings before render; aligning speaker diarization JSON/RTTM or transcript speaker_id fields into speaker_turns JSON/Markdown review packets with crosstalk, unlabeled-speaker gates, and speaker badge enrich plans for podcasts/interviews; planning ASR rough cuts from transcript filler metadata and adjacent repeated sentences; detecting visual scene boundaries with FFmpeg and using them to scene-snap highlight candidates without cutting transcript words; picking scored long-video highlight candidates with hook/value/turn/data signals, warnings, Markdown review tables, optional scene-boundary snapping, and optional render_config handoff; rewriting transcripts into 5-field (hook/pain/turn/value/cta) story structures using 8 hook + 5 CTA templates; running platform-rule content lint (80+ regex for 广告法极限词/导流外站/医美/财富诱导); auto-scheduling B-roll cutaways, chapter title cards, emoji stickers, and BGM beat-sync (librosa); detecting abstract-concept opportunities and emitting gpt-image-2-shaped prompts that the Codex built-in `imagegen` tool can run directly (no API key needed); building storyboard_plan shot cards from transcript/clean_script with generation routing (codex_imagegen / dreamina_video / remotion_hyperframes / media_library_broll), continuity anchors, first/motion/last-frame prompts, and paid-credit approval notes before generating video assets; turning storyboard plans into asset manifests with ready / candidate_found / needs_generation / needs_approval / needs_render / search_needed states so generated media, local motion cards, and B-roll are reviewed before render; scoring storyboard asset providers with provider_decision.py across task fit, quality, control, reliability, cost, latency, continuity, command availability, budget caps, and paid-credit approval gates before generation; planning optional transition bridges between adjacent storyboard shots with transition_bridge.py, including ending/opening frame references, Dreamina paid-credit approval notes, and local fallback routes; checking pre-render motion density with motion_guard.py so motion-led videos do not silently downgrade into still-image slideshows; building smart_reframe.py subject-aware crop/letterbox plans from external detection JSON and scene boundaries before 3:4/9:16 export; ranking indexed local B-roll candidates by tags, filename, duration, aspect, and transparent score reasons via media_library.py recommend; building screen-focus click/hotspot zoom plans for software tutorials and product demos; building privacy_redact.py visual redaction plans from manual boxes or detector JSON for faces, license plates, IDs, and screen-sensitive regions, with blur/pixelate/solid FFmpeg output and publish gates; ingesting repeatable enrich-plan JSON via render_final.py --enrich-plan so B-roll, chapter cards, stickers, generated images, speaker badges, and focus_events feed the final render without manual config copying; removing talking-head pauses with adaptive loudnorm/silencedetect jump cuts and auditable cut lists; generating filmstrip+waveform timeline-view PNGs for cut-boundary or render-QA human review; rendering with audience profiles (tech_pro/lifestyle), Heavy CJK fonts, automatic loudness normalisation (dynaudnorm+compressor+loudnorm), optional voice-aware BGM ducking/fade-in, primary-speed control, karaoke/word-level subtitles, and optional --versioned-output `_V<N>` files that avoid overwriting previous renders; exporting readable SRT/VTT/ASS/JSON subtitle sidecars from transcript or render_config with speed/offset alignment; building localization_pack.py review packages for translated subtitles, readability limits, dubbing_tasks, speaker voice maps, and localization publish gates without calling translation or TTS providers; building asset_provenance.py review packets for media source/license/creator/attribution metadata, credits lines, and publish gates; exporting chapter marker sidecars from transcript/clean_script/manual chapter JSON as JSON, Markdown, FFmetadata, and YouTube timestamps; building pipeline_manifest.py run-state manifests that summarize required artifacts, unresolved storyboard/provider/transition/motion_guard/speaker_turns/privacy_redaction/localization_pack/asset_provenance blockers, render QA status, and publish-ready strict gates; running post-render QA for dimensions/audio/black frames/frozen video/silence and writing review packets with segment evidence plus optional clips; exporting one master into three platform deliverables (xhs 3:4 / douyin 9:16 / wxch ≤60s), optionally using multi_export.py --reframe-plan for subject-aware crops; generating titles + 200-500 char captions + tags + publish-time hints; exporting to JianYing/CapCut; exporting render_config or rough/jump cut lists to CMX 3600-style EDL + manifest for Premiere/Final Cut Pro/Resolve handoff; generating Remotion voiceover animations. Refuses pipeline-internal tokens (speed multipliers, model names, debug strings) on output frames. Requires ffmpeg and a whisper backend (mlx-whisper on Apple Silicon, faster-whisper elsewhere). Pillow needed for chapter cards. librosa optional for real beat detection. Remotion workflow additionally requires Node.js. Image generation routes through Codex `imagegen` (gpt-image-2) when in Codex; outside Codex, callers use the OpenAI Python SDK directly with their own OPENAI_API_KEY (this skill does not bundle an OpenAI client)."
+description: "Xiaohongshu/RED-tuned content engine for short-form video. Use when: producing daily 小红书/抖音/视频号 videos from raw voice-over + b-roll materials; transcribing speech with mlx-whisper/faster-whisper; planning ASR rough cuts from transcript filler metadata and adjacent repeated sentences; rewriting transcripts into 5-field (hook/pain/turn/value/cta) story structures using 8 hook + 5 CTA templates; running platform-rule content lint (80+ regex for 广告法极限词/导流外站/医美/财富诱导); auto-scheduling B-roll cutaways, chapter title cards, emoji stickers, and BGM beat-sync (librosa); detecting abstract-concept opportunities and emitting gpt-image-2-shaped prompts that the Codex built-in `imagegen` tool can run directly (no API key needed); building storyboard_plan shot cards from transcript/clean_script with generation routing (codex_imagegen / dreamina_video / remotion_hyperframes / media_library_broll), continuity anchors, first/motion/last-frame prompts, and paid-credit approval notes before generating video assets; turning storyboard plans into asset manifests with ready / candidate_found / needs_generation / needs_approval / needs_render / search_needed states so generated media, local motion cards, and B-roll are reviewed before render; ranking indexed local B-roll candidates by tags, filename, duration, aspect, and transparent score reasons via media_library.py recommend; building screen-focus click/hotspot zoom plans for software tutorials and product demos; ingesting repeatable enrich-plan JSON via render_final.py --enrich-plan so B-roll, chapter cards, stickers, generated images, and focus_events feed the final render without manual config copying; removing talking-head pauses with adaptive loudnorm/silencedetect jump cuts and auditable cut lists; generating filmstrip+waveform timeline-view PNGs for cut-boundary or render-QA human review; rendering with audience profiles (tech_pro/lifestyle), Heavy CJK fonts, automatic loudness normalisation (dynaudnorm+compressor+loudnorm), primary-speed control, karaoke/word-level subtitles, and optional --versioned-output `_V<N>` files that avoid overwriting previous renders; exporting readable SRT/VTT/ASS/JSON subtitle sidecars from transcript or render_config with speed/offset alignment; running post-render QA for dimensions/audio/black frames/frozen video/silence and writing review packets with segment evidence plus optional clips; exporting one master into three platform deliverables (xhs 3:4 / douyin 9:16 / wxch ≤60s); generating titles + 200-500 char captions + tags + publish-time hints; exporting to JianYing/CapCut; exporting render_config or rough/jump cut lists to CMX 3600-style EDL + manifest for Premiere/Final Cut Pro/Resolve handoff; generating Remotion voiceover animations. Refuses pipeline-internal tokens (speed multipliers, model names, debug strings) on output frames. Requires ffmpeg and a whisper backend (mlx-whisper on Apple Silicon, faster-whisper elsewhere). Pillow needed for chapter cards. librosa optional for real beat detection. Remotion workflow additionally requires Node.js. Image generation routes through Codex `imagegen` (gpt-image-2) when in Codex; outside Codex, callers use the OpenAI Python SDK directly with their own OPENAI_API_KEY (this skill does not bundle an OpenAI client)."
 argument-hint: "Provide the path(s) to voice-over audio + optional b-roll videos to process"
 metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
 ---
@@ -15,11 +15,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 口播音频 + 无声素材
    │
    ├─→ transcribe.py            转写 + 词级时间戳 + 口误标记
-   ├─→ transcript_review.py     transcript → 可编辑校验文件 → reviewed transcript
-   ├─→ speaker_turns.py         diarization JSON/RTTM → 说话人回合 / badge enrich plan
    ├─→ rough_cut.py             ASR 粗剪：去纯口头禅 / 相邻重复句
-   ├─→ scene_boundaries.py      视觉场景边界：ffmpeg scene score / Markdown review
-   ├─→ highlight_picker.py      长视频精华候选：score / hook / scene snap / render_config
    ├─→ rewrite_script.py        LLM 重组 5 段式（hook/pain/turn/value/cta）
    ├─→ content_guard.py         80+ 条平台雷区 lint
    ├─→ auto_enrich.py           B-roll / 章节卡 / 贴纸 / BGM 卡点 / imagegen 提示词
@@ -28,25 +24,18 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ storyboard_plan.py       分镜 shot cards / 生成路由 / 连续性锚点
    ├─→ storyboard_assets.py     素材任务清单 / ready 预检 / paid 额度提醒
    │                            可选 media_library.py recommend 排名 B-roll 候选
-   ├─→ provider_decision.py     生成 provider 打分 / 预算 cap / paid 审批 / 依赖预检
-   ├─→ transition_bridge.py     相邻分镜转场桥接计划 / 尾帧首帧引用 / paid 审批
-   ├─→ motion_guard.py          预渲染 motion density 门禁 / 静态段拦截
+   ├─→ stock_material_plan.py   远程 stock 搜索规划
+   │                            Pexels / Pixabay / Coverr 查询计划 + 素材登记提示
    ├─→ screen_focus.py          录屏点击/热点 → 自动聚焦计划
    ├─→ jump_cut.py              自适应去停顿 + 可审计 cut list（口播/访谈可选）
    ├─→ render_final.py          单次编码渲染（enrich_plan/focus_events + Heavy 字幕 + 响度规范化）
    │                            可选 --versioned-output 防覆盖旧成片
    ├─→ render_qa.py             渲染后黑屏/静帧/静音/尺寸质检 + review packet
-   ├─→ privacy_redact.py        人脸/车牌/屏幕敏感区域 → blur/pixelate/mask review
    ├─→ timeline_view.py         切点/QA 可疑区间 filmstrip + waveform 复盘图
    ├─→ subtitle_pack.py         SRT/VTT/ASS/JSON 字幕交付包（speed/offset 对齐）
-   ├─→ localization_pack.py     多语字幕 / 配音交付包 / dubbing tasks
-   ├─→ asset_provenance.py      素材来源 / 授权 / 署名 review + credits
-   ├─→ chapter_markers.py       JSON/Markdown/FFmetadata/YouTube 章节时间戳
    ├─→ export_edl.py            render_config / cut list → EDL + manifest
-   ├─→ smart_reframe.py         检测 JSON / scene_boundaries → 主体感知裁切计划
    ├─→ multi_export.py          小红书 3:4 / 抖音 9:16 / 视频号 ≤60s
-   ├─→ generate_caption.py      标题 + 200-500 字正文 + 3-6 tags + 发布时段
-   └─→ pipeline_manifest.py     汇总 artifact、缺口和发布前门禁
+   └─→ generate_caption.py      标题 + 200-500 字正文 + 3-6 tags + 发布时段
 ```
 
 **每天做一条短视频的完整提示词模板**：[docs/prompts/15-xhs-daily-tech-video.md](docs/prompts/15-xhs-daily-tech-video.md)（推荐入口）。
@@ -59,14 +48,11 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 |---|---|---|
 | `_internal_text_guard.py` | 拦截内部 token 进画面 | 内部模块，render_final 自动调 |
 | `content_guard.py` | 平台雷区 lint | `--script` `--title` `--caption` `--strict` |
-| `transcript_review.py` | transcript review 导出/应用 + 词级时间重分配 | `export --transcript work/transcript.json --review work/transcript_review.txt` / `apply --transcript work/transcript.json --review work/transcript_review.txt --output work/transcript_reviewed.json` |
-| `speaker_turns.py` | diarization/transcript → 说话人回合 review + speaker badge enrich plan | `--transcript` `--diarization` / `--rttm` `--speaker-map` `--enrich-plan` `--strict` |
 | `rough_cut.py` | transcript 粗剪：去口头禅/重复句 | `--transcript` `--cut-list` / `--input` `--output` |
-| `scene_boundaries.py` | 视频 → 视觉场景边界 + review artifact | `<input>` `--output` `--markdown` `--threshold` |
-| `highlight_picker.py` | transcript → 长视频精华候选 + scene snap + render_config | `--transcript` `--scene-boundaries` `--output` `--markdown` `--render-config` `--strict` |
 | `rewrite_script.py` | LLM 5 段式重组 + 验证 | `--transcript` `--structure` `--hook-template` `--emit-prompt` / `--llm-output` |
 | `auto_broll.py` | B-roll 调度 | `--transcript` `--assets` `--max-single-shot` |
-| `media_library.py` | 本地素材库索引 + B-roll 候选推荐 | `init` `scan` `search` `recommend --category broll --json` |
+| `media_library.py` | 本地素材库索引 + B-roll 候选推荐 + 素材来源登记 | `init` `scan` `search` `recommend --category broll --json` `import` `annotate` |
+| `stock_material_plan.py` | 主题/脚本 → Pexels/Pixabay/Coverr stock 查询计划 | `--subject` `--script` `--provider` `--media-library` `--output` `--markdown` |
 | `auto_chapter_cards.py` | 章节卡 PNG | `--script` `--audio` `--style` `--output-dir` |
 | `auto_stickers.py` | 情绪→贴纸 | `--transcript` `--min-interval` |
 | `beat_sync.py` | BGM 卡点 | `--bgm` `--cuts` `--window` |
@@ -75,24 +61,15 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `audio_cue_sheet.py` | transcript → BGM/SFX cue、生成审批和音频门禁 | `--transcript` `--asset-root` `--require-local-music` `--require-local-sfx` `--strict` |
 | `storyboard_plan.py` | transcript/clean_script → 分镜 shot cards + 生成路由 | `--transcript` `--clean-script` `--output` `--markdown` |
 | `storyboard_assets.py` | storyboard_plan → 素材清单 + ready/paid 预检 | `--storyboard-plan` `--asset-root` `--output` `--strict` |
-| `provider_decision.py` | storyboard_assets → provider 打分、预算、审批和命令可用性决策日志 | `--asset-manifest` `--budget-cap` `--single-action-approval` `--strict` |
-| `transition_bridge.py` | storyboard_plan/assets → 相邻分镜转场 prompt、帧引用和 paid 审批 | `--storyboard-plan` `--asset-manifest` `--mode` `--strict` |
-| `motion_guard.py` | storyboard/render_config → motion ratio、最长静态段和 unresolved motion blockers | `--storyboard-plan` `--asset-manifest` `--motion-required` `--strict` |
 | `screen_focus.py` | 录屏点击/热点 → 聚焦 zoom enrich plan | `--events` `--event` `--screen-width` `--output` |
 | `jump_cut.py` | 自适应静音检测 → 去停顿 cut list / 成片 | `<input.mp4>` `--dry-run` `--cut-list cuts.json` / `--output jumpcut.mp4` |
 | `render_final.py` | 单次编码渲染 + enrich_plan 接入 | `--config render_config.json` `--enrich-plan enrich_plan.json` `--output final.mp4` |
 | `render_qa.py` | 渲染后 QA：尺寸/音频/黑屏/静帧/静音 + review packet | `<video.mp4>` `--platform douyin` `--json qa.json` `--review-dir verify/qa` |
-| `privacy_redact.py` | 手工框/检测 JSON → 视觉隐私遮挡 review + 可选 FFmpeg 渲染 | `--video final.mp4 --detections work/privacy.json --output work/privacy_redaction.json --strict` |
 | `timeline_view.py` | 切点/QA 可疑区间可视化复盘图 | `<video.mp4>` `--at 42.5` `--output view.png` / `--cut-list cuts.json` `--output-dir verify/` |
 | `subtitle_pack.py` | transcript/render_config → SRT/VTT/ASS/JSON 字幕包 | `--transcript work/transcript.json --output-dir output/subtitles` / `--config render_config.json --speed 1.25 --offset 2.0` |
-| `localization_pack.py` | transcript/render_config → 多语字幕 review、SRT 草稿、dubbing tasks、voice map 门禁 | `--transcript work/transcript.json --target-language en --output work/localization_pack.json --strict` |
-| `asset_provenance.py` | media_index/storyboard/render_config → 素材来源、授权、署名和 credits 门禁 | `--media-library work/day58 --render-config work/render_config.json --output work/asset_provenance.json --strict` |
-| `chapter_markers.py` | transcript/clean_script/章节 JSON → 章节元数据交付 | `--transcript work/transcript.json --clean-script work/clean_script.md --output-dir output/chapters` |
 | `export_edl.py` | NLE handoff：导出 EDL + manifest | `--config render_config.json --output edit.edl` / `--cut-list rough_cut.json --output rough.edl` |
-| `smart_reframe.py` | 外部检测 JSON / scene_boundaries → track/center/letterbox 裁切计划 | `<input.mp4>` `--detections work/detections.json --platform douyin --output work/reframe_douyin.json --markdown work/reframe_douyin.md` |
 | `multi_export.py` | 三平台导出 | `<input.mp4>` `--platforms xhs douyin wxch` |
 | `generate_caption.py` | 标题/正文/tag | `--script` `--profile` `--output` |
-| `pipeline_manifest.py` | 生产线 artifact 状态清单/发布门禁 | `--project-dir work/day58 --target-stage publish_ready --strict` |
 | `profiles/__init__.py` | 受众档位加载 | `load_profile("tech_pro")` |
 
 ## V3 新增 render_final.py 标志位
@@ -103,8 +80,6 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `--primary-speed 1.25` | 1.0 | 主输出速度。`--speed` 仍可加额外变种 |
 | `--no-loudnorm` | 不传 = 开启响度规范化 | 关闭 `dynaudnorm + acompressor + loudnorm` |
 | `--no-content-guard` | 不传 = 开启 lint | 关闭平台规则检查（不推荐） |
-| `--bgm-ducking` | 关 | 用人声 sidechain 自动压低 BGM；config 也可写 `"bgm_ducking": true` |
-| `--bgm-fade-in 1` / `--bgm-fade-out 3` | 0 / 3 | BGM 开头/结尾淡入淡出秒数 |
 | `--subtitle-style karaoke` | normal | 逐词卡拉 OK 字幕 |
 | `--enrich-plan work/enrich_plan.json` | 关 | 可重复传入；自动接入 B-roll / 章节卡 / 贴纸 / 生成图 / focus_events |
 | `--versioned-output` | 关 | 输出到下一个 `<name>_V<N>.mp4`，避免覆盖上一版成片 |
@@ -376,6 +351,42 @@ python3 scripts/media_library.py recommend "AI workflow dashboard" \
 
 推荐结果包含 `score`、`reasons`、`absolute_path`，用于人工/agent 先确认再写入 `render_config` 或 `enrich_plan`。默认过滤已经不存在的索引文件；需要清理 stale index 时可加 `--include-missing`。
 
+**本地素材不足时规划 stock 查询**：
+```bash
+python3 scripts/stock_material_plan.py \
+  --subject "AI workflow automation" \
+  --script work/transcript.json \
+  --provider pexels \
+  --provider pixabay \
+  --provider coverr \
+  --media-library . \
+  --output work/stock_material_plan.json \
+  --markdown work/stock_material_plan.md
+```
+
+`stock_material_plan.py` 只生成 `stock_material_plan.v1` 和 Markdown review，不联网、不下载、不消耗额度。它借鉴 MoneyPrinterTurbo 的 `video_terms` / Pexels / Pixabay / Coverr / `video_count` 素材规划方式，但保持本 skill 的 artifact-first 风格。
+
+**下载或客户给的素材确认授权后登记**：
+```bash
+python3 scripts/media_library.py import /path/to/downloaded.mp4 \
+  --project-dir . \
+  --category broll \
+  --copy \
+  --provider pexels \
+  --source-url "https://www.pexels.com/video/demo-123/" \
+  --creator "Demo Creator" \
+  --license "Pexels License" \
+  --tag "workflow,dashboard"
+
+python3 scripts/media_library.py annotate media/broll/downloaded.mp4 \
+  --project-dir . \
+  --source-url "https://example.com/source" \
+  --license "owned" \
+  --tag "client-approved"
+```
+
+登记后的 `provider`、`source_url`、`creator`、`license` 会进入 `media_index.json/db`，后续由 `asset_provenance.py` 做发布门禁。
+
 ### Phase 1: Audio Extraction（音频提取）
 
 对每个输入视频文件，使用 [extract_audio.py](./scripts/extract_audio.py) 提取音频：
@@ -439,54 +450,13 @@ Whisper 常见的识别错误类型：
 - **乱码片段**：语音模糊导致识别为无意义文字的片段（如连续的单字碎片），标记为可跳过
 
 **校验流程**：
-1. 用 `transcript_review.py export` 把 transcript 导出为可编辑 review 文件，可选套用 corrections 字典。
-2. 人工只改每行前缀后的文字，保留 `[seg:<id> start:<time> end:<time>]` 前缀。
-3. 用 `transcript_review.py apply` 生成 `transcript_reviewed.json`，默认不覆盖原始 transcript。
-4. 后续 `rewrite_script.py`、`rough_cut.py`、`storyboard_plan.py`、`subtitle_pack.py` 优先使用 reviewed transcript。
-5. 对于口误/乱码片段，在展示片段列表时（Phase 3）标注为建议跳过。
-
-```bash
-python3 scripts/transcript_review.py export \
-  --transcript work/transcript.json \
-  --review work/transcript_review.txt \
-  --corrections work/corrections.json
-
-python3 scripts/transcript_review.py apply \
-  --transcript work/transcript.json \
-  --review work/transcript_review.txt \
-  --output work/transcript_reviewed.json
-```
-
-`apply` 会把修正记录写入顶层 `review` metadata；带 `words[]` 的 transcript 会按原片段时间范围重新分配词级时间戳，供 karaoke 字幕继续使用。
+1. 读取所有 transcript.json 的文字内容
+2. 逐条检查，列出发现的问题（原文 → 修正 或 标记为可跳过）
+3. 将修正列表展示给用户确认
+4. 用户确认后，直接修改 transcript.json 文件中的 text 字段
+5. 对于口误/乱码片段，在展示片段列表时（Phase 3）标注为建议跳过
 
 **注意**：此步骤必须在 Phase 5（渲染）之前完成，因为字幕文字来源于 transcript.json。修正后再渲染，才能保证最终视频中的字幕文字正确。
-
-### Phase 2.5b: Speaker Turns（播客/访谈说话人回合，可选）
-
-如果素材是播客、访谈、圆桌或双人口播，且已有外部 diarization JSON / RTTM，先把说话人时间段对齐到 transcript：
-
-```bash
-python3 scripts/speaker_turns.py \
-  --transcript work/transcript.json \
-  --diarization work/diarization.json \
-  --speaker-map work/speakers.json \
-  --output work/speaker_turns.json \
-  --markdown work/speaker_turns.md \
-  --enrich-plan work/speaker_badges.json \
-  --min-speakers 2 \
-  --strict
-```
-
-`speaker_turns.py` 不运行 diarization 模型、不上传音频、不消耗 provider credits；它只读本地 artifact，输出 `speaker_turns.v1`、Markdown review 和可选 `speaker_badges.json`。渲染时把 badge 接回：
-
-```bash
-python3 scripts/render_final.py \
-  --config work/render_config.json \
-  --enrich-plan work/speaker_badges.json \
-  --output output/interview_master.mp4
-```
-
-如需发布前强制检查说话人回合，`pipeline_manifest.py --require speaker_turns --strict` 会把 `summary.blocking` 纳入门禁。
 
 ### Phase 2.6: ASR Rough Cut（口头禅/重复句粗剪，可选）
 
@@ -507,30 +477,6 @@ python3 scripts/rough_cut.py \
 ```
 
 `rough_cut.py` 会输出 `decisions` / `removed_segments` / `keep_segments` / `speedup_ratio`。它不调用 LLM，不提交任何付费任务；只用 `transcribe.py --detect-fillers` 的 filler metadata 和相邻文本相似度做保守粗剪。激进切点应再用 `timeline_view.py --cut-list work/rough_cut.json` 复核。
-
-### Phase 2.7: Highlight Picker（长视频精华候选，可选）
-
-如果是长口播、访谈、课程或直播回放，先用 [highlight_picker.py](./scripts/highlight_picker.py) 从 transcript 里挑出 scored candidates，再进入人工选择或渲染：
-
-```bash
-python3 scripts/scene_boundaries.py origin/long-talk.mp4 \
-  --output work/scene_boundaries.json \
-  --markdown work/scene_boundaries.md
-
-python3 scripts/highlight_picker.py \
-  --transcript work/transcript.json \
-  --scene-boundaries work/scene_boundaries.json \
-  --scene-snap-tolerance 1.5 \
-  --video origin/long-talk.mp4 \
-  --output work/highlight_candidates.json \
-  --markdown work/highlight_candidates.md \
-  --render-config work/highlight_render_config.json \
-  --platform xhs \
-  --num-clips 3 \
-  --strict
-```
-
-`scene_boundaries.py` 用本地 FFmpeg 检测视觉场景边界，输出 `scene_boundaries.v1` JSON 和 Markdown review。`highlight_picker.py` 不调用 LLM、不提交任何付费任务；它用 hook question / contrarian / pain / turn / practical value / data / emotion / CTA 等透明信号给滑动 transcript 窗口打分，输出 `score_breakdown`、`signals`、`warnings`、`reason` 和可复核 Markdown。传入 `--scene-boundaries` 后，候选 start 只会向前扩展到附近视觉切点，end 只会向后扩展到附近视觉切点，避免吞字。`--render-config` 输出的 clips 可直接交给 `render_final.py`，但有 `weak opening hook` 或 `may end mid-thought` warning 时应先人工调整。
 
 ### Phase 3: User Interaction（用户交互）
 
@@ -571,7 +517,7 @@ python3 scripts/highlight_picker.py \
 - 转录文字与前一片段高度重复的片段（口误重说）
 
 **长视频自动拆短片**（视频 > 3 分钟时）：
-优先运行 `highlight_picker.py` 生成候选表；如果脚本不可用，再由 AI agent 分析 transcript 识别话题转换点（语义断裂、过渡词如"接下来"、"另外"），将片段按话题分组为独立短视频（每个 30-90 秒），并为每组计算整体吸引力评分：
+AI agent 应分析 transcript 识别话题转换点（语义断裂、过渡词如"接下来"、"另外"），将片段按话题分组为独立短视频（每个 30-90 秒），并为每组计算整体吸引力评分：
 
 ```
 推荐短视频拆分方案：
@@ -616,13 +562,7 @@ python3 scripts/highlight_picker.py \
   ],
   "bgm": "path/to/background_music.mp3",
   "bgm_volume": 0.15,
-  "bgm_fade_in": 1.0,
   "bgm_fade_out": 3.0,
-  "bgm_ducking": true,
-  "bgm_duck_threshold": 0.03,
-  "bgm_duck_ratio": 8.0,
-  "bgm_duck_attack": 20.0,
-  "bgm_duck_release": 250.0,
   "subtitle_style": "karaoke",
   "subtitle_highlight_color": "#FFFF00",
   "chapters": [
@@ -649,7 +589,7 @@ python3 scripts/highlight_picker.py \
 **Auto-Enrich 自动接入**（推荐）：
 - 先运行 `auto_enrich.py --output work/enrich_plan.json`
 - 渲染时加 `--enrich-plan work/enrich_plan.json`
-- `broll[].suggested_asset` 会转成定时 B-roll video overlay；`text_badges[]`、`chapter_cards[]` 和 `stickers[]` 会转成 ASS badge；`chapter_cards[].png` / `imagegen[].image_path` / `imagegen[].generated_path` 会转成定时图片 overlay
+- `broll[].suggested_asset` 会转成定时 B-roll video overlay；`chapter_cards[]` 和 `stickers[]` 会转成 ASS badge；`chapter_cards[].png` / `imagegen[].image_path` / `imagegen[].generated_path` 会转成定时图片 overlay
 - 没有实际生成文件的 imagegen cue 只作为提示输出，不会阻塞渲染
 - 合并后的可见文字仍会走 `_internal_text_guard` 和 `content_guard.py`
 
@@ -666,20 +606,6 @@ python3 scripts/highlight_picker.py \
 - 如果传入 `--media-library`，`media_library_broll` shot 会从素材索引里生成 `candidate_paths` + `candidate_scores`，按 tag、文件名、metadata、时长和画幅透明排名
 - 加 `--strict` 时，任何素材未 ready 都会返回退出码 2，适合放在最终渲染前
 - `needs_approval` 代表 Dreamina/即梦等可能消耗 credits 的任务，必须先确认再提交；生图优先使用 Codex 内置 `image_gen` 工具，即 OpenAI GPT Image 2（`gpt-image-2`）。
-
-**Provider Decision Log 生成供应商选择预检**（生成素材前推荐）：
-- 运行 `provider_decision.py --asset-manifest work/storyboard_assets.json --output work/provider_decision.json --markdown work/provider_decision.md --budget-cap 3.00 --single-action-approval 0.50 --strict`
-- 输出每个 shot 的 provider 候选、7 维评分、预算状态、审批状态、命令依赖和下一步动作
-- 默认候选包括 `codex_imagegen` / `dreamina_video` / `remotion_hyperframes` / `media_library_broll`；已 ready 或已有本地候选的素材不会重复生成
-- 选择逻辑优先尊重 storyboard primary route；primary 不可用时才降级到 fallback
-- `--strict` 在 paid-credit 审批、预算超限、依赖缺失或 fallback 降级时返回退出码 2；生图优先使用 Codex 内置 `image_gen` 工具，即 OpenAI GPT Image 2（`gpt-image-2`）。
-
-**Motion Guard 预渲染动感门禁**（motion-led 片子渲染前推荐）：
-- 运行 `motion_guard.py --storyboard-plan work/storyboard_plan.json --asset-manifest work/storyboard_assets.json --motion-required --output work/motion_guard.json --markdown work/motion_guard.md --strict`
-- 输出 `motion_guard.v1`，记录 `motion_ratio`、最长连续静态/未知段、未解决 motion 素材和 `summary.blocking`
-- `--motion-required --strict` 在静态图过多、连续静态段过长或 motion 素材仍未生成/审批/搜索/渲染时返回 2
-- 如果只检查最终配置，可用 `motion_guard.py --render-config work/render_config.json --enrich-plan work/enrich_plan.json`
-- 失败时优先补本地 B-roll、Remotion/HyperFrames motion card、`screen_focus.py` 聚焦镜头，或确认 credits 后生成 Dreamina/即梦视频
 
 **自定义封面**（`cover_image`）：
 - 提供自定义封面 PNG 路径，优先于自动生成的封面
@@ -705,10 +631,7 @@ python3 scripts/highlight_picker.py \
 **背景音乐**（`bgm`）：
 - 提供背景音乐文件路径（MP3/M4A/WAV 等 FFmpeg 支持的格式）
 - `bgm_volume`：BGM 音量（0.0-1.0），默认 0.15（人声为主，BGM 为辅）
-- `bgm_fade_in`：开头淡入时长（秒），默认 0
 - `bgm_fade_out`：结尾淡出时长（秒），默认 3.0
-- `bgm_ducking`：设为 `true` 或渲染时传 `--bgm-ducking`，用人声 sidechain 自动压低 BGM
-- `bgm_duck_threshold` / `bgm_duck_ratio` / `bgm_duck_attack` / `bgm_duck_release`：细调 FFmpeg `sidechaincompress`，默认分别为 `0.03` / `8.0` / `20ms` / `250ms`
 - BGM 自动循环播放直到视频结束，不需要预先剪辑长度
 - 推荐免费可商用音乐源：Pixabay Music、Mixkit、YouTube Audio Library
 - 选曲建议：口播/教程用轻柔纯音乐（无人声），节奏不要太强，避免抢人声
@@ -928,67 +851,13 @@ python3 scripts/subtitle_pack.py \
 
 `subtitle_pack.py` 可从 `transcript.json` 或 `render_config.json` 生成 SRT/VTT/ASS/JSON。`--config` 会按最终 clips 顺序串接字幕时间线；`--speed` 对齐 `render_final.py --primary-speed`；`--offset` 对齐片头封面秒数。JSON manifest 保留每条 cue 的来源片段和 `over_max_chars` 之类校对警告。
 
-**6d. 多语字幕 / 配音交付包（海外分发或配音版时跑）**：
-```bash
-python3 scripts/localization_pack.py \
-  --transcript work/transcript_reviewed.json \
-  --target-language en \
-  --translations work/localization_en_reviewed.json \
-  --voice-map work/voices.json \
-  --dubbing \
-  --require-translations \
-  --require-voices \
-  --fail-on-readability \
-  --output work/localization_pack.json \
-  --markdown work/localization_pack.md \
-  --strict
-```
-
-`localization_pack.py` 不调用翻译或 TTS；它生成 `localization_pack.v1`，把 target_text、subtitle readability、estimated TTS speed、speaker voice map 和 `dubbing_tasks[]` 放进一个 review artifact。缺翻译、字幕过长、TTS 速度超限或缺 voice 时写入 `summary.blocking`。
-
-**6e. 素材来源 / 授权 / 署名门禁（外部素材或发布前跑）**：
-```bash
-python3 scripts/asset_provenance.py \
-  --media-library work/day58 \
-  --asset-manifest work/storyboard_assets.json \
-  --render-config work/render_config.json \
-  --enrich-plan work/enrich_plan.json \
-  --output work/asset_provenance.json \
-  --markdown work/asset_provenance.md \
-  --strict
-```
-
-`asset_provenance.py` 不搜索、不下载、不调用 stock API；它读取 media_index、storyboard asset manifest、render_config、enrich_plan 或显式 `--asset`，输出 `asset_provenance.v1`、Markdown review 和 `credits[]`。Pexels/Pixabay/Unsplash/自有素材/生成素材有内置基础策略；CC BY 缺署名、缺文件、外部来源缺授权清理等写入 `summary.blocking`。需要强制每个素材都有授权元数据时加 `--require-known-license`。生图优先使用 Codex 内置 `image_gen` 工具，即 OpenAI GPT Image 2（`gpt-image-2`）。
-
-**6f. 章节 marker 交付（YouTube/B站/课程/metadata 时跑）**：
-```bash
-python3 scripts/chapter_markers.py \
-  --transcript work/transcript.json \
-  --clean-script work/clean_script.md \
-  --output-dir output/chapters
-```
-
-`chapter_markers.py` 会输出 `chapters.json`、`chapters.md`、`chapters.ffmetadata` 和 `chapters-youtube.txt`。`--chapters work/chapters_draft.json --duration 720` 可读取人工/LLM 已确认的章节。`--strict` 在首章非 0:00、章节间隔过短等 warning 时返回 2，适合发布前拦截。
-
-**6g. 生产线 artifact 门禁（发布前跑）**：
-```bash
-python3 scripts/pipeline_manifest.py \
-  --project-dir work/day58 \
-  --target-stage publish_ready \
-  --output work/day58/pipeline_manifest.json \
-  --markdown work/day58/pipeline_manifest.md \
-  --strict
-```
-
-`pipeline_manifest.py` 会汇总 transcript、clean_script、render_config、master video、render QA、caption，以及 storyboard/provider/transition/motion_guard/speaker_turns/privacy_redaction/localization_pack/asset_provenance 的阻塞状态。`--strict` 在缺少必需 artifact、QA fail、paid approval、budget blocker、motion_guard、speaker_turns、privacy_redaction、localization_pack 或 asset_provenance blocker 未解决时返回 2；需要强制字幕、章节、说话人回合、视觉隐私、多语交付或素材授权审查时，加 `--require subtitles --require chapter_markers --require speaker_turns --require privacy_redaction --require localization_pack --require asset_provenance`。
-
-**6h. 音频重复检测**：
+**6d. 音频重复检测**：
 1. 提取最终视频的音频
 2. 重新进行语音识别
 3. 检查识别结果中是否存在相邻片段的文字重复（前一句末尾 2-3 个字与后一句开头重复）
 4. 如发现技术性重复（非自然语言重复），需要调整 render_config.json 中的片段选择
 
-**6i. 字幕文字最终校验**：
+**6d. 字幕文字最终校验**：
 1. 读取最终视频使用的所有 transcript 片段的文字
 2. 按最终视频的片段顺序，逐条检查以下问题：
    - **语音识别残留错误**：Phase 2.5 可能遗漏的同音字、专有名词错误

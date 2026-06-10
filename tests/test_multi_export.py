@@ -9,7 +9,6 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts"))
 
 from multi_export import PRESETS, _source_aspect_filter, build_ffmpeg_command  # noqa: E402
-from smart_reframe import build_reframe_plan  # noqa: E402
 
 
 def test_three_presets_present():
@@ -68,73 +67,3 @@ def test_build_command_uses_faststart():
     assert "-movflags" in cmd
     idx = cmd.index("-movflags")
     assert cmd[idx + 1] == "+faststart"
-
-
-def test_build_command_can_use_single_segment_reframe_plan():
-    plan = build_reframe_plan(
-        video_path="in.mp4",
-        src_w=1920,
-        src_h=1080,
-        duration=10.0,
-        dst_w=1080,
-        dst_h=1920,
-        platform="douyin",
-        detections_payload=[
-            {"time": 2.0, "label": "face", "bbox": [1450, 200, 1600, 380]},
-        ],
-    )
-
-    cmd = build_ffmpeg_command(
-        "in.mp4",
-        "out.mp4",
-        PRESETS["douyin"],
-        src_w=1920,
-        src_h=1080,
-        src_duration=10.0,
-        reframe_plan=plan,
-    )
-
-    assert "-vf" in cmd
-    vf = cmd[cmd.index("-vf") + 1]
-    assert "crop=608:1080" in vf
-    assert "scale=1080:1920" in vf
-
-
-def test_build_command_uses_filter_complex_for_multi_segment_reframe_plan():
-    plan = build_reframe_plan(
-        video_path="in.mp4",
-        src_w=1920,
-        src_h=1080,
-        duration=6.0,
-        dst_w=1080,
-        dst_h=1920,
-        platform="douyin",
-        scene_plan={
-            "scenes": [
-                {"scene_id": "scene_001", "start": 0.0, "end": 3.0},
-                {"scene_id": "scene_002", "start": 3.0, "end": 6.0},
-            ]
-        },
-        detections_payload=[
-            {"time": 1.0, "label": "face", "bbox": [120, 200, 240, 380]},
-            {"time": 4.0, "label": "face", "bbox": [1500, 200, 1640, 380]},
-        ],
-        merge_tolerance_px=0,
-    )
-
-    cmd = build_ffmpeg_command(
-        "in.mp4",
-        "out.mp4",
-        PRESETS["douyin"],
-        src_w=1920,
-        src_h=1080,
-        src_duration=6.0,
-        reframe_plan=plan,
-    )
-
-    assert "-filter_complex" in cmd
-    fc = cmd[cmd.index("-filter_complex") + 1]
-    assert "trim=start=0.000:end=3.000" in fc
-    assert "concat=n=2:v=1:a=0[vout]" in fc
-    assert "-map" in cmd
-    assert "[vout]" in cmd

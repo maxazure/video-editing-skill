@@ -33,34 +33,8 @@
      --engine auto --model auto --language zh --word-timestamps --detect-fillers \
      > work/transcript.json
 
-1b. python3 scripts/transcript_review.py export \
-     --transcript work/transcript.json \
-     --review work/transcript_review.txt \
-     --corrections work/corrections.json
-
-   打开 work/transcript_review.txt，修正 ASR 错词，只改每行前缀后的文字。保存后：
-
-   python3 scripts/transcript_review.py apply \
-     --transcript work/transcript.json \
-     --review work/transcript_review.txt \
-     --output work/transcript_reviewed.json
-
-1b. # 如果素材是播客/访谈/双人口播，且已有外部 diarization JSON 或 RTTM：
-    python3 scripts/speaker_turns.py \
-      --transcript work/transcript_reviewed.json \
-      --diarization work/diarization.json \
-      --speaker-map work/speakers.json \
-      --output work/speaker_turns.json \
-      --markdown work/speaker_turns.md \
-      --enrich-plan work/speaker_badges.json \
-      --min-speakers 2 \
-      --strict
-    # 如果只有 RTTM，把 --diarization 换成 --rttm work/audio.rttm。
-    # 渲染时可把 work/speaker_badges.json 作为额外 --enrich-plan。
-    # 详见 docs/prompts/39-speaker-turns.md
-
 2. python3 scripts/rewrite_script.py \
-     --transcript work/transcript_reviewed.json \
+     --transcript work/transcript.json \
      --structure pain_solve \
      --hook-template auto \
      --max-duration 150 \
@@ -71,12 +45,12 @@
 
 3. （你输出 JSON 后）保存到 work/llm.json，然后：
    python3 scripts/rewrite_script.py \
-     --transcript work/transcript_reviewed.json \
+     --transcript work/transcript.json \
      --llm-output work/llm.json \
      --output work/clean_script.md
 
 4. python3 scripts/auto_enrich.py \
-     --transcript work/transcript_reviewed.json \
+     --transcript work/transcript.json \
      --clean-script work/clean_script.md \
      --bgm origin/<bgm>.mp3 \
      --output work/enrich_plan.json
@@ -89,7 +63,7 @@
 
 4c. # 生成分镜 shot cards，先审查生成路由和连续性，再决定是否消耗视频生成额度：
     python3 scripts/storyboard_plan.py \
-      --transcript work/transcript_reviewed.json \
+      --transcript work/transcript.json \
       --clean-script work/clean_script.md \
       --output work/storyboard_plan.json \
       --markdown work/storyboard_plan.md \
@@ -107,18 +81,7 @@
     # 渲染前可加 --strict；如果有 needs_approval，提交 Dreamina/即梦前必须确认 credits。
     # 详见 docs/prompts/25-storyboard-assets.md
 
-4e. # 如果这条片子承诺有运动感 / motion-led，渲染前先拦截“静态图堆成幻灯片”：
-    python3 scripts/motion_guard.py \
-      --storyboard-plan work/storyboard_plan.json \
-      --asset-manifest work/storyboard_assets.json \
-      --motion-required \
-      --output work/motion_guard.json \
-      --markdown work/motion_guard.md \
-      --strict
-    # 如果返回 2，先补 B-roll、motion card、screen_focus 或经确认后生成 Dreamina/即梦视频。
-    # 详见 docs/prompts/37-motion-guard.md
-
-4f. # 如果输入是完整口播视频、访谈或录屏，且停顿很多，可先生成去停顿 cut list：
+4e. # 如果输入是完整口播视频、访谈或录屏，且停顿很多，可先生成去停顿 cut list：
     python3 scripts/jump_cut.py origin/<talking_video>.mp4 \
       --dry-run \
       --cut-list work/jumpcut.json
@@ -138,8 +101,7 @@
 
    (任何 HARD violation 必须先去掉再继续；SOFT 警告需要权衡)
 
-6. # 如 1b 生成了 speaker_badges.json，可额外加一条 --enrich-plan work/speaker_badges.json
-   python3 scripts/render_final.py \
+6. python3 scripts/render_final.py \
      --config work/render_config.json \
      --enrich-plan work/enrich_plan.json \
      --profile tech_pro \
@@ -216,11 +178,6 @@ day<NN>/
 │   ├── storyboard_plan.md   # 人工 review 版分镜卡
 │   ├── storyboard_assets.json # 素材任务清单 + ready/paid 预检
 │   ├── storyboard_assets.md   # 人工 review 版素材表
-│   ├── motion_guard.json   # 可选：预渲染动感门禁
-│   ├── motion_guard.md     # 可选：motion density review packet
-│   ├── speaker_turns.json  # 可选：播客/访谈说话人回合 review
-│   ├── speaker_turns.md
-│   ├── speaker_badges.json # 可选：说话人 badge enrich plan
 │   ├── jumpcut.json        # 可选：去停顿 cut list
 │   ├── day<NN>_edit.edl    # 可选：NLE handoff
 │   ├── day<NN>_edit.edl.json # 可选：EDL manifest

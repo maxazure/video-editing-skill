@@ -28,27 +28,6 @@
 
 ## 自动拆分（让 AI 判断怎么分）
 
-如果已经有 `transcript.json`，先跑本地候选打分，拿到可复核的短视频候选：
-
-```bash
-python3 scripts/scene_boundaries.py media/raw/long-talk.mp4 \
-  --output work/scene_boundaries.json \
-  --markdown work/scene_boundaries.md
-
-python3 scripts/highlight_picker.py \
-  --transcript work/long_transcript.json \
-  --scene-boundaries work/scene_boundaries.json \
-  --scene-snap-tolerance 1.5 \
-  --video media/raw/long-talk.mp4 \
-  --output work/highlight_candidates.json \
-  --markdown work/highlight_candidates.md \
-  --render-config work/highlight_render_config.json \
-  --platform xhs \
-  --num-clips 4
-```
-
-先看 `work/scene_boundaries.md` 确认视觉切点没有过密，再看 `work/highlight_candidates.md`，确认每条都有完整 hook 和收尾。`Scene Snap` 会显示候选片段向前/向后扩展了多少秒来对齐画面切换；确认后再用 `work/highlight_render_config.json` 进入渲染。
-
 ```
 这个视频比较长（15 分钟），帮我分析内容后自动拆分成几条短视频。
 你来判断按什么话题分比较合理，每条大概 1 分钟。

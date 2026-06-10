@@ -42,20 +42,8 @@
 | 27 | [NLE Handoff 导出 EDL](27-export-edl.md) | render_config / cut list → 单轨 EDL + manifest，交给 Premiere/FCP/Resolve |
 | 28 | [Screen Focus 点击聚焦](28-screen-focus.md) | 录屏点击/热点 → 自动放大、标记、标签计划 |
 | 29 | [Subtitle Pack 字幕交付包](29-subtitle-pack.md) | transcript/render_config → SRT/VTT/ASS/JSON，支持加速和片头 offset |
-| 30 | [Provider Decision Log 生成供应商选择预检](30-provider-decision.md) | storyboard_assets → provider 打分、预算、审批和命令可用性决策日志 |
-| 31 | [Highlight Picker 长视频精华候选](31-highlight-picker.md) | transcript → scored short-form candidates + render_config |
-| 32 | [Scene Boundaries 视觉场景边界](32-scene-boundaries.md) | FFmpeg scene cuts → highlight picker 自然切点对齐 |
-| 33 | [Transition Bridge 转场桥接计划](33-transition-bridge.md) | storyboard_plan/assets → 相邻镜头转场 prompt、帧引用和 paid 审批 |
-| 34 | [Chapter Markers 章节元数据交付](34-chapter-markers.md) | transcript/clean_script/章节 JSON → YouTube timestamps + FFmetadata |
-| 35 | [Pipeline Manifest 生产线状态清单](35-pipeline-manifest.md) | 扫描本地 artifact，汇总进度、缺口和发布前门禁 |
-| 36 | [Transcript Review 转录校验回路](36-transcript-review.md) | transcript JSON → 可编辑 review 文件 → 修正后 transcript |
-| 37 | [Motion Guard 预渲染动感门禁](37-motion-guard.md) | storyboard/render_config → motion ratio、最长静态段和 blockers |
-| 38 | [Smart Reframe 主体感知裁切](38-smart-reframe.md) | 检测 JSON / scene_boundaries → track / center / letterbox reframe plan |
-| 39 | [Speaker Turns 说话人回合](39-speaker-turns.md) | diarization JSON/RTTM + transcript → speaker turn review + badge enrich plan |
-| 40 | [Privacy Redaction 视觉隐私遮挡](40-privacy-redaction.md) | 手工框 / 检测 JSON → blur/pixelate/mask review + optional FFmpeg render |
-| 41 | [Localization Pack 多语字幕 / 配音交付包](41-localization-pack.md) | transcript/render_config → 翻译审校、SRT 草稿、dubbing tasks 和发布门禁 |
-| 42 | [Asset Provenance 素材授权 / 署名门禁](42-asset-provenance.md) | media_index/render_config → source/license/credits review + publish gate |
 | 43 | [Audio Cue Sheet 音频设计清单](43-audio-cue-sheet.md) | transcript → BGM/SFX cue、生成审批和音频门禁 |
+| 44 | [Stock Material Plan 远程素材搜索规划](44-stock-material-plan.md) | 主题/脚本 → stock 搜索词、Pexels/Pixabay/Coverr 查询计划、本地素材登记 |
 
 ## 快速上手
 
@@ -96,16 +84,5 @@
 | 想把自动剪辑方案交给专业剪辑软件 | [27-NLE Handoff](27-export-edl.md) |
 | 软件录屏里想自动放大点击位置 | [28-Screen Focus](28-screen-focus.md) |
 | 平台要上传 SRT/VTT 字幕文件 | [29-Subtitle Pack](29-subtitle-pack.md) |
-| 生成图片/视频前想先看 provider、预算和审批风险 | [30-Provider Decision Log](30-provider-decision.md) |
-| 长视频想先自动挑最值得剪的片段 | [31-Highlight Picker](31-highlight-picker.md) |
-| 长视频剪点想对齐画面切换 | [32-Scene Boundaries](32-scene-boundaries.md) |
-| 相邻分镜之间跳得太硬 | [33-Transition Bridge](33-transition-bridge.md) |
-| 想给长视频/课程导出章节时间戳 | [34-Chapter Markers](34-chapter-markers.md) |
-| 想先人工修正 ASR 错词再渲染字幕 | [36-Transcript Review](36-transcript-review.md) |
-| 担心生成图太多导致成片像幻灯片 | [37-Motion Guard](37-motion-guard.md) |
-| 横屏素材转竖屏时不想中心裁掉人物 | [38-Smart Reframe](38-smart-reframe.md) |
-| 播客/访谈想先确认谁在说话 | [39-Speaker Turns](39-speaker-turns.md) |
-| 视频里有人脸、车牌、微信号或屏幕敏感信息 | [40-Privacy Redaction](40-privacy-redaction.md) |
-| 中文视频要做英文字幕或配音版 | [41-Localization Pack](41-localization-pack.md) |
-| 用了 Pexels/Pixabay/外部素材，发布前想确认授权和署名 | [42-Asset Provenance](42-asset-provenance.md) |
 | 想先规划 BGM 和音效再渲染 | [43-Audio Cue Sheet](43-audio-cue-sheet.md) |
+| 本地 B-roll 不够，想先规划 stock 素材搜索 | [44-Stock Material Plan](44-stock-material-plan.md) |

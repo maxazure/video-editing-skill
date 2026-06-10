@@ -19,6 +19,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import sqlite3
 import sys
 import uuid
@@ -384,6 +385,102 @@ def _resolve_item_path(project_dir, item_path):
     if os.path.isabs(path):
         return os.path.abspath(path)
     return os.path.abspath(os.path.join(project_dir, path))
+
+
+def _path_for_index(project_dir, file_path):
+    """Store project-local paths relatively and external files absolutely."""
+    abs_project = os.path.abspath(project_dir)
+    abs_file = os.path.abspath(file_path)
+    try:
+        rel = os.path.relpath(abs_file, abs_project)
+    except ValueError:
+        return abs_file
+    if rel == "." or rel.startswith(".."):
+        return abs_file
+    return rel
+
+
+def _parse_tag_args(values):
+    tags = []
+    for value in values or []:
+        for tag in re.split(r"[,，;；\n]+", str(value)):
+            cleaned = tag.strip()
+            if cleaned and cleaned not in tags:
+                tags.append(cleaned)
+    return tags
+
+
+def _metadata_from_args(args):
+    metadata = {}
+    for key in ("provider", "source_url", "creator", "license", "license_url", "notes"):
+        value = getattr(args, key, None)
+        if value not in (None, ""):
+            metadata[key] = value
+    return metadata or None
+
+
+def _unique_destination(directory, filename):
+    os.makedirs(directory, exist_ok=True)
+    base, ext = os.path.splitext(filename)
+    candidate = os.path.join(directory, filename)
+    if not os.path.exists(candidate):
+        return candidate
+    idx = 2
+    while True:
+        candidate = os.path.join(directory, f"{base}-{idx}{ext}")
+        if not os.path.exists(candidate):
+            return candidate
+        idx += 1
+
+
+def build_media_item(project_dir, file_path, *, category=None, tags=None, metadata=None):
+    """Build an index item for one registered media file."""
+    classification = classify_file(file_path, project_dir)
+    if category:
+        classification["category"] = category
+
+    item = {
+        "path": _path_for_index(project_dir, file_path),
+        "type": classification["type"],
+        "category": classification["category"],
+        "file_size": os.path.getsize(file_path) if os.path.exists(file_path) else None,
+        "tags": tags or None,
+        "metadata": metadata or None,
+    }
+
+    if classification["type"] == "video" and os.path.exists(file_path):
+        try:
+            duration, width, height, fps, _rotation = get_video_info(file_path)
+            item["duration"] = duration
+            item["width"] = width
+            item["height"] = height
+            item["fps"] = fps
+        except Exception:
+            item["duration"] = None
+            item["width"] = None
+            item["height"] = None
+            item["fps"] = None
+
+        transcript = _find_transcript(file_path)
+        if transcript:
+            item["transcript_path"] = _path_for_index(project_dir, transcript)
+
+    return item
+
+
+def find_index_item(project_dir, index, item_path):
+    """Find an indexed item by stored path or resolved absolute path."""
+    wanted_abs = _resolve_item_path(project_dir, item_path)
+    wanted_norm = os.path.normcase(os.path.abspath(wanted_abs))
+    wanted_raw = str(item_path)
+    for item in index.get_all():
+        stored = str(item.get("path") or "")
+        if stored == wanted_raw:
+            return item
+        stored_abs = _resolve_item_path(project_dir, stored)
+        if os.path.normcase(os.path.abspath(stored_abs)) == wanted_norm:
+            return item
+    return None
 
 
 def _flatten_text(value):
@@ -892,6 +989,104 @@ def cmd_recommend(args):
         )
 
 
+def cmd_import(args):
+    """Register or copy a media asset into the index with provenance metadata."""
+    project_dir = os.path.abspath(args.project_dir)
+    source_path = os.path.abspath(os.path.expanduser(args.path))
+    if not os.path.isfile(source_path):
+        print(f"media file not found: {args.path}", file=sys.stderr)
+        return 1
+
+    category = args.category
+    target_path = source_path
+    if args.copy:
+        if not category:
+            category = classify_file(source_path, project_dir).get("category") or "assets"
+        destination_dir = os.path.join(project_dir, "media", category)
+        target_path = _unique_destination(destination_dir, os.path.basename(source_path))
+        shutil.copy2(source_path, target_path)
+
+    tags = _parse_tag_args(args.tag)
+    metadata = _metadata_from_args(args)
+    item = build_media_item(
+        project_dir,
+        target_path,
+        category=category,
+        tags=tags,
+        metadata=metadata,
+    )
+
+    index = open_index(project_dir)
+    try:
+        index.add(item)
+        index.save()
+    finally:
+        if hasattr(index, "close"):
+            index.close()
+
+    payload = {
+        "status": "imported",
+        "project_dir": project_dir,
+        "copied": bool(args.copy),
+        "source_path": source_path,
+        "item": item,
+    }
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        print(f"Imported: {item['path']}")
+        if metadata:
+            print(f"  metadata: {json.dumps(metadata, ensure_ascii=False)}")
+        if tags:
+            print(f"  tags: {', '.join(tags)}")
+    return 0
+
+
+def cmd_annotate(args):
+    """Update tags/category/provenance metadata for an existing index item."""
+    project_dir = os.path.abspath(args.project_dir)
+    index = open_index(project_dir)
+    try:
+        item = find_index_item(project_dir, index, args.path)
+        if not item:
+            print(f"indexed media not found: {args.path}", file=sys.stderr)
+            return 1
+
+        if args.category:
+            item["category"] = args.category
+
+        new_tags = _parse_tag_args(args.tag)
+        if new_tags:
+            existing_tags = item.get("tags") or []
+            if isinstance(existing_tags, str):
+                existing_tags = _parse_tag_args([existing_tags])
+            for tag in new_tags:
+                if tag not in existing_tags:
+                    existing_tags.append(tag)
+            item["tags"] = existing_tags
+
+        new_metadata = _metadata_from_args(args)
+        if new_metadata:
+            existing_metadata = item.get("metadata") or {}
+            if not isinstance(existing_metadata, dict):
+                existing_metadata = {"notes": str(existing_metadata)}
+            existing_metadata.update(new_metadata)
+            item["metadata"] = existing_metadata
+
+        index.add(item)
+        index.save()
+    finally:
+        if hasattr(index, "close"):
+            index.close()
+
+    payload = {"status": "annotated", "project_dir": project_dir, "item": item}
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        print(f"Annotated: {item.get('path')}")
+    return 0
+
+
 def cmd_upgrade(args):
     """Force upgrade from JSON to SQLite backend."""
     project_dir = os.path.abspath(args.project_dir)
@@ -958,6 +1153,50 @@ def main():
     p_recommend.add_argument("--json", action="store_true",
                              help="Emit machine-readable recommendation JSON")
 
+    # import
+    p_import = subparsers.add_parser(
+        "import",
+        help="Register or copy one media asset with provenance metadata",
+    )
+    p_import.add_argument("path", help="Media file to register")
+    p_import.add_argument("--project-dir", default=".",
+                          help="Project root directory (default: .)")
+    p_import.add_argument("--category", choices=sorted(MEDIA_DIRS),
+                          default=None, help="Override category, e.g. broll")
+    p_import.add_argument("--copy", action="store_true",
+                          help="Copy the file into media/<category>/ before indexing")
+    p_import.add_argument("--tag", action="append",
+                          help="Tag(s) to attach. Repeatable or comma-separated")
+    p_import.add_argument("--provider", help="Source provider, e.g. pexels, pixabay, coverr, owned")
+    p_import.add_argument("--source-url", help="Original source URL for provenance")
+    p_import.add_argument("--creator", help="Creator/author attribution")
+    p_import.add_argument("--license", help="License name or policy")
+    p_import.add_argument("--license-url", help="License URL")
+    p_import.add_argument("--notes", help="Free-form provenance notes")
+    p_import.add_argument("--json", action="store_true",
+                          help="Emit machine-readable import result")
+
+    # annotate
+    p_annotate = subparsers.add_parser(
+        "annotate",
+        help="Update tags/category/provenance metadata for an indexed asset",
+    )
+    p_annotate.add_argument("path", help="Indexed path or absolute file path")
+    p_annotate.add_argument("--project-dir", default=".",
+                            help="Project root directory (default: .)")
+    p_annotate.add_argument("--category", choices=sorted(MEDIA_DIRS),
+                            default=None, help="Override category")
+    p_annotate.add_argument("--tag", action="append",
+                            help="Tag(s) to add. Repeatable or comma-separated")
+    p_annotate.add_argument("--provider", help="Source provider")
+    p_annotate.add_argument("--source-url", help="Original source URL for provenance")
+    p_annotate.add_argument("--creator", help="Creator/author attribution")
+    p_annotate.add_argument("--license", help="License name or policy")
+    p_annotate.add_argument("--license-url", help="License URL")
+    p_annotate.add_argument("--notes", help="Free-form provenance notes")
+    p_annotate.add_argument("--json", action="store_true",
+                            help="Emit machine-readable annotation result")
+
     # upgrade
     p_upgrade = subparsers.add_parser("upgrade", help="Upgrade JSON → SQLite")
     p_upgrade.add_argument("project_dir", nargs="?", default=".",
@@ -975,10 +1214,14 @@ def main():
         "status": cmd_status,
         "search": cmd_search,
         "recommend": cmd_recommend,
+        "import": cmd_import,
+        "annotate": cmd_annotate,
         "upgrade": cmd_upgrade,
     }
 
-    commands[args.command](args)
+    result = commands[args.command](args)
+    if isinstance(result, int):
+        sys.exit(result)
 
 
 if __name__ == "__main__":

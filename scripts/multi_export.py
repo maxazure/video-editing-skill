@@ -18,17 +18,11 @@ import json
 import os
 import subprocess
 import sys
-from typing import Any, Mapping, List, Optional
+from typing import List, Optional
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from utils import get_video_info, get_ffmpeg_encode_args  # noqa: E402
-from smart_reframe import (  # noqa: E402
-    build_reframe_filter_complex,
-    build_reframe_vf,
-    load_reframe_plan,
-    plan_matches_target,
-)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -86,24 +80,9 @@ def _source_aspect_filter(src_w: int, src_h: int, dst_w: int, dst_h: int) -> str
 
 
 def build_ffmpeg_command(input_path: str, output_path: str, preset: PlatformPreset,
-                          src_w: int, src_h: int, src_duration: float,
-                          reframe_plan: Optional[Mapping[str, Any]] = None) -> List[str]:
+                          src_w: int, src_h: int, src_duration: float) -> List[str]:
     """Build the ffmpeg command for one platform preset."""
-    filter_complex: Optional[str] = None
-    if reframe_plan:
-        if not plan_matches_target(reframe_plan, preset.width, preset.height, preset.name):
-            target = reframe_plan.get("target") or {}
-            raise ValueError(
-                "reframe plan target "
-                f"{target.get('platform')} {target.get('width')}x{target.get('height')} "
-                f"does not match {preset.name} {preset.width}x{preset.height}"
-            )
-        vf = build_reframe_vf(reframe_plan)
-        if vf is None:
-            filter_complex = build_reframe_filter_complex(reframe_plan)
-    else:
-        vf = _source_aspect_filter(src_w, src_h, preset.width, preset.height)
-
+    vf = _source_aspect_filter(src_w, src_h, preset.width, preset.height)
     cmd: List[str] = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
                        "-i", input_path]
 
@@ -111,10 +90,7 @@ def build_ffmpeg_command(input_path: str, output_path: str, preset: PlatformPres
         cmd.extend(["-t", f"{preset.max_duration_seconds:.2f}"])
 
     encode = get_ffmpeg_encode_args()
-    if filter_complex:
-        cmd.extend(["-filter_complex", filter_complex, "-map", "[vout]", "-map", "0:a?"])
-    else:
-        cmd.extend(["-vf", vf])
+    cmd.extend(["-vf", vf])
     cmd.extend(encode)
     cmd.extend([
         "-crf", str(preset.crf),
@@ -125,23 +101,16 @@ def build_ffmpeg_command(input_path: str, output_path: str, preset: PlatformPres
     return cmd
 
 
-def export_one(input_path: str, output_dir: str, preset: PlatformPreset,
-               reframe_plan: Optional[Mapping[str, Any]] = None) -> Optional[str]:
+def export_one(input_path: str, output_dir: str, preset: PlatformPreset) -> Optional[str]:
     src_duration, src_w, src_h, _fps, _rot = get_video_info(input_path)
 
     os.makedirs(output_dir, exist_ok=True)
     base = os.path.splitext(os.path.basename(input_path))[0]
     out_path = os.path.join(output_dir, f"{base}_{preset.name}.mp4")
 
-    try:
-        cmd = build_ffmpeg_command(input_path, out_path, preset, src_w, src_h, src_duration, reframe_plan)
-    except ValueError as exc:
-        print(f"   ❌ {exc}", file=sys.stderr)
-        return None
+    cmd = build_ffmpeg_command(input_path, out_path, preset, src_w, src_h, src_duration)
     print(f"\n[{preset.name}] {preset.width}×{preset.height}  →  {out_path}")
     print(f"   {preset.notes}")
-    if reframe_plan:
-        print(f"   smart reframe: {reframe_plan.get('summary', {}).get('strategies', {})}")
     try:
         subprocess.run(cmd, check=True)
     except subprocess.CalledProcessError as exc:
@@ -159,8 +128,6 @@ def main() -> int:
                    help="Platforms to export (default: all)")
     p.add_argument("--dry-run", action="store_true",
                    help="Print the ffmpeg commands without running")
-    p.add_argument("--reframe-plan",
-                   help="Optional smart_reframe.py JSON for the matching platform/target size")
     args = p.parse_args()
 
     if not os.path.isfile(args.input):
@@ -170,36 +137,17 @@ def main() -> int:
     src_duration, src_w, src_h, _fps, _rot = get_video_info(args.input)
     print(f"Source: {src_w}×{src_h}, {src_duration:.2f}s")
 
-    try:
-        reframe_plan = load_reframe_plan(args.reframe_plan) if args.reframe_plan else None
-    except (OSError, ValueError) as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        return 1
-
     summary: List[dict] = []
     for plat in args.platforms:
         preset = PRESETS[plat]
         out_path = os.path.join(args.output_dir, f"{os.path.splitext(os.path.basename(args.input))[0]}_{plat}.mp4")
-        try:
-            cmd = build_ffmpeg_command(args.input, out_path, preset, src_w, src_h, src_duration, reframe_plan)
-        except ValueError as exc:
-            print(f"Error: {exc}", file=sys.stderr)
-            return 1
+        cmd = build_ffmpeg_command(args.input, out_path, preset, src_w, src_h, src_duration)
         if args.dry_run:
             print(f"\n[{plat}] {' '.join(cmd)}")
-            summary.append({
-                "platform": plat,
-                "output": out_path,
-                "cmd": cmd,
-                "reframe_plan": args.reframe_plan,
-            })
+            summary.append({"platform": plat, "output": out_path, "cmd": cmd})
         else:
-            result = export_one(args.input, args.output_dir, preset, reframe_plan)
-            summary.append({
-                "platform": plat,
-                "output": result,
-                "reframe_plan": args.reframe_plan,
-            })
+            result = export_one(args.input, args.output_dir, preset)
+            summary.append({"platform": plat, "output": result})
 
     manifest = os.path.join(args.output_dir, "multi_export_manifest.json")
     os.makedirs(args.output_dir, exist_ok=True)
