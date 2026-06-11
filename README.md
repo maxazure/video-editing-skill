@@ -32,6 +32,9 @@
    ├─→ storyboard_plan.py       transcript/clean_script → shot cards
    │                            生成路由 / 连续性锚点 / Dreamina 额度提醒
    │
+   ├─→ video_prompt_pack.py     Dreamina/Veo/LTX/Wan/Sora 提示词包
+   │                            角色/品牌一致性 / image-to-video / paid approval gate
+   │
    ├─→ storyboard_assets.py     shot cards → 素材任务清单 / ready 预检
    │                            imagegen / Dreamina / motion / broll 状态表
    │                            可选接入 media_library.py recommend 排名候选素材
@@ -83,7 +86,7 @@ cd ~/projects/video-editing-skill
 python3 scripts/utils.py
 
 # 4. 跑一遍测试套件确认 OK
-pytest tests/           # 312 个测试，约 4 秒
+pytest tests/           # 326 个测试，约 4 秒
 ```
 
 每天做一条视频的完整模板：**[docs/prompts/15-xhs-daily-tech-video.md](docs/prompts/15-xhs-daily-tech-video.md)**
@@ -206,7 +209,7 @@ python3 scripts/audio_cue_sheet.py \
 输出 `audio_cue_sheet.v1`：`voice_track` 记录主口播响度目标，`music[]` 给出全片 BGM mood / BPM / prompt / 本地候选或生成需求，`sfx[]` 根据“但是 / 重点 / 完成 / 风险”等触发词排 whoosh、ping、chime、warning tick。`--strict` 会在要求本地 BGM/SFX 但素材缺失时返回 2；`pipeline_manifest.py` 会自动识别 `audio_cue_sheet.json` 并把 `summary.blocking > 0` 列为 blocking gate。
 
 ### 🎞️ Storyboard Plan — 分镜与生成路由
-[`scripts/storyboard_plan.py`](scripts/storyboard_plan.py) · [`scripts/storyboard_assets.py`](scripts/storyboard_assets.py) · [分镜文档](docs/prompts/24-storyboard-plan.md) · [素材清单文档](docs/prompts/25-storyboard-assets.md)
+[`scripts/storyboard_plan.py`](scripts/storyboard_plan.py) · [`scripts/video_prompt_pack.py`](scripts/video_prompt_pack.py) · [`scripts/storyboard_assets.py`](scripts/storyboard_assets.py) · [分镜文档](docs/prompts/24-storyboard-plan.md) · [视频提示词包文档](docs/prompts/45-video-prompt-pack.md) · [素材清单文档](docs/prompts/25-storyboard-assets.md)
 
 借鉴 GitHub 上视频生成类项目的 storyboard / shot continuity / provider routing 思路，但保持本项目的轻量原则：脚本只做本地规划，不提交任何付费生成任务。
 
@@ -216,6 +219,7 @@ python3 scripts/audio_cue_sheet.py \
 | `generation_route` | `codex_imagegen` / `dreamina_video` / `remotion_hyperframes` / `media_library_broll` + fallback + why |
 | `continuity.anchors` | 系列色彩、比例、字幕安全区、上一镜头引用、关键词线索 |
 | `storyboard_plan.md` | 适合人工 review 的 shot cards，含 prompt 和检查项 |
+| `video_prompt_pack.json` | 每个 shot 的 Dreamina/即梦 Seedance、Veo、LTX、Wan、Sora 提示词、参考图路径、负面提示词和审批状态 |
 | `storyboard_assets.json` | 每个 shot 对应素材是否 ready、需要生成/审批/渲染/搜索；B-roll 可带 `candidate_scores` 排名理由 |
 
 常用：
@@ -237,6 +241,34 @@ python3 scripts/storyboard_assets.py \
 ```
 
 路由规则：抽象概念优先 `codex_imagegen`；数字/指标优先 `remotion_hyperframes`；动作/场景变化推荐 `dreamina_video` 但只标记为需确认，因为 Dreamina/即梦生成可能消耗 credits；其他先走本地素材库 B-roll。传 `--media-library <project_dir>` 时，`storyboard_assets.py` 会从 `media_index.json` / `media_index.db` 里按标签、文件名、时长和画幅推荐候选，并在 Markdown 表里显示分数。`storyboard_assets.py --strict` 会在素材未 ready 时返回退出码 2，适合渲染前拦截。生图优先使用 Codex 内置 `image_gen` 工具，即 OpenAI GPT Image 2（`gpt-image-2`）。
+
+### 🎥 Video Prompt Pack — 视频生成提示词包
+[`scripts/video_prompt_pack.py`](scripts/video_prompt_pack.py) · [详细文档](docs/prompts/45-video-prompt-pack.md)
+
+借鉴 GitHub 上视频生成 skill 对多模型提示词、角色参考 sheet、image-to-video 和 provider 成本审批的做法，但保持本项目 artifact-first：只把 `storyboard_plan.json` 转成 `video_prompt_pack.v1` 和 Markdown review，不提交 Dreamina/Veo/LTX/Wan/Sora 任务，不消耗 credits。
+
+常用：
+```bash
+python3 scripts/video_prompt_pack.py \
+  --storyboard-plan work/storyboard_plan.json \
+  --asset-root work \
+  --character "same Chinese founder-host, navy jacket" \
+  --brand-anchor "palette=charcoal,white,signal yellow" \
+  --output work/video_prompt_pack.json \
+  --markdown work/video_prompt_pack.md \
+  --strict
+
+python3 scripts/video_prompt_pack.py \
+  --storyboard-plan work/storyboard_plan.json \
+  --asset-root work \
+  --provider dreamina_seedance \
+  --animate-stills \
+  --approved \
+  --output work/video_prompt_pack.json \
+  --markdown work/video_prompt_pack.md
+```
+
+输出 `global.character_sheet_prompt`、`items[].prompt`、`items[].negative_prompt`、`items[].reference.expected_path/resolved_path`、`items[].approval_status` 和 `summary.blocking`。`--strict` 会在 generated-video provider 还没有 `--approved` 时返回 2；`pipeline_manifest.py` 会自动识别 `video_prompt_pack.json` 并把未清零的 `summary.blocking` 列为 blocking gate。Dreamina/即梦、Veo、LTX、Wan、Sora 等视频生成可能消耗 credits，提交前先确认并保持小批量。
 
 ### 🗂️ Media Library Recommend — 本地 B-roll 候选推荐
 [`scripts/media_library.py`](scripts/media_library.py)
@@ -700,20 +732,28 @@ python3 $SKILL/scripts/storyboard_plan.py \
   --max-shots 8 \
   --target-aspect 9:16
 
-# 3c. 素材任务清单与预检：哪些已 ready，哪些要生图/审批/渲染/搜索
+# 3c. 可选：把分镜转成 Dreamina/Veo/LTX/Wan/Sora 视频生成提示词包
+python3 $SKILL/scripts/video_prompt_pack.py \
+  --storyboard-plan $WORK/work/storyboard_plan.json \
+  --asset-root $WORK/work \
+  --output $WORK/work/video_prompt_pack.json \
+  --markdown $WORK/work/video_prompt_pack.md \
+  --strict
+
+# 3d. 素材任务清单与预检：哪些已 ready，哪些要生图/审批/渲染/搜索
 python3 $SKILL/scripts/storyboard_assets.py \
   --storyboard-plan $WORK/work/storyboard_plan.json \
   --asset-root $WORK/work \
   --output $WORK/work/storyboard_assets.json \
   --markdown $WORK/work/storyboard_assets.md
 
-# 3d. 如果 imagegen[] 或 storyboard_assets 里的 needs_generation 非空，在 Codex 里直接调内置 imagegen 工具
+# 3e. 如果 imagegen[] 或 storyboard_assets 里的 needs_generation 非空，在 Codex 里直接调内置 imagegen 工具
 #     生图优先使用 Codex 内置 `image_gen` 工具，即 OpenAI GPT Image 2（`gpt-image-2`）。
 #     把每条 prompt_en 用 imagegen 生成 1024x1536，存到 $WORK/work/imagegen/
 #     不需要 OPENAI_API_KEY；详见 docs/prompts/19-imagegen.md
 #     如果 storyboard_assets 里有 needs_approval，提交 Dreamina/即梦前先确认，因为可能消耗 credits。
 
-# 3e. 可选：软件教程/产品演示录屏，导入点击热点并生成自动聚焦计划
+# 3f. 可选：软件教程/产品演示录屏，导入点击热点并生成自动聚焦计划
 python3 $SKILL/scripts/screen_focus.py \
   --events $WORK/work/clicks.json \
   --screen-width 1920 \
@@ -779,7 +819,7 @@ python3 $SKILL/scripts/generate_caption.py \
 ## 测试
 
 ```bash
-pytest tests/           # 218 测试，约 3 秒
+pytest tests/           # 326 测试，约 4 秒
 ```
 
 按模块跑：
@@ -795,12 +835,31 @@ pytest tests/test_timeline_view.py -v       # 切点/QA 可视化复盘图
 pytest tests/test_generate_caption.py -v    # 文案合成
 pytest tests/test_imagegen_hint.py -v       # gpt-image-2 提示词检测
 pytest tests/test_storyboard_plan.py -v     # 分镜 shot cards + 生成路由
+pytest tests/test_video_prompt_pack.py -v   # 视频生成提示词包 + 审批 gate
 pytest tests/test_storyboard_assets.py -v   # 分镜素材 readiness manifest
 pytest tests/test_export_edl.py -v          # NLE handoff EDL + manifest
 pytest tests/test_screen_focus.py -v        # 录屏点击聚焦计划 + render 接入
 pytest tests/test_subtitle_pack.py -v       # SRT/VTT/ASS/JSON 字幕交付包
 pytest tests/test_audio_cue_sheet.py -v     # BGM/SFX 音频设计清单
 ```
+
+### 2026-06-12 自动化升级记录（Video Prompt Pack）
+
+本次联网研究的 GitHub 参考：
+
+| 项目 | 看到的优点 | 本项目吸收方式 |
+|---|---|---|
+| [`Square-Zero-Labs/video-prompting-skill`](https://github.com/Square-Zero-Labs/video-prompting-skill) | 支持 Seedance、LTX、Sora、Veo、Wan 等模型指南，并把 character sheet 作为 image-to-video 前置工作流 | 新增 provider-specific prompt pack，包含角色/风格 reference sheet、参考图路径和模型化 prompt |
+| [`browser-use/video-use`](https://github.com/browser-use/video-use/blob/main/SKILL.md) | 强调确认策略、执行、迭代、持久化，以及字幕/剪辑等 production-correctness hard rules | `video_prompt_pack.py --strict` 在 paid video generation 未审批时返回 2，生成前先持久化 review artifact |
+| [`digitalsamba/claude-code-video-toolkit`](https://github.com/digitalsamba/claude-code-video-toolkit) | 用项目状态跟踪 scenes、audio、phase、asset status，适合跨会话续作 | 新增 `video_prompt_pack.json/.md` 作为可恢复 artifact，并接入 `pipeline_manifest.py` gate |
+| [`calesthio/OpenMontage`](https://github.com/calesthio/OpenMontage) | provider 选择、创意审批、自检和成本意识都进入生产流程 | prompt pack 记录 `approval_status`、negative prompt、review checks 和 `summary.blocking` |
+| [`SamurAIGPT/AI-Youtube-Shorts-Generator`](https://github.com/samuraigpt/ai-youtube-shorts-generator) | 长视频转短视频时输出 JSON，保留分数、hook、reason 等下游可自动化字段 | 本项目继续保持 JSON + Markdown 双输出，方便 agent 和人工同时复核 |
+
+新增/调整能力：新增 `scripts/video_prompt_pack.py`，可从 `storyboard_plan.json` 生成 `video_prompt_pack.v1`，自动/指定输出 Dreamina/即梦 Seedance、Veo、LTX、Wan、Sora、Codex imagegen、Remotion 或本地 B-roll 的提示词；支持 `--character`、`--brand-anchor`、`--animate-stills`、`--approved`、`--strict`；新增 `docs/prompts/45-video-prompt-pack.md`，更新 daily workflow、SKILL、提示词目录；`pipeline_manifest.py` 新增 `video_prompt_pack` 可选 gate，发现 `summary.blocking > 0` 会阻塞发布清单。
+
+使用方式：普通 review 用 `python3 scripts/video_prompt_pack.py --storyboard-plan work/storyboard_plan.json --asset-root work --output work/video_prompt_pack.json --markdown work/video_prompt_pack.md --strict`；要把 Codex imagegen still route 转成 image-to-video 提示词，加 `--animate-stills`；确认 Dreamina/即梦或其他 provider credits 后加 `--approved` 再进入提交/下载流程。
+
+验证结果：新增 `tests/test_video_prompt_pack.py` 5 项，更新 `tests/test_pipeline_manifest.py`；`.venv/bin/python -m pytest tests/test_video_prompt_pack.py tests/test_pipeline_manifest.py -q` 通过 `17 passed in 0.23s`；完整 `.venv/bin/python -m pytest tests -q` 通过 `326 passed in 3.78s`；`.venv/bin/python -m compileall scripts tests` 通过；`git diff --check` 通过；`.venv/bin/python scripts/video_prompt_pack.py --help` 和 `.venv/bin/python scripts/pipeline_manifest.py --list-categories` smoke 验证正常。
 
 ### 2026-06-10 自动化升级记录（Audio Cue Sheet）
 
@@ -857,6 +916,7 @@ pytest tests/test_audio_cue_sheet.py -v     # BGM/SFX 音频设计清单
 | **28** | **[Screen Focus](docs/prompts/28-screen-focus.md)** | **录屏点击/热点自动聚焦** |
 | **29** | **[Subtitle Pack](docs/prompts/29-subtitle-pack.md)** | **导出 SRT/VTT/ASS/JSON 字幕包** |
 | **43** | **[Audio Cue Sheet](docs/prompts/43-audio-cue-sheet.md)** | **规划 BGM/SFX 和生成审批** |
+| **45** | **[Video Prompt Pack](docs/prompts/45-video-prompt-pack.md)** | **视频生成提示词包 + paid approval gate** |
 
 完整列表见 [docs/prompts/README.md](docs/prompts/README.md)。
 
@@ -901,6 +961,7 @@ scripts/
 ├── imagegen_hint.py            抽象概念→gpt-image-2 提示词       [V3]
 ├── auto_enrich.py              丰富度编排                       [V3]
 ├── storyboard_plan.py          分镜 shot cards + 生成路由         [V3]
+├── video_prompt_pack.py        多模型视频生成提示词包 + 审批 gate  [V3]
 ├── storyboard_assets.py        分镜素材任务清单 + ready 预检       [V3]
 ├── screen_focus.py             录屏点击/热点聚焦计划              [V3]
 ├── render_final.py             单次编码渲染 + enrich_plan 接入（V3 强化）

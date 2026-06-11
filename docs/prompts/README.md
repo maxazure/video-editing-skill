@@ -44,6 +44,7 @@
 | 29 | [Subtitle Pack 字幕交付包](29-subtitle-pack.md) | transcript/render_config → SRT/VTT/ASS/JSON，支持加速和片头 offset |
 | 43 | [Audio Cue Sheet 音频设计清单](43-audio-cue-sheet.md) | transcript → BGM/SFX cue、生成审批和音频门禁 |
 | 44 | [Stock Material Plan 远程素材搜索规划](44-stock-material-plan.md) | 主题/脚本 → stock 搜索词、Pexels/Pixabay/Coverr 查询计划、本地素材登记 |
+| 45 | [Video Prompt Pack 视频生成提示词包](45-video-prompt-pack.md) | storyboard_plan → Dreamina/Veo/LTX/Wan/Sora 提示词、角色一致性和 paid approval gate |
 
 ## 快速上手
 
@@ -86,3 +87,4 @@
 | 平台要上传 SRT/VTT 字幕文件 | [29-Subtitle Pack](29-subtitle-pack.md) |
 | 想先规划 BGM 和音效再渲染 | [43-Audio Cue Sheet](43-audio-cue-sheet.md) |
 | 本地 B-roll 不够，想先规划 stock 素材搜索 | [44-Stock Material Plan](44-stock-material-plan.md) |
+| 分镜要交给 Dreamina/Veo/LTX/Wan/Sora 生成视频 | [45-Video Prompt Pack](45-video-prompt-pack.md) |

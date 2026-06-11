@@ -72,7 +72,17 @@
     # codex_imagegen 用 Codex 内置 image_gen；dreamina_video 只是建议，提交 Dreamina/即梦前先确认 credits。
     # 详见 docs/prompts/24-storyboard-plan.md
 
-4d. # 把分镜转成素材清单，先审查哪些素材 ready、需要生成、需要审批或要补 B-roll：
+4d. # 可选：把分镜转成 Dreamina/Veo/LTX/Wan/Sora 视频生成提示词包：
+    python3 scripts/video_prompt_pack.py \
+      --storyboard-plan work/storyboard_plan.json \
+      --asset-root work \
+      --output work/video_prompt_pack.json \
+      --markdown work/video_prompt_pack.md \
+      --strict
+    # --strict 会在视频生成还没确认 credits 时返回 2；审批后再加 --approved。
+    # 详见 docs/prompts/45-video-prompt-pack.md
+
+4e. # 把分镜转成素材清单，先审查哪些素材 ready、需要生成、需要审批或要补 B-roll：
     python3 scripts/storyboard_assets.py \
       --storyboard-plan work/storyboard_plan.json \
       --asset-root work \
@@ -81,7 +91,7 @@
     # 渲染前可加 --strict；如果有 needs_approval，提交 Dreamina/即梦前必须确认 credits。
     # 详见 docs/prompts/25-storyboard-assets.md
 
-4e. # 如果输入是完整口播视频、访谈或录屏，且停顿很多，可先生成去停顿 cut list：
+4f. # 如果输入是完整口播视频、访谈或录屏，且停顿很多，可先生成去停顿 cut list：
     python3 scripts/jump_cut.py origin/<talking_video>.mp4 \
       --dry-run \
       --cut-list work/jumpcut.json
@@ -176,6 +186,8 @@ day<NN>/
 │   ├── enrich_plan.json    # broll/sticker/chapter cues
 │   ├── storyboard_plan.json # 分镜 shot cards + 生成路由
 │   ├── storyboard_plan.md   # 人工 review 版分镜卡
+│   ├── video_prompt_pack.json # 视频生成提示词包 + paid approval gate
+│   ├── video_prompt_pack.md   # 人工 review 版 provider prompts
 │   ├── storyboard_assets.json # 素材任务清单 + ready/paid 预检
 │   ├── storyboard_assets.md   # 人工 review 版素材表
 │   ├── jumpcut.json        # 可选：去停顿 cut list

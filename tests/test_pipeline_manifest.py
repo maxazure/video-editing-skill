@@ -156,6 +156,25 @@ def test_optional_audio_cue_sheet_blocks_when_unresolved(tmp_path):
     assert "2 blocking item(s) in summary.blocking" in gate["notes"]
 
 
+def test_optional_video_prompt_pack_blocks_when_unapproved(tmp_path):
+    _publish_ready_project(tmp_path)
+    _write(tmp_path / "work" / "video_prompt_pack.json", {
+        "version": "video_prompt_pack.v1",
+        "summary": {
+            "items": 2,
+            "approval_required": 1,
+            "blocking": 1,
+        },
+    })
+
+    manifest = build_manifest(str(tmp_path), target_stage="publish_ready")
+
+    assert manifest["status"] == "blocked"
+    assert "video_prompt_pack" in manifest["blocked_gates"]
+    gate = next(g for g in manifest["gates"] if g["category"] == "video_prompt_pack")
+    assert "1 blocking item(s) in summary.blocking" in gate["notes"]
+
+
 def test_privacy_redaction_can_be_required(tmp_path):
     _publish_ready_project(tmp_path)
 

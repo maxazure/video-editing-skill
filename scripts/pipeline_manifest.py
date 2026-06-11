@@ -99,6 +99,13 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         blocks_when_present=True,
     ),
     ArtifactDef(
+        "video_prompt_pack",
+        "Video Prompt Pack",
+        ("**/video_prompt_pack.json", "**/*_video_prompt_pack.json"),
+        "Run video_prompt_pack.py and clear generated-video approval blockers before submitting provider jobs.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "provider_decision",
         "Provider Decision",
         ("**/provider_decision.json", "**/*_provider_decision.json"),
@@ -327,6 +334,7 @@ def evaluate_category(definition: ArtifactDef, artifacts: Sequence[ArtifactRecor
 
         if definition.category in {
             "storyboard_assets",
+            "video_prompt_pack",
             "transition_bridge",
             "motion_guard",
             "speaker_turns",
