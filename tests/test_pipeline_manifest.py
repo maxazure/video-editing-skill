@@ -175,6 +175,33 @@ def test_optional_video_prompt_pack_blocks_when_unapproved(tmp_path):
     assert "1 blocking item(s) in summary.blocking" in gate["notes"]
 
 
+def test_optional_generation_task_log_blocks_when_async_task_unfinished(tmp_path):
+    _publish_ready_project(tmp_path)
+    _write(tmp_path / "work" / "generation_tasks.json", {
+        "version": "generation_task_log.v1",
+        "summary": {
+            "tasks": 1,
+            "blocking": 1,
+            "pending": 1,
+        },
+        "tasks": [
+            {
+                "task_key": "dreamina:submit_123",
+                "provider": "dreamina",
+                "provider_task_id": "submit_123",
+                "status": "processing",
+            }
+        ],
+    })
+
+    manifest = build_manifest(str(tmp_path), target_stage="publish_ready")
+
+    assert manifest["status"] == "blocked"
+    assert "generation_task_log" in manifest["blocked_gates"]
+    gate = next(g for g in manifest["gates"] if g["category"] == "generation_task_log")
+    assert "1 blocking item(s) in summary.blocking" in gate["notes"]
+
+
 def test_privacy_redaction_can_be_required(tmp_path):
     _publish_ready_project(tmp_path)
 

@@ -82,7 +82,20 @@
     # --strict 会在视频生成还没确认 credits 时返回 2；审批后再加 --approved。
     # 详见 docs/prompts/45-video-prompt-pack.md
 
-4e. # 把分镜转成素材清单，先审查哪些素材 ready、需要生成、需要审批或要补 B-roll：
+4e. # 如果已经提交 Dreamina/即梦或其他异步生成任务，保存 submit_id/task id 并跟踪下载：
+    python3 scripts/generation_task_log.py add \
+      --log work/generation_tasks.json \
+      --provider dreamina \
+      --task-id "<submit_id>" \
+      --shot-id shot_002 \
+      --expected-path work/generated_video/shot_002.mp4 \
+      --status submitted \
+      --markdown work/generation_tasks.md \
+      --strict
+    # 任务完成并下载后，用 update 写入 asset-path；未完成/未下载会阻塞 pipeline_manifest。
+    # 详见 docs/prompts/46-generation-task-log.md
+
+4f. # 把分镜转成素材清单，先审查哪些素材 ready、需要生成、需要审批或要补 B-roll：
     python3 scripts/storyboard_assets.py \
       --storyboard-plan work/storyboard_plan.json \
       --asset-root work \
@@ -91,7 +104,7 @@
     # 渲染前可加 --strict；如果有 needs_approval，提交 Dreamina/即梦前必须确认 credits。
     # 详见 docs/prompts/25-storyboard-assets.md
 
-4f. # 如果输入是完整口播视频、访谈或录屏，且停顿很多，可先生成去停顿 cut list：
+4g. # 如果输入是完整口播视频、访谈或录屏，且停顿很多，可先生成去停顿 cut list：
     python3 scripts/jump_cut.py origin/<talking_video>.mp4 \
       --dry-run \
       --cut-list work/jumpcut.json
@@ -188,6 +201,8 @@ day<NN>/
 │   ├── storyboard_plan.md   # 人工 review 版分镜卡
 │   ├── video_prompt_pack.json # 视频生成提示词包 + paid approval gate
 │   ├── video_prompt_pack.md   # 人工 review 版 provider prompts
+│   ├── generation_tasks.json # 异步生成任务 submit_id / 下载 gate
+│   ├── generation_tasks.md   # 人工 review 版任务台账
 │   ├── storyboard_assets.json # 素材任务清单 + ready/paid 预检
 │   ├── storyboard_assets.md   # 人工 review 版素材表
 │   ├── jumpcut.json        # 可选：去停顿 cut list

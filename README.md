@@ -35,6 +35,9 @@
    ├─→ video_prompt_pack.py     Dreamina/Veo/LTX/Wan/Sora 提示词包
    │                            角色/品牌一致性 / image-to-video / paid approval gate
    │
+   ├─→ generation_task_log.py   异步生成任务台账
+   │                            submit_id / 轮询 / 下载 / 本地落盘 gate
+   │
    ├─→ storyboard_assets.py     shot cards → 素材任务清单 / ready 预检
    │                            imagegen / Dreamina / motion / broll 状态表
    │                            可选接入 media_library.py recommend 排名候选素材
@@ -86,7 +89,7 @@ cd ~/projects/video-editing-skill
 python3 scripts/utils.py
 
 # 4. 跑一遍测试套件确认 OK
-pytest tests/           # 326 个测试，约 4 秒
+pytest tests/           # 334 个测试，约 3 秒
 ```
 
 每天做一条视频的完整模板：**[docs/prompts/15-xhs-daily-tech-video.md](docs/prompts/15-xhs-daily-tech-video.md)**
@@ -269,6 +272,40 @@ python3 scripts/video_prompt_pack.py \
 ```
 
 输出 `global.character_sheet_prompt`、`items[].prompt`、`items[].negative_prompt`、`items[].reference.expected_path/resolved_path`、`items[].approval_status` 和 `summary.blocking`。`--strict` 会在 generated-video provider 还没有 `--approved` 时返回 2；`pipeline_manifest.py` 会自动识别 `video_prompt_pack.json` 并把未清零的 `summary.blocking` 列为 blocking gate。Dreamina/即梦、Veo、LTX、Wan、Sora 等视频生成可能消耗 credits，提交前先确认并保持小批量。
+
+### 🧾 Generation Task Log — 异步生成任务台账
+[`scripts/generation_task_log.py`](scripts/generation_task_log.py) · [详细文档](docs/prompts/46-generation-task-log.md)
+
+借鉴 PixVerse skills 的 task polling / asset download 能力和 Claude Code Video Toolkit 的跨会话项目状态管理，但保持本项目本地化：只记录异步生成任务状态，不提交 paid jobs。
+
+常用：
+```bash
+python3 scripts/generation_task_log.py import-provider-decision \
+  --provider-decision work/provider_decision.json \
+  --log work/generation_tasks.json \
+  --markdown work/generation_tasks.md \
+  --strict
+
+python3 scripts/generation_task_log.py add \
+  --log work/generation_tasks.json \
+  --provider dreamina \
+  --task-id "<submit_id>" \
+  --shot-id shot_002 \
+  --expected-path work/generated_video/shot_002.mp4 \
+  --status submitted \
+  --markdown work/generation_tasks.md \
+  --strict
+
+python3 scripts/generation_task_log.py update \
+  --log work/generation_tasks.json \
+  --provider dreamina \
+  --task-id "<submit_id>" \
+  --status downloaded \
+  --asset-path work/generated_video/shot_002.mp4 \
+  --markdown work/generation_tasks.md
+```
+
+输出 `generation_task_log.v1`：`tasks[].provider_task_id` 保存 Dreamina `submit_id` / provider task id，`poll_command` / `download_command` 保存下一步命令，`readiness` 区分 `needs_approval` / `pending` / `processing` / `needs_download` / `missing_asset` / `failed` / `ready`。`--strict` 会在 `summary.blocking > 0` 时返回 2；`pipeline_manifest.py` 会自动识别 `generation_tasks.json` 并把未清零的异步任务列为 blocking gate。
 
 ### 🗂️ Media Library Recommend — 本地 B-roll 候选推荐
 [`scripts/media_library.py`](scripts/media_library.py)
@@ -836,12 +873,30 @@ pytest tests/test_generate_caption.py -v    # 文案合成
 pytest tests/test_imagegen_hint.py -v       # gpt-image-2 提示词检测
 pytest tests/test_storyboard_plan.py -v     # 分镜 shot cards + 生成路由
 pytest tests/test_video_prompt_pack.py -v   # 视频生成提示词包 + 审批 gate
+pytest tests/test_generation_task_log.py -v # 异步生成任务台账 + 下载 gate
 pytest tests/test_storyboard_assets.py -v   # 分镜素材 readiness manifest
 pytest tests/test_export_edl.py -v          # NLE handoff EDL + manifest
 pytest tests/test_screen_focus.py -v        # 录屏点击聚焦计划 + render 接入
 pytest tests/test_subtitle_pack.py -v       # SRT/VTT/ASS/JSON 字幕交付包
 pytest tests/test_audio_cue_sheet.py -v     # BGM/SFX 音频设计清单
 ```
+
+### 2026-06-14 自动化升级记录（Generation Task Log）
+
+本次联网研究的 GitHub 参考：
+
+| 项目 | 看到的优点 | 本项目吸收方式 |
+|---|---|---|
+| [`PixVerseAI/skills`](https://github.com/PixVerseAI/skills) | 把 task status / wait 和 asset download 拆成独立 capability，适合异步生成和批量任务 | 新增本地 `generation_task_log.py`，保存 task id、轮询命令、下载命令和 blocking 状态 |
+| [`digitalsamba/claude-code-video-toolkit`](https://github.com/digitalsamba/claude-code-video-toolkit) | 用项目状态跟踪 scenes、asset status、phase，方便跨会话续作 | `generation_tasks.json` 成为可恢复 artifact，并由 `pipeline_manifest.py` 汇总发布前状态 |
+| [`znyupup/ai-video-editing-skill`](https://github.com/znyupup/ai-video-editing-skill) | 自动剪辑 workflow 强调素材理解、预览确认、再渲染 | 本次先补生成素材的 review/落盘闭环；交互式 dashboard 暂不引入 |
+| [`GoogleCloudPlatform/vertex-ai-creative-studio`](https://github.com/GoogleCloudPlatform/vertex-ai-creative-studio/blob/main/experiments/mcp-genmedia/skills/genmedia-video-editor/SKILL.md) | 视频生成和 FFmpeg 合成工具链分工明确 | 本项目继续保持 provider 生成与本地渲染分离，只记录生成任务，不提交 provider job |
+
+新增/调整能力：新增 `scripts/generation_task_log.py`，支持 `add`、`update`、`import-provider-decision`、`report` 四个子命令；可记录 Dreamina/即梦 `submit_id`、PixVerse task id 或其他 provider id，自动生成 Dreamina `query_result` 轮询/下载命令，导入 provider JSON 状态，并计算 `readiness` 与 `summary.blocking`。`pipeline_manifest.py` 新增 `generation_task_log` 可选 gate，发现 `generation_tasks.json` 中存在未审批、未完成、未下载、失败或本地文件丢失的任务时会阻塞发布清单。新增 `docs/prompts/46-generation-task-log.md`，并更新 daily workflow、SKILL、提示词目录和 README 能力说明。
+
+使用方式：从 provider 决策初始化台账用 `python3 scripts/generation_task_log.py import-provider-decision --provider-decision work/provider_decision.json --log work/generation_tasks.json --markdown work/generation_tasks.md --strict`；提交 Dreamina/即梦后保存任务用 `python3 scripts/generation_task_log.py add --log work/generation_tasks.json --provider dreamina --task-id "<submit_id>" --shot-id shot_002 --expected-path work/generated_video/shot_002.mp4 --status submitted --markdown work/generation_tasks.md --strict`；下载完成后用 `python3 scripts/generation_task_log.py update --log work/generation_tasks.json --provider dreamina --task-id "<submit_id>" --status downloaded --asset-path work/generated_video/shot_002.mp4 --markdown work/generation_tasks.md`。
+
+验证结果：新增 `tests/test_generation_task_log.py` 7 项，更新 `tests/test_pipeline_manifest.py`；`.venv/bin/python -m pytest tests/test_generation_task_log.py tests/test_pipeline_manifest.py -q` 通过 `20 passed in 0.21s`；`.venv/bin/python -m compileall scripts tests` 通过；`.venv/bin/python scripts/generation_task_log.py --help`、`.venv/bin/python scripts/generation_task_log.py add --help`、`.venv/bin/python scripts/pipeline_manifest.py --list-categories | rg generation_task_log` smoke 通过；`git diff --check` 通过；第一次全量测试因 macOS `subprocess.Popen` 临时返回 `BlockingIOError: Resource temporarily unavailable` 导致 5 个旧 CLI smoke 失败，单独重跑这 5 项通过 `5 passed in 0.28s`，随后最终全量 `.venv/bin/python -m pytest tests -q` 通过 `334 passed in 3.30s`。
 
 ### 2026-06-12 自动化升级记录（Video Prompt Pack）
 
@@ -917,6 +972,7 @@ pytest tests/test_audio_cue_sheet.py -v     # BGM/SFX 音频设计清单
 | **29** | **[Subtitle Pack](docs/prompts/29-subtitle-pack.md)** | **导出 SRT/VTT/ASS/JSON 字幕包** |
 | **43** | **[Audio Cue Sheet](docs/prompts/43-audio-cue-sheet.md)** | **规划 BGM/SFX 和生成审批** |
 | **45** | **[Video Prompt Pack](docs/prompts/45-video-prompt-pack.md)** | **视频生成提示词包 + paid approval gate** |
+| **46** | **[Generation Task Log](docs/prompts/46-generation-task-log.md)** | **跟踪 submit_id、轮询、下载和本地落盘** |
 
 完整列表见 [docs/prompts/README.md](docs/prompts/README.md)。
 

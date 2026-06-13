@@ -45,6 +45,7 @@
 | 43 | [Audio Cue Sheet 音频设计清单](43-audio-cue-sheet.md) | transcript → BGM/SFX cue、生成审批和音频门禁 |
 | 44 | [Stock Material Plan 远程素材搜索规划](44-stock-material-plan.md) | 主题/脚本 → stock 搜索词、Pexels/Pixabay/Coverr 查询计划、本地素材登记 |
 | 45 | [Video Prompt Pack 视频生成提示词包](45-video-prompt-pack.md) | storyboard_plan → Dreamina/Veo/LTX/Wan/Sora 提示词、角色一致性和 paid approval gate |
+| 46 | [Generation Task Log 异步生成任务台账](46-generation-task-log.md) | 记录 submit_id/task id、轮询/下载命令、本地落盘和发布前 blocking gate |
 
 ## 快速上手
 
@@ -88,3 +89,4 @@
 | 想先规划 BGM 和音效再渲染 | [43-Audio Cue Sheet](43-audio-cue-sheet.md) |
 | 本地 B-roll 不够，想先规划 stock 素材搜索 | [44-Stock Material Plan](44-stock-material-plan.md) |
 | 分镜要交给 Dreamina/Veo/LTX/Wan/Sora 生成视频 | [45-Video Prompt Pack](45-video-prompt-pack.md) |
+| 已提交异步生成任务，要保存 submit_id 并跟踪下载 | [46-Generation Task Log](46-generation-task-log.md) |

@@ -113,6 +113,13 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         blocks_when_present=True,
     ),
     ArtifactDef(
+        "generation_task_log",
+        "Generation Task Log",
+        ("**/generation_tasks.json", "**/*_generation_tasks.json"),
+        "Run generation_task_log.py report and finish, download, or relink all async provider tasks.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "transition_bridge",
         "Transition Bridge",
         ("**/transition_bridge_plan.json", "**/*_transition_bridge*.json"),
@@ -335,6 +342,7 @@ def evaluate_category(definition: ArtifactDef, artifacts: Sequence[ArtifactRecor
         if definition.category in {
             "storyboard_assets",
             "video_prompt_pack",
+            "generation_task_log",
             "transition_bridge",
             "motion_guard",
             "speaker_turns",
