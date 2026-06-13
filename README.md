@@ -4,7 +4,7 @@
 
 它不是一个单点 FFmpeg 脚本，而是一条完整工作流：**转写 → 清稿 → 去口头禅/停顿 → 重组故事 → 分镜 → B-roll/生图/生成视频规划 → 字幕与声音设计 → 单次编码渲染 → 质检 → 多平台导出 → 标题文案**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
 
-## 核心卖点
+## 适合做什么
 
 - **把口播短视频从“素材堆”推进到“发布包”**：转写、清稿、分镜、素材清单、渲染配置、字幕 sidecar、QA、标题正文和标签都能落成可审计 artifact。
 - **针对中文社媒口播做过生产化调参**：Heavy CJK 字幕、1.25x 主输出、响度规范化、平台违禁词 lint、章节卡、贴纸、BGM/SFX cue、三平台导出都不是通用 demo。
@@ -13,21 +13,66 @@
 
 这里的“80%”是按口播短视频生产来评估的：它已经覆盖素材整理、ASR、清稿、粗剪、字幕、B-roll/图像/生成视频规划、声音 cue、渲染、质检、多平台导出和发布文案。剩下通常需要人工负责的是选题判断、最终审美取舍、品牌口吻、客户确认、复杂手工精修、调色混音和需要逐帧 keyframe 的高级特效。
 
-## 审查结论
+## 项目现状与边界
 
-合理的地方：
+做得比较完整的地方：
 
 - **定位清楚**：口播、教程、访谈、录屏和长视频切短视频是高重复剪辑场景，脚本化收益高。
 - **流水线完整**：从 transcript 到 publish gate 的 artifact 很全，失败点可复查，不依赖聊天上下文记忆。
 - **风险控制到位**：内容合规、素材授权、隐私遮挡、生成任务审批、渲染 QA、pipeline manifest 都有阻塞门禁。
 - **本地优先**：核心剪辑、渲染、质检不需要云端服务；外部生成任务只做规划、审批和台账。
 
-需要克制的地方：
+需要用户知道的边界：
 
 - **不应包装成全类型剪辑替代品**：电影感剪辑、MV、广告大片、复杂调色混音和精细动效仍需要专业人工。
 - **AI 生成素材不等于自动可用**：Dreamina/Veo/Sora 等结果必须经过下载、授权、视觉连续性和 QA 检查。
 - **平台规则不是法律意见**：`content_guard.py` 能拦常见风险词，但最终发布仍要人审。
 - **README 和 SKILL 偏长**：功能很全，但新用户需要先走推荐入口，不适合从完整脚本文档硬读。
+
+## 视频素材理解
+
+当前版本已经有基础的视频理解能力，但还没有内置 YOLO 这类物体检测模型：
+
+- `extract_keyframes.py` 会抽关键帧和时序图，帮助 agent/用户快速看懂一段视频的视觉内容。
+- `scene_boundaries.py` 用 FFmpeg scene score 做视觉场景边界检测，供长视频拆条和 highlight snap 使用。
+- `media_library.py` 会读取视频元数据、文件名、标签、素材来源和关联 transcript，用透明分数推荐本地 B-roll。
+- `smart_reframe.py` 可以读取外部 detector JSON，按人脸、人物、主体、物体等权重生成竖屏/方屏重构图计划。
+- `privacy_redact.py` 可以读取外部检测框或人工框，对人脸、车牌、屏幕敏感区域生成 blur/pixelate/mask 计划。
+
+也就是说，项目现在能“消费”物体检测结果，但不会自己运行 YOLO。这个取舍是有意的：YOLO/RT-DETR/MediaPipe 等模型会带来较大的依赖、模型下载、GPU/Metal/CUDA 兼容和速度问题；对大量口播视频来说，ASR + 关键帧 + 场景边界已经能覆盖主要剪辑决策。
+
+推荐的下一步方案是新增一个可选的 `video_understanding.py`：
+
+1. 先用 FFmpeg 按场景边界和固定间隔抽帧，避免对每一帧跑模型。
+2. 如果安装了 `ultralytics`，用 YOLO/RT-DETR 系列模型检测 `person`、`face/head`、`phone`、`laptop`、`screen`、`car`、`logo/sign` 等常用短视频对象。
+3. 可选接 ByteTrack / Norfair 这类轻量 tracking，把逐帧检测合并成 `tracks[]`，减少抖动和重复框。
+4. 输出统一的 `video_understanding.v1`：
+   - `frames[]`：时间戳、关键帧路径、场景 id。
+   - `detections[]`：label、bbox、confidence、source model。
+   - `tracks[]`：主体轨迹、出现时间段、中心点、面积变化、运动强度。
+   - `scene_tags[]`：人物、屏幕、产品、街景、车辆、手部演示等可检索标签。
+   - `warnings[]`：过曝、黑屏、模糊、主体出画、检测置信度低等。
+5. 下游复用这个 JSON：`smart_reframe.py` 做主体感知裁切，`privacy_redact.py` 做隐私遮挡，`media_library.py` 写入视觉标签，`storyboard_assets.py` 选择更匹配的 B-roll，`pipeline_manifest.py` 可把未复核的视觉检测列为 gate。
+
+预期用法：
+
+```bash
+python3 scripts/video_understanding.py origin/talking.mp4 \
+  --output work/video_understanding.json \
+  --markdown work/video_understanding.md \
+  --frames-dir work/video_frames \
+  --detector yolo \
+  --sample scene-and-interval \
+  --strict
+
+python3 scripts/smart_reframe.py origin/talking.mp4 \
+  --detections work/video_understanding.json \
+  --platform douyin \
+  --output work/reframe_douyin.json \
+  --markdown work/reframe_douyin.md
+```
+
+这个模块应该保持可选：没有安装 detector 时，项目仍然能走现有 ASR/关键帧/场景边界工作流；安装 detector 后，再获得更强的动态内容理解、主体追踪、隐私检测和 B-roll 标签能力。
 
 ```
 口播音频 + 无声素材
