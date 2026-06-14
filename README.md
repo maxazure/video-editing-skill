@@ -181,7 +181,7 @@ cd ~/projects/video-editing-skill
 python3 scripts/utils.py
 
 # 4. 跑一遍测试套件确认 OK
-pytest tests/           # 343 个测试，约 8 秒
+pytest tests/           # 351 个测试，约 8 秒
 ```
 
 每天做一条视频的完整模板：**[docs/prompts/15-xhs-daily-tech-video.md](docs/prompts/15-xhs-daily-tech-video.md)**
@@ -299,6 +299,26 @@ python3 scripts/video_understanding.py origin/talk.mp4 \
 ```
 
 输出可以直接交给 `smart_reframe.py --detections` 做主体感知裁切，也可以交给 `privacy_redact.py --detections` 做隐私遮挡计划。`ultralytics` 不是必装依赖；没有 detector 时仍然能生成抽样帧和 review shell。
+
+### 🎨 Color Grade — 可审计调色计划
+[`scripts/color_grade.py`](scripts/color_grade.py) · [详细文档](docs/prompts/48-color-grade.md)
+
+借鉴 agent 视频编辑工具对 color grading / filters 的重视，但保持本项目的单次编码原则：先生成 bounded `color_grade.v1` 调色计划和 Markdown review，最终由 `render_final.py --color-grade` 在字幕前接入同一条 FFmpeg filter graph。
+
+常用：
+```bash
+python3 scripts/color_grade.py \
+  --preset screen \
+  --output work/color_grade.json \
+  --markdown work/color_grade.md
+
+python3 scripts/render_final.py \
+  --config work/render_config.json \
+  --color-grade work/color_grade.json \
+  --output output/tutorial_master.mp4
+```
+
+内置 `natural`、`warm`、`cool`、`punchy`、`soft`、`cinematic`、`screen` 七个 preset；自定义 `brightness`、`contrast`、`saturation`、`gamma`、`temperature`、`tint`、`sharpness` 会被限制在保守范围内，`--strict` 在参数被 clamp 时返回 2。若主片已经渲染完，也可以用 `color_grade.py --input output/master.mp4 --render-output output/master_grade.mp4` 做单独复版；日常推荐仍是在 `render_final.py` 里一次编码完成。
 
 ### 🎧 Audio Cue Sheet — BGM / SFX 音频设计清单
 [`scripts/audio_cue_sheet.py`](scripts/audio_cue_sheet.py) · [详细文档](docs/prompts/43-audio-cue-sheet.md)
@@ -593,6 +613,7 @@ python3 scripts/timeline_view.py origin/talking.mp4 --cut-list work/jumpcut.json
 | 字幕风格 | `--subtitle-style normal/karaoke/bold_pop/neon/minimal/yellow_pop` |
 | 自动丰富接入 | `--enrich-plan work/enrich_plan.json`，可重复传入 |
 | 点击聚焦 | `--enrich-plan work/screen_focus_plan.json`，读取 `focus_events[]` |
+| 调色接入 | `--color-grade work/color_grade.json` 或 config `"color_grade": "screen"` |
 | 版本化输出 | `--versioned-output` 或 config `"versioned_output": true` |
 
 ### 🧾 Versioned Output — 成片不覆盖旧版本
@@ -913,9 +934,17 @@ python3 $SKILL/scripts/screen_focus.py \
   --output $WORK/work/screen_focus_plan.json \
   --markdown $WORK/work/screen_focus_plan.md
 
+# 3g. 可选：生成调色计划，最终渲染时用 --color-grade 接入单次编码
+python3 $SKILL/scripts/color_grade.py \
+  --preset screen \
+  --output $WORK/work/color_grade.json \
+  --markdown $WORK/work/color_grade.md
+
 # 4. 渲染
 #    如果生成了 screen_focus_plan.json，可额外追加：
 #    --enrich-plan $WORK/work/screen_focus_plan.json
+#    如果生成了 color_grade.json，可额外追加：
+#    --color-grade $WORK/work/color_grade.json
 python3 $SKILL/scripts/render_final.py \
   --config $WORK/work/render_config.json \
   --enrich-plan $WORK/work/enrich_plan.json \
@@ -971,7 +1000,7 @@ python3 $SKILL/scripts/generate_caption.py \
 ## 测试
 
 ```bash
-pytest tests/           # 343 测试，约 8 秒
+pytest tests/           # 351 测试，约 8 秒
 ```
 
 按模块跑：
@@ -995,7 +1024,25 @@ pytest tests/test_export_edl.py -v          # NLE handoff EDL + manifest
 pytest tests/test_screen_focus.py -v        # 录屏点击聚焦计划 + render 接入
 pytest tests/test_subtitle_pack.py -v       # SRT/VTT/ASS/JSON 字幕交付包
 pytest tests/test_audio_cue_sheet.py -v     # BGM/SFX 音频设计清单
+pytest tests/test_color_grade.py -v         # 调色计划 + render_final 接入
 ```
+
+### 2026-06-15 自动化升级记录（Color Grade）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 看到的优点 | 本项目吸收方式 |
+|---|---|---|
+| [`KyaniteLabs/mcp-video`](https://github.com/KyaniteLabs/mcp-video) | 把 color grading、effects、preflight guardrails、repurposing manifest 放进 agent tool surface | 新增 bounded `color_grade.py`，不让 agent 手写不受控 FFmpeg filter |
+| [`browser-use/video-use`](https://github.com/browser-use/video-use/blob/main/SKILL.md) | 把 color grade 与 transcript/cut/subtitles 并列为 conversational video editing 能力 | 在本 skill 的实际渲染链中加入 `--color-grade`，而不是只写成提示词建议 |
+| [`wizenheimer/vibestudio`](https://github.com/wizenheimer/vibestudio) | 视频 filters / color correction 作为本地、可追踪命令能力 | 输出 JSON + Markdown + FFmpeg filter，保持可审计和本地优先 |
+| [`aicw-io/aicw-video`](https://github.com/aicw-io/aicw-video) | 先预览/确认 range、caption、privacy、format，再渲染 | 调色先产 `color_grade.v1` review artifact，再由 `render_final.py` 接入 |
+
+新增/调整能力：新增 `scripts/color_grade.py`，支持 `natural`、`warm`、`cool`、`punchy`、`soft`、`cinematic`、`screen` 七个 preset；自定义 `brightness`、`contrast`、`saturation`、`gamma`、`temperature`、`tint`、`sharpness` 会被 clamp 到保守范围，`--strict` 在 clamp 时返回 2。`render_final.py` 新增 `--color-grade`，可读取 preset、FFmpeg 单链 filter 或 `color_grade.v1` JSON，并在 B-roll/image/focus 之后、字幕/HUD 前应用，避免二次压缩改变字幕颜色。`pipeline_manifest.py` 新增 `color_grade` artifact 类别；README、SKILL、`docs/prompts/48-color-grade.md` 和提示词目录已更新。
+
+使用方式：先跑 `python3 scripts/color_grade.py --preset screen --output work/color_grade.json --markdown work/color_grade.md`；最终渲染加 `python3 scripts/render_final.py --config work/render_config.json --color-grade work/color_grade.json --output output/tutorial_master.mp4`。如果只是给已完成 master 做复版，可用 `python3 scripts/color_grade.py --preset cinematic --input output/master.mp4 --render-output output/master_grade.mp4 --output work/color_grade.json --markdown work/color_grade.md`。
+
+验证结果：新增 `tests/test_color_grade.py` 7 项，更新 `tests/test_pipeline_manifest.py`；`.venv/bin/python -m pytest tests/test_color_grade.py tests/test_pipeline_manifest.py -q` 通过 `22 passed in 0.31s`；`.venv/bin/python -m compileall scripts tests` 通过；`.venv/bin/python scripts/color_grade.py --help`、`.venv/bin/python scripts/render_final.py --help`、`.venv/bin/python scripts/pipeline_manifest.py --list-categories | rg color_grade` smoke 通过；`git diff --check` 通过；最终全量 `.venv/bin/python -m pytest tests -q` 通过 `351 passed in 3.88s`。
 
 ### 2026-06-14 自动化升级记录（Video Understanding + YOLO）
 

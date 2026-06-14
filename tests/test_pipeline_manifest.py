@@ -114,6 +114,22 @@ def test_video_understanding_can_be_required(tmp_path):
     assert gate["status"] == "ready"
 
 
+def test_color_grade_can_be_required(tmp_path):
+    _publish_ready_project(tmp_path)
+    _write(tmp_path / "work" / "color_grade.json", {
+        "version": "color_grade.v1",
+        "preset": "screen",
+        "ffmpeg": {"vf": "eq=contrast=1.0800"},
+    })
+
+    manifest = build_manifest(str(tmp_path), target_stage="publish_ready", required=["color_grade"])
+
+    assert manifest["status"] == "ready"
+    gate = next(g for g in manifest["gates"] if g["category"] == "color_grade")
+    assert gate["required"] is True
+    assert gate["status"] == "ready"
+
+
 def test_optional_localization_pack_blocks_when_unresolved(tmp_path):
     _publish_ready_project(tmp_path)
     _write(tmp_path / "work" / "localization_pack.json", {

@@ -146,6 +146,12 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         "Create render_config.json or export one from highlight_picker.py.",
     ),
     ArtifactDef(
+        "color_grade",
+        "Color Grade",
+        ("**/color_grade.json", "**/*_color_grade.json"),
+        "Run color_grade.py when the master needs a bounded color look before final render.",
+    ),
+    ArtifactDef(
         "master_video",
         "Master Video",
         (

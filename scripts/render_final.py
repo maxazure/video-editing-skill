@@ -41,6 +41,7 @@ from burn_subtitles import (
 from generate_cover_image import generate_cover as generate_cover_image
 from _internal_text_guard import check_visible_text
 from content_guard import enforce as enforce_platform_rules, HardBlock
+from color_grade import color_grade_filter_from_value
 
 # --- Caption style presets ---
 CAPTION_PRESETS = {
@@ -820,6 +821,15 @@ def build_focus_filter_ops(
     return filter_lines, label, next_stage
 
 
+def append_color_grade_filter(filter_lines, current_v_label, stage_idx, color_grade_filter):
+    """Append a single-chain color grade before subtitles/HUD overlays."""
+    if not color_grade_filter:
+        return current_v_label, stage_idx
+    out_label = f"[vstage{stage_idx}]"
+    filter_lines.append(f"{current_v_label}{color_grade_filter}{out_label}")
+    return out_label, stage_idx + 1
+
+
 def generate_cover_png(video_path, title, width, height, temp_files,
                        style="bold", subtitle=None, use_frame=False):
     """Generate cover PNG using headless Chrome.
@@ -848,6 +858,9 @@ def main():
                         help="Optional enrich-plan JSON. Repeatable. Merges B-roll, "
                              "stickers, chapter cards, generated image cues, and "
                              "screen focus events into the render.")
+    parser.add_argument("--color-grade", default=None,
+                        help="Optional color grade preset, filter, or color_grade.v1 JSON plan path. "
+                             "Overrides config color_grade.")
     parser.add_argument("--output", required=True, help="Output video path")
     parser.add_argument("--font-path", default=None, help="Custom font path")
     parser.add_argument("--font-size", type=int, default=120, help="Subtitle font size (default: 120, i.e. screen_width/9 for 1080p portrait)")
@@ -883,6 +896,7 @@ def main():
     args = parser.parse_args()
 
     config = load_config(args.config)
+    config_base_dir = os.path.dirname(os.path.abspath(args.config))
     for enrich_plan_path in args.enrich_plan:
         plan = load_enrich_plan(enrich_plan_path)
         config = merge_enrich_plan(
@@ -905,6 +919,19 @@ def main():
                 f"[enrich] advisory imagegen cues without generated files: "
                 f"{stats['advisory_imagegen']}"
             )
+
+    if args.color_grade:
+        config["color_grade"] = args.color_grade
+
+    try:
+        color_grade_filter = color_grade_filter_from_value(
+            config.get("color_grade"), base_dir=config_base_dir,
+        )
+    except ValueError as exc:
+        print(f"Error: invalid color grade config: {exc}", file=sys.stderr)
+        sys.exit(2)
+    if color_grade_filter:
+        print(f"[color-grade] {color_grade_filter}")
 
     # Audience profile — overlays sensible defaults from scripts/profiles/<name>.yaml
     # onto fields the user didn't pass via CLI. The CLI / config always wins; profile
@@ -1287,6 +1314,10 @@ def main():
             stage_idx=video_stage_idx,
         )
         filter_lines.extend(focus_lines)
+
+        current_v_label, video_stage_idx = append_color_grade_filter(
+            filter_lines, current_v_label, video_stage_idx, color_grade_filter,
+        )
 
         if subtitle_filter:
             filter_lines.append(f"{current_v_label}{subtitle_filter}[sub_v]")
