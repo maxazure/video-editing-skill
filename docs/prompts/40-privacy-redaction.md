@@ -2,7 +2,7 @@
 
 `scripts/privacy_redact.py` 用手工框或外部检测 JSON 生成隐私遮挡计划，适合发布前处理人脸、车牌、微信号、手机号、邮箱、客户资料、屏幕录制里的个人信息等敏感区域。
 
-本脚本不内置 YOLO、EgoBlur、deface 或任何云端检测模型；它只负责读取已经产生或人工确认的框，输出 `privacy_redaction_plan.v1` JSON、Markdown review，以及可选 FFmpeg blur/pixelate/mask 命令。生图优先使用 Codex 内置 `image_gen` 工具，即 OpenAI GPT Image 2（`gpt-image-2`）。
+本脚本不直接运行 YOLO、EgoBlur、deface 或任何云端检测模型；它只负责读取已经产生或人工确认的框，输出 `privacy_redaction_plan.v1` JSON、Markdown review，以及可选 FFmpeg blur/pixelate/mask 命令。需要本项目内置的可选 YOLO 上游时，先运行 `video_understanding.py --detector yolo`。生图优先使用 Codex 内置 `image_gen` 工具，即 OpenAI GPT Image 2（`gpt-image-2`）。
 
 ## 常用命令
 
@@ -11,7 +11,7 @@
 ```bash
 python3 scripts/privacy_redact.py \
   --video output/day58_master.mp4 \
-  --detections work/privacy_detections.json \
+  --detections work/video_understanding.json \
   --output work/privacy_redaction.json \
   --markdown work/privacy_redaction.md \
   --method pixelate \

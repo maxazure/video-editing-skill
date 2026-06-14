@@ -15,6 +15,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 口播音频 + 无声素材
    │
    ├─→ transcribe.py            转写 + 词级时间戳 + 口误标记
+   ├─→ video_understanding.py   抽样帧 + 可选 YOLO 检测 / tracks / scene_tags
    ├─→ rough_cut.py             ASR 粗剪：去纯口头禅 / 相邻重复句
    ├─→ rewrite_script.py        LLM 重组 5 段式（hook/pain/turn/value/cta）
    ├─→ content_guard.py         80+ 条平台雷区 lint
@@ -51,6 +52,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `_internal_text_guard.py` | 拦截内部 token 进画面 | 内部模块，render_final 自动调 |
 | `content_guard.py` | 平台雷区 lint | `--script` `--title` `--caption` `--strict` |
 | `rough_cut.py` | transcript 粗剪：去口头禅/重复句 | `--transcript` `--cut-list` / `--input` `--output` |
+| `video_understanding.py` | 抽样帧 + 可选 YOLO 物体检测 + 轻量 tracklets | `--detector yolo` `--scene-boundaries` `--external-detections` `--strict` |
 | `rewrite_script.py` | LLM 5 段式重组 + 验证 | `--transcript` `--structure` `--hook-template` `--emit-prompt` / `--llm-output` |
 | `auto_broll.py` | B-roll 调度 | `--transcript` `--assets` `--max-single-shot` |
 | `media_library.py` | 本地素材库索引 + B-roll 候选推荐 + 素材来源登记 | `init` `scan` `search` `recommend --category broll --json` `import` `annotate` |
@@ -484,6 +486,48 @@ python3 scripts/extract_keyframes.py video.mp4
 - 找出画面与语音最匹配的高质量片段（如：讲到"这家店"时画面正好对着店铺）
 - 识别画面模糊、遮挡、光线不佳的片段，建议跳过
 - 户外拍摄时，注意画面抖动严重的片段，在选片时降低优先级
+
+### Phase 2b: Video Understanding（抽样帧 + 可选 YOLO）
+
+当素材里的人、手机、电脑屏幕、产品、车辆或其他动态对象会影响裁切、隐私遮挡或 B-roll 选择时，使用 [video_understanding.py](./scripts/video_understanding.py) 生成结构化视觉理解 artifact。默认不需要安装 detector；如果要运行 YOLO，先安装可选依赖 `ultralytics`。
+
+```bash
+# 无 detector：只抽样帧并生成 review shell
+python3 scripts/video_understanding.py video.mp4 \
+  --output work/video_understanding.json \
+  --markdown work/video_understanding.md
+
+# 可选 YOLO：检测对象并生成 detections/tracks/scene_tags
+pip install ultralytics
+python3 scripts/video_understanding.py video.mp4 \
+  --scene-boundaries work/scene_boundaries.json \
+  --detector yolo \
+  --model yolo11n.pt \
+  --output work/video_understanding.json \
+  --markdown work/video_understanding.md \
+  --strict
+```
+
+输出：
+- `video_understanding.json` — `video_understanding.v1`，包含 `frames[]`、`detections[]`、`tracks[]`、`scene_tags[]`、`warnings[]`
+- `video_understanding.md` — 人工 review 表，列出抽样帧、检测数量、轨迹、标签和 warning
+
+典型下游：
+```bash
+python3 scripts/smart_reframe.py video.mp4 \
+  --detections work/video_understanding.json \
+  --platform douyin \
+  --output work/reframe_douyin.json \
+  --markdown work/reframe_douyin.md
+
+python3 scripts/privacy_redact.py \
+  --video video.mp4 \
+  --detections work/video_understanding.json \
+  --output work/privacy_redaction.json \
+  --markdown work/privacy_redaction.md
+```
+
+注意：内置 tracklets 是为口播剪辑做的轻量关联，不等同于逐帧多目标跟踪。对体育、车流、多人遮挡等高动态素材，可以用 Ultralytics `model.track(..., tracker="bytetrack.yaml")`、BoT-SORT 或 Norfair 生成更密集的检测/track 结果，再转换成同一份 `detections[]` / `tracks[]` JSON。
 
 ### Phase 2.5: Transcript Review（转录文字校验）
 

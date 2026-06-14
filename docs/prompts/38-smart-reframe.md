@@ -2,7 +2,7 @@
 
 `scripts/smart_reframe.py` 用外部检测 JSON 生成可审计的裁切计划，让横屏素材导出 9:16 / 3:4 时不要只做中心裁切。
 
-本脚本不内置 YOLO、MediaPipe 或云端视觉模型。检测可以来自任何工具，只要提供带时间戳和 `bbox` 的 JSON；本项目负责把检测结果按场景合并成 `track` / `center` / `letterbox` 计划，并交给 `multi_export.py --reframe-plan` 应用。
+本脚本不直接运行视觉模型。检测可以来自 `video_understanding.py --detector yolo`，也可以来自任何外部工具，只要提供带时间戳和 `bbox` 的 JSON；本项目负责把检测结果按场景合并成 `track` / `center` / `letterbox` 计划，并交给 `multi_export.py --reframe-plan` 应用。
 
 ## 适用场景
 
@@ -40,8 +40,14 @@ python3 scripts/scene_boundaries.py origin/talk.mp4 \
   --output work/scene_boundaries.json \
   --markdown work/scene_boundaries.md
 
+python3 scripts/video_understanding.py origin/talk.mp4 \
+  --scene-boundaries work/scene_boundaries.json \
+  --detector yolo \
+  --output work/video_understanding.json \
+  --markdown work/video_understanding.md
+
 python3 scripts/smart_reframe.py origin/talk.mp4 \
-  --detections work/detections.json \
+  --detections work/video_understanding.json \
   --scene-boundaries work/scene_boundaries.json \
   --platform douyin \
   --output work/reframe_douyin.json \

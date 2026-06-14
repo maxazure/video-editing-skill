@@ -31,38 +31,49 @@
 
 ## 视频素材理解
 
-当前版本已经有基础的视频理解能力，但还没有内置 YOLO 这类物体检测模型：
+当前版本已经加入可选的视频理解层：基础流程不依赖机器视觉模型，安装 `ultralytics` 后可以用 YOLO 对抽样帧做物体检测，并把结果整理成统一的 `video_understanding.v1`。
 
 - `extract_keyframes.py` 会抽关键帧和时序图，帮助 agent/用户快速看懂一段视频的视觉内容。
 - `scene_boundaries.py` 用 FFmpeg scene score 做视觉场景边界检测，供长视频拆条和 highlight snap 使用。
+- `video_understanding.py` 会按固定间隔和场景边界抽帧；`--detector yolo` 会运行 Ultralytics YOLO，输出 `frames[]`、`detections[]`、`tracks[]`、`scene_tags[]` 和 review Markdown。
 - `media_library.py` 会读取视频元数据、文件名、标签、素材来源和关联 transcript，用透明分数推荐本地 B-roll。
-- `smart_reframe.py` 可以读取外部 detector JSON，按人脸、人物、主体、物体等权重生成竖屏/方屏重构图计划。
-- `privacy_redact.py` 可以读取外部检测框或人工框，对人脸、车牌、屏幕敏感区域生成 blur/pixelate/mask 计划。
+- `smart_reframe.py` 可以读取 `video_understanding.json`，按人脸、人物、主体、物体等权重生成竖屏/方屏重构图计划。
+- `privacy_redact.py` 可以读取同一份检测框或人工框，对人脸、车牌、屏幕敏感区域生成 blur/pixelate/mask 计划。
 
-也就是说，项目现在能“消费”物体检测结果，但不会自己运行 YOLO。这个取舍是有意的：YOLO/RT-DETR/MediaPipe 等模型会带来较大的依赖、模型下载、GPU/Metal/CUDA 兼容和速度问题；对大量口播视频来说，ASR + 关键帧 + 场景边界已经能覆盖主要剪辑决策。
+这个设计是有意的：YOLO/RT-DETR/MediaPipe 等模型会带来模型下载、GPU/Metal/CUDA 兼容和速度问题；对大量口播视频来说，ASR + 关键帧 + 场景边界已经能覆盖主要剪辑决策。因此本项目把 YOLO 做成“需要时打开”的增强能力，而不是强制依赖。
 
-推荐的下一步方案是新增一个可选的 `video_understanding.py`：
+`video_understanding.py` 的工作方式：
 
 1. 先用 FFmpeg 按场景边界和固定间隔抽帧，避免对每一帧跑模型。
-2. 如果安装了 `ultralytics`，用 YOLO/RT-DETR 系列模型检测 `person`、`face/head`、`phone`、`laptop`、`screen`、`car`、`logo/sign` 等常用短视频对象。
-3. 可选接 ByteTrack / Norfair 这类轻量 tracking，把逐帧检测合并成 `tracks[]`，减少抖动和重复框。
+2. 如果安装了 `ultralytics`，用 YOLO 检测 `person`、`phone`、`laptop`、`screen/tv`、`car`、`bottle/cup` 等短视频常见对象。
+3. 用采样帧上的 bbox 做轻量 IoU/中心点关联，合并成 `tracks[]`，用于判断主体是否移动、是否大面积占画、是否适合自动重构图。
 4. 输出统一的 `video_understanding.v1`：
    - `frames[]`：时间戳、关键帧路径、场景 id。
    - `detections[]`：label、bbox、confidence、source model。
    - `tracks[]`：主体轨迹、出现时间段、中心点、面积变化、运动强度。
    - `scene_tags[]`：人物、屏幕、产品、街景、车辆、手部演示等可检索标签。
-   - `warnings[]`：过曝、黑屏、模糊、主体出画、检测置信度低等。
+   - `warnings[]`：未启用 detector、未检测到对象、低置信度检测等。
 5. 下游复用这个 JSON：`smart_reframe.py` 做主体感知裁切，`privacy_redact.py` 做隐私遮挡，`media_library.py` 写入视觉标签，`storyboard_assets.py` 选择更匹配的 B-roll，`pipeline_manifest.py` 可把未复核的视觉检测列为 gate。
 
-预期用法：
+常用方式：
 
 ```bash
+# 可选：只有需要 YOLO 检测时安装
+pip install ultralytics
+
+python3 scripts/scene_boundaries.py origin/talking.mp4 \
+  --output work/scene_boundaries.json \
+  --markdown work/scene_boundaries.md
+
 python3 scripts/video_understanding.py origin/talking.mp4 \
   --output work/video_understanding.json \
   --markdown work/video_understanding.md \
   --frames-dir work/video_frames \
+  --scene-boundaries work/scene_boundaries.json \
   --detector yolo \
-  --sample scene-and-interval \
+  --model yolo11n.pt \
+  --sample-interval 2 \
+  --max-frames 32 \
   --strict
 
 python3 scripts/smart_reframe.py origin/talking.mp4 \
@@ -72,13 +83,24 @@ python3 scripts/smart_reframe.py origin/talking.mp4 \
   --markdown work/reframe_douyin.md
 ```
 
-这个模块应该保持可选：没有安装 detector 时，项目仍然能走现有 ASR/关键帧/场景边界工作流；安装 detector 后，再获得更强的动态内容理解、主体追踪、隐私检测和 B-roll 标签能力。
+如果不想安装 YOLO，也可以只生成抽样帧和 review shell：
+
+```bash
+python3 scripts/video_understanding.py origin/talking.mp4 \
+  --output work/video_understanding.json \
+  --markdown work/video_understanding.md
+```
+
+对于需要更细的逐帧动态跟踪的素材，可以把 Ultralytics `model.track(..., tracker="bytetrack.yaml")`、BoT-SORT 或 Norfair 的结果转换成同一份 `detections[]` / `tracks[]` JSON 再交给本项目。当前内置版本优先服务口播剪辑：抽帧检测 + 轻量轨迹已经足够支持主体裁切、隐私遮挡提示和 B-roll 标签。
 
 ```
 口播音频 + 无声素材
    │
    ├─→ transcribe.py            转写 + 词级时间戳 + 口误标记
    │                            (mlx-whisper / faster-whisper / openai-whisper)
+   │
+   ├─→ video_understanding.py   抽样帧 + 可选 YOLO 物体检测
+   │                            frames / detections / tracks / scene_tags
    │
    ├─→ rough_cut.py             ASR 粗剪 → 去纯口头禅 / 相邻重复句
    │                            输出可审计 cut list，可选单次 concat 渲染
@@ -159,7 +181,7 @@ cd ~/projects/video-editing-skill
 python3 scripts/utils.py
 
 # 4. 跑一遍测试套件确认 OK
-pytest tests/           # 334 个测试，约 3 秒
+pytest tests/           # 343 个测试，约 8 秒
 ```
 
 每天做一条视频的完整模板：**[docs/prompts/15-xhs-daily-tech-video.md](docs/prompts/15-xhs-daily-tech-video.md)**
@@ -254,6 +276,29 @@ NVIDIA GPU 配置详见本文末尾的 [Linux GPU 配置](#linux-gpu-配置) 段
 | [`auto_enrich.py`](scripts/auto_enrich.py) | 编排上面四个，输出综合 plan JSON（含 imagegen cues） |
 
 `render_final.py --enrich-plan work/enrich_plan.json` 会把 plan 里的 B-roll、章节卡、贴纸和已生成图片 cue 自动接回单次渲染；`--enrich-plan` 可重复传入，用来叠加 `screen_focus_plan.json` 这类独立计划。没有实际文件的 imagegen cue 会保留为提示，不会阻塞导出。
+
+### 👁️ Video Understanding — 抽样帧 + 可选 YOLO 检测
+[`scripts/video_understanding.py`](scripts/video_understanding.py) · [详细文档](docs/prompts/47-video-understanding.md)
+
+为口播、访谈、产品演示和户外素材补上结构化视觉线索：先按时间和场景边界抽帧；需要时再用 Ultralytics YOLO 识别人、手机、电脑、屏幕、车辆、杯子等常见对象；最后输出可审计的 `video_understanding.v1`。
+
+常用：
+```bash
+python3 scripts/video_understanding.py origin/talk.mp4 \
+  --output work/video_understanding.json \
+  --markdown work/video_understanding.md
+
+pip install ultralytics
+python3 scripts/video_understanding.py origin/talk.mp4 \
+  --scene-boundaries work/scene_boundaries.json \
+  --detector yolo \
+  --model yolo11n.pt \
+  --output work/video_understanding.json \
+  --markdown work/video_understanding.md \
+  --strict
+```
+
+输出可以直接交给 `smart_reframe.py --detections` 做主体感知裁切，也可以交给 `privacy_redact.py --detections` 做隐私遮挡计划。`ultralytics` 不是必装依赖；没有 detector 时仍然能生成抽样帧和 review shell。
 
 ### 🎧 Audio Cue Sheet — BGM / SFX 音频设计清单
 [`scripts/audio_cue_sheet.py`](scripts/audio_cue_sheet.py) · [详细文档](docs/prompts/43-audio-cue-sheet.md)
@@ -926,7 +971,7 @@ python3 $SKILL/scripts/generate_caption.py \
 ## 测试
 
 ```bash
-pytest tests/           # 326 测试，约 4 秒
+pytest tests/           # 343 测试，约 8 秒
 ```
 
 按模块跑：
@@ -944,12 +989,29 @@ pytest tests/test_imagegen_hint.py -v       # gpt-image-2 提示词检测
 pytest tests/test_storyboard_plan.py -v     # 分镜 shot cards + 生成路由
 pytest tests/test_video_prompt_pack.py -v   # 视频生成提示词包 + 审批 gate
 pytest tests/test_generation_task_log.py -v # 异步生成任务台账 + 下载 gate
+pytest tests/test_video_understanding.py -v # 抽样帧 + 可选 YOLO 检测 artifact
 pytest tests/test_storyboard_assets.py -v   # 分镜素材 readiness manifest
 pytest tests/test_export_edl.py -v          # NLE handoff EDL + manifest
 pytest tests/test_screen_focus.py -v        # 录屏点击聚焦计划 + render 接入
 pytest tests/test_subtitle_pack.py -v       # SRT/VTT/ASS/JSON 字幕交付包
 pytest tests/test_audio_cue_sheet.py -v     # BGM/SFX 音频设计清单
 ```
+
+### 2026-06-14 自动化升级记录（Video Understanding + YOLO）
+
+本次联网 research 参考：
+
+| 来源 | 看到的要点 | 本项目吸收方式 |
+|---|---|---|
+| [Ultralytics YOLO Predict 文档](https://docs.ultralytics.com/modes/predict/) | `Results.boxes` 提供 `xyxy`、`conf`、`cls`、可选 `id` 等字段 | `video_understanding.py --detector yolo` 直接解析这些字段，输出统一 `detections[]` |
+| [Ultralytics YOLO Track 文档](https://docs.ultralytics.com/modes/track/) | Ultralytics 支持 BoT-SORT / ByteTrack 等 tracker，可用 tracker YAML 配置 | README 说明高动态素材可用 `model.track(..., tracker="bytetrack.yaml")` 作为同一 JSON 的更密集上游 |
+| [Norfair 文档](https://tryolabs.github.io/norfair/) | Norfair 可以给任意 detector 增加轻量多目标跟踪 | 本项目内置先做抽样帧 bbox 轻量关联；需要严格 MOT 时可用 Norfair 输出外部 tracks |
+
+新增/调整能力：新增 `scripts/video_understanding.py`，支持默认无 detector 抽样帧、`--detector yolo` 可选 Ultralytics YOLO 检测、`--external-detections` 合并已有检测 JSON、按场景边界和固定间隔抽帧、生成轻量 `tracks[]`、`scene_tags[]`、`warnings[]` 和 Markdown review。`pipeline_manifest.py` 新增 `video_understanding` artifact 类别，可作为可选或显式 required gate 被发现。README、SKILL、`docs/prompts/47-video-understanding.md`、smart reframe 和 privacy redaction 文档都已更新为同一条视觉理解路径。
+
+使用方式：无 detector 时用 `python3 scripts/video_understanding.py origin/talk.mp4 --output work/video_understanding.json --markdown work/video_understanding.md`；启用 YOLO 时先 `pip install ultralytics`，再加 `--detector yolo --model yolo11n.pt --scene-boundaries work/scene_boundaries.json --strict`；下游用 `smart_reframe.py --detections work/video_understanding.json` 做主体感知裁切，或用 `privacy_redact.py --detections work/video_understanding.json` 生成隐私遮挡计划。
+
+验证结果：新增 `tests/test_video_understanding.py` 8 项，更新 `tests/test_pipeline_manifest.py`；`.venv/bin/python -m pytest tests/test_video_understanding.py tests/test_smart_reframe.py tests/test_privacy_redact.py tests/test_pipeline_manifest.py -q` 通过 `36 passed in 1.12s`；`.venv/bin/python scripts/video_understanding.py --help`、`.venv/bin/python scripts/pipeline_manifest.py --list-categories | rg video_understanding` smoke 通过；`.venv/bin/python -m compileall scripts tests` 通过；`git diff --check` 通过；最终全量 `.venv/bin/python -m pytest tests -q` 通过 `343 passed in 3.63s`。
 
 ### 2026-06-14 自动化升级记录（Generation Task Log）
 
@@ -1158,7 +1220,7 @@ V3.2+ 路线图后续可能加：
 
 V3 已完成：Phase 1-5 + imagegen 集成（[#9](https://github.com/maxazure/video-editing-skill/pull/9) [#11](https://github.com/maxazure/video-editing-skill/pull/11) [#12](https://github.com/maxazure/video-editing-skill/pull/12) [#13](https://github.com/maxazure/video-editing-skill/pull/13) [#14](https://github.com/maxazure/video-editing-skill/pull/14) [#15](https://github.com/maxazure/video-editing-skill/pull/15) [#16](https://github.com/maxazure/video-editing-skill/pull/16)）。
 
-PR 欢迎。新功能必须带测试，每个新脚本至少 5 个测试，全套 <2 秒跑完。
+PR 欢迎。新功能必须带测试，每个新脚本至少 5 个测试，全套应保持在轻量本地运行范围内。
 
 ---
 

@@ -99,6 +99,21 @@ def test_optional_privacy_redaction_blocks_when_unresolved(tmp_path):
     assert "1 blocking item(s) in summary.blocking" in privacy_gate["notes"]
 
 
+def test_video_understanding_can_be_required(tmp_path):
+    _publish_ready_project(tmp_path)
+    _write(tmp_path / "work" / "video_understanding.json", {
+        "version": "video_understanding.v1",
+        "summary": {"frames": 2, "detections": 1, "tracks": 1},
+    })
+
+    manifest = build_manifest(str(tmp_path), target_stage="publish_ready", required=["video_understanding"])
+
+    assert manifest["status"] == "ready"
+    gate = next(g for g in manifest["gates"] if g["category"] == "video_understanding")
+    assert gate["required"] is True
+    assert gate["status"] == "ready"
+
+
 def test_optional_localization_pack_blocks_when_unresolved(tmp_path):
     _publish_ready_project(tmp_path)
     _write(tmp_path / "work" / "localization_pack.json", {

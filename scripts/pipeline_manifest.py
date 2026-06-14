@@ -67,6 +67,12 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         "Run scene_boundaries.py when highlight candidates should snap to visual cuts.",
     ),
     ArtifactDef(
+        "video_understanding",
+        "Video Understanding",
+        ("**/video_understanding.json", "**/*_video_understanding.json"),
+        "Run video_understanding.py when visual objects, tracks, crops, or privacy boxes matter.",
+    ),
+    ArtifactDef(
         "highlight_candidates",
         "Highlight Candidates",
         ("**/highlight_candidates.json", "**/*_highlight_candidates.json"),
