@@ -130,6 +130,44 @@ def test_color_grade_can_be_required(tmp_path):
     assert gate["status"] == "ready"
 
 
+def test_optional_publish_package_blocks_when_unresolved(tmp_path):
+    _publish_ready_project(tmp_path)
+    _write(tmp_path / "work" / "publish_package.json", {
+        "version": "publish_package.v1",
+        "summary": {
+            "platforms": 3,
+            "ready_platforms": 2,
+            "blocking": 1,
+        },
+    })
+
+    manifest = build_manifest(str(tmp_path), target_stage="publish_ready")
+
+    assert manifest["status"] == "blocked"
+    assert "publish_package" in manifest["blocked_gates"]
+    gate = next(g for g in manifest["gates"] if g["category"] == "publish_package")
+    assert "1 blocking item(s) in summary.blocking" in gate["notes"]
+
+
+def test_publish_package_can_be_required(tmp_path):
+    _publish_ready_project(tmp_path)
+    _write(tmp_path / "work" / "publish_package.json", {
+        "version": "publish_package.v1",
+        "summary": {
+            "platforms": 3,
+            "ready_platforms": 3,
+            "blocking": 0,
+        },
+    })
+
+    manifest = build_manifest(str(tmp_path), target_stage="publish_ready", required=["publish_package"])
+
+    assert manifest["status"] == "ready"
+    gate = next(g for g in manifest["gates"] if g["category"] == "publish_package")
+    assert gate["required"] is True
+    assert gate["status"] == "ready"
+
+
 def test_optional_localization_pack_blocks_when_unresolved(tmp_path):
     _publish_ready_project(tmp_path)
     _write(tmp_path / "work" / "localization_pack.json", {

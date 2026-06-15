@@ -181,7 +181,7 @@ cd ~/projects/video-editing-skill
 python3 scripts/utils.py
 
 # 4. 跑一遍测试套件确认 OK
-pytest tests/           # 351 个测试，约 8 秒
+pytest tests/           # 360 个测试，约 6 秒
 ```
 
 每天做一条视频的完整模板：**[docs/prompts/15-xhs-daily-tech-video.md](docs/prompts/15-xhs-daily-tech-video.md)**
@@ -848,6 +848,23 @@ python3 scripts/timeline_view.py output/day58_master.mp4 --at 42.5 --radius 1.5 
 - 3-6 个 # tag，混合垂类 + 长尾（避免纯热词堆叠被判搬运）
 - 发布时段建议来自所选 audience profile
 
+### 📤 Publish Package — 最终上传包
+[`scripts/publish_package.py`](scripts/publish_package.py) · [详细文档](docs/prompts/49-publish-package.md)
+
+借鉴 `vidpipe` / `OpenShorts` / `youtube-shorts-pipeline` 这类项目的发布队列和多平台分发思路，但保持本项目本地优先：不登录平台、不调用上传 API，只把发布必需物料和 gate 状态整理成可审计的 JSON + Markdown。
+
+常用：
+```bash
+python3 scripts/publish_package.py \
+  --project-dir work/day58 \
+  --platforms xhs douyin wxch \
+  --output work/day58/publish_package.json \
+  --markdown work/day58/publish_package.md \
+  --strict
+```
+
+输出 `publish_package.v1`，包含每个平台的 MP4、封面图、SRT/VTT、标题、正文、tags、发布时间建议、上传 checklist、章节文本和 `pipeline_manifest` 阻塞状态。`--strict` 会在缺少平台视频、caption 不完整、或已有 gate blocked 时返回 2；`pipeline_manifest.py` 也会识别 `publish_package.json` 并把 `summary.blocking > 0` 列为 blocking gate。
+
 ### 👤 受众 Profile
 [`scripts/profiles/`](scripts/profiles/)
 
@@ -988,11 +1005,28 @@ python3 $SKILL/scripts/render_qa.py \
   $WORK/output/day${DAY}_xhs.mp4 --platform xhs
 python3 $SKILL/scripts/render_qa.py \
   $WORK/output/day${DAY}_douyin.mp4 --platform douyin
+python3 $SKILL/scripts/render_qa.py \
+  $WORK/output/day${DAY}_wxch.mp4 --platform wxch
 
 # 8. 文案
 python3 $SKILL/scripts/generate_caption.py \
   --script $WORK/work/clean_script.md --profile tech_pro \
   --output $WORK/output/day${DAY}_caption.json
+
+# 9. 发布前 gate 汇总 + 最终上传包
+python3 $SKILL/scripts/pipeline_manifest.py \
+  --project-dir $WORK \
+  --target-stage publish_ready \
+  --output $WORK/work/pipeline_manifest.json \
+  --markdown $WORK/work/pipeline_manifest.md \
+  --strict
+
+python3 $SKILL/scripts/publish_package.py \
+  --project-dir $WORK \
+  --platforms xhs douyin wxch \
+  --output $WORK/work/publish_package.json \
+  --markdown $WORK/work/publish_package.md \
+  --strict
 ```
 
 ---
@@ -1000,7 +1034,7 @@ python3 $SKILL/scripts/generate_caption.py \
 ## 测试
 
 ```bash
-pytest tests/           # 351 测试，约 8 秒
+pytest tests/           # 360 测试，约 6 秒
 ```
 
 按模块跑：
@@ -1025,7 +1059,26 @@ pytest tests/test_screen_focus.py -v        # 录屏点击聚焦计划 + render 
 pytest tests/test_subtitle_pack.py -v       # SRT/VTT/ASS/JSON 字幕交付包
 pytest tests/test_audio_cue_sheet.py -v     # BGM/SFX 音频设计清单
 pytest tests/test_color_grade.py -v         # 调色计划 + render_final 接入
+pytest tests/test_publish_package.py -v     # 最终上传包 + gate 状态汇总
 ```
+
+### 2026-06-16 自动化升级记录（Publish Package）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 看到的优点 | 本项目吸收方式 |
+|---|---|---|
+| [`browser-use/video-use`](https://github.com/browser-use/video-use) | 输出固定落在项目 `edit/` 目录，渲染前后有自评和持久化上下文 | 本项目保持 artifact-first，把发布前物料汇总为 `publish_package.v1`，不依赖聊天上下文 |
+| [`htekdev/vidpipe`](https://github.com/htekdev/vidpipe) | idea / platform / publish-by / output structure 进入内容生产管理 | `publish_package.py` 输出平台级 checklist、caption copy 和发布时间提示 |
+| [`mutonby/openshorts`](https://github.com/mutonby/openshorts) | YouTube Studio、title/description/chapter、社交自动发布和排期是一等能力 | 本项目先做本地发布包，不引入账号 token 或第三方上传 API |
+| [`rushindrasinha/youtube-shorts-pipeline`](https://github.com/rushindrasinha/youtube-shorts-pipeline) | research → script → visuals → voice → captions → assemble → upload 的完整链路 | 在 `multi_export` / `caption` / `subtitle_pack` / `pipeline_manifest` 之后新增最终上传 handoff |
+| [`Bomx/super-video-maker-skill`](https://github.com/Bomx/super-video-maker-skill) | paid-call、source deck、timestamp、layout、technical QC 都作为质量 gate | `publish_package.py` 读取或构建 pipeline gate，把 blocked 状态带到上传包 |
+
+新增/调整能力：新增 `scripts/publish_package.py`，支持 `xhs`、`douyin`、`wxch`、`youtube_shorts`、`tiktok`、`instagram_reels`；自动发现平台 MP4、封面、SRT/VTT、caption JSON、章节文本和 pipeline manifest，输出 `publish_package.json` 与 Markdown checklist。`pipeline_manifest.py` 新增 `publish_package` artifact 类别；如果发布包 `summary.blocking > 0`，会作为 blocking gate。README、SKILL、`docs/prompts/49-publish-package.md`、提示词目录和 daily workflow 已更新。
+
+使用方式：常规发布前跑 `python3 scripts/publish_package.py --project-dir work/day58 --platforms xhs douyin wxch --output work/day58/publish_package.json --markdown work/day58/publish_package.md --strict`；如果平台文件不在默认位置，用 `--video xhs=/path/to/xhs.mp4 --video youtube_shorts=/path/to/shorts.mp4` 覆盖。脚本不上传、不登录平台、不调用外部 API，适合手工上传或把 JSON 交给发布 connector。
+
+验证结果：新增 `tests/test_publish_package.py` 7 项，更新 `tests/test_pipeline_manifest.py`；`.venv/bin/python -m pytest tests/test_publish_package.py tests/test_pipeline_manifest.py -q` 通过 `24 passed in 0.36s`；`.venv/bin/python -m compileall scripts tests` 通过；`.venv/bin/python scripts/publish_package.py --help`、`.venv/bin/python scripts/pipeline_manifest.py --list-categories | rg publish_package` smoke 通过；`git diff --check` 通过；最终全量 `.venv/bin/python -m pytest tests -q` 通过 `360 passed in 5.76s`。
 
 ### 2026-06-15 自动化升级记录（Color Grade）
 
@@ -1152,6 +1205,7 @@ pytest tests/test_color_grade.py -v         # 调色计划 + render_final 接入
 | **43** | **[Audio Cue Sheet](docs/prompts/43-audio-cue-sheet.md)** | **规划 BGM/SFX 和生成审批** |
 | **45** | **[Video Prompt Pack](docs/prompts/45-video-prompt-pack.md)** | **视频生成提示词包 + paid approval gate** |
 | **46** | **[Generation Task Log](docs/prompts/46-generation-task-log.md)** | **跟踪 submit_id、轮询、下载和本地落盘** |
+| **49** | **[Publish Package](docs/prompts/49-publish-package.md)** | **汇总平台视频、文案、字幕和发布 gate** |
 
 完整列表见 [docs/prompts/README.md](docs/prompts/README.md)。
 
@@ -1182,6 +1236,7 @@ scripts/
 ├── _internal_text_guard.py     内部 token 拦截器
 ├── transcribe.py               Whisper 转写
 ├── rough_cut.py                transcript 粗剪：去口头禅/重复句      [V3]
+├── video_understanding.py      抽样帧 + 可选 YOLO 检测 artifact       [V3]
 ├── extract_audio.py            音频提取
 ├── split_video.py              按句切片（V2 兼容）
 ├── media_library.py            素材库索引（CLIP-ready）
@@ -1197,8 +1252,11 @@ scripts/
 ├── auto_enrich.py              丰富度编排                       [V3]
 ├── storyboard_plan.py          分镜 shot cards + 生成路由         [V3]
 ├── video_prompt_pack.py        多模型视频生成提示词包 + 审批 gate  [V3]
+├── generation_task_log.py      异步生成任务台账 + 下载 gate         [V3]
 ├── storyboard_assets.py        分镜素材任务清单 + ready 预检       [V3]
+├── stock_material_plan.py      远程 stock 搜索规划                 [V3]
 ├── screen_focus.py             录屏点击/热点聚焦计划              [V3]
+├── color_grade.py              bounded 调色计划 + FFmpeg filter    [V3]
 ├── render_final.py             单次编码渲染 + enrich_plan 接入（V3 强化）
 ├── render_qa.py                渲染后黑屏/静帧/静音/尺寸质检       [V3]
 ├── timeline_view.py            filmstrip+waveform 可视化复盘图     [V3]
@@ -1212,6 +1270,7 @@ scripts/
 ├── generate_standup_timeline.py Remotion timeline
 ├── multi_export.py             三平台导出                       [V3]
 ├── generate_caption.py         标题/正文/标签                   [V3]
+├── publish_package.py          最终上传包 + gate 状态汇总           [V3]
 ├── prompts/
 │   ├── hook_templates.yaml     8 钩子模板                       [V3]
 │   ├── cta_templates.yaml      5 CTA 模板                       [V3]

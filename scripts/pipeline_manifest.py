@@ -240,6 +240,13 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         "Run multi_export.py when separate platform deliverables are required.",
     ),
     ArtifactDef(
+        "publish_package",
+        "Publish Package",
+        ("**/publish_package.json", "**/*_publish_package.json"),
+        "Run publish_package.py and resolve missing platform files or gate blockers before upload.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "nle_handoff",
         "NLE Handoff",
         ("**/*.edl", "**/*.edl.json"),
@@ -362,6 +369,7 @@ def evaluate_category(definition: ArtifactDef, artifacts: Sequence[ArtifactRecor
             "localization_pack",
             "asset_provenance",
             "audio_cue_sheet",
+            "publish_package",
         }:
             blocking = _int_at(data, "summary", "blocking")
             if blocking:

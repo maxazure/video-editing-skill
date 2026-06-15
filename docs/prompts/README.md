@@ -48,6 +48,7 @@
 | 46 | [Generation Task Log 异步生成任务台账](46-generation-task-log.md) | 记录 submit_id/task id、轮询/下载命令、本地落盘和发布前 blocking gate |
 | 47 | [Video Understanding 抽样帧 + 可选 YOLO](47-video-understanding.md) | 视频 → frames/detections/tracks/scene_tags，供重构图、隐私遮挡和 B-roll 标签复用 |
 | 48 | [Color Grade 调色计划](48-color-grade.md) | 生成 bounded 调色 plan，并在 render_final 单次编码中接入 |
+| 49 | [Publish Package 最终上传包](49-publish-package.md) | 平台视频、封面、字幕、文案、章节和 gate 状态汇总 |
 
 ## 快速上手
 
@@ -94,3 +95,4 @@
 | 已提交异步生成任务，要保存 submit_id 并跟踪下载 | [46-Generation Task Log](46-generation-task-log.md) |
 | 想识别视频里的人、屏幕、手机或动态主体 | [47-Video Understanding](47-video-understanding.md) |
 | 想统一成片色彩或加轻微质感 | [48-Color Grade](48-color-grade.md) |
+| 准备上传前想核对平台视频、文案和 gate | [49-Publish Package](49-publish-package.md) |

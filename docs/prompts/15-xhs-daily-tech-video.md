@@ -169,9 +169,24 @@
      --profile tech_pro \
      --output output/day<NN>_caption.json
 
+13. python3 scripts/pipeline_manifest.py \
+     --project-dir . \
+     --target-stage publish_ready \
+     --output work/pipeline_manifest.json \
+     --markdown work/pipeline_manifest.md \
+     --strict
+
+14. python3 scripts/publish_package.py \
+     --project-dir . \
+     --platforms xhs douyin wxch \
+     --output work/publish_package.json \
+     --markdown work/publish_package.md \
+     --strict
+
 最后给我：
 - 三个平台的 mp4 路径
 - caption.json 里的 title + caption_body + tags + publish_time_hint
+- publish_package.md 里的每个平台上传 checklist 和 blockers
 - enrich_plan.json 里 broll/sticker/chapter 总数（确认丰富度足够）
 - content_guard 的输出（必须 ✅ 无违规）
 - render_qa 的输出（必须没有 FAIL；WARN 要解释）
@@ -208,7 +223,11 @@ day<NN>/
 │   ├── jumpcut.json        # 可选：去停顿 cut list
 │   ├── day<NN>_edit.edl    # 可选：NLE handoff
 │   ├── day<NN>_edit.edl.json # 可选：EDL manifest
-│   └── render_config.json  # 喂给 render_final 的配置
+│   ├── render_config.json  # 喂给 render_final 的配置
+│   ├── pipeline_manifest.json # 发布前 gate 汇总
+│   ├── pipeline_manifest.md
+│   ├── publish_package.json # 最终上传包
+│   └── publish_package.md
 └── output/
     ├── verify/                         # 可选：timeline_view PNG
     ├── day<NN>_master.mp4              # 9:16 主版本
