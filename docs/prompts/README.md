@@ -49,6 +49,7 @@
 | 47 | [Video Understanding 抽样帧 + 可选 YOLO](47-video-understanding.md) | 视频 → frames/detections/tracks/scene_tags，供重构图、隐私遮挡和 B-roll 标签复用 |
 | 48 | [Color Grade 调色计划](48-color-grade.md) | 生成 bounded 调色 plan，并在 render_final 单次编码中接入 |
 | 49 | [Publish Package 最终上传包](49-publish-package.md) | 平台视频、封面、字幕、文案、章节和 gate 状态汇总 |
+| 50 | [CapCut Subtitle Import 剪映字幕反向导入](50-import-capcut-subtitles.md) | 剪映/CapCut 自动字幕或 SRT → transcript / gap cut list |
 
 ## 快速上手
 
@@ -96,3 +97,4 @@
 | 想识别视频里的人、屏幕、手机或动态主体 | [47-Video Understanding](47-video-understanding.md) |
 | 想统一成片色彩或加轻微质感 | [48-Color Grade](48-color-grade.md) |
 | 准备上传前想核对平台视频、文案和 gate | [49-Publish Package](49-publish-package.md) |
+| 已在剪映里生成/校对自动字幕，想回到本 pipeline | [50-CapCut Subtitle Import](50-import-capcut-subtitles.md) |

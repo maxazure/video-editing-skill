@@ -153,6 +153,9 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    ├─→ subtitle_pack.py         SRT / VTT / ASS / JSON 字幕交付包
    │                            支持 render_config 串接、加速倍率、片头 offset 对齐
    │
+   ├─→ import_capcut_subtitles.py
+   │                            剪映/CapCut 自动字幕 → transcript / gap cut list
+   │
    ├─→ export_edl.py            render_config / cut list → EDL + manifest
    │                            交给 Premiere / Final Cut Pro / Resolve
    │
@@ -181,7 +184,7 @@ cd ~/projects/video-editing-skill
 python3 scripts/utils.py
 
 # 4. 跑一遍测试套件确认 OK
-pytest tests/           # 360 个测试，约 6 秒
+pytest tests/           # 365 个测试，约 6 秒
 ```
 
 每天做一条视频的完整模板：**[docs/prompts/15-xhs-daily-tech-video.md](docs/prompts/15-xhs-daily-tech-video.md)**
@@ -539,6 +542,28 @@ python3 scripts/subtitle_pack.py \
 
 `--transcript` 默认保留原始时间码；`--config` 默认按 `render_final.py` 的 clips 顺序串接时间线。`--speed` 对齐 `--primary-speed`，`--offset` 对齐封面/片头秒数；中文默认 18 字单行、英文默认 42 字单行，也可用 `--max-chars` 覆盖。
 
+### 🔁 CapCut Subtitle Import — 剪映字幕反向导入
+[`scripts/import_capcut_subtitles.py`](scripts/import_capcut_subtitles.py) · [详细文档](docs/prompts/50-import-capcut-subtitles.md)
+
+借鉴 SmartCut / CapCut 自动字幕工作流：先在剪映里用 Auto Captions 生成或人工校对字幕，再把字幕轨导回本项目，生成兼容 `rewrite_script.py`、`rough_cut.py`、`subtitle_pack.py` 的 `transcript.json`。需要按字幕间隙做初剪时，同一个脚本也能输出 `keep_segments` cut list，交给 `timeline_view.py` 或 `export_edl.py` 复核。
+
+常用：
+```bash
+python3 scripts/import_capcut_subtitles.py \
+  --draft ~/Movies/JianyingPro/User\ Data/Projects/com.lveditor.draft/day58 \
+  --transcript work/capcut_transcript.json \
+  --cut-list work/capcut_gap_cut.json \
+  --markdown work/capcut_subtitles.md \
+  --gap-threshold 1.0
+
+python3 scripts/import_capcut_subtitles.py \
+  --srt exports/capcut_auto_captions.srt \
+  --transcript work/capcut_transcript.json \
+  --srt-output output/subtitles/capcut_clean.srt
+```
+
+默认只读取剪映草稿里的 subtitle 材料，避免把封面标题/贴纸文字误当口播字幕；如果某个草稿把自动字幕保存成普通文字轨，可加 `--include-overlays`。`--cut-list` 是“字幕间隙代理”的保守粗剪，最终渲染前仍应跑 `timeline_view.py --cut-list` 人工复核。
+
 ### ✂️ ASR Rough Cut — 自动去口头禅/重复句
 [`scripts/rough_cut.py`](scripts/rough_cut.py) · [详细文档](docs/prompts/26-rough-cut.md)
 
@@ -661,6 +686,24 @@ python3 scripts/export_edl.py \
 ```
 
 适合把自动粗剪交给 Premiere / Final Cut Pro / DaVinci Resolve 做调色、混音、精剪或协作复核。复杂字幕、overlay、章节卡和 B-roll 仍以 `render_final.py` / `export_capcut.py` 为准。
+
+### 2026-06-17 自动化升级记录（CapCut Subtitle Import）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`mrbuslov/capcut-ai-editor`](https://github.com/mrbuslov/capcut-ai-editor) | 直接读取 CapCut 自动字幕，用字幕间隙和重复表达做 talking-head 智能粗剪 | 新增本地反向导入，不直接改草稿；输出 transcript 和可复核 cut list |
+| [`danyfernandes/capcut-srt-extractor-python`](https://github.com/danyfernandes/capcut-srt-extractor-python) | 从 CapCut 工程取回 SRT，解决剪映字幕难交付的问题 | 支持草稿 `draft_content.json` 和外部 SRT 两种入口 |
+| [`mutonby/openshorts`](https://github.com/mutonby/openshorts) | 长视频切短视频流水线重视 Auto Subtitles、hook overlays 和发布前资产交付 | 本项目保持本地 transcript/artifact 交付，不接入云端发布 API |
+| [`JiamanJemma/video-post-production-kit`](https://github.com/JiamanJemma/video-post-production-kit) | talking-head + screen recording 后期流程强调字幕校对和多轨可复核 | 新增 Markdown review + gap cut list，先复核再渲染/交给 NLE |
+| [`jurczykpawel/reelstack`](https://github.com/jurczykpawel/reelstack) | 把外部生成器/编辑器当作内容来源，生产线负责统一 timing、caption、branding | 剪映可作为字幕校对入口，回流后继续走本项目统一 pipeline |
+
+新增/调整能力：新增 `scripts/import_capcut_subtitles.py`，可从剪映/CapCut 草稿目录、`draft_content.json` 或 SRT 导入字幕，输出兼容本项目的 `capcut_subtitle_transcript`；可选 `--cut-list` 会按字幕间隙生成 `keep_segments`，供 `timeline_view.py`、`export_edl.py` 或后续粗剪流程复核；默认只导入 subtitle 材料，避免封面标题/贴纸文字混入 transcript，必要时用 `--include-overlays` 兜底。
+
+使用方式：从剪映草稿导入用 `python3 scripts/import_capcut_subtitles.py --draft ~/Movies/JianyingPro/User\ Data/Projects/com.lveditor.draft/day58 --transcript work/capcut_transcript.json --cut-list work/capcut_gap_cut.json --markdown work/capcut_subtitles.md --source-media origin/talking.mp4`；从 SRT 导入用 `python3 scripts/import_capcut_subtitles.py --srt exports/capcut_auto_captions.srt --transcript work/capcut_transcript.json --srt-output output/subtitles/capcut_clean.srt`。详细示例见 [docs/prompts/50-import-capcut-subtitles.md](docs/prompts/50-import-capcut-subtitles.md)。
+
+验证结果：新增 `tests/test_import_capcut_subtitles.py` 5 项；`.venv/bin/python -m pytest tests/test_import_capcut_subtitles.py -q` 通过 `5 passed in 0.05s`；完整 `.venv/bin/python -m pytest tests -q` 通过 `365 passed in 4.87s`；`.venv/bin/python -m compileall scripts tests` 通过；`git diff --check` 通过；`.venv/bin/python scripts/import_capcut_subtitles.py --help` smoke 验证 CLI 参数正常。
 
 ### 2026-05-27 自动化升级记录（Subtitle Pack）
 
@@ -1206,6 +1249,7 @@ pytest tests/test_publish_package.py -v     # 最终上传包 + gate 状态汇�
 | **45** | **[Video Prompt Pack](docs/prompts/45-video-prompt-pack.md)** | **视频生成提示词包 + paid approval gate** |
 | **46** | **[Generation Task Log](docs/prompts/46-generation-task-log.md)** | **跟踪 submit_id、轮询、下载和本地落盘** |
 | **49** | **[Publish Package](docs/prompts/49-publish-package.md)** | **汇总平台视频、文案、字幕和发布 gate** |
+| **50** | **[CapCut Subtitle Import](docs/prompts/50-import-capcut-subtitles.md)** | **剪映/CapCut 自动字幕反向导入** |
 
 完整列表见 [docs/prompts/README.md](docs/prompts/README.md)。
 
@@ -1261,6 +1305,7 @@ scripts/
 ├── render_qa.py                渲染后黑屏/静帧/静音/尺寸质检       [V3]
 ├── timeline_view.py            filmstrip+waveform 可视化复盘图     [V3]
 ├── subtitle_pack.py            SRT/VTT/ASS/JSON 字幕交付包        [V3]
+├── import_capcut_subtitles.py  剪映/CapCut 字幕反向导入 + gap cut [V3]
 ├── burn_subtitles.py           字幕 ASS 生成
 ├── generate_cover.py           封面生成
 ├── generate_cover_image.py     Chrome-rendered 封面
