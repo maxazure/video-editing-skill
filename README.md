@@ -157,6 +157,7 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    │                            剪映/CapCut 自动字幕 → transcript / gap cut list
    │
    ├─→ export_edl.py            render_config / cut list → EDL + manifest
+   ├─→ export_fcpxml.py         render_config / cut list → FCPXML + manifest
    │                            交给 Premiere / Final Cut Pro / Resolve
    │
    ├─→ multi_export.py          小红书 3:4 / 抖音 9:16 / 视频号 ≤60s
@@ -666,10 +667,10 @@ python3 scripts/render_final.py \
 }
 ```
 
-### 🧭 NLE Handoff — EDL 导出
-[`scripts/export_edl.py`](scripts/export_edl.py) · [详细文档](docs/prompts/27-export-edl.md)
+### 🧭 NLE Handoff — EDL / FCPXML 导出
+[`scripts/export_edl.py`](scripts/export_edl.py) · [`scripts/export_fcpxml.py`](scripts/export_fcpxml.py) · [详细文档](docs/prompts/27-export-edl.md)
 
-借鉴自动剪辑/生成类项目常见的“先产 timeline，再交给专业剪辑软件继续精修”工作流：`export_edl.py` 可把本项目的 `render_config.json` 或 `rough_cut.py` / `jump_cut.py` 产生的 `keep_segments` 导出成单轨 CMX 3600 风格 EDL，同时写一个 JSON manifest 保留绝对源路径和精确秒数。
+借鉴自动剪辑/生成类项目常见的“先产 timeline，再交给专业剪辑软件继续精修”工作流：`export_edl.py` 可把本项目的 `render_config.json` 或 `rough_cut.py` / `jump_cut.py` 产生的 `keep_segments` 导出成单轨 CMX 3600 风格 EDL；`export_fcpxml.py` 导出 Final Cut Pro / DaVinci Resolve 更友好的单 spine FCPXML。两者都会写 JSON manifest，保留绝对源路径和精确秒数。
 
 常用：
 ```bash
@@ -683,9 +684,34 @@ python3 scripts/export_edl.py \
   --cut-list work/rough_cut.json \
   --output work/rough_cut.edl \
   --fps 30
+
+python3 scripts/export_fcpxml.py \
+  --config work/render_config.json \
+  --output work/day58_edit.fcpxml \
+  --fps 30 \
+  --width 1080 \
+  --height 1920
 ```
 
-适合把自动粗剪交给 Premiere / Final Cut Pro / DaVinci Resolve 做调色、混音、精剪或协作复核。复杂字幕、overlay、章节卡和 B-roll 仍以 `render_final.py` / `export_capcut.py` 为准。
+适合把自动粗剪交给 Premiere / Final Cut Pro / DaVinci Resolve 做调色、混音、精剪或协作复核。EDL 更通用，FCPXML 对 FCP / Resolve 更直接；复杂字幕、overlay、章节卡和 B-roll 仍以 `render_final.py` / `export_capcut.py` 为准。
+
+### 2026-06-18 自动化升级记录（FCPXML NLE Handoff）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`WyattBlue/auto-editor`](https://github.com/WyattBlue/auto-editor) | 自动剪辑后可导出 Premiere / Resolve / Final Cut Pro / Shotcut / Kdenlive 时间线 | 在已有 EDL handoff 外补 FCPXML，延续同一份剪辑计划 |
+| [`leeyc09/Silence-Cutter`](https://github.com/leeyc09/Silence-Cutter) | 静音移除后直接输出 FCPXML，并强调 word-boundary / 字幕同步 | 本项目继续使用已有 rough/jump cut list；FCPXML 只做非破坏式 NLE 交接 |
+| [`AKMessi/vex`](https://github.com/AKMessi/vex) | typed shorts/edit plan、质量门禁、候选片段评分和 NLE handoff 思路清晰 | 复用本项目 manifest / QA / timeline_view gate，不新增云端依赖 |
+| [`browser-use/video-use`](https://github.com/browser-use/video-use) | transcript-first、EDL、render self-eval 的 agent 剪辑循环 | FCPXML 继续从 transcript/render_config/cut-list artifact 派生，保持可审计 |
+| [`KyaniteLabs/mcp-video`](https://github.com/KyaniteLabs/mcp-video) | 把 FFmpeg、字幕、质量检查、repurpose package 包装为 typed/guardrailed 工具 | 本项目保持脚本式接口，但为 NLE handoff 增加更强格式覆盖 |
+
+新增/调整能力：新增 `scripts/export_fcpxml.py`，可读取 `render_config.json`、`rough_cut.py` 或 `jump_cut.py` 的 `keep_segments`，生成单 spine FCPXML 和 `<output>.json` manifest；支持 `--fps`、`--width`、`--height`、`--title`、`--source` 和 `--fcpxml-version`。`export_edl.py` 保留，二者共享同一套 segment/event 解析。
+
+使用方式：从成片配置导出用 `python3 scripts/export_fcpxml.py --config work/render_config.json --output work/day58_edit.fcpxml --fps 30 --width 1080 --height 1920`；从粗剪 cut list 导出用 `python3 scripts/export_fcpxml.py --cut-list work/rough_cut.json --output work/rough_cut.fcpxml --fps 30`。详细说明见 [docs/prompts/27-export-edl.md](docs/prompts/27-export-edl.md)。
+
+验证结果：新增 `tests/test_export_fcpxml.py` 4 项；`.venv/bin/python -m pytest tests/test_export_fcpxml.py -q` 通过 `4 passed in 0.06s`；相关回归 `.venv/bin/python -m pytest tests/test_export_fcpxml.py tests/test_export_edl.py tests/test_pipeline_manifest.py -q` 通过 `28 passed in 0.29s`；完整 `.venv/bin/python -m pytest tests -q` 通过 `369 passed in 4.76s`；`.venv/bin/python -m compileall scripts tests` 通过；`git diff --check` 通过。
 
 ### 2026-06-17 自动化升级记录（CapCut Subtitle Import）
 
@@ -1042,6 +1068,12 @@ python3 $SKILL/scripts/export_edl.py \
   --config $WORK/work/render_config.json \
   --output $WORK/work/day${DAY}_edit.edl \
   --fps 30
+python3 $SKILL/scripts/export_fcpxml.py \
+  --config $WORK/work/render_config.json \
+  --output $WORK/work/day${DAY}_edit.fcpxml \
+  --fps 30 \
+  --width 1080 \
+  --height 1920
 
 # 7. 平台导出质检
 python3 $SKILL/scripts/render_qa.py \
@@ -1077,7 +1109,7 @@ python3 $SKILL/scripts/publish_package.py \
 ## 测试
 
 ```bash
-pytest tests/           # 360 测试，约 6 秒
+pytest tests/           # 369 测试，约 6 秒
 ```
 
 按模块跑：
@@ -1098,6 +1130,7 @@ pytest tests/test_generation_task_log.py -v # 异步生成任务台账 + 下载 
 pytest tests/test_video_understanding.py -v # 抽样帧 + 可选 YOLO 检测 artifact
 pytest tests/test_storyboard_assets.py -v   # 分镜素材 readiness manifest
 pytest tests/test_export_edl.py -v          # NLE handoff EDL + manifest
+pytest tests/test_export_fcpxml.py -v       # NLE handoff FCPXML + manifest
 pytest tests/test_screen_focus.py -v        # 录屏点击聚焦计划 + render 接入
 pytest tests/test_subtitle_pack.py -v       # SRT/VTT/ASS/JSON 字幕交付包
 pytest tests/test_audio_cue_sheet.py -v     # BGM/SFX 音频设计清单
@@ -1242,7 +1275,7 @@ pytest tests/test_publish_package.py -v     # 最终上传包 + gate 状态汇�
 | **24** | **[Storyboard Plan](docs/prompts/24-storyboard-plan.md)** | **分镜 shot cards + 生成路由** |
 | **25** | **[Storyboard Assets](docs/prompts/25-storyboard-assets.md)** | **分镜素材任务清单 + ready 预检** |
 | **26** | **[ASR Rough Cut](docs/prompts/26-rough-cut.md)** | **去口头禅/重复句粗剪** |
-| **27** | **[NLE Handoff](docs/prompts/27-export-edl.md)** | **导出 EDL 给 Premiere/FCP/Resolve** |
+| **27** | **[NLE Handoff](docs/prompts/27-export-edl.md)** | **导出 EDL / FCPXML 给 Premiere/FCP/Resolve** |
 | **28** | **[Screen Focus](docs/prompts/28-screen-focus.md)** | **录屏点击/热点自动聚焦** |
 | **29** | **[Subtitle Pack](docs/prompts/29-subtitle-pack.md)** | **导出 SRT/VTT/ASS/JSON 字幕包** |
 | **43** | **[Audio Cue Sheet](docs/prompts/43-audio-cue-sheet.md)** | **规划 BGM/SFX 和生成审批** |
@@ -1312,6 +1345,7 @@ scripts/
 ├── add_chapter_bar.py          章节进度条
 ├── export_capcut.py            剪映工程导出
 ├── export_edl.py               NLE handoff EDL + manifest          [V3]
+├── export_fcpxml.py            NLE handoff FCPXML + manifest       [V3]
 ├── generate_standup_timeline.py Remotion timeline
 ├── multi_export.py             三平台导出                       [V3]
 ├── generate_caption.py         标题/正文/标签                   [V3]

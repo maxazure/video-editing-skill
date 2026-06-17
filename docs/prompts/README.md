@@ -39,7 +39,7 @@
 | 24 | [Storyboard Plan 分镜与生成路由](24-storyboard-plan.md) | transcript/clean script → shot cards、生成路由、连续性锚点 |
 | 25 | [Storyboard Assets 素材清单与预检](25-storyboard-assets.md) | storyboard_plan → 素材状态表、paid approval、ready 检查 |
 | 26 | [ASR Rough Cut 口头禅/重复句粗剪](26-rough-cut.md) | transcript/filler metadata → 可审计 cut list，可选直接渲染 |
-| 27 | [NLE Handoff 导出 EDL](27-export-edl.md) | render_config / cut list → 单轨 EDL + manifest，交给 Premiere/FCP/Resolve |
+| 27 | [NLE Handoff 导出 EDL/FCPXML](27-export-edl.md) | render_config / cut list → 单轨 EDL 或 FCPXML + manifest，交给 Premiere/FCP/Resolve |
 | 28 | [Screen Focus 点击聚焦](28-screen-focus.md) | 录屏点击/热点 → 自动放大、标记、标签计划 |
 | 29 | [Subtitle Pack 字幕交付包](29-subtitle-pack.md) | transcript/render_config → SRT/VTT/ASS/JSON，支持加速和片头 offset |
 | 43 | [Audio Cue Sheet 音频设计清单](43-audio-cue-sheet.md) | transcript → BGM/SFX cue、生成审批和音频门禁 |

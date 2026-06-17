@@ -153,6 +153,12 @@
       --config work/render_config.json \
       --output work/day<NN>_edit.edl \
       --fps 30
+    python3 scripts/export_fcpxml.py \
+      --config work/render_config.json \
+      --output work/day<NN>_edit.fcpxml \
+      --fps 30 \
+      --width 1080 \
+      --height 1920
 
 10. python3 scripts/render_qa.py \
      output/day<NN>_master_xhs.mp4 \
@@ -223,6 +229,8 @@ day<NN>/
 │   ├── jumpcut.json        # 可选：去停顿 cut list
 │   ├── day<NN>_edit.edl    # 可选：NLE handoff
 │   ├── day<NN>_edit.edl.json # 可选：EDL manifest
+│   ├── day<NN>_edit.fcpxml # 可选：FCPXML handoff
+│   ├── day<NN>_edit.fcpxml.json # 可选：FCPXML manifest
 │   ├── render_config.json  # 喂给 render_final 的配置
 │   ├── pipeline_manifest.json # 发布前 gate 汇总
 │   ├── pipeline_manifest.md

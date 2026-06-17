@@ -5,7 +5,7 @@ Import JianYing/CapCut subtitle tracks back into this pipeline.
 CapCut's auto captions are often a useful human-reviewed transcript source.
 This script reads draft_content.json (or an exported SRT), emits a compatible
 transcript.json, and can also create a non-destructive cut list from subtitle
-gaps for timeline_view.py / export_edl.py review.
+gaps for timeline_view.py / export_edl.py / export_fcpxml.py review.
 """
 
 import argparse

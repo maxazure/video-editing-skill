@@ -249,8 +249,8 @@ ARTIFACTS: Sequence[ArtifactDef] = (
     ArtifactDef(
         "nle_handoff",
         "NLE Handoff",
-        ("**/*.edl", "**/*.edl.json"),
-        "Run export_edl.py if an editor needs Premiere/FCP/Resolve handoff files.",
+        ("**/*.edl", "**/*.edl.json", "**/*.fcpxml", "**/*.fcpxml.json"),
+        "Run export_edl.py or export_fcpxml.py if an editor needs Premiere/FCP/Resolve handoff files.",
     ),
 )
 

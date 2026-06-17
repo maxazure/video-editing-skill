@@ -66,4 +66,4 @@ python3 scripts/timeline_view.py \
   --output-dir output/verify/capcut_gap_cut
 ```
 
-确认没误切后，再考虑用 `export_edl.py` 交给 NLE，或把字幕 transcript 交给本项目其它工具继续处理。CapCut 字幕间隙不是逐帧剪辑决策，最终成片前必须复核。
+确认没误切后，再考虑用 `export_edl.py` / `export_fcpxml.py` 交给 NLE，或把字幕 transcript 交给本项目其它工具继续处理。CapCut 字幕间隙不是逐帧剪辑决策，最终成片前必须复核。
