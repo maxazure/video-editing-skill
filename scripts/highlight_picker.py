@@ -82,6 +82,15 @@ SIGNAL_PATTERNS: Dict[str, Tuple[str, Tuple[str, ...], float]] = {
     ),
 }
 
+EN_BRIEF_STOPWORDS = {
+    "about", "after", "again", "all", "also", "and", "any", "are", "but",
+    "can", "clip", "clips", "find", "for", "from", "get", "has", "have",
+    "into", "moment", "moments", "more", "most", "not", "one", "out", "show",
+    "that", "the", "this", "video", "want", "when", "where", "with", "your",
+}
+
+CJK_BRIEF_STOP_CHARS = set("的一是在不了有和就都而及与或把被给这那我你他她它们个很太也要想找从到")
+
 
 @dataclass(frozen=True)
 class TranscriptSegment:
@@ -209,6 +218,93 @@ def _signal_score(text: str, signal_ids: Sequence[str], cap: float = 1.0) -> Tup
     return min(cap, score), labels
 
 
+def _extract_brief_terms(brief: str) -> List[str]:
+    """Return deterministic search terms for prompt/brief-oriented clipping."""
+    terms: List[str] = []
+    seen = set()
+
+    def add(term: str) -> None:
+        compact = re.sub(r"\s+", " ", term).strip().lower()
+        compact = compact.strip(" ,.;:!?()[]{}\"'`")
+        if len(compact) < 2 or compact in seen:
+            return
+        seen.add(compact)
+        terms.append(compact)
+
+    for quoted in re.findall(r"[\"'“”‘’](.*?)[\"'“”‘’]", brief):
+        add(quoted)
+
+    for word in re.findall(r"[A-Za-z0-9][A-Za-z0-9'_-]*", brief.lower()):
+        normalized = word.strip("_-'")
+        if len(normalized) >= 3 and normalized not in EN_BRIEF_STOPWORDS:
+            add(normalized)
+
+    for run in re.findall(r"[\u4e00-\u9fff]{2,}", brief):
+        if len(run) <= 8:
+            add(run)
+        for size in (4, 3, 2):
+            if len(run) < size:
+                continue
+            for idx in range(0, len(run) - size + 1):
+                piece = run[idx:idx + size]
+                if any(char not in CJK_BRIEF_STOP_CHARS for char in piece):
+                    add(piece)
+
+    return terms[:24]
+
+
+def _brief_match_score(text: str, brief: Optional[str]) -> Optional[Dict[str, Any]]:
+    if not brief or not brief.strip():
+        return None
+    text_lc = text.lower()
+    terms = _extract_brief_terms(brief)
+    if not terms:
+        return {
+            "brief": brief.strip(),
+            "terms": [],
+            "matched_terms": [],
+            "coverage": 0.0,
+            "frequency": 0.0,
+            "early_match": 0.0,
+            "score": 0.0,
+        }
+
+    weighted_total = 0.0
+    weighted_match = 0.0
+    occurrences = 0
+    first_match: Optional[int] = None
+    matched_terms: List[str] = []
+    for term in terms:
+        weight = 1.0 + min(1.0, max(0, len(term) - 2) / 5.0)
+        weighted_total += weight
+        pattern = re.escape(term)
+        matches = list(re.finditer(pattern, text_lc, flags=re.IGNORECASE))
+        if not matches:
+            continue
+        weighted_match += weight
+        occurrences += len(matches)
+        matched_terms.append(term)
+        first_pos = matches[0].start()
+        first_match = first_pos if first_match is None else min(first_match, first_pos)
+
+    coverage = weighted_match / weighted_total if weighted_total else 0.0
+    frequency = min(1.0, occurrences / max(1.0, len(terms) * 0.5))
+    early_match = 0.0
+    if first_match is not None:
+        early_window = max(24, int(len(text_lc) * 0.35))
+        early_match = max(0.0, 1.0 - first_match / max(1, early_window))
+    score = min(1.0, 0.72 * coverage + 0.18 * frequency + 0.10 * early_match)
+    return {
+        "brief": brief.strip(),
+        "terms": terms,
+        "matched_terms": matched_terms,
+        "coverage": round(coverage, 3),
+        "frequency": round(frequency, 3),
+        "early_match": round(early_match, 3),
+        "score": round(score, 3),
+    }
+
+
 def _duration_score(duration: float, target_duration: float, min_duration: float, max_duration: float) -> float:
     if duration < min_duration or duration > max_duration:
         return 0.0
@@ -260,6 +356,7 @@ def score_window(
     min_duration: float,
     max_duration: float,
     target_duration: float,
+    brief: Optional[str] = None,
 ) -> Dict[str, Any]:
     text = window.text
     hook_text = " ".join(seg.text for seg in window.segments if seg.end - window.start <= 5.0) or window.segments[0].text
@@ -284,6 +381,7 @@ def score_window(
     completeness_score, warnings = _completeness_score(window)
     filler_penalty, filler_warnings = _filler_penalty(text, language)
     warnings.extend(filler_warnings)
+    brief_match = _brief_match_score(text, brief)
 
     raw = (
         0.24 * hook_score
@@ -294,33 +392,46 @@ def score_window(
         + 0.10 * density_score
         + 0.10 * completeness_score
     )
+    if brief_match is not None:
+        raw = 0.74 * raw + 0.26 * float(brief_match["score"])
     score = max(0.0, min(100.0, raw * 100.0 - filler_penalty * 100.0))
     signal_labels = list(dict.fromkeys(hook_labels + value_labels + turn_labels + emotion_labels))
+    if brief_match is not None and float(brief_match["score"]) >= 0.18:
+        signal_labels.insert(0, "brief match")
     if hook_score < 0.20:
         warnings.append("weak opening hook")
     if duration_score < 0.45:
         warnings.append("duration far from platform sweet spot")
+    if brief_match is not None and float(brief_match["score"]) < 0.18:
+        warnings.append("weak brief match")
 
     title = suggest_title(window, signal_labels)
     reason = build_reason(signal_labels, duration_score, completeness_score)
-    return {
+    score_breakdown = {
+        "hook": round(hook_score, 3),
+        "value": round(value_score, 3),
+        "turn": round(turn_score, 3),
+        "emotion": round(emotion_score, 3),
+        "duration": round(duration_score, 3),
+        "density": round(density_score, 3),
+        "completeness": round(completeness_score, 3),
+        "filler_penalty": round(filler_penalty, 3),
+    }
+    if brief_match is not None:
+        score_breakdown["brief"] = float(brief_match["score"])
+
+    payload: Dict[str, Any] = {
         "score": round(score, 1),
-        "score_breakdown": {
-            "hook": round(hook_score, 3),
-            "value": round(value_score, 3),
-            "turn": round(turn_score, 3),
-            "emotion": round(emotion_score, 3),
-            "duration": round(duration_score, 3),
-            "density": round(density_score, 3),
-            "completeness": round(completeness_score, 3),
-            "filler_penalty": round(filler_penalty, 3),
-        },
+        "score_breakdown": score_breakdown,
         "signals": signal_labels,
         "warnings": list(dict.fromkeys(warnings)),
         "hook_text": _clip_text(hook_text, 80),
         "title_suggestion": title,
         "reason": reason,
     }
+    if brief_match is not None:
+        payload["brief_match"] = brief_match
+    return payload
 
 
 def suggest_title(window: CandidateWindow, signals: Sequence[str]) -> str:
@@ -474,6 +585,7 @@ def build_highlight_candidates(
     *,
     platform: str = "xhs",
     language: str = "auto",
+    brief: Optional[str] = None,
     min_duration: Optional[float] = None,
     max_duration: Optional[float] = None,
     target_duration: Optional[float] = None,
@@ -504,6 +616,7 @@ def build_highlight_candidates(
             min_duration=min_duration,
             max_duration=max_duration,
             target_duration=target_duration,
+            brief=brief,
         )
         candidate = {
             "id": f"highlight_{index:04d}",
@@ -549,6 +662,7 @@ def build_highlight_candidates(
             "max_candidates": max_candidates,
             "overlap_threshold": overlap_threshold,
             "scene_snap_tolerance": scene_snap_tolerance if scene_points else None,
+            "brief": brief.strip() if brief else None,
         },
         "summary": {
             "windows_scored": len(scored),
@@ -570,6 +684,7 @@ def format_time(seconds: float) -> str:
 
 
 def emit_markdown(plan: Mapping[str, Any]) -> str:
+    has_brief = bool(plan.get("params", {}).get("brief"))
     lines = [
         "# Highlight Candidates",
         "",
@@ -578,10 +693,20 @@ def emit_markdown(plan: Mapping[str, Any]) -> str:
         f"- Windows scored: `{plan['summary']['windows_scored']}`",
         f"- Selected clips: `{plan['summary']['selected']}`",
         f"- Scene-snapped clips: `{plan['summary'].get('scene_snapped', 0)}`",
-        "",
-        "| Rank | Time | Score | Scene Snap | Hook | Why | Warnings |",
-        "| --- | --- | ---: | --- | --- | --- | --- |",
     ]
+    if has_brief:
+        lines.append(f"- Brief: `{_clip_text(str(plan['params']['brief']), 90)}`")
+    lines.append("")
+    if has_brief:
+        lines.extend([
+            "| Rank | Time | Score | Brief Match | Scene Snap | Hook | Why | Warnings |",
+            "| --- | --- | ---: | --- | --- | --- | --- | --- |",
+        ])
+    else:
+        lines.extend([
+            "| Rank | Time | Score | Scene Snap | Hook | Why | Warnings |",
+            "| --- | --- | ---: | --- | --- | --- | --- |",
+        ])
     for candidate in plan.get("selected", []):
         warnings = "; ".join(candidate.get("warnings") or []) or "-"
         snap = candidate.get("scene_snap") or {}
@@ -591,23 +716,41 @@ def emit_markdown(plan: Mapping[str, Any]) -> str:
                 start=float(snap.get("start_shift", 0.0)),
                 end=float(snap.get("end_shift", 0.0)),
             )
-        lines.append(
-            "| {rank} | {start}-{end} | {score:.1f} | {snap} | {hook} | {reason} | {warnings} |".format(
-                rank=candidate["rank"],
-                start=format_time(candidate["start"]),
-                end=format_time(candidate["end"]),
-                score=float(candidate["score"]),
-                snap=snap_text,
-                hook=_clip_text(candidate.get("hook_text", ""), 52).replace("|", "\\|"),
-                reason=str(candidate.get("reason", "")).replace("|", "\\|"),
-                warnings=warnings.replace("|", "\\|"),
+        common = {
+            "rank": candidate["rank"],
+            "start": format_time(candidate["start"]),
+            "end": format_time(candidate["end"]),
+            "score": float(candidate["score"]),
+            "snap": snap_text,
+            "hook": _clip_text(candidate.get("hook_text", ""), 52).replace("|", "\\|"),
+            "reason": str(candidate.get("reason", "")).replace("|", "\\|"),
+            "warnings": warnings.replace("|", "\\|"),
+        }
+        if has_brief:
+            match = candidate.get("brief_match") or {}
+            matched = ", ".join(match.get("matched_terms") or []) or "-"
+            brief_text = "{score:.2f}: {matched}".format(
+                score=float(match.get("score", 0.0)),
+                matched=_clip_text(matched, 42).replace("|", "\\|"),
             )
-        )
+            lines.append(
+                "| {rank} | {start}-{end} | {score:.1f} | {brief} | {snap} | {hook} | {reason} | {warnings} |".format(
+                    brief=brief_text,
+                    **common,
+                )
+            )
+        else:
+            lines.append(
+                "| {rank} | {start}-{end} | {score:.1f} | {snap} | {hook} | {reason} | {warnings} |".format(
+                    **common,
+                )
+            )
     lines.extend([
         "",
         "## Review Notes",
         "",
         "- Pick candidates with a real opening hook and a self-contained ending before rendering.",
+        "- With `--brief`, prefer clips that match the brief and still have a self-contained ending.",
         "- If `warnings` mention weak hook or mid-thought ending, rewrite or extend the clip manually.",
         "- If scene snapping is enabled, start times only move backward and end times only move forward to avoid cutting transcript words.",
         "- `--render-config` can create a direct `render_final.py` input when a source video path is supplied.",
@@ -627,6 +770,8 @@ def build_render_config(plan: Mapping[str, Any], video_path: str) -> Dict[str, A
             "highlight_score": candidate["score"],
             "segment_ids": candidate["segment_ids"],
         })
+        if candidate.get("brief_match"):
+            clips[-1]["brief_match"] = candidate["brief_match"]
         if candidate.get("scene_snap"):
             clips[-1]["scene_snap"] = candidate["scene_snap"]
     return {
@@ -643,6 +788,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--markdown", help="Optional Markdown review table")
     parser.add_argument("--video", help="Source video path used when writing --render-config")
     parser.add_argument("--render-config", help="Optional render_final.py config containing selected clips")
+    parser.add_argument("--brief", "--query", dest="brief", help="Optional natural-language moment brief, e.g. 'find the product reveal'")
     parser.add_argument("--scene-boundaries", help="Optional scene_boundaries JSON from scripts/scene_boundaries.py")
     parser.add_argument("--scene-snap-tolerance", type=float, default=1.5, help="Seconds to expand a candidate to nearby visual cut points")
     parser.add_argument("--platform", choices=sorted(PLATFORM_DEFAULTS), default="xhs")
@@ -673,6 +819,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             transcript,
             platform=args.platform,
             language=args.language,
+            brief=args.brief,
             min_duration=args.min_duration,
             max_duration=args.max_duration,
             target_duration=args.target_duration,

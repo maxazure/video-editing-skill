@@ -44,6 +44,30 @@ python3 scripts/render_final.py \
 
 如果先运行了 [32 Scene Boundaries](32-scene-boundaries.md)，`--scene-boundaries` 会让候选片段开头只向前扩展到附近视觉切点、结尾只向后扩展到附近视觉切点，避免吞掉 transcript 字词。扩展信息会写入每个 candidate 的 `scene_snap`，并进入 `render_config`。
 
+## 按自然语言 brief 找片段
+
+当用户不是要“自动找最爆的片段”，而是已经知道要找什么时，传 `--brief` 或 `--query`：
+
+```bash
+python3 scripts/highlight_picker.py \
+  --transcript work/long_transcript.json \
+  --brief "产品发布 用户反应 价格对比" \
+  --output work/brief_highlights.json \
+  --markdown work/brief_highlights.md \
+  --video origin/long-talk.mp4 \
+  --render-config work/brief_render_config.json \
+  --platform douyin \
+  --num-clips 3 \
+  --strict
+```
+
+`--brief` 会把自然语言意图拆成英文关键词和中文短语片段，和原有 hook/value/duration/completeness 分数一起排序。输出里每条 candidate 会多出：
+- `brief_match.score`：0-1 相关性分数
+- `brief_match.matched_terms`：命中的 brief 词
+- `score_breakdown.brief`：参与总分的相关性分
+
+这个模式适合 “找产品 reveal”、“找用户强反应”、“找教程关键步骤”、“找失败教训” 这类定向剪片。仍然要看 Markdown 复核表，避免只因为关键词命中就截到半句话。
+
 ## 打分逻辑
 
 `highlight_picker.py` 会用滑动 transcript 窗口生成候选，并按平台默认时长过滤：
@@ -64,6 +88,7 @@ python3 scripts/render_final.py \
 - 语速密度是否适合短视频
 - 是否开头/结尾像半句话
 - 是否有明显 filler-heavy 风险
+- 如果传了 `--brief`，是否命中 brief/query 的主题词
 
 相互重叠的候选会按分数去重，避免同一个精彩段落重复输出多条。
 

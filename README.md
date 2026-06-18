@@ -2,7 +2,7 @@
 
 这是一个面向 **口播、教程、访谈、播客切片、录屏演示** 的 AI 视频剪辑生产线：给它原始口播音频/视频、transcript、B-roll 或素材目录，它可以把“还没整理的素材”推进到 **可发布的小红书 / 抖音 / 视频号短视频**。
 
-它不是一个单点 FFmpeg 脚本，而是一条完整工作流：**转写 → 清稿 → 去口头禅/停顿 → 重组故事 → 分镜 → B-roll/生图/生成视频规划 → 字幕与声音设计 → 单次编码渲染 → 质检 → 多平台导出 → 标题文案**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
+它不是一个单点 FFmpeg 脚本，而是一条完整工作流：**转写 → 长视频择段 → 清稿 → 去口头禅/停顿 → 重组故事 → 分镜 → B-roll/生图/生成视频规划 → 字幕与声音设计 → 单次编码渲染 → 质检 → 多平台导出 → 标题文案**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
 
 ## 适合做什么
 
@@ -101,6 +101,9 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    │
    ├─→ video_understanding.py   抽样帧 + 可选 YOLO 物体检测
    │                            frames / detections / tracks / scene_tags
+   │
+   ├─→ highlight_picker.py      长视频精华候选 / brief-query 定向找片段
+   │                            输出 score / hook / reason / render_config
    │
    ├─→ rough_cut.py             ASR 粗剪 → 去纯口头禅 / 相邻重复句
    │                            输出可审计 cut list，可选单次 concat 渲染
@@ -303,6 +306,28 @@ python3 scripts/video_understanding.py origin/talk.mp4 \
 ```
 
 输出可以直接交给 `smart_reframe.py --detections` 做主体感知裁切，也可以交给 `privacy_redact.py --detections` 做隐私遮挡计划。`ultralytics` 不是必装依赖；没有 detector 时仍然能生成抽样帧和 review shell。
+
+### 🔎 Highlight Picker — 长视频精华候选 / brief 定向找片段
+[`scripts/highlight_picker.py`](scripts/highlight_picker.py) · [详细文档](docs/prompts/31-highlight-picker.md)
+
+长视频拆短视频时，先从 `transcript.json` 生成可发布候选，输出透明 `score`、`signals`、`warnings`、`hook_text`、`reason` 和可选 `render_config`。默认模式会找 hook/value/duration 表现好的短视频片段；如果用户已经知道要找什么，加 `--brief` 或 `--query` 做 prompt-based clipping。
+
+常用：
+```bash
+python3 scripts/highlight_picker.py \
+  --transcript work/long_transcript.json \
+  --brief "产品发布 用户反应 价格对比" \
+  --scene-boundaries work/scene_boundaries.json \
+  --video origin/long-talk.mp4 \
+  --output work/brief_highlights.json \
+  --markdown work/brief_highlights.md \
+  --render-config work/brief_render_config.json \
+  --platform douyin \
+  --num-clips 3 \
+  --strict
+```
+
+`--brief` 会把自然语言意图拆成英文关键词和中文短语片段，写入每条 candidate 的 `brief_match.score` 与 `matched_terms`，但仍保留原来的自包含结尾、弱 hook、时长偏离等 warning。适合“找产品 reveal / 用户强反应 / 教程关键步骤 / 失败教训”这类定向剪片。
 
 ### 🎨 Color Grade — 可审计调色计划
 [`scripts/color_grade.py`](scripts/color_grade.py) · [详细文档](docs/prompts/48-color-grade.md)
@@ -694,6 +719,24 @@ python3 scripts/export_fcpxml.py \
 ```
 
 适合把自动粗剪交给 Premiere / Final Cut Pro / DaVinci Resolve 做调色、混音、精剪或协作复核。EDL 更通用，FCPXML 对 FCP / Resolve 更直接；复杂字幕、overlay、章节卡和 B-roll 仍以 `render_final.py` / `export_capcut.py` 为准。
+
+### 2026-06-19 自动化升级记录（Prompt-Based Highlight Picker）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`SamurAIGPT/Clip-Anything`](https://github.com/SamurAIGPT/Clip-Anything) | “describe what you want” 的 prompt-based clipping 很适合从长视频定向找时刻 | 在已有 `highlight_picker.py` 中新增 `--brief/--query`，不引入外部 API |
+| [`SamurAIGPT/AI-Youtube-Shorts-Generator`](https://github.com/samuraigpt/ai-youtube-shorts-generator) | 长视频转短视频输出 highlights/score/hook/reason JSON，并强调 highlight selection criteria | 本项目已有 score/hook/reason；本次补 brief relevance 和 `brief_match` 字段 |
+| [`gyoridavid/short-video-maker`](https://github.com/gyoridavid/short-video-maker) | 面向 TikTok/Reels/Shorts 的 MCP + REST 自动生成链路，说明 agent/API 双接口对视频生产有价值 | 本项目继续保持 CLI artifact-first；`--render-config` 直接交给 `render_final.py` |
+| [`Anil-matcha/AI-B-roll`](https://github.com/Anil-matcha/AI-B-roll) | 用 AI B-roll 增强短视频可看性，强调按内容补画面 | 本项目已有 `auto_enrich.py` / `storyboard_assets.py`，本次不新增付费 B-roll API |
+| [`digitalsamba/claude-code-video-toolkit`](https://github.com/digitalsamba/claude-code-video-toolkit) | 把 voiceover、music、image/video generation 和 review 工具拆成 agent 可调用脚本 | 本项目已有音频 cue、视频 prompt pack 和生成任务台账，本次只补定向择段缺口 |
+
+新增/调整能力：`scripts/highlight_picker.py` 新增 `--brief` / `--query`，可把“产品发布 用户反应”“find the product reveal”这类自然语言意图拆成英文关键词和中文短语片段，并把 `brief_match.score` 纳入原有 hook/value/duration/completeness 打分。输出 JSON 和 Markdown 会显示 `brief_match.matched_terms`、`score_breakdown.brief` 和弱匹配 warning；`--render-config` 也会保留 `brief_match` 供后续渲染/复核。
+
+使用方式：常规自动找精华仍用 `python3 scripts/highlight_picker.py --transcript work/long_transcript.json --output work/highlights.json --markdown work/highlights.md --platform douyin --strict`；定向找片段用 `python3 scripts/highlight_picker.py --transcript work/long_transcript.json --brief "产品发布 用户反应 价格对比" --video origin/long-talk.mp4 --output work/brief_highlights.json --markdown work/brief_highlights.md --render-config work/brief_render_config.json --platform douyin --num-clips 3 --strict`。详细说明见 [docs/prompts/31-highlight-picker.md](docs/prompts/31-highlight-picker.md)。
+
+验证结果：新增/更新 `tests/test_highlight_picker.py` 2 项 brief/query 覆盖；`.venv/bin/python -m pytest tests/test_highlight_picker.py -q` 通过 `9 passed in 0.07s`；`.venv/bin/python scripts/highlight_picker.py --help` smoke 验证 `--brief/--query` 参数正常；`.venv/bin/python -m compileall scripts tests` 通过；`git diff --check` 通过；完整 `.venv/bin/python -m pytest tests -q` 通过 `371 passed in 3.71s`。
 
 ### 2026-06-18 自动化升级记录（FCPXML NLE Handoff）
 
@@ -1312,8 +1355,9 @@ scripts/
 ├── utils.py                    平台/字体/编码器自检
 ├── _internal_text_guard.py     内部 token 拦截器
 ├── transcribe.py               Whisper 转写
-├── rough_cut.py                transcript 粗剪：去口头禅/重复句      [V3]
 ├── video_understanding.py      抽样帧 + 可选 YOLO 检测 artifact       [V3]
+├── highlight_picker.py         长视频精华候选 / brief 定向找片段      [V3]
+├── rough_cut.py                transcript 粗剪：去口头禅/重复句      [V3]
 ├── extract_audio.py            音频提取
 ├── split_video.py              按句切片（V2 兼容）
 ├── media_library.py            素材库索引（CLIP-ready）

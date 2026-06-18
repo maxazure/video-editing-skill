@@ -32,6 +32,20 @@ def _sample_transcript():
     }
 
 
+def _brief_transcript():
+    return {
+        "language": "zh",
+        "duration": 72.0,
+        "segments": [
+            {"id": 1, "start": 0.0, "end": 12.0, "text": "为什么很多团队做 AI 自动化会失败？"},
+            {"id": 2, "start": 12.0, "end": 24.0, "text": "因为他们只盯工具，没有建立稳定流程。"},
+            {"id": 3, "start": 24.0, "end": 36.0, "text": "产品发布当天，我们先展示了核心功能。"},
+            {"id": 4, "start": 36.0, "end": 48.0, "text": "用户反应最强的是价格对比和真实案例。"},
+            {"id": 5, "start": 48.0, "end": 60.0, "text": "最后再补一个普通的收尾说明。"},
+        ],
+    }
+
+
 def test_normalize_segments_keeps_timing_and_ids():
     segments = normalize_segments(_sample_transcript())
     assert [s.idx for s in segments[:2]] == [1, 2]
@@ -55,6 +69,24 @@ def test_build_highlight_candidates_scores_hook_and_value():
     assert 2 in top["segment_ids"]
     assert "strong question hook" in top["signals"]
     assert "specific data point" in top["signals"]
+
+
+def test_build_highlight_candidates_uses_brief_relevance():
+    plan = build_highlight_candidates(
+        _brief_transcript(),
+        platform="douyin",
+        brief="产品发布 用户反应",
+        min_duration=20,
+        max_duration=28,
+        target_duration=24,
+        num_clips=1,
+    )
+
+    top = plan["selected"][0]
+    assert top["segment_ids"] == [3, 4]
+    assert top["brief_match"]["score"] >= 0.4
+    assert "brief match" in top["signals"]
+    assert plan["params"]["brief"] == "产品发布 用户反应"
 
 
 def test_dedupe_candidates_removes_lower_scored_overlap():
@@ -83,6 +115,22 @@ def test_emit_markdown_and_render_config_include_selected_clip():
     assert "# Highlight Candidates" in md
     assert "origin/long.mp4" == render_config["clips"][0]["video"]
     assert render_config["clips"][0]["highlight_score"] == plan["selected"][0]["score"]
+
+
+def test_emit_markdown_and_render_config_include_brief_match():
+    plan = build_highlight_candidates(
+        _brief_transcript(),
+        brief="product launch 用户反应",
+        min_duration=20,
+        max_duration=28,
+        num_clips=1,
+    )
+    md = emit_markdown(plan)
+    render_config = build_render_config(plan, "origin/launch.mp4")
+
+    assert "Brief Match" in md
+    assert "用户反应" in md
+    assert render_config["clips"][0]["brief_match"]["matched_terms"]
 
 
 def test_scene_snap_expands_candidate_to_visual_boundaries():
@@ -171,6 +219,8 @@ def test_cli_writes_json_markdown_and_render_config(tmp_path):
             "origin/long.mp4",
             "--render-config",
             str(render_path),
+            "--brief",
+            "降低交付时间 检查清单",
             "--scene-boundaries",
             str(scene_path),
             "--scene-snap-tolerance",
@@ -194,3 +244,4 @@ def test_cli_writes_json_markdown_and_render_config(tmp_path):
     render_config = json.loads(render_path.read_text(encoding="utf-8"))
     assert len(render_config["clips"]) == 2
     assert "scene_snap" in render_config["clips"][0]
+    assert "brief_match" in render_config["clips"][0]

@@ -42,6 +42,7 @@
 | 27 | [NLE Handoff 导出 EDL/FCPXML](27-export-edl.md) | render_config / cut list → 单轨 EDL 或 FCPXML + manifest，交给 Premiere/FCP/Resolve |
 | 28 | [Screen Focus 点击聚焦](28-screen-focus.md) | 录屏点击/热点 → 自动放大、标记、标签计划 |
 | 29 | [Subtitle Pack 字幕交付包](29-subtitle-pack.md) | transcript/render_config → SRT/VTT/ASS/JSON，支持加速和片头 offset |
+| 31 | [Highlight Picker 长视频精华候选](31-highlight-picker.md) | 长视频 transcript → 精华候选；可用 `--brief/--query` 定向找片段 |
 | 43 | [Audio Cue Sheet 音频设计清单](43-audio-cue-sheet.md) | transcript → BGM/SFX cue、生成审批和音频门禁 |
 | 44 | [Stock Material Plan 远程素材搜索规划](44-stock-material-plan.md) | 主题/脚本 → stock 搜索词、Pexels/Pixabay/Coverr 查询计划、本地素材登记 |
 | 45 | [Video Prompt Pack 视频生成提示词包](45-video-prompt-pack.md) | storyboard_plan → Dreamina/Veo/LTX/Wan/Sora 提示词、角色一致性和 paid approval gate |
@@ -90,6 +91,7 @@
 | 想把自动剪辑方案交给专业剪辑软件 | [27-NLE Handoff](27-export-edl.md) |
 | 软件录屏里想自动放大点击位置 | [28-Screen Focus](28-screen-focus.md) |
 | 平台要上传 SRT/VTT 字幕文件 | [29-Subtitle Pack](29-subtitle-pack.md) |
+| 想从长视频里按主题/brief 找片段 | [31-Highlight Picker](31-highlight-picker.md) |
 | 想先规划 BGM 和音效再渲染 | [43-Audio Cue Sheet](43-audio-cue-sheet.md) |
 | 本地 B-roll 不够，想先规划 stock 素材搜索 | [44-Stock Material Plan](44-stock-material-plan.md) |
 | 分镜要交给 Dreamina/Veo/LTX/Wan/Sora 生成视频 | [45-Video Prompt Pack](45-video-prompt-pack.md) |
