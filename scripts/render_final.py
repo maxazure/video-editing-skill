@@ -182,8 +182,10 @@ def merge_enrich_plan(config, plan, *, plan_base_dir):
         "chapters": 0,
         "image_overlays": 0,
         "focus_events": 0,
+        "pip_overlays": 0,
         "missing_broll_assets": 0,
         "missing_image_assets": 0,
+        "missing_pip_assets": 0,
         "advisory_imagegen": 0,
     }
 
@@ -192,6 +194,7 @@ def merge_enrich_plan(config, plan, *, plan_base_dir):
     broll_overlays = list(merged.get("broll_overlays") or [])
     image_overlays = list(merged.get("image_overlays") or [])
     focus_events = list(merged.get("focus_events") or [])
+    pip_overlays = list(merged.get("pip_overlays") or [])
 
     for cue in plan.get("broll") or []:
         asset = (
@@ -308,6 +311,22 @@ def merge_enrich_plan(config, plan, *, plan_base_dir):
             if image_path:
                 stats["missing_image_assets"] += 1
 
+    for cue in plan.get("pip_overlays") or []:
+        video_path = _resolve_plan_path(
+            cue.get("video") or cue.get("camera") or cue.get("path"),
+            plan_base_dir,
+        )
+        if not video_path or not os.path.isfile(video_path):
+            stats["missing_pip_assets"] += 1
+            continue
+        pip_cue = copy.deepcopy(cue)
+        pip_cue["video"] = video_path
+        start, end = _cue_time_range(pip_cue, default_duration=4.0)
+        pip_cue["start"] = start
+        pip_cue["end"] = end
+        pip_overlays.append(pip_cue)
+        stats["pip_overlays"] += 1
+
     if text_badges:
         merged["text_badges"] = text_badges
     if chapters:
@@ -318,6 +337,8 @@ def merge_enrich_plan(config, plan, *, plan_base_dir):
         merged["image_overlays"] = image_overlays
     if focus_events:
         merged["focus_events"] = focus_events
+    if pip_overlays:
+        merged["pip_overlays"] = pip_overlays
     merged["_enrich_plan_stats"] = stats
     return merged
 
@@ -717,6 +738,20 @@ def _safe_filter_color(value):
     return "red@0.85"
 
 
+def _even_px(value, *, minimum=2):
+    px = int(round(value))
+    if px % 2:
+        px += 1
+    return max(minimum, px)
+
+
+def _safe_speed(value):
+    speed = _float_or_default(value, 1.0)
+    if speed <= 0:
+        return 1.0
+    return speed
+
+
 def normalize_focus_event(cue, *, default_duration=1.2, default_zoom=1.75):
     """Normalize a screen-focus cue for render-time filter construction."""
     start = _float_or_default(cue.get("start", cue.get("time", cue.get("timestamp"))), 0.0)
@@ -821,6 +856,136 @@ def build_focus_filter_ops(
     return filter_lines, label, next_stage
 
 
+def _pip_position_expr(position, *, margin_px):
+    pos = str(position or "bottom_right").strip().lower().replace("-", "_")
+    x_exprs = {
+        "bottom_right": f"main_w-overlay_w-{margin_px}",
+        "top_right": f"main_w-overlay_w-{margin_px}",
+        "bottom_left": str(margin_px),
+        "top_left": str(margin_px),
+        "center": "(main_w-overlay_w)/2",
+        "middle": "(main_w-overlay_w)/2",
+    }
+    y_exprs = {
+        "bottom_right": f"main_h-overlay_h-{margin_px}",
+        "bottom_left": f"main_h-overlay_h-{margin_px}",
+        "top_right": str(margin_px),
+        "top_left": str(margin_px),
+        "center": "(main_h-overlay_h)/2",
+        "middle": "(main_h-overlay_h)/2",
+    }
+    return x_exprs.get(pos, x_exprs["bottom_right"]), y_exprs.get(pos, y_exprs["bottom_right"])
+
+
+def normalize_pip_overlay(
+    cue,
+    *,
+    width,
+    height,
+    cover_duration,
+    speed,
+    default_duration=4.0,
+):
+    """Normalize a timed picture-in-picture / facecam cue."""
+    speed = _safe_speed(speed)
+    start, end = _cue_time_range(cue, default_duration=default_duration)
+    start_out = cover_duration + start / speed
+    end_out = cover_duration + end / speed
+    if end_out <= start_out:
+        end_out = start_out + default_duration / speed
+    source_duration = max(0.05, end - start)
+
+    sync_offset = _float_or_default(cue.get("sync_offset", cue.get("camera_sync_offset")), 0.0)
+    if "source_start" in cue:
+        source_start = _float_or_default(cue.get("source_start"), 0.0)
+    else:
+        source_start = start + sync_offset
+    source_start = max(0.0, source_start)
+
+    width_ratio = _clamp(
+        _float_or_default(cue.get("width_ratio", cue.get("size")), 0.24),
+        0.12,
+        0.55,
+    )
+    pip_w = _even_px(width * width_ratio)
+    margin_ratio = _clamp(_float_or_default(cue.get("margin_ratio"), 0.035), 0.0, 0.16)
+    margin_px = int(round(_float_or_default(cue.get("margin_px"), min(width, height) * margin_ratio)))
+    x_expr, y_expr = _pip_position_expr(cue.get("position"), margin_px=margin_px)
+
+    return {
+        "start_out": start_out,
+        "end_out": end_out,
+        "duration_out": max(0.05, end_out - start_out),
+        "source_duration": source_duration,
+        "source_start": source_start,
+        "width": pip_w,
+        "x": x_expr,
+        "y": y_expr,
+        "opacity": _clamp(_float_or_default(cue.get("opacity"), 1.0), 0.2, 1.0),
+        "transition": _clamp(_float_or_default(cue.get("transition"), 0.12), 0.0, 0.8),
+    }
+
+
+def build_pip_filter_ops(
+    current_v_label,
+    pip_inputs,
+    *,
+    width,
+    height,
+    cover_duration,
+    speed,
+    stage_idx,
+):
+    """Build timed PIP camera overlay filters."""
+    filter_lines = []
+    label = current_v_label
+    next_stage = stage_idx
+
+    for ov_idx, (cue, input_idx) in enumerate(pip_inputs):
+        safe_speed = _safe_speed(speed)
+        overlay = normalize_pip_overlay(
+            cue,
+            width=width,
+            height=height,
+            cover_duration=cover_duration,
+            speed=safe_speed,
+        )
+        prep_label = f"pip_ov_{ov_idx}"
+        out_label = f"[vstage{next_stage}]"
+        if safe_speed != 1.0:
+            pip_setpts = f"setpts=(PTS-STARTPTS)/{safe_speed:.4f}+{overlay['start_out']:.4f}/TB"
+        else:
+            pip_setpts = f"setpts=PTS-STARTPTS+{overlay['start_out']:.4f}/TB"
+        pip_filters = [
+            f"trim=start={overlay['source_start']:.4f}:duration={overlay['source_duration']:.4f}",
+            pip_setpts,
+            f"scale={overlay['width']}:-2:force_original_aspect_ratio=decrease",
+            "setsar=1",
+            "format=rgba",
+        ]
+        if overlay["opacity"] < 1.0:
+            pip_filters.append(f"colorchannelmixer=aa={overlay['opacity']:.3f}")
+        transition = min(overlay["transition"], overlay["duration_out"] / 2)
+        if transition > 0:
+            pip_filters.append(
+                f"fade=t=in:st={overlay['start_out']:.4f}:d={transition:.4f}:alpha=1"
+            )
+            pip_filters.append(
+                f"fade=t=out:st={max(overlay['start_out'], overlay['end_out'] - transition):.4f}:"
+                f"d={transition:.4f}:alpha=1"
+            )
+        filter_lines.append(f"[{input_idx}:v]{','.join(pip_filters)}[{prep_label}]")
+        filter_lines.append(
+            f"{label}[{prep_label}]overlay={overlay['x']}:{overlay['y']}:"
+            f"enable='between(t,{overlay['start_out']:.4f},{overlay['end_out']:.4f})':"
+            f"eof_action=pass{out_label}"
+        )
+        label = out_label
+        next_stage += 1
+
+    return filter_lines, label, next_stage
+
+
 def append_color_grade_filter(filter_lines, current_v_label, stage_idx, color_grade_filter):
     """Append a single-chain color grade before subtitles/HUD overlays."""
     if not color_grade_filter:
@@ -857,7 +1022,7 @@ def main():
     parser.add_argument("--enrich-plan", action="append", default=[],
                         help="Optional enrich-plan JSON. Repeatable. Merges B-roll, "
                              "stickers, chapter cards, generated image cues, and "
-                             "screen focus events into the render.")
+                             "screen focus or PIP camera events into the render.")
     parser.add_argument("--color-grade", default=None,
                         help="Optional color grade preset, filter, or color_grade.v1 JSON plan path. "
                              "Overrides config color_grade.")
@@ -909,9 +1074,14 @@ def main():
             f"badges={stats.get('text_badges', 0)}, "
             f"chapters={stats.get('chapters', 0)}, "
             f"image_overlays={stats.get('image_overlays', 0)}, "
-            f"focus={stats.get('focus_events', 0)}"
+            f"focus={stats.get('focus_events', 0)}, "
+            f"pip={stats.get('pip_overlays', 0)}"
         )
-        skipped = stats.get("missing_broll_assets", 0) + stats.get("missing_image_assets", 0)
+        skipped = (
+            stats.get("missing_broll_assets", 0)
+            + stats.get("missing_image_assets", 0)
+            + stats.get("missing_pip_assets", 0)
+        )
         if skipped:
             print(f"[enrich] skipped missing media assets: {skipped}", file=sys.stderr)
         if stats.get("advisory_imagegen", 0):
@@ -1221,6 +1391,15 @@ def main():
             extra_inputs.append(("image_overlay", input_idx, os.path.abspath(image_path)))
             timed_image_inputs.append((cue, input_idx))
 
+        timed_pip_inputs = []
+        for cue in config.get("pip_overlays", []) or []:
+            video_path = cue.get("video") or cue.get("camera") or cue.get("path")
+            if not video_path or not os.path.isfile(video_path):
+                continue
+            input_idx = len(input_files) + len(extra_inputs)
+            extra_inputs.append(("pip_overlay", input_idx, os.path.abspath(video_path)))
+            timed_pip_inputs.append((cue, input_idx))
+
         # --- Assemble full filter_complex ---
         filter_lines = [base_filter]
 
@@ -1314,6 +1493,17 @@ def main():
             stage_idx=video_stage_idx,
         )
         filter_lines.extend(focus_lines)
+
+        pip_lines, current_v_label, video_stage_idx = build_pip_filter_ops(
+            current_v_label,
+            timed_pip_inputs,
+            width=width,
+            height=height,
+            cover_duration=cover_duration,
+            speed=speed,
+            stage_idx=video_stage_idx,
+        )
+        filter_lines.extend(pip_lines)
 
         current_v_label, video_stage_idx = append_color_grade_filter(
             filter_lines, current_v_label, video_stage_idx, color_grade_filter,

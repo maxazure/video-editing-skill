@@ -1,6 +1,6 @@
 # Video Editing Skill — 视频剪辑技能
 
-这是一个面向 **口播、教程、访谈、播客切片、录屏演示** 的 AI 视频剪辑生产线：给它原始口播音频/视频、transcript、B-roll 或素材目录，它可以把“还没整理的素材”推进到 **可发布的小红书 / 抖音 / 视频号短视频**。
+这是一个面向 **口播、教程、访谈、播客切片、录屏演示 / facecam demo** 的 AI 视频剪辑生产线：给它原始口播音频/视频、transcript、B-roll、摄像头小窗或素材目录，它可以把“还没整理的素材”推进到 **可发布的小红书 / 抖音 / 视频号短视频**。
 
 它不是一个单点 FFmpeg 脚本，而是一条完整工作流：**转写 → 长视频择段 → 清稿 → 去口头禅/停顿 → 重组故事 → 分镜 → B-roll/生图/生成视频规划 → 字幕与声音设计 → 单次编码渲染 → 质检 → 多平台导出 → 标题文案**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
 
@@ -142,12 +142,14 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    │
    ├─→ screen_focus.py          录屏点击/热点 → focus_events 聚焦计划
    │                            render_final 自动放大、标记、标签
+   ├─→ pip_overlay.py           录屏 + facecam → pip_overlays 小窗计划
+   │                            render_final 单次编码合成 PIP camera
    │
    ├─→ jump_cut.py              自适应静音检测 → cut list → 去停顿成片
    │     └─→ timeline_view.py   切点 filmstrip + waveform 人工复核图
    │
    ├─→ render_final.py          单次编码渲染 + enrich_plan 自动接入
-   │     B-roll / 章节卡 / 贴纸 / 生成图 / 点击聚焦 overlay + Heavy 字幕 + 响度规范化
+   │     B-roll / 章节卡 / 贴纸 / 生成图 / 点击聚焦 / PIP camera + Heavy 字幕 + 响度规范化
    │     可选 --versioned-output：输出 _V<N>，避免覆盖旧成片
    │
    ├─→ render_qa.py             渲染后黑屏/静帧/静音/尺寸质检 + review packet
@@ -545,6 +547,31 @@ python3 scripts/render_final.py \
 
 `focus_events[]` 支持像素或 0-1 坐标、`duration`、`zoom`、`transition`、`marker_color` 和 `label`；`render_final.py` 会在对应时间段淡入放大裁切画面，并把 label 合并为 timed badge，适合软件教程、产品演示和操作录屏。
 
+### 🎥 PIP Overlay — 录屏摄像头小窗
+[`scripts/pip_overlay.py`](scripts/pip_overlay.py) · [详细文档](docs/prompts/51-pip-overlay.md)
+
+借鉴 Loop 这类录屏编辑工具把 screen、microphone 和 optional camera 合成一个短反馈闭环的做法，但保持本项目的 artifact-first 方式：先把 facecam/camera 录制转成 `pip_overlays[]` 计划，复核 Markdown 后再交给 `render_final.py --enrich-plan` 单次编码合成，不混入 camera audio。
+
+常用：
+```bash
+python3 scripts/pip_overlay.py \
+  --camera origin/facecam.mp4 \
+  --segment "0,18,bottom_right" \
+  --segment "18,42,top_right" \
+  --sync-offset 0.18 \
+  --width-ratio 0.24 \
+  --output work/pip_overlay_plan.json \
+  --markdown work/pip_overlay_plan.md
+
+python3 scripts/render_final.py \
+  --config work/render_config.json \
+  --enrich-plan work/screen_focus_plan.json \
+  --enrich-plan work/pip_overlay_plan.json \
+  --output output/tutorial_master.mp4
+```
+
+`pip_overlays[]` 支持每段独立 `position`、`source_start`、`sync_offset`、`width_ratio`、`margin_ratio`、`opacity` 和 `transition`；`render_final.py` 会随 `--primary-speed` / `--speed` 同步压缩 camera 小窗时间线，避免变速输出时讲解人画面和主画面错位。
+
 ### 📝 Subtitle Pack — SRT/VTT/ASS 字幕交付
 [`scripts/subtitle_pack.py`](scripts/subtitle_pack.py) · [详细文档](docs/prompts/29-subtitle-pack.md)
 
@@ -719,6 +746,24 @@ python3 scripts/export_fcpxml.py \
 ```
 
 适合把自动粗剪交给 Premiere / Final Cut Pro / DaVinci Resolve 做调色、混音、精剪或协作复核。EDL 更通用，FCPXML 对 FCP / Resolve 更直接；复杂字幕、overlay、章节卡和 B-roll 仍以 `render_final.py` / `export_capcut.py` 为准。
+
+### 2026-06-20 自动化升级记录（PIP Overlay）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`tadaspetra/loop`](https://github.com/tadaspetra/loop) | 录屏工具把 screen、microphone、optional camera、实时 transcript 和 PIP camera preview 放在同一编辑闭环里 | 新增本地 PIP overlay plan，不引入 Electron/录屏端依赖 |
+| [`browser-use/video-use`](https://github.com/browser-use/video-use/blob/main/SKILL.md) | 强调 audio-primary、transcript-driven edits，并把 overlay animations 当成 agent 可执行能力 | PIP 继续挂在 transcript/render_config 驱动的 `render_final.py --enrich-plan` |
+| [`GoogleCloudPlatform/vertex-ai-creative-studio` genmedia-video-editor](https://github.com/GoogleCloudPlatform/vertex-ai-creative-studio/blob/main/experiments/mcp-genmedia/skills/genmedia-video-editor/SKILL.md) | 把 image/video overlay 坐标、尺寸和 ffmpeg compositing 做成明确工具能力 | 本项目新增 timed video PIP overlay，保留单次编码原则 |
+| [`FireRedTeam/FireRed-OpenStoryline`](https://github.com/FireRedTeam/FireRed-OpenStoryline) | natural-language editing agent 强调 human-in-the-loop 和可复用 style/skills | PIP 先生成 JSON/Markdown review，再由用户/agent 复核后渲染 |
+| [`bilibili/carocut`](https://github.com/bilibili/carocut) | 多 agent + Remotion 的视频制作助手说明 creator workflow 需要可组合的画面层 | 本项目仍用轻量 CLI artifact，不把 Remotion 变成 PIP 必需依赖 |
+
+新增/调整能力：新增 `scripts/pip_overlay.py`，可把 facecam/camera 视频转成 `pip_overlay_plan.v1`，输出 `pip_overlays[]` 与 Markdown 复核表；支持多段 `--segment "start,end[,position]"`、`--sync-offset`、`--source-start`、`--width-ratio`、`--margin-ratio`、`--opacity` 和 `--transition`。`render_final.py --enrich-plan` 现在会合并 `pip_overlays[]`，把 camera 小窗作为 timed video overlay 接入 B-roll/image/focus 之后、字幕之前，并在 `--primary-speed` / `--speed` 输出中同步压缩 PIP 时间线；camera audio 默认忽略，避免污染主口播/BGM 音频链路。
+
+使用方式：先跑 `python3 scripts/pip_overlay.py --camera origin/facecam.mp4 --segment "0,18,bottom_right" --segment "18,42,top_right" --sync-offset 0.18 --output work/pip_overlay_plan.json --markdown work/pip_overlay_plan.md`；渲染时重复传入 enrich plan，例如 `python3 scripts/render_final.py --config work/render_config.json --enrich-plan work/enrich_plan.json --enrich-plan work/screen_focus_plan.json --enrich-plan work/pip_overlay_plan.json --output output/tutorial_master.mp4`。详细说明见 [docs/prompts/51-pip-overlay.md](docs/prompts/51-pip-overlay.md)。
+
+验证结果：新增 `tests/test_pip_overlay.py` 8 项；`.venv/bin/python -m pytest tests/test_pip_overlay.py tests/test_render_enrich_plan.py tests/test_screen_focus.py -q` 通过 `19 passed in 0.26s`；`.venv/bin/python -m compileall scripts tests` 通过；`.venv/bin/python scripts/pip_overlay.py --help` 和 `.venv/bin/python scripts/render_final.py --help` smoke 验证通过；2 秒 FFmpeg 变速合成 smoke 验证 `pip_overlays[]` 可渲染为有效 MP4；最终全量 `.venv/bin/python -m pytest tests -q` 通过 `379 passed in 4.01s`。
 
 ### 2026-06-19 自动化升级记录（Prompt-Based Highlight Picker）
 
@@ -1063,7 +1108,15 @@ python3 $SKILL/scripts/screen_focus.py \
   --output $WORK/work/screen_focus_plan.json \
   --markdown $WORK/work/screen_focus_plan.md
 
-# 3g. 可选：生成调色计划，最终渲染时用 --color-grade 接入单次编码
+# 3g. 可选：录屏另有 facecam/camera，生成 PIP 小窗计划
+python3 $SKILL/scripts/pip_overlay.py \
+  --camera $WORK/origin/facecam.mp4 \
+  --segment "0,42,bottom_right" \
+  --sync-offset 0.18 \
+  --output $WORK/work/pip_overlay_plan.json \
+  --markdown $WORK/work/pip_overlay_plan.md
+
+# 3h. 可选：生成调色计划，最终渲染时用 --color-grade 接入单次编码
 python3 $SKILL/scripts/color_grade.py \
   --preset screen \
   --output $WORK/work/color_grade.json \
@@ -1072,6 +1125,8 @@ python3 $SKILL/scripts/color_grade.py \
 # 4. 渲染
 #    如果生成了 screen_focus_plan.json，可额外追加：
 #    --enrich-plan $WORK/work/screen_focus_plan.json
+#    如果生成了 pip_overlay_plan.json，可额外追加：
+#    --enrich-plan $WORK/work/pip_overlay_plan.json
 #    如果生成了 color_grade.json，可额外追加：
 #    --color-grade $WORK/work/color_grade.json
 python3 $SKILL/scripts/render_final.py \
@@ -1152,7 +1207,7 @@ python3 $SKILL/scripts/publish_package.py \
 ## 测试
 
 ```bash
-pytest tests/           # 369 测试，约 6 秒
+pytest tests/           # 379 测试，约 6 秒
 ```
 
 按模块跑：

@@ -51,6 +51,7 @@
 | 48 | [Color Grade 调色计划](48-color-grade.md) | 生成 bounded 调色 plan，并在 render_final 单次编码中接入 |
 | 49 | [Publish Package 最终上传包](49-publish-package.md) | 平台视频、封面、字幕、文案、章节和 gate 状态汇总 |
 | 50 | [CapCut Subtitle Import 剪映字幕反向导入](50-import-capcut-subtitles.md) | 剪映/CapCut 自动字幕或 SRT → transcript / gap cut list |
+| 51 | [PIP Overlay 摄像头小窗](51-pip-overlay.md) | 录屏 + facecam → timed PIP 小窗计划，render_final 单次编码合成 |
 
 ## 快速上手
 
@@ -90,6 +91,7 @@
 | 口头禅、卡壳和重复句太多 | [26-ASR Rough Cut](26-rough-cut.md) |
 | 想把自动剪辑方案交给专业剪辑软件 | [27-NLE Handoff](27-export-edl.md) |
 | 软件录屏里想自动放大点击位置 | [28-Screen Focus](28-screen-focus.md) |
+| 录屏教程想叠加讲解人小窗 | [51-PIP Overlay](51-pip-overlay.md) |
 | 平台要上传 SRT/VTT 字幕文件 | [29-Subtitle Pack](29-subtitle-pack.md) |
 | 想从长视频里按主题/brief 找片段 | [31-Highlight Picker](31-highlight-picker.md) |
 | 想先规划 BGM 和音效再渲染 | [43-Audio Cue Sheet](43-audio-cue-sheet.md) |
