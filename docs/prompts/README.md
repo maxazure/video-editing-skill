@@ -52,6 +52,7 @@
 | 49 | [Publish Package 最终上传包](49-publish-package.md) | 平台视频、封面、字幕、文案、章节和 gate 状态汇总 |
 | 50 | [CapCut Subtitle Import 剪映字幕反向导入](50-import-capcut-subtitles.md) | 剪映/CapCut 自动字幕或 SRT → transcript / gap cut list |
 | 51 | [PIP Overlay 摄像头小窗](51-pip-overlay.md) | 录屏 + facecam → timed PIP 小窗计划，render_final 单次编码合成 |
+| 52 | [Project Resume 续跑上下文包](52-project-resume.md) | 本地 artifacts → agent handoff JSON/Markdown/CLAUDE.md，跨会话继续项目 |
 
 ## 快速上手
 
@@ -102,3 +103,4 @@
 | 想统一成片色彩或加轻微质感 | [48-Color Grade](48-color-grade.md) |
 | 准备上传前想核对平台视频、文案和 gate | [49-Publish Package](49-publish-package.md) |
 | 已在剪映里生成/校对自动字幕，想回到本 pipeline | [50-CapCut Subtitle Import](50-import-capcut-subtitles.md) |
+| 视频项目暂停后想让下一位 agent 接着做 | [52-Project Resume](52-project-resume.md) |

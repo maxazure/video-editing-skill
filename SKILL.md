@@ -1,7 +1,6 @@
 ---
 name: video-editing
-description: "Xiaohongshu/RED-tuned content engine for short-form video. Use when: producing daily 小红书/抖音/视频号 videos from raw voice-over + b-roll materials; transcribing speech with mlx-whisper/faster-whisper; importing JianYing/CapCut auto captions or exported SRT back into transcript/cut-list artifacts; picking long-video highlight candidates with optional brief/query relevance and scene-boundary snapping; planning ASR rough cuts from transcript filler metadata and adjacent repeated sentences; rewriting transcripts into 5-field (hook/pain/turn/value/cta) story structures using 8 hook + 5 CTA templates; running platform-rule content lint (80+ regex for 广告法极限词/导流外站/医美/财富诱导); auto-scheduling B-roll cutaways, chapter title cards, emoji stickers, and BGM beat-sync (librosa); detecting abstract-concept opportunities and emitting gpt-image-2-shaped prompts that the Codex built-in `imagegen` tool can run directly (no API key needed); building storyboard_plan shot cards from transcript/clean_script with generation routing (codex_imagegen / dreamina_video / remotion_hyperframes / media_library_broll), continuity anchors, first/motion/last-frame prompts, and paid-credit approval notes before generating video assets; turning storyboard plans into provider-specific video_prompt_pack artifacts for Dreamina/即梦 Seedance, Veo, LTX, Wan, and Sora with character/style reference prompts and approval gates; tracking async generation submit_id/task ids, query_result polling, provider downloads, local asset paths, and unresolved blocking states through generation_task_log.py; turning storyboard plans into asset manifests with ready / candidate_found / needs_generation / needs_approval / needs_render / search_needed states so generated media, local motion cards, and B-roll are reviewed before render; ranking indexed local B-roll candidates by tags, filename, duration, aspect, and transparent score reasons via media_library.py recommend; building screen-focus click/hotspot zoom plans for software tutorials and product demos; building timed facecam/PIP overlay plans for screen recordings with sync offset and section-level layout changes; creating bounded color_grade plans and applying them in render_final.py before subtitles/HUD overlays; ingesting repeatable enrich-plan JSON via render_final.py --enrich-plan so B-roll, chapter cards, stickers, generated images, focus_events, and pip_overlays feed the final render without manual config copying; removing talking-head pauses with adaptive loudnorm/silencedetect jump cuts and auditable cut lists; generating filmstrip+waveform timeline-view PNGs for cut-boundary or render-QA human review; rendering with audience profiles (tech_pro/lifestyle), Heavy CJK fonts, automatic loudness normalisation (dynaudnorm+compressor+loudnorm), primary-speed control, karaoke/word-level subtitles, color-grade filters, and optional --versioned-output `_V<N>` files that avoid overwriting previous renders; exporting readable SRT/VTT/ASS/JSON subtitle sidecars from transcript or render_config with speed/offset alignment; running post-render QA for dimensions/audio/black frames/frozen video/silence and writing review packets with segment evidence plus optional clips; exporting one master into three platform deliverables (xhs 3:4 / douyin 9:16 / wxch ≤60s); generating titles + 200-500 char captions + tags + publish-time hints; assembling local publish_package manifests that bind platform videos, covers, subtitles, chapter text, captions, and pipeline blockers before manual upload or connector handoff; exporting to JianYing/CapCut; exporting render_config or rough/jump cut lists to CMX 3600-style EDL or FCPXML + manifest for Premiere/Final Cut Pro/Resolve handoff; generating Remotion voiceover animations. Refuses pipeline-internal tokens (speed multipliers, model names, debug strings) on output frames. Requires ffmpeg and a whisper backend (mlx-whisper on Apple Silicon, faster-whisper elsewhere). Pillow needed for chapter cards. librosa optional for real beat detection. Remotion workflow additionally requires Node.js. Image generation routes through Codex `imagegen` (gpt-image-2) when in Codex; outside Codex, callers use the OpenAI Python SDK directly with their own OPENAI_API_KEY (this skill does not bundle an OpenAI client)."
-argument-hint: "Provide the path(s) to voice-over audio + optional b-roll videos to process"
+description: "Xiaohongshu/RED-tuned short-form video production workflow. Use when Codex needs to turn raw voice-over, talking-head, tutorial, interview, podcast, long-video, screen recording, B-roll, captions, or generated assets into auditable social-video artifacts for 小红书, 抖音, 微信视频号, TikTok, Reels, or YouTube Shorts. Covers transcription, transcript cleanup, highlight picking, rough/jump cuts, story rewrite, content guard, B-roll/enrich plans, gpt-image-2 prompt routing, storyboard and video-generation prompt packs, async generation task logs, media-library recommendations, screen focus, facecam PIP, color grade, render, QA review packets, subtitle sidecars, CapCut subtitle import, multi-platform exports, captions, publish packages, project_resume handoff packets, EDL/FCPXML handoff, and Remotion voiceover animation."
 metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
 ---
 
@@ -41,6 +40,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ subtitle_pack.py         SRT/VTT/ASS/JSON 字幕交付包（speed/offset 对齐）
    ├─→ import_capcut_subtitles.py
    │                            剪映/CapCut 自动字幕 → transcript / gap cut list
+   ├─→ project_resume.py        续跑上下文包 / agent handoff / 可选 CLAUDE.md
    ├─→ export_edl.py            render_config / cut list → EDL + manifest
    ├─→ export_fcpxml.py         render_config / cut list → FCPXML + manifest
    ├─→ multi_export.py          小红书 3:4 / 抖音 9:16 / 视频号 ≤60s
@@ -84,6 +84,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `timeline_view.py` | 切点/QA 可疑区间可视化复盘图 | `<video.mp4>` `--at 42.5` `--output view.png` / `--cut-list cuts.json` `--output-dir verify/` |
 | `subtitle_pack.py` | transcript/render_config → SRT/VTT/ASS/JSON 字幕包 | `--transcript work/transcript.json --output-dir output/subtitles` / `--config render_config.json --speed 1.25 --offset 2.0` |
 | `import_capcut_subtitles.py` | 剪映/CapCut 自动字幕或 SRT → transcript + gap cut list | `--draft <draft_dir>` / `--srt captions.srt` `--transcript work/capcut_transcript.json` `--cut-list work/capcut_gap_cut.json` |
+| `project_resume.py` | 本地 artifacts → 续跑上下文包 / agent handoff | `--project-dir work/day58 --markdown work/day58/project_resume.md --agent-note work/day58/CLAUDE.md` |
 | `export_edl.py` | NLE handoff：导出 EDL + manifest | `--config render_config.json --output edit.edl` / `--cut-list rough_cut.json --output rough.edl` |
 | `export_fcpxml.py` | NLE handoff：导出 FCPXML + manifest | `--config render_config.json --output edit.fcpxml` / `--cut-list rough_cut.json --output rough.fcpxml` |
 | `multi_export.py` | 三平台导出 | `<input.mp4>` `--platforms xhs douyin wxch` |
@@ -1054,13 +1055,26 @@ python3 scripts/publish_package.py \
 
 `publish_package.py` 不上传、不调用平台 API；它只把 `multi_export.py` 的平台 MP4、`generate_caption.py` 的标题/正文/tags、封面、SRT/VTT、章节文本和 `pipeline_manifest` gate 状态合成 `publish_package.v1`。如果缺少某个平台视频、caption 为空、或 pipeline manifest 已 blocked，`--strict` 返回 2。需要交给外部发布 connector 时，用这份 JSON 作为 handoff；手工上传时看 Markdown checklist。
 
-**6e. 音频重复检测**：
+**6e. 续跑上下文包（跨会话/自动化收尾时跑）**：
+```bash
+python3 scripts/project_resume.py \
+  --project-dir work/day58 \
+  --target-stage publish_ready \
+  --output work/day58/project_resume.json \
+  --markdown work/day58/project_resume.md \
+  --agent-note work/day58/CLAUDE.md \
+  --strict
+```
+
+`project_resume.py` 复用 `pipeline_manifest.py` 的本地 gate，不渲染、不上传、不提交生成任务。它输出 `project_resume.v1`，包含 `phase`、`recommended_first_action`、`next_actions[]`、最近 artifacts、关键 gate snapshot 和一句可直接交给下一位 agent 的 `suggested_prompt`。长流程被压缩上下文、自动化结束、或要交给另一位 agent 时，优先把 Markdown/agent note 作为接手入口。
+
+**6f. 音频重复检测**：
 1. 提取最终视频的音频
 2. 重新进行语音识别
 3. 检查识别结果中是否存在相邻片段的文字重复（前一句末尾 2-3 个字与后一句开头重复）
 4. 如发现技术性重复（非自然语言重复），需要调整 render_config.json 中的片段选择
 
-**6f. 字幕文字最终校验**：
+**6g. 字幕文字最终校验**：
 1. 读取最终视频使用的所有 transcript 片段的文字
 2. 按最终视频的片段顺序，逐条检查以下问题：
    - **语音识别残留错误**：Phase 2.5 可能遗漏的同音字、专有名词错误

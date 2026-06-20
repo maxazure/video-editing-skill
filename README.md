@@ -2,7 +2,7 @@
 
 这是一个面向 **口播、教程、访谈、播客切片、录屏演示 / facecam demo** 的 AI 视频剪辑生产线：给它原始口播音频/视频、transcript、B-roll、摄像头小窗或素材目录，它可以把“还没整理的素材”推进到 **可发布的小红书 / 抖音 / 视频号短视频**。
 
-它不是一个单点 FFmpeg 脚本，而是一条完整工作流：**转写 → 长视频择段 → 清稿 → 去口头禅/停顿 → 重组故事 → 分镜 → B-roll/生图/生成视频规划 → 字幕与声音设计 → 单次编码渲染 → 质检 → 多平台导出 → 标题文案**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
+它不是一个单点 FFmpeg 脚本，而是一条完整工作流：**转写 → 长视频择段 → 清稿 → 去口头禅/停顿 → 重组故事 → 分镜 → B-roll/生图/生成视频规划 → 字幕与声音设计 → 单次编码渲染 → 质检 → 多平台导出 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
 
 ## 适合做什么
 
@@ -161,6 +161,8 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    ├─→ import_capcut_subtitles.py
    │                            剪映/CapCut 自动字幕 → transcript / gap cut list
    │
+   ├─→ project_resume.py        续跑上下文包 / agent handoff / 可选 CLAUDE.md
+   │
    ├─→ export_edl.py            render_config / cut list → EDL + manifest
    ├─→ export_fcpxml.py         render_config / cut list → FCPXML + manifest
    │                            交给 Premiere / Final Cut Pro / Resolve
@@ -190,7 +192,7 @@ cd ~/projects/video-editing-skill
 python3 scripts/utils.py
 
 # 4. 跑一遍测试套件确认 OK
-pytest tests/           # 365 个测试，约 6 秒
+pytest tests/           # 384 个测试，约 5 秒
 ```
 
 每天做一条视频的完整模板：**[docs/prompts/15-xhs-daily-tech-video.md](docs/prompts/15-xhs-daily-tech-video.md)**
@@ -747,6 +749,24 @@ python3 scripts/export_fcpxml.py \
 
 适合把自动粗剪交给 Premiere / Final Cut Pro / DaVinci Resolve 做调色、混音、精剪或协作复核。EDL 更通用，FCPXML 对 FCP / Resolve 更直接；复杂字幕、overlay、章节卡和 B-roll 仍以 `render_final.py` / `export_capcut.py` 为准。
 
+### 2026-06-21 自动化升级记录（Project Resume Handoff）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`digitalsamba/claude-code-video-toolkit`](https://github.com/digitalsamba/claude-code-video-toolkit) | `project.json` 跟踪 scenes/audio/sessions/phase，并把计划与实际文件 reconcile 后生成项目级 `CLAUDE.md` | 新增本地 `project_resume.py`，复用现有 gate，不引入项目数据库 |
+| [`HKUDS/ViMax`](https://github.com/HKUDS/ViMax) | Agent Loop + TUI 支持 session resume、context compaction 和工作目录 artifacts | 输出 `project_resume.v1` + Markdown，让压缩上下文后的 agent 先读文件状态 |
+| [`SamurAIGPT/Generative-Media-Skills`](https://github.com/SamurAIGPT/Generative-Media-Skills) | agent-native CLI、结构化 JSON 输出、semantic exit codes 和 recipe 化工作流 | `project_resume.py --strict` 在 blocked stage 返回 2，适合自动化收尾 |
+| [`JossBen/mcp-video-editing-assistant`](https://github.com/JossBen/mcp-video-editing-assistant/blob/master/CLAUDE.md) | 视频编辑助手把 timeline/workflow 学习状态持久化到 JSON | 本项目继续只读本地 artifacts，生成可恢复 handoff，不绑定 Resolve/MCP |
+| [`SamurAIGPT/AI-Youtube-Shorts-Generator`](https://github.com/samuraigpt/ai-youtube-shorts-generator) | LLM highlight detection、Whisper 和 auto-crop 证明长视频生产链需要可恢复状态 | 本项目已有 highlight/render/publish artifacts，本次补跨会话续跑入口 |
+
+新增/调整能力：新增 `scripts/project_resume.py`，可扫描项目目录并复用 `pipeline_manifest.py` 的 gate，输出 `project_resume.v1`、Markdown resume 和可选项目级 `CLAUDE.md`。内容包括 `phase`、`recommended_first_action`、`next_actions[]`、`latest_artifacts[]`、ready artifacts、关键 gate snapshot、guardrails 和可直接交给下一位 agent 的 `suggested_prompt`。新增 [docs/prompts/52-project-resume.md](docs/prompts/52-project-resume.md)，更新 daily workflow、提示词目录、SKILL 和 README。另将 `SKILL.md` frontmatter 规范化：移除旧的顶层 `argument-hint`，并把过长 description 压缩到 skill 校验器允许范围。
+
+使用方式：自动化收尾或跨会话接手前跑 `python3 scripts/project_resume.py --project-dir work/day58 --target-stage publish_ready --output work/day58/project_resume.json --markdown work/day58/project_resume.md --agent-note work/day58/CLAUDE.md --strict`。如果只想写默认项目级 agent note，可用 `--agent-note` 不带路径，脚本会写到 `--project-dir/CLAUDE.md`。脚本不渲染、不上传、不提交任何付费生成任务。
+
+验证结果：新增 `tests/test_project_resume.py` 5 项；`.venv/bin/python -m pytest tests/test_project_resume.py tests/test_pipeline_manifest.py -q` 通过 `22 passed in 0.27s`；`.venv/bin/python scripts/project_resume.py --help` smoke 通过；`.venv/bin/python -m compileall scripts tests` 通过；`.venv/bin/python /Users/maxazure/.codex/skills/.system/skill-creator/scripts/quick_validate.py /Users/maxazure/projects/video-editing-skill` 通过 `Skill is valid!`；`git diff --check` 通过；最终全量 `.venv/bin/python -m pytest tests -q` 通过 `384 passed in 4.40s`。
+
 ### 2026-06-20 自动化升级记录（PIP Overlay）
 
 本次联网研究的 GitHub 参考：
@@ -1022,6 +1042,24 @@ python3 scripts/publish_package.py \
 
 输出 `publish_package.v1`，包含每个平台的 MP4、封面图、SRT/VTT、标题、正文、tags、发布时间建议、上传 checklist、章节文本和 `pipeline_manifest` 阻塞状态。`--strict` 会在缺少平台视频、caption 不完整、或已有 gate blocked 时返回 2；`pipeline_manifest.py` 也会识别 `publish_package.json` 并把 `summary.blocking > 0` 列为 blocking gate。
 
+### 🧭 Project Resume — 续跑上下文包
+[`scripts/project_resume.py`](scripts/project_resume.py) · [详细文档](docs/prompts/52-project-resume.md)
+
+借鉴 agent-native 视频工具的 project state / resume note 思路，但保持本项目本地 artifact-first：复用 `pipeline_manifest.py` 的 gate 判断，把状态、阶段、缺件、最近 artifacts 和下一步动作整理成可交给下一位 agent 的 JSON + Markdown。
+
+常用：
+```bash
+python3 scripts/project_resume.py \
+  --project-dir work/day58 \
+  --target-stage publish_ready \
+  --output work/day58/project_resume.json \
+  --markdown work/day58/project_resume.md \
+  --agent-note work/day58/CLAUDE.md \
+  --strict
+```
+
+输出 `project_resume.v1`，包含 `phase`、`recommended_first_action`、`next_actions[]`、`latest_artifacts[]`、关键 gate snapshot 和一句 `suggested_prompt`。`--agent-note` 可写出项目级 `CLAUDE.md`；不传路径时默认写到 `--project-dir/CLAUDE.md`。脚本不渲染、不上传、不提交任何生成任务，适合自动化收尾、上下文压缩后续跑和跨 agent 交接。
+
 ### 👤 受众 Profile
 [`scripts/profiles/`](scripts/profiles/)
 
@@ -1200,6 +1238,15 @@ python3 $SKILL/scripts/publish_package.py \
   --output $WORK/work/publish_package.json \
   --markdown $WORK/work/publish_package.md \
   --strict
+
+# 9b. 可选：自动化收尾或跨会话接手前生成续跑上下文包
+python3 $SKILL/scripts/project_resume.py \
+  --project-dir $WORK \
+  --target-stage publish_ready \
+  --output $WORK/work/project_resume.json \
+  --markdown $WORK/work/project_resume.md \
+  --agent-note $WORK/CLAUDE.md \
+  --strict
 ```
 
 ---
@@ -1207,7 +1254,7 @@ python3 $SKILL/scripts/publish_package.py \
 ## 测试
 
 ```bash
-pytest tests/           # 379 测试，约 6 秒
+pytest tests/           # 384 测试，约 5 秒
 ```
 
 按模块跑：
@@ -1234,6 +1281,7 @@ pytest tests/test_subtitle_pack.py -v       # SRT/VTT/ASS/JSON 字幕交付包
 pytest tests/test_audio_cue_sheet.py -v     # BGM/SFX 音频设计清单
 pytest tests/test_color_grade.py -v         # 调色计划 + render_final 接入
 pytest tests/test_publish_package.py -v     # 最终上传包 + gate 状态汇总
+pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 ```
 
 ### 2026-06-16 自动化升级记录（Publish Package）
@@ -1381,6 +1429,7 @@ pytest tests/test_publish_package.py -v     # 最终上传包 + gate 状态汇�
 | **46** | **[Generation Task Log](docs/prompts/46-generation-task-log.md)** | **跟踪 submit_id、轮询、下载和本地落盘** |
 | **49** | **[Publish Package](docs/prompts/49-publish-package.md)** | **汇总平台视频、文案、字幕和发布 gate** |
 | **50** | **[CapCut Subtitle Import](docs/prompts/50-import-capcut-subtitles.md)** | **剪映/CapCut 自动字幕反向导入** |
+| **52** | **[Project Resume](docs/prompts/52-project-resume.md)** | **生成跨会话续跑上下文包** |
 
 完整列表见 [docs/prompts/README.md](docs/prompts/README.md)。
 
@@ -1438,6 +1487,7 @@ scripts/
 ├── timeline_view.py            filmstrip+waveform 可视化复盘图     [V3]
 ├── subtitle_pack.py            SRT/VTT/ASS/JSON 字幕交付包        [V3]
 ├── import_capcut_subtitles.py  剪映/CapCut 字幕反向导入 + gap cut [V3]
+├── project_resume.py           续跑上下文包 + agent handoff           [V3]
 ├── burn_subtitles.py           字幕 ASS 生成
 ├── generate_cover.py           封面生成
 ├── generate_cover_image.py     Chrome-rendered 封面
