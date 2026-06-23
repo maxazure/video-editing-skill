@@ -69,6 +69,7 @@ def test_build_cut_plan_reports_speedup_and_removed_segments():
     assert plan["removed_seconds"] == 2.0
     assert plan["output_duration_estimate"] == 6.0
     assert plan["speedup_ratio"] == 1.333
+    assert plan["fade_seconds"] == 0.03
     assert plan["removed_segments"] == [{"start": 2.0, "end": 4.0, "duration": 2.0}]
 
 
@@ -83,5 +84,32 @@ def test_build_ffmpeg_command_uses_single_concat_encode_for_video():
     assert "-filter_complex" in cmd
     assert "trim=start=0.0000:end=2.0000" in joined
     assert "atrim=start=3.0000:end=5.0000" in joined
+    assert "afade=t=in:st=0:d=0.0300" in joined
+    assert "afade=t=out:st=1.9700:d=0.0300" in joined
     assert "concat=n=2:v=1:a=1[outv][outa]" in joined
     assert "-map" in cmd and "[outv]" in cmd and "[outa]" in cmd
+
+
+def test_build_ffmpeg_command_can_disable_cut_fades():
+    cmd = build_ffmpeg_command(
+        "in.mp4",
+        "out.mp4",
+        [Segment(start=0.0, end=2.0, duration=2.0)],
+        has_video=False,
+        fade_seconds=0.0,
+    )
+    assert "afade=" not in " ".join(cmd)
+    assert "concat=n=1:v=0:a=1[outa]" in " ".join(cmd)
+
+
+def test_build_ffmpeg_command_clamps_fade_to_half_segment():
+    cmd = build_ffmpeg_command(
+        "in.mp4",
+        "out.mp4",
+        [Segment(start=0.0, end=0.04, duration=0.04)],
+        has_video=False,
+        fade_seconds=0.03,
+    )
+    joined = " ".join(cmd)
+    assert "afade=t=in:st=0:d=0.0200" in joined
+    assert "afade=t=out:st=0.0200:d=0.0200" in joined

@@ -114,7 +114,8 @@
       --limit 12
     # 先检查 work/jumpcut.json 的 removed_segments，确认没有误切人声；
     # 再查看 output/verify/jumpcut/*.png 的 filmstrip + waveform；
-    # 需要独立去停顿成片时再加 --output output/day<NN>_jumpcut.mp4。
+    # 需要独立去停顿成片时再加 --output output/day<NN>_jumpcut.mp4；
+    # 默认 --fade-duration 0.03 会降低切点爆音，只有需要硬切原声时才设为 0。
     # 详见 docs/prompts/21-jump-cut.md 和 docs/prompts/22-timeline-view.md
 
 5. python3 scripts/content_guard.py \

@@ -20,6 +20,7 @@ from utils import get_ffmpeg_encode_args  # noqa: E402
 
 
 DEFAULT_NOISE_DB = -35.0
+DEFAULT_FADE_SECONDS = 0.03
 
 
 @dataclass(frozen=True)
@@ -159,7 +160,8 @@ def detect_silences(input_path: str, noise_db: float, min_silence: float,
 
 def build_cut_plan(input_path: str, output_path: Optional[str], duration: float,
                    silences: List[Segment], noise_db: float, min_silence: float,
-                   pad: float, min_keep: float) -> Dict:
+                   pad: float, min_keep: float,
+                   fade_seconds: float = DEFAULT_FADE_SECONDS) -> Dict:
     keep_segments = build_keep_segments(duration, silences, pad=pad, min_keep=min_keep)
     removed_segments = infer_removed_segments(duration, keep_segments)
     removed_seconds = sum(s.duration for s in removed_segments)
@@ -171,6 +173,7 @@ def build_cut_plan(input_path: str, output_path: Optional[str], duration: float,
         "noise_threshold_db": round(noise_db, 2),
         "min_silence_seconds": min_silence,
         "pad_seconds": pad,
+        "fade_seconds": fade_seconds,
         "min_keep_seconds": min_keep,
         "detected_silences": [asdict(s) for s in silences],
         "removed_segments": [asdict(s) for s in removed_segments],
@@ -181,9 +184,23 @@ def build_cut_plan(input_path: str, output_path: Optional[str], duration: float,
     }
 
 
+def _audio_fade_filters(segment: Segment, fade_seconds: float) -> str:
+    if fade_seconds <= 0 or segment.duration <= 0:
+        return ""
+    fade = min(float(fade_seconds), segment.duration / 2)
+    if fade <= 0:
+        return ""
+    fade_out_start = max(0.0, segment.duration - fade)
+    return (
+        f",afade=t=in:st=0:d={fade:.4f},"
+        f"afade=t=out:st={fade_out_start:.4f}:d={fade:.4f}"
+    )
+
+
 def build_ffmpeg_command(input_path: str, output_path: str, keep_segments: List[Segment],
                          has_video: bool = True,
-                         video_encode_args: Optional[List[str]] = None) -> List[str]:
+                         video_encode_args: Optional[List[str]] = None,
+                         fade_seconds: float = DEFAULT_FADE_SECONDS) -> List[str]:
     if not keep_segments:
         raise ValueError("No keep segments available; refusing to render an empty output")
 
@@ -198,7 +215,7 @@ def build_ffmpeg_command(input_path: str, output_path: str, keep_segments: List[
             concat_inputs.append(f"[v{i}]")
         filters.append(
             f"[0:a]atrim=start={segment.start:.4f}:end={segment.end:.4f},"
-            f"asetpts=PTS-STARTPTS[a{i}]"
+            f"asetpts=PTS-STARTPTS{_audio_fade_filters(segment, fade_seconds)}[a{i}]"
         )
         concat_inputs.append(f"[a{i}]")
 
@@ -270,6 +287,8 @@ def main() -> int:
     p.add_argument("--noise-db", default="auto", help="'auto' via loudnorm input_thresh, or a fixed value like -35")
     p.add_argument("--min-silence", type=float, default=0.5, help="Minimum silence duration to remove")
     p.add_argument("--pad", type=float, default=0.08, help="Seconds preserved on both sides of each silence")
+    p.add_argument("--fade-duration", type=float, default=DEFAULT_FADE_SECONDS,
+                   help="Audio fade-in/out seconds per kept segment to prevent cut pops. Set 0 to disable")
     p.add_argument("--min-keep", type=float, default=0.15, help="Drop accidental kept fragments shorter than this")
     p.add_argument("--dry-run", action="store_true", help="Only detect and write/print the cut list")
     args = p.parse_args()
@@ -279,6 +298,9 @@ def main() -> int:
         return 1
     if not args.output and not args.dry_run:
         print("Error: --output is required unless --dry-run is set", file=sys.stderr)
+        return 1
+    if args.fade_duration < 0:
+        print("Error: --fade-duration must be >= 0", file=sys.stderr)
         return 1
 
     metadata = probe_media(args.input)
@@ -293,6 +315,7 @@ def main() -> int:
         args.input, args.output, duration, silences,
         noise_db=noise_db, min_silence=args.min_silence,
         pad=args.pad, min_keep=args.min_keep,
+        fade_seconds=args.fade_duration,
     )
 
     if args.cut_list:
@@ -307,7 +330,13 @@ def main() -> int:
     keep_segments = [Segment(**s) for s in plan["keep_segments"]]
     os.makedirs(os.path.dirname(os.path.abspath(args.output)) or ".", exist_ok=True)
     input_has_video = has_stream(metadata, "video")
-    cmd = build_ffmpeg_command(args.input, args.output, keep_segments, has_video=input_has_video)
+    cmd = build_ffmpeg_command(
+        args.input,
+        args.output,
+        keep_segments,
+        has_video=input_has_video,
+        fade_seconds=args.fade_duration,
+    )
     run_ffmpeg_with_fallback(cmd, has_video=input_has_video)
     print(f"Jump cut complete: {args.output}")
     print(f"Removed {plan['removed_seconds']:.2f}s; estimate {plan['output_duration_estimate']:.2f}s output")

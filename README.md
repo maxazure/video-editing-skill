@@ -145,7 +145,7 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    ├─→ pip_overlay.py           录屏 + facecam → pip_overlays 小窗计划
    │                            render_final 单次编码合成 PIP camera
    │
-   ├─→ jump_cut.py              自适应静音检测 → cut list → 去停顿成片
+   ├─→ jump_cut.py              自适应静音检测 → cut list → 去停顿成片 + 切点音频 fade
    │     └─→ timeline_view.py   切点 filmstrip + waveform 人工复核图
    │
    ├─→ render_final.py          单次编码渲染 + enrich_plan 自动接入
@@ -648,13 +648,14 @@ python3 scripts/timeline_view.py origin/talking.mp4 --cut-list work/rough_cut.js
 | 自适应阈值 | 先跑 `loudnorm=print_format=json`，用 `input_thresh` 作为 `silencedetect` 阈值 |
 | 可审计 cut list | 输出 `detected_silences` / `removed_segments` / `keep_segments` / `speedup_ratio` |
 | 安全 padding | 默认每个切点保留 0.08s，避免咬字被切掉 |
+| 防爆音 fade | 默认每个保留片段加 30ms 音频淡入/淡出；`--fade-duration 0` 可关闭 |
 | 单次编码渲染 | 用 `trim/atrim + concat` 一次输出，不产生中间重编码文件 |
 
 常用：
 ```bash
 python3 scripts/jump_cut.py input/talking.mp4 --dry-run --cut-list output/talking.jumpcut.json
 python3 scripts/timeline_view.py input/talking.mp4 --cut-list output/talking.jumpcut.json --output-dir output/verify/cuts
-python3 scripts/jump_cut.py input/talking.mp4 --output output/talking.jumpcut.mp4 --cut-list output/talking.jumpcut.json
+python3 scripts/jump_cut.py input/talking.mp4 --output output/talking.jumpcut.mp4 --cut-list output/talking.jumpcut.json --fade-duration 0.03
 ```
 
 ### 🔎 Timeline View — 切点/可疑区间复盘图
@@ -748,6 +749,24 @@ python3 scripts/export_fcpxml.py \
 ```
 
 适合把自动粗剪交给 Premiere / Final Cut Pro / DaVinci Resolve 做调色、混音、精剪或协作复核。EDL 更通用，FCPXML 对 FCP / Resolve 更直接；复杂字幕、overlay、章节卡和 B-roll 仍以 `render_final.py` / `export_capcut.py` 为准。
+
+### 2026-06-23 自动化升级记录（Jump Cut Audio Fades）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`browser-use/video-use`](https://github.com/browser-use/video-use) | 把“每个 segment 边界加 30ms audio fade 防爆音”列为 production-correctness hard rule | `jump_cut.py` 默认给每个保留片段加 30ms fade-in/out，减少 concat 切点 pop |
+| [`WyattBlue/auto-editor`](https://github.com/WyattBlue/auto-editor) | 自动静音剪辑支持 margin、audio/motion edit methods，并把 dead space removal 作为 first pass | 本项目保留现有自适应静音阈值和 `--pad`，只补缺失的音频边界处理，不引入复杂表达式 DSL |
+| [`GoogleCloudPlatform/vertex-ai-creative-studio` genmedia-video-editor](https://github.com/GoogleCloudPlatform/vertex-ai-creative-studio/blob/main/experiments/mcp-genmedia/skills/genmedia-video-editor/SKILL.md) | 把视频生成、叠图、拼接、GIF、音视频同步拆成明确工具能力 | 本项目继续使用本地 FFmpeg CLI，把 fade 放进现有 single-pass filtergraph |
+| [`SamurAIGPT/AI-Youtube-Shorts-Generator`](https://github.com/samuraigpt/ai-youtube-shorts-generator) | 长视频转短视频强调 Whisper、highlight ranking、auto crop 和 JSON 输出 | 本项目已有 highlight/reframe 路线，本次只修补最终 jump-cut 听感缺口 |
+| [`jianchang512/pyvideotrans`](https://github.com/jianchang512/pyvideotrans) / [`krillinai/KrillinAI`](https://github.com/krillinai/KrillinAI) | 多语转写、翻译、配音和音画同步说明音频链路质量会直接影响发布体验 | 本次不新增配音服务，只确保自动去停顿成片的切点音频更稳 |
+
+新增/调整能力：`scripts/jump_cut.py` 新增 `--fade-duration`，默认 `0.03` 秒。渲染时每个 `keep_segments[]` 音频片段会在同一个 `atrim/asetpts` filter chain 中追加 `afade=t=in` 和 `afade=t=out`，不增加中间文件、不改变单次 concat 编码模型。短片段会自动把 fade 限制到片段时长的一半；需要完全硬切原声时可传 `--fade-duration 0`。cut list JSON 新增 `fade_seconds` 字段，方便后续 EDL/FCPXML/复核时知道实际音频边界策略。README、SKILL、`docs/prompts/21-jump-cut.md`、`docs/prompts/15-xhs-daily-tech-video.md` 和提示词索引已同步。
+
+使用方式：先审查切点仍用 `python3 scripts/jump_cut.py input/talking.mp4 --dry-run --cut-list output/talking.jumpcut.json`；确认后渲染用 `python3 scripts/jump_cut.py input/talking.mp4 --output output/talking.jumpcut.mp4 --cut-list output/talking.jumpcut.json --fade-duration 0.03`。如需旧行为，传 `--fade-duration 0`。
+
+验证结果：新增/更新 `tests/test_jump_cut.py` 3 项覆盖默认 fade、关闭 fade、短片段 fade clamp；`.venv/bin/python -m pytest tests/test_jump_cut.py -q` 通过 `8 passed in 0.04s`；相关回归 `.venv/bin/python -m pytest tests/test_jump_cut.py tests/test_export_edl.py tests/test_export_fcpxml.py -q` 通过 `19 passed in 0.17s`；合成 1.2 秒 FFmpeg smoke 成功输出 MP4 且 cut list 含 `fade_seconds: 0.03`；`.venv/bin/python -m compileall scripts tests` 通过；`.venv/bin/python /Users/maxazure/.codex/skills/.system/skill-creator/scripts/quick_validate.py /Users/maxazure/projects/video-editing-skill` 通过 `Skill is valid!`；`git diff --check` 通过；全量 `.venv/bin/python -m pytest tests -q` 通过 `386 passed in 4.41s`。
 
 ### 2026-06-21 自动化升级记录（Project Resume Handoff）
 

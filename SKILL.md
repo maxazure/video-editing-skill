@@ -32,7 +32,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ screen_focus.py          录屏点击/热点 → 自动聚焦计划
    ├─→ pip_overlay.py           录屏 + facecam → PIP 小窗计划
    ├─→ color_grade.py           bounded 调色 plan / render_final 单次编码接入
-   ├─→ jump_cut.py              自适应去停顿 + 可审计 cut list（口播/访谈可选）
+   ├─→ jump_cut.py              自适应去停顿 + 可审计 cut list + 30ms 防爆音 fade
    ├─→ render_final.py          单次编码渲染（enrich_plan/focus_events/pip_overlays + Heavy 字幕 + 响度规范化）
    │                            可选 --versioned-output 防覆盖旧成片
    ├─→ render_qa.py             渲染后黑屏/静帧/静音/尺寸质检 + review packet
@@ -78,7 +78,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `screen_focus.py` | 录屏点击/热点 → 聚焦 zoom enrich plan | `--events` `--event` `--screen-width` `--output` |
 | `pip_overlay.py` | 录屏 + facecam → PIP 摄像头小窗 enrich plan | `--camera` `--segment` `--sync-offset` `--output` |
 | `color_grade.py` | bounded 调色 plan + FFmpeg filter + 可选现有 master 复版 | `--preset` `--output` `--markdown` `--render-output` `--strict` |
-| `jump_cut.py` | 自适应静音检测 → 去停顿 cut list / 成片 | `<input.mp4>` `--dry-run` `--cut-list cuts.json` / `--output jumpcut.mp4` |
+| `jump_cut.py` | 自适应静音检测 → 去停顿 cut list / 成片 + 切点音频 fade | `<input.mp4>` `--dry-run` `--cut-list cuts.json` / `--output jumpcut.mp4` `--fade-duration 0.03` |
 | `render_final.py` | 单次编码渲染 + enrich_plan 接入 | `--config render_config.json` `--enrich-plan enrich_plan.json` `--output final.mp4` |
 | `render_qa.py` | 渲染后 QA：尺寸/音频/黑屏/静帧/静音 + review packet | `<video.mp4>` `--platform douyin` `--json qa.json` `--review-dir verify/qa` |
 | `timeline_view.py` | 切点/QA 可疑区间可视化复盘图 | `<video.mp4>` `--at 42.5` `--output view.png` / `--cut-list cuts.json` `--output-dir verify/` |
