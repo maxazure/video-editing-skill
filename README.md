@@ -2,7 +2,7 @@
 
 这是一个面向 **口播、教程、访谈、播客切片、录屏演示 / facecam demo** 的 AI 视频剪辑生产线：给它原始口播音频/视频、transcript、B-roll、摄像头小窗或素材目录，它可以把“还没整理的素材”推进到 **可发布的小红书 / 抖音 / 视频号短视频**。
 
-它不是一个单点 FFmpeg 脚本，而是一条完整工作流：**转写 → 长视频择段 → 清稿 → 去口头禅/停顿 → 重组故事 → 分镜 → B-roll/生图/生成视频规划 → 字幕与声音设计 → 单次编码渲染 → 质检 → 多平台导出 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
+它不是一个单点 FFmpeg 脚本，而是一条完整工作流：**转写 → 长视频择段 → 清稿 → 去口头禅/停顿 → 重组故事 → 分镜 → B-roll/生图/生成视频规划 → 字幕与声音设计 → 渲染前预检 → 单次编码渲染 → 质检 → 多平台导出 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
 
 ## 适合做什么
 
@@ -11,7 +11,7 @@
 - **生成式素材有明确审批和台账**：Codex `image_gen` / GPT Image 2 提示词、Dreamina/Veo/LTX/Wan/Sora 视频提示词、provider 决策、`submit_id` 轮询下载和本地落盘 gate 都先记录再执行。
 - **适合交给强推理模型做长流程代理执行**：在 [GPT-5.5](https://developers.openai.com/api/docs/models/gpt-5.5) 和 [Claude Opus 4.8](https://docs.anthropic.com/en/docs/about-claude/models) 这类面向复杂专业任务、agent 工作流的模型下，本 skill 对 **口播类短视频** 至少可以替代 **80% 的常规视频剪辑工作**。
 
-这里的“80%”是按口播短视频生产来评估的：它已经覆盖素材整理、ASR、清稿、粗剪、字幕、B-roll/图像/生成视频规划、声音 cue、渲染、质检、多平台导出和发布文案。剩下通常需要人工负责的是选题判断、最终审美取舍、品牌口吻、客户确认、复杂手工精修、调色混音和需要逐帧 keyframe 的高级特效。
+这里的“80%”是按口播短视频生产来评估的：它已经覆盖素材整理、ASR、清稿、粗剪、字幕、B-roll/图像/生成视频规划、声音 cue、渲染前预检、渲染、质检、多平台导出和发布文案。剩下通常需要人工负责的是选题判断、最终审美取舍、品牌口吻、客户确认、复杂手工精修、调色混音和需要逐帧 keyframe 的高级特效。
 
 ## 项目现状与边界
 
@@ -148,6 +148,9 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    ├─→ jump_cut.py              自适应静音检测 → cut list → 去停顿成片 + 切点音频 fade
    │     └─→ timeline_view.py   切点 filmstrip + waveform 人工复核图
    │
+   ├─→ edit_preflight.py        render_config/enrich_plan/cut list 渲染前预检
+   │                            缺文件、空剪辑、非法时间段、危险参数 gate
+   │
    ├─→ render_final.py          单次编码渲染 + enrich_plan 自动接入
    │     B-roll / 章节卡 / 贴纸 / 生成图 / 点击聚焦 / PIP camera + Heavy 字幕 + 响度规范化
    │     可选 --versioned-output：输出 _V<N>，避免覆盖旧成片
@@ -192,7 +195,7 @@ cd ~/projects/video-editing-skill
 python3 scripts/utils.py
 
 # 4. 跑一遍测试套件确认 OK
-pytest tests/           # 384 个测试，约 5 秒
+pytest tests/           # 394 个测试，约 5 秒
 ```
 
 每天做一条视频的完整模板：**[docs/prompts/15-xhs-daily-tech-video.md](docs/prompts/15-xhs-daily-tech-video.md)**
@@ -680,6 +683,23 @@ python3 scripts/timeline_view.py origin/talking.mp4 --cut-list work/jumpcut.json
 - **5 个 structure 槽位**：chapter_background / chapter_title_card / broll_fallback / data_visualization / abstract_concept
 - **gpt-image-2 规则全部编码**：引号 = 精确文字渲染、约束写进 prose（无 negative-prompt 字段）、具体相机+光圈+光照（避免 "AI 味"）、默认拒绝人脸/人手特写、中文标题不走 gpt-image-2
 
+### 🧪 Edit Preflight — 渲染前预检 gate
+[`scripts/edit_preflight.py`](scripts/edit_preflight.py) · [详细文档](docs/prompts/53-edit-preflight.md)
+
+借鉴 agent 视频编辑工具的 structured preflight / risky-parameter guardrails 思路，但保持本项目本地 artifact-first：先检查 `render_config.json`、`enrich_plan.json` 和 rough/jump cut list，再决定是否允许进入 FFmpeg 渲染。
+
+常用：
+```bash
+python3 scripts/edit_preflight.py \
+  --config work/render_config.json \
+  --enrich-plan work/enrich_plan.json \
+  --output work/edit_preflight.json \
+  --markdown work/edit_preflight.md \
+  --strict
+```
+
+输出 `edit_preflight.v1`，会检查空剪辑、缺视频/图片/音频文件、`transcript + segment_id` 不匹配、非法时间段、overlay 超出输出时间线、PIP/focus 参数风险。`pipeline_manifest.py` 会识别 `edit_preflight.json`，如果 `summary.blocking > 0` 就把它列为 blocking gate。它不解码、不渲染、不上传；渲染后仍然要跑 `render_qa.py`。
+
 ### 🎚️ 渲染层（V3 强化）
 [`scripts/render_final.py`](scripts/render_final.py)
 
@@ -749,6 +769,24 @@ python3 scripts/export_fcpxml.py \
 ```
 
 适合把自动粗剪交给 Premiere / Final Cut Pro / DaVinci Resolve 做调色、混音、精剪或协作复核。EDL 更通用，FCPXML 对 FCP / Resolve 更直接；复杂字幕、overlay、章节卡和 B-roll 仍以 `render_final.py` / `export_capcut.py` 为准。
+
+### 2026-06-23 自动化升级记录（Edit Preflight Gate）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`KyaniteLabs/mcp-video`](https://github.com/KyaniteLabs/mcp-video) | 把 FFmpeg 工具包装成 structured tools，并强调 preflight validation / risky edit parameter guardrails，避免 silent bad media output | 新增本地 `edit_preflight.py`，专注渲染前 artifact 预检，不引入 MCP server |
+| [`browser-use/video-use`](https://github.com/browser-use/video-use/blob/main/SKILL.md) | 把 production-correctness rules 和确认后再执行作为硬规则，减少 agent 直接改坏时间线 | preflight 在 `render_final.py` 前输出 JSON/Markdown review，供人/agent 先修再渲染 |
+| [`video-db/skills`](https://github.com/video-db/skills) | 以 See → Understand → Act 的视频工作流提供搜索、编辑、字幕和导出能力，并返回可复核结果 | 本项目继续本地优先，只检查已有 `render_config` / `enrich_plan` / cut list |
+| [`wizenheimer/vibestudio`](https://github.com/wizenheimer/vibestudio) | 透明、traceable 的本地 FFmpeg tool workflow，便于 agent 审计输入输出 | preflight 不解码、不渲染，只做结构、路径、时间和参数检查 |
+| [`hiteshK03/video-production-skill`](https://github.com/hiteshK03/video-production-skill) | 视频生产 skill 教 agent 在多工具之间选择正确顺序和参数 | daily workflow 现在把 preflight 放在 content guard 后、render_final 前 |
+
+新增/调整能力：新增 `scripts/edit_preflight.py`，输出 `edit_preflight.v1` JSON 和 Markdown，可检查 `render_config.clips[]` 非空、视频/图片/音频路径存在、direct `start/end` 或 `transcript + segment_id` 时间段合法、B-roll/image/PIP overlay 路径和时间线边界、focus 像素坐标是否缺 `source_width/source_height`、PIP `width_ratio/opacity/source_start` 等风险参数，以及 rough/jump cut `keep_segments[]`。`pipeline_manifest.py` 新增 `edit_preflight` artifact 类别；只要项目里已有 unresolved `edit_preflight.json` 且 `summary.blocking > 0`，manifest 会把它列为 blocking gate。新增 [docs/prompts/53-edit-preflight.md](docs/prompts/53-edit-preflight.md)，并更新 daily workflow、提示词目录、SKILL 和 README。
+
+使用方式：渲染前跑 `python3 scripts/edit_preflight.py --config work/render_config.json --enrich-plan work/enrich_plan.json --output work/edit_preflight.json --markdown work/edit_preflight.md --strict`。如果有多个计划文件可重复传 `--enrich-plan`，如果要检查 rough/jump cut 结果可加 `--cut-list work/jump_cut.json`。脚本不会渲染、上传、下载或提交任何付费生成任务；渲染后仍需跑 `render_qa.py`。
+
+验证结果：新增 `tests/test_edit_preflight.py` 7 项，并更新 `tests/test_pipeline_manifest.py`；`.venv/bin/python -m pytest tests/test_edit_preflight.py tests/test_pipeline_manifest.py -q` 通过 `25 passed in 0.24s`；`.venv/bin/python scripts/edit_preflight.py --help` smoke 通过；`.venv/bin/python -m compileall scripts tests` 通过；`.venv/bin/python /Users/maxazure/.codex/skills/.system/skill-creator/scripts/quick_validate.py /Users/maxazure/projects/video-editing-skill` 通过 `Skill is valid!`；`git diff --check` 通过；最终全量 `.venv/bin/python -m pytest tests -q` 通过 `394 passed in 3.94s`。
 
 ### 2026-06-23 自动化升级记录（Jump Cut Audio Fades）
 
@@ -1179,7 +1217,15 @@ python3 $SKILL/scripts/color_grade.py \
   --output $WORK/work/color_grade.json \
   --markdown $WORK/work/color_grade.md
 
-# 4. 渲染
+# 4. 渲染前预检：先挡住缺文件、空剪辑、坏时间段和危险 overlay 参数
+python3 $SKILL/scripts/edit_preflight.py \
+  --config $WORK/work/render_config.json \
+  --enrich-plan $WORK/work/enrich_plan.json \
+  --output $WORK/work/edit_preflight.json \
+  --markdown $WORK/work/edit_preflight.md \
+  --strict
+
+# 5. 渲染
 #    如果生成了 screen_focus_plan.json，可额外追加：
 #    --enrich-plan $WORK/work/screen_focus_plan.json
 #    如果生成了 pip_overlay_plan.json，可额外追加：
@@ -1194,19 +1240,19 @@ python3 $SKILL/scripts/render_final.py \
   --subtitle-style karaoke \
   --output $WORK/output/day${DAY}_master.mp4
 
-# 5. 主片质检
+# 6. 主片质检
 python3 $SKILL/scripts/render_qa.py \
   $WORK/output/day${DAY}_master.mp4 --platform douyin \
   --json $WORK/output/day${DAY}_master_qa.json \
   --review-dir $WORK/output/verify/day${DAY}_qa \
   --review-clips
 
-# 5b. 如果 QA 有 WARN/FAIL，先看 review packet；想抽查关键切点再生成可视化复盘图
+# 6b. 如果 QA 有 WARN/FAIL，先看 review packet；想抽查关键切点再生成可视化复盘图
 python3 $SKILL/scripts/timeline_view.py \
   $WORK/output/day${DAY}_master.mp4 --at 42.5 --radius 1.5 \
   --output $WORK/output/verify/day${DAY}_42_5s.png
 
-# 5c. 可选：导出平台可上传字幕 sidecar
+# 6c. 可选：导出平台可上传字幕 sidecar
 python3 $SKILL/scripts/subtitle_pack.py \
   --config $WORK/work/render_config.json \
   --output-dir $WORK/output/subtitles \
@@ -1214,11 +1260,11 @@ python3 $SKILL/scripts/subtitle_pack.py \
   --speed 1.25 \
   --offset 2.0
 
-# 6. 多平台
+# 7. 多平台
 python3 $SKILL/scripts/multi_export.py \
   $WORK/output/day${DAY}_master.mp4 --output-dir $WORK/output/
 
-# 6b. 可选：交给专业剪辑软件继续精修/调色/混音
+# 7b. 可选：交给专业剪辑软件继续精修/调色/混音
 python3 $SKILL/scripts/export_edl.py \
   --config $WORK/work/render_config.json \
   --output $WORK/work/day${DAY}_edit.edl \
@@ -1230,7 +1276,7 @@ python3 $SKILL/scripts/export_fcpxml.py \
   --width 1080 \
   --height 1920
 
-# 7. 平台导出质检
+# 8. 平台导出质检
 python3 $SKILL/scripts/render_qa.py \
   $WORK/output/day${DAY}_xhs.mp4 --platform xhs
 python3 $SKILL/scripts/render_qa.py \
@@ -1238,12 +1284,12 @@ python3 $SKILL/scripts/render_qa.py \
 python3 $SKILL/scripts/render_qa.py \
   $WORK/output/day${DAY}_wxch.mp4 --platform wxch
 
-# 8. 文案
+# 9. 文案
 python3 $SKILL/scripts/generate_caption.py \
   --script $WORK/work/clean_script.md --profile tech_pro \
   --output $WORK/output/day${DAY}_caption.json
 
-# 9. 发布前 gate 汇总 + 最终上传包
+# 10. 发布前 gate 汇总 + 最终上传包
 python3 $SKILL/scripts/pipeline_manifest.py \
   --project-dir $WORK \
   --target-stage publish_ready \
@@ -1258,7 +1304,7 @@ python3 $SKILL/scripts/publish_package.py \
   --markdown $WORK/work/publish_package.md \
   --strict
 
-# 9b. 可选：自动化收尾或跨会话接手前生成续跑上下文包
+# 10b. 可选：自动化收尾或跨会话接手前生成续跑上下文包
 python3 $SKILL/scripts/project_resume.py \
   --project-dir $WORK \
   --target-stage publish_ready \
@@ -1273,7 +1319,7 @@ python3 $SKILL/scripts/project_resume.py \
 ## 测试
 
 ```bash
-pytest tests/           # 384 测试，约 5 秒
+pytest tests/           # 394 测试，约 5 秒
 ```
 
 按模块跑：
@@ -1299,6 +1345,7 @@ pytest tests/test_screen_focus.py -v        # 录屏点击聚焦计划 + render 
 pytest tests/test_subtitle_pack.py -v       # SRT/VTT/ASS/JSON 字幕交付包
 pytest tests/test_audio_cue_sheet.py -v     # BGM/SFX 音频设计清单
 pytest tests/test_color_grade.py -v         # 调色计划 + render_final 接入
+pytest tests/test_edit_preflight.py -v      # 渲染前结构/路径/参数预检 gate
 pytest tests/test_publish_package.py -v     # 最终上传包 + gate 状态汇总
 pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 ```
@@ -1501,6 +1548,7 @@ scripts/
 ├── stock_material_plan.py      远程 stock 搜索规划                 [V3]
 ├── screen_focus.py             录屏点击/热点聚焦计划              [V3]
 ├── color_grade.py              bounded 调色计划 + FFmpeg filter    [V3]
+├── edit_preflight.py           渲染前结构/路径/参数预检 gate       [V3]
 ├── render_final.py             单次编码渲染 + enrich_plan 接入（V3 强化）
 ├── render_qa.py                渲染后黑屏/静帧/静音/尺寸质检       [V3]
 ├── timeline_view.py            filmstrip+waveform 可视化复盘图     [V3]

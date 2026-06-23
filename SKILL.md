@@ -1,6 +1,6 @@
 ---
 name: video-editing
-description: "Xiaohongshu/RED-tuned short-form video production workflow. Use when Codex needs to turn raw voice-over, talking-head, tutorial, interview, podcast, long-video, screen recording, B-roll, captions, or generated assets into auditable social-video artifacts for 小红书, 抖音, 微信视频号, TikTok, Reels, or YouTube Shorts. Covers transcription, transcript cleanup, highlight picking, rough/jump cuts, story rewrite, content guard, B-roll/enrich plans, gpt-image-2 prompt routing, storyboard and video-generation prompt packs, async generation task logs, media-library recommendations, screen focus, facecam PIP, color grade, render, QA review packets, subtitle sidecars, CapCut subtitle import, multi-platform exports, captions, publish packages, project_resume handoff packets, EDL/FCPXML handoff, and Remotion voiceover animation."
+description: "Xiaohongshu/RED-tuned short-form video production workflow. Use when Codex needs to turn raw voice-over, talking-head, tutorial, interview, podcast, long-video, screen recording, B-roll, captions, or generated assets into auditable social-video artifacts for 小红书, 抖音, 微信视频号, TikTok, Reels, or YouTube Shorts. Covers transcription, transcript cleanup, highlight picking, rough/jump cuts, story rewrite, content guard, B-roll/enrich plans, gpt-image-2 prompt routing, storyboard and video-generation prompt packs, async generation task logs, media-library recommendations, screen focus, facecam PIP, color grade, edit preflight, render, QA review packets, subtitle sidecars, CapCut subtitle import, multi-platform exports, captions, publish packages, project_resume handoff packets, EDL/FCPXML handoff, and Remotion voiceover animation."
 metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
 ---
 
@@ -33,6 +33,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ pip_overlay.py           录屏 + facecam → PIP 小窗计划
    ├─→ color_grade.py           bounded 调色 plan / render_final 单次编码接入
    ├─→ jump_cut.py              自适应去停顿 + 可审计 cut list + 30ms 防爆音 fade
+   ├─→ edit_preflight.py        render_config/enrich_plan/cut list 渲染前预检 gate
    ├─→ render_final.py          单次编码渲染（enrich_plan/focus_events/pip_overlays + Heavy 字幕 + 响度规范化）
    │                            可选 --versioned-output 防覆盖旧成片
    ├─→ render_qa.py             渲染后黑屏/静帧/静音/尺寸质检 + review packet
@@ -79,6 +80,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `pip_overlay.py` | 录屏 + facecam → PIP 摄像头小窗 enrich plan | `--camera` `--segment` `--sync-offset` `--output` |
 | `color_grade.py` | bounded 调色 plan + FFmpeg filter + 可选现有 master 复版 | `--preset` `--output` `--markdown` `--render-output` `--strict` |
 | `jump_cut.py` | 自适应静音检测 → 去停顿 cut list / 成片 + 切点音频 fade | `<input.mp4>` `--dry-run` `--cut-list cuts.json` / `--output jumpcut.mp4` `--fade-duration 0.03` |
+| `edit_preflight.py` | render_config/enrich_plan/cut list 渲染前预检 gate | `--config render_config.json` `--enrich-plan enrich_plan.json` `--output edit_preflight.json` `--strict` |
 | `render_final.py` | 单次编码渲染 + enrich_plan 接入 | `--config render_config.json` `--enrich-plan enrich_plan.json` `--output final.mp4` |
 | `render_qa.py` | 渲染后 QA：尺寸/音频/黑屏/静帧/静音 + review packet | `<video.mp4>` `--platform douyin` `--json qa.json` `--review-dir verify/qa` |
 | `timeline_view.py` | 切点/QA 可疑区间可视化复盘图 | `<video.mp4>` `--at 42.5` `--output view.png` / `--cut-list cuts.json` `--output-dir verify/` |

@@ -146,6 +146,13 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         "Create render_config.json or export one from highlight_picker.py.",
     ),
     ArtifactDef(
+        "edit_preflight",
+        "Edit Preflight",
+        ("**/edit_preflight.json", "**/*_edit_preflight.json"),
+        "Run edit_preflight.py and resolve missing media, invalid timing, or risky edit parameters before render.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "color_grade",
         "Color Grade",
         ("**/color_grade.json", "**/*_color_grade.json"),
@@ -370,6 +377,7 @@ def evaluate_category(definition: ArtifactDef, artifacts: Sequence[ArtifactRecor
             "asset_provenance",
             "audio_cue_sheet",
             "publish_package",
+            "edit_preflight",
         }:
             blocking = _int_at(data, "summary", "blocking")
             if blocking:

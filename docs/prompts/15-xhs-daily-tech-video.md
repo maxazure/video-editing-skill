@@ -125,6 +125,15 @@
 
    (任何 HARD violation 必须先去掉再继续；SOFT 警告需要权衡)
 
+5b. python3 scripts/edit_preflight.py \
+      --config work/render_config.json \
+      --enrich-plan work/enrich_plan.json \
+      --output work/edit_preflight.json \
+      --markdown work/edit_preflight.md \
+      --strict
+
+   (缺文件、空剪辑、非法时间段、overlay 超出时间线或像素坐标缺尺寸时，先修 artifact 再渲染)
+
 6. python3 scripts/render_final.py \
      --config work/render_config.json \
      --enrich-plan work/enrich_plan.json \
@@ -241,6 +250,8 @@ day<NN>/
 │   ├── day<NN>_edit.fcpxml # 可选：FCPXML handoff
 │   ├── day<NN>_edit.fcpxml.json # 可选：FCPXML manifest
 │   ├── render_config.json  # 喂给 render_final 的配置
+│   ├── edit_preflight.json # 渲染前预检 gate
+│   ├── edit_preflight.md
 │   ├── pipeline_manifest.json # 发布前 gate 汇总
 │   ├── pipeline_manifest.md
 │   ├── publish_package.json # 最终上传包

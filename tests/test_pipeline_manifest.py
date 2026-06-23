@@ -130,6 +130,25 @@ def test_color_grade_can_be_required(tmp_path):
     assert gate["status"] == "ready"
 
 
+def test_optional_edit_preflight_blocks_when_unresolved(tmp_path):
+    _publish_ready_project(tmp_path)
+    _write(tmp_path / "work" / "edit_preflight.json", {
+        "version": "edit_preflight.v1",
+        "status": "blocked",
+        "summary": {
+            "blocking": 2,
+            "warnings": 1,
+        },
+    })
+
+    manifest = build_manifest(str(tmp_path), target_stage="publish_ready")
+
+    assert manifest["status"] == "blocked"
+    assert "edit_preflight" in manifest["blocked_gates"]
+    gate = next(g for g in manifest["gates"] if g["category"] == "edit_preflight")
+    assert "2 blocking item(s) in summary.blocking" in gate["notes"]
+
+
 def test_optional_publish_package_blocks_when_unresolved(tmp_path):
     _publish_ready_project(tmp_path)
     _write(tmp_path / "work" / "publish_package.json", {

@@ -48,9 +48,10 @@ python3 scripts/pipeline_manifest.py \
 | `motion_guard.json` | `summary.blocking > 0` |
 | `speaker_turns.json` | `summary.blocking > 0` |
 | `privacy_redaction.json` | `summary.blocking > 0` |
+| `edit_preflight.json` | `summary.blocking > 0` |
 | `render_qa.json` | `status == fail` 或任一 file `status == fail` |
 
-这些 artifact 即使不是当前 stage 的必需项，只要存在且未解决，也会让 manifest 进入 `blocked`，避免把未审批 paid generation 或失败 QA 漏到发布阶段。
+这些 artifact 即使不是当前 stage 的必需项，只要存在且未解决，也会让 manifest 进入 `blocked`，避免把未审批 paid generation、渲染前预检失败或失败 QA 漏到发布阶段。
 
 ## 输出
 
