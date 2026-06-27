@@ -244,6 +244,24 @@ def test_optional_audio_cue_sheet_blocks_when_unresolved(tmp_path):
     assert "2 blocking item(s) in summary.blocking" in gate["notes"]
 
 
+def test_optional_audio_master_report_blocks_when_unresolved(tmp_path):
+    _publish_ready_project(tmp_path)
+    _write(tmp_path / "output" / "day58_audio_master_report.json", {
+        "version": "audio_master_report.v1",
+        "summary": {
+            "blocking": 1,
+            "warnings": 0,
+        },
+    })
+
+    manifest = build_manifest(str(tmp_path), target_stage="publish_ready")
+
+    assert manifest["status"] == "blocked"
+    assert "audio_master_report" in manifest["blocked_gates"]
+    gate = next(g for g in manifest["gates"] if g["category"] == "audio_master_report")
+    assert "1 blocking item(s) in summary.blocking" in gate["notes"]
+
+
 def test_optional_video_prompt_pack_blocks_when_unapproved(tmp_path):
     _publish_ready_project(tmp_path)
     _write(tmp_path / "work" / "video_prompt_pack.json", {

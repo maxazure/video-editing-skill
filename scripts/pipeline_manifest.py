@@ -181,6 +181,16 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         blocks_when_present=True,
     ),
     ArtifactDef(
+        "audio_master_report",
+        "Audio Master Report",
+        (
+            "**/audio_master_report.json",
+            "**/*_audio_master_report.json",
+        ),
+        "Run audio_master_report.py and fix loudness, true-peak, LRA, or silence blockers before publishing.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "privacy_redaction",
         "Privacy Redaction",
         (
@@ -376,6 +386,7 @@ def evaluate_category(definition: ArtifactDef, artifacts: Sequence[ArtifactRecor
             "localization_pack",
             "asset_provenance",
             "audio_cue_sheet",
+            "audio_master_report",
             "publish_package",
             "edit_preflight",
         }:

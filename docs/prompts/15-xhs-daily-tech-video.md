@@ -147,6 +147,12 @@
      --platform douyin \
      --json output/day<NN>_master_qa.json
 
+7b. python3 scripts/audio_master_report.py \
+      output/day<NN>_master.mp4 \
+      --output output/day<NN>_audio_master_report.json \
+      --markdown output/day<NN>_audio_master_report.md \
+      --strict
+
 8. # 如果 render_qa 有 WARN/FAIL，或要抽查 hook / 转场 / 片尾：
    python3 scripts/timeline_view.py output/day<NN>_master.mp4 \
      --at <可疑秒数> \
@@ -214,12 +220,14 @@
 - enrich_plan.json 里 broll/sticker/chapter 总数（确认丰富度足够）
 - content_guard 的输出（必须 ✅ 无违规）
 - render_qa 的输出（必须没有 FAIL；WARN 要解释）
+- audio_master_report 的输出（必须 `summary.blocking == 0`）
 - 如有 jump_cut 或 QA WARN/FAIL，给我 timeline_view PNG 路径和人工判断
 
 注意事项：
 - 永远不要在画面上漏 1.25x / mlx-whisper / loudnorm 这类内部 token
 - 字幕字体走 Source Han Sans SC Heavy 或 STHeiti Medium，不要用 W3
 - 1.25x 之后必须做响度规范化（render_final 默认会做，不要 --no-loudnorm）
+- 发布前用 audio_master_report 确认 LUFS / true peak / 长静音，不要只凭耳朵判断
 - 如果 content_guard 拦截，先重写标题再继续，不要 --no-content-guard 绕过
 ```
 
@@ -265,6 +273,8 @@ day<NN>/
     ├── day<NN>_master_douyin.mp4       # 9:16 抖音版
     ├── day<NN>_master_wxch.mp4         # 9:16 ≤60s 视频号版
     ├── day<NN>_master_qa.json          # 主片 QA
+    ├── day<NN>_audio_master_report.json # 成片响度报告
+    ├── day<NN>_audio_master_report.md
     ├── day<NN>_xhs_qa.json             # 小红书版 QA
     ├── day<NN>_douyin_qa.json          # 抖音版 QA
     ├── day<NN>_caption.json            # 标题 + 正文 + 标签

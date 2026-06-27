@@ -156,6 +156,7 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    │     可选 --versioned-output：输出 _V<N>，避免覆盖旧成片
    │
    ├─→ render_qa.py             渲染后黑屏/静帧/静音/尺寸质检 + review packet
+   ├─→ audio_master_report.py   成片响度 / true peak / LRA / 长静音发布 gate
    │     └─→ timeline_view.py   QA 可疑区间可视化复盘
    │
    ├─→ subtitle_pack.py         SRT / VTT / ASS / JSON 字幕交付包
@@ -770,6 +771,23 @@ python3 scripts/export_fcpxml.py \
 
 适合把自动粗剪交给 Premiere / Final Cut Pro / DaVinci Resolve 做调色、混音、精剪或协作复核。EDL 更通用，FCPXML 对 FCP / Resolve 更直接；复杂字幕、overlay、章节卡和 B-roll 仍以 `render_final.py` / `export_capcut.py` 为准。
 
+### 2026-06-28 自动化升级记录（Audio Master Report）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`KyaniteLabs/mcp-video`](https://github.com/KyaniteLabs/mcp-video) | 把 FFmpeg 能力包装成 guardrailed tools，并已有 audio normalization / quality guardrails 模块 | 不引入 MCP server；新增只读 `audio_master_report.py`，把成片响度、true peak、LRA 和长静音变成可审计 gate |
+| [`browser-use/video-use`](https://github.com/browser-use/video-use/blob/main/SKILL.md) | 明确 audio-first 剪辑和 production-correctness hard rules，要求输出前自检 | 本项目已有 `render_qa.py`；本次补上 audio master 维度，避免“有音轨但不适合发布”的漏检 |
+| [`donghaozhang/video-agent-skill`](https://github.com/donghaozhang/video-agent-skill) | AI video suite 把 transcribe / create-video / analyze-video 等能力做成 CLI，适合流水线组合 | 延续本项目 CLI artifact 风格，输出 JSON/Markdown 而不是隐藏在聊天上下文 |
+| [`haidrrrry/claude-remotion-skill`](https://github.com/haidrrrry/claude-remotion-skill) | Remotion skill 把 captions、sound design 和 video render 放在同一创作面 | 本项目不扩大 Remotion 依赖，只给最终 master 增加声音质量报告 |
+
+新增/调整能力：新增 `scripts/audio_master_report.py`，用 FFmpeg `ebur128=peak=true` 和 `silencedetect` 输出 `audio_master_report.v1` JSON/Markdown，检查 integrated LUFS、true peak、LRA 和长静音总量；默认门槛为 -16 LUFS ±2 LU、true peak ≤ -1 dBFS、LRA ≤ 18 LU、长静音总量 ≤ 3 秒。`pipeline_manifest.py` 新增 `audio_master_report` artifact 类别，发现 `summary.blocking > 0` 会作为 publish gate 阻塞。新增 [docs/prompts/54-audio-master-report.md](docs/prompts/54-audio-master-report.md)，并更新 daily workflow、提示词目录、SKILL 和 README。
+
+使用方式：渲染和 `render_qa.py` 后运行 `python3 scripts/audio_master_report.py output/day58_master.mp4 --output output/day58_audio_master_report.json --markdown output/day58_audio_master_report.md --strict`。脚本只读最终文件，不重写媒体、不上传、不调用 provider；失败时优先回到 `render_final.py` 默认响度链路重新渲染，不要反复压缩已完成 master。
+
+验证结果：新增 `tests/test_audio_master_report.py` 7 项，并更新 `tests/test_pipeline_manifest.py`；`.venv/bin/python -m pytest tests/test_audio_master_report.py tests/test_pipeline_manifest.py -q` 通过 `26 passed in 0.24s`；`.venv/bin/python scripts/audio_master_report.py --help` smoke 通过；合成 1.5 秒 FFmpeg MP4 smoke 成功输出 JSON/Markdown，并正确把 -21.1 LUFS tone 标为 blocking；`.venv/bin/python -m compileall scripts tests` 通过；`.venv/bin/python /Users/maxazure/.codex/skills/.system/skill-creator/scripts/quick_validate.py /Users/maxazure/projects/video-editing-skill` 通过 `Skill is valid!`；`git diff --check` 通过；最终全量 `.venv/bin/python -m pytest tests -q` 通过 `402 passed in 4.26s`。
+
 ### 2026-06-23 自动化升级记录（Edit Preflight Gate）
 
 本次联网研究的 GitHub 参考：
@@ -1064,6 +1082,21 @@ python3 scripts/timeline_view.py output/day58_master.mp4 --at 42.5 --radius 1.5 
 
 `--review-dir` 会写 `render_qa_review.json` 和 `render_qa_review.md`，把黑屏、静帧、静音的可疑区间按 FAIL/WARN 排序；`--review-clips` 会额外抽取短 MP4 证据片段。只需要审阅清单时不加 `--review-clips`。
 
+### 🎚️ Audio Master Report — 成片响度发布门禁
+[`scripts/audio_master_report.py`](scripts/audio_master_report.py) · [详细文档](docs/prompts/54-audio-master-report.md)
+
+借鉴 agent 视频工具对 audio-first correctness 和 render 后可审计报告的重视，但不做二次压缩：`render_final.py` 仍负责默认响度链路，`audio_master_report.py` 只读最终 master，用 FFmpeg `ebur128` / `silencedetect` 输出 JSON + Markdown。
+
+常用：
+```bash
+python3 scripts/audio_master_report.py output/day58_master.mp4 \
+  --output output/day58_audio_master_report.json \
+  --markdown output/day58_audio_master_report.md \
+  --strict
+```
+
+默认检查 -16 LUFS ±2 LU、true peak ≤ -1 dBFS、LRA ≤ 18 LU、长静音总量 ≤ 3 秒。输出 `audio_master_report.v1`，如果 `summary.blocking > 0`，`pipeline_manifest.py` 会把它列为 blocking gate。若失败，优先回到 `render_final.py` 默认响度链路重新渲染，不要反复压缩已完成 master。
+
 ### 📦 多平台导出
 [`scripts/multi_export.py`](scripts/multi_export.py) · [详细文档](docs/prompts/17-multi-platform.md)
 
@@ -1247,12 +1280,19 @@ python3 $SKILL/scripts/render_qa.py \
   --review-dir $WORK/output/verify/day${DAY}_qa \
   --review-clips
 
-# 6b. 如果 QA 有 WARN/FAIL，先看 review packet；想抽查关键切点再生成可视化复盘图
+# 6b. 主片响度/爆峰/长静音门禁
+python3 $SKILL/scripts/audio_master_report.py \
+  $WORK/output/day${DAY}_master.mp4 \
+  --output $WORK/output/day${DAY}_audio_master_report.json \
+  --markdown $WORK/output/day${DAY}_audio_master_report.md \
+  --strict
+
+# 6c. 如果 QA 有 WARN/FAIL，先看 review packet；想抽查关键切点再生成可视化复盘图
 python3 $SKILL/scripts/timeline_view.py \
   $WORK/output/day${DAY}_master.mp4 --at 42.5 --radius 1.5 \
   --output $WORK/output/verify/day${DAY}_42_5s.png
 
-# 6c. 可选：导出平台可上传字幕 sidecar
+# 6d. 可选：导出平台可上传字幕 sidecar
 python3 $SKILL/scripts/subtitle_pack.py \
   --config $WORK/work/render_config.json \
   --output-dir $WORK/output/subtitles \
@@ -1319,7 +1359,7 @@ python3 $SKILL/scripts/project_resume.py \
 ## 测试
 
 ```bash
-pytest tests/           # 394 测试，约 5 秒
+pytest tests/           # 402 测试，约 5 秒
 ```
 
 按模块跑：
@@ -1329,6 +1369,7 @@ pytest tests/test_rewrite_script.py -v      # Story Engine
 pytest tests/test_auto_broll.py -v          # B-roll 调度
 pytest tests/test_multi_export.py -v        # 多平台比例转换
 pytest tests/test_render_qa.py -v           # 渲染后质检
+pytest tests/test_audio_master_report.py -v # 成片响度 / true peak / LRA 门禁
 pytest tests/test_render_enrich_plan.py -v  # enrich_plan 自动接入渲染
 pytest tests/test_rough_cut.py -v           # ASR 粗剪：口头禅/重复句 cut list
 pytest tests/test_timeline_view.py -v       # 切点/QA 可视化复盘图
@@ -1496,6 +1537,7 @@ pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 | **49** | **[Publish Package](docs/prompts/49-publish-package.md)** | **汇总平台视频、文案、字幕和发布 gate** |
 | **50** | **[CapCut Subtitle Import](docs/prompts/50-import-capcut-subtitles.md)** | **剪映/CapCut 自动字幕反向导入** |
 | **52** | **[Project Resume](docs/prompts/52-project-resume.md)** | **生成跨会话续跑上下文包** |
+| **54** | **[Audio Master Report](docs/prompts/54-audio-master-report.md)** | **检查 LUFS、true peak、LRA 和长静音** |
 
 完整列表见 [docs/prompts/README.md](docs/prompts/README.md)。
 
@@ -1551,6 +1593,7 @@ scripts/
 ├── edit_preflight.py           渲染前结构/路径/参数预检 gate       [V3]
 ├── render_final.py             单次编码渲染 + enrich_plan 接入（V3 强化）
 ├── render_qa.py                渲染后黑屏/静帧/静音/尺寸质检       [V3]
+├── audio_master_report.py      成片响度 / true peak / LRA 发布门禁 [V3]
 ├── timeline_view.py            filmstrip+waveform 可视化复盘图     [V3]
 ├── subtitle_pack.py            SRT/VTT/ASS/JSON 字幕交付包        [V3]
 ├── import_capcut_subtitles.py  剪映/CapCut 字幕反向导入 + gap cut [V3]
