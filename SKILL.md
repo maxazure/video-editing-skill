@@ -1,6 +1,6 @@
 ---
 name: video-editing
-description: "Xiaohongshu/RED-tuned short-form video production workflow. Use when Codex needs to turn raw voice-over, talking-head, tutorial, interview, podcast, long-video, screen recording, B-roll, captions, or generated assets into auditable social-video artifacts for 小红书, 抖音, 微信视频号, TikTok, Reels, or YouTube Shorts. Covers transcription, transcript cleanup, highlight picking, rough/jump cuts, story rewrite, content guard, B-roll/enrich plans, gpt-image-2 prompt routing, storyboard and video-generation prompt packs, async generation task logs, media-library recommendations, screen focus, facecam PIP, color grade, edit preflight, render, QA review packets, audio master loudness reports, subtitle sidecars, CapCut subtitle import, multi-platform exports, captions, publish packages, project_resume handoff packets, EDL/FCPXML handoff, and Remotion voiceover animation."
+description: "Xiaohongshu/RED-tuned short-form video production workflow. Use when Codex needs to turn raw voice-over, talking-head, tutorial, interview, podcast, long-video, screen recording, B-roll, captions, or generated assets into auditable social-video artifacts for 小红书, 抖音, 微信视频号, TikTok, Reels, or YouTube Shorts. Covers transcription, transcript cleanup, highlight picking, rough/jump cuts, SRT edit-guide planning, story rewrite, content guard, B-roll/enrich plans, gpt-image-2 prompt routing, storyboard and video-generation prompt packs, async generation task logs, media-library recommendations, screen focus, facecam PIP, color grade, edit preflight, render, QA review packets, audio master loudness reports, subtitle sidecars, CapCut subtitle import, multi-platform exports, captions, publish packages, project_resume handoff packets, EDL/FCPXML handoff, and Remotion voiceover animation."
 metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
 ---
 
@@ -41,6 +41,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ subtitle_pack.py         SRT/VTT/ASS/JSON 字幕交付包（speed/offset 对齐）
    ├─→ import_capcut_subtitles.py
    │                            剪映/CapCut 自动字幕 → transcript / gap cut list
+   ├─→ srt_edit_plan.py         SRT + keep/drop 编辑指令 → render_config / cut list
    ├─→ project_resume.py        续跑上下文包 / agent handoff / 可选 CLAUDE.md
    ├─→ export_edl.py            render_config / cut list → EDL + manifest
    ├─→ export_fcpxml.py         render_config / cut list → FCPXML + manifest
@@ -87,6 +88,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `timeline_view.py` | 切点/QA 可疑区间可视化复盘图 | `<video.mp4>` `--at 42.5` `--output view.png` / `--cut-list cuts.json` `--output-dir verify/` |
 | `subtitle_pack.py` | transcript/render_config → SRT/VTT/ASS/JSON 字幕包 | `--transcript work/transcript.json --output-dir output/subtitles` / `--config render_config.json --speed 1.25 --offset 2.0` |
 | `import_capcut_subtitles.py` | 剪映/CapCut 自动字幕或 SRT → transcript + gap cut list | `--draft <draft_dir>` / `--srt captions.srt` `--transcript work/capcut_transcript.json` `--cut-list work/capcut_gap_cut.json` |
+| `srt_edit_plan.py` | SRT + 人工/agent keep/drop 指令 → edit plan / render_config / cut list | `--srt captions.srt --guide edit_guide.md --source-media origin/talking.mp4 --render-config work/render_config.json --strict` |
 | `project_resume.py` | 本地 artifacts → 续跑上下文包 / agent handoff | `--project-dir work/day58 --markdown work/day58/project_resume.md --agent-note work/day58/CLAUDE.md` |
 | `export_edl.py` | NLE handoff：导出 EDL + manifest | `--config render_config.json --output edit.edl` / `--cut-list rough_cut.json --output rough.edl` |
 | `export_fcpxml.py` | NLE handoff：导出 FCPXML + manifest | `--config render_config.json --output edit.fcpxml` / `--cut-list rough_cut.json --output rough.fcpxml` |
@@ -996,6 +998,32 @@ python3 scripts/import_capcut_subtitles.py \
 ```
 
 `--cut-list` 用字幕间隙生成 `keep_segments`，适合先用 `timeline_view.py --cut-list` 复核，再交给 `export_edl.py` 或后续粗剪流程。默认只读取 subtitle 材料；如果草稿把自动字幕存为普通文字轨，再加 `--include-overlays`。
+
+如果已经有 SRT 和人工/agent 写好的字幕编号编辑意见，用 `srt_edit_plan.py` 直接生成可复核剪辑方案：
+
+`work/edit_guide.md` 示例：
+
+```md
+title: 发布会高光
+platform: xhs
+keep 3-5: 先用产品发布和用户反应
+drop 1-2: 铺垫太慢
+keep 8: 补一句核心结论
+```
+
+```bash
+python3 scripts/srt_edit_plan.py \
+  --srt exports/capcut_auto_captions.srt \
+  --guide work/edit_guide.md \
+  --source-media origin/talking.mp4 \
+  --output work/srt_edit_plan.json \
+  --render-config work/render_config.json \
+  --cut-list work/srt_edit_cut.json \
+  --markdown work/srt_edit_plan.md \
+  --strict
+```
+
+`keep/include/use/select` 行按出现顺序生成最终输出顺序；`drop/skip/exclude/remove` 行写入 review。`--cut-list` 输出按原素材时间排序，适合 `timeline_view.py --cut-list` 看切点；真正的重排序输出看 `--render-config`。需要强制每个字幕编号都被审过时，加 `--require-all-reviewed --strict`。
 
 ### Phase 5c: NLE Handoff EDL / FCPXML（交给 Premiere / FCP / Resolve）
 

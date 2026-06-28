@@ -164,6 +164,7 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    │
    ├─→ import_capcut_subtitles.py
    │                            剪映/CapCut 自动字幕 → transcript / gap cut list
+   ├─→ srt_edit_plan.py         SRT + keep/drop 编辑指令 → render_config / cut list
    │
    ├─→ project_resume.py        续跑上下文包 / agent handoff / 可选 CLAUDE.md
    │
@@ -196,7 +197,7 @@ cd ~/projects/video-editing-skill
 python3 scripts/utils.py
 
 # 4. 跑一遍测试套件确认 OK
-pytest tests/           # 394 个测试，约 5 秒
+pytest tests/           # 406 个测试，约 5 秒
 ```
 
 每天做一条视频的完整模板：**[docs/prompts/15-xhs-daily-tech-video.md](docs/prompts/15-xhs-daily-tech-video.md)**
@@ -623,6 +624,35 @@ python3 scripts/import_capcut_subtitles.py \
 
 默认只读取剪映草稿里的 subtitle 材料，避免把封面标题/贴纸文字误当口播字幕；如果某个草稿把自动字幕保存成普通文字轨，可加 `--include-overlays`。`--cut-list` 是“字幕间隙代理”的保守粗剪，最终渲染前仍应跑 `timeline_view.py --cut-list` 人工复核。
 
+### 🧾 SRT Edit Plan — 字幕编辑指令转剪辑方案
+[`scripts/srt_edit_plan.py`](scripts/srt_edit_plan.py) · [详细文档](docs/prompts/55-srt-edit-plan.md)
+
+借鉴 video-use / OpenStoryline 这类“先让人或 agent 给出编辑意图，再生成可复核时间线”的方式；本项目把它压成一个本地确定性桥接脚本：SRT + keep/drop 字幕编号指令 → `srt_edit_plan.json`、`render_config.json`、source-time cut list 和 Markdown review。
+
+`work/edit_guide.md` 示例：
+```md
+title: 发布会高光
+platform: xhs
+keep 3-5: 先用产品发布和用户反应
+drop 1-2: 铺垫太慢
+keep 8: 补一句核心结论
+```
+
+常用：
+```bash
+python3 scripts/srt_edit_plan.py \
+  --srt work/captions.srt \
+  --guide work/edit_guide.md \
+  --source-media origin/talking.mp4 \
+  --output work/srt_edit_plan.json \
+  --render-config work/render_config.json \
+  --cut-list work/srt_edit_cut.json \
+  --markdown work/srt_edit_plan.md \
+  --strict
+```
+
+`keep/include/use/select` 行按出现顺序生成最终输出；`drop/skip/exclude/remove` 行写入 review。`--cut-list` 按原素材时间排序，适合 `timeline_view.py --cut-list` 复核；真正重排后的输出看 `--render-config`。
+
 ### ✂️ ASR Rough Cut — 自动去口头禅/重复句
 [`scripts/rough_cut.py`](scripts/rough_cut.py) · [详细文档](docs/prompts/26-rough-cut.md)
 
@@ -770,6 +800,24 @@ python3 scripts/export_fcpxml.py \
 ```
 
 适合把自动粗剪交给 Premiere / Final Cut Pro / DaVinci Resolve 做调色、混音、精剪或协作复核。EDL 更通用，FCPXML 对 FCP / Resolve 更直接；复杂字幕、overlay、章节卡和 B-roll 仍以 `render_final.py` / `export_capcut.py` 为准。
+
+### 2026-06-29 自动化升级记录（SRT Edit Plan）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`browser-use/video-use`](https://github.com/browser-use/video-use) | 用 transcript 作为主要编辑界面，辅以 timeline review 和确认后执行 | 新增 SRT-first edit guide，把字幕编号编辑意见转成可审计 JSON/Markdown，不引入云端转写 |
+| [`FireRedTeam/FireRed-OpenStoryline`](https://github.com/FireRedTeam/FireRed-OpenStoryline) | 支持 conversational refinement、resequence clips 和可复用 editing skill | 用普通 Markdown keep/drop 指令表达重排和删除，顺序可复用、可 review |
+| [`iPythoning/ai-video-studio`](https://github.com/iPythoning/ai-video-studio) | Generate → Edit → Export 链路把生成和剪辑交付串起来 | 本项目保持本地 artifact-first，输出 `render_config` / cut list 交给现有渲染和 NLE handoff |
+| [`linwownil/xmeml`](https://github.com/linwownil/xmeml) | 把 SRT/字幕时间数据用于剪辑软件 XML 交接 | 本次先把 SRT 时间码转成 `render_config` 和 source-time cut list，再复用现有 EDL/FCPXML |
+| [`kyle95wm/srt-2-audacity`](https://github.com/kyle95wm/srt-2-audacity) | 把 SRT timing 转成编辑器可用 label track，适合精确人工复核 | Markdown review 保留字幕编号、时间、文本、keep/drop 理由，方便剪辑前核对 |
+
+新增/调整能力：新增 `scripts/srt_edit_plan.py`，可读取 SRT 和人工/agent 写的 keep/drop 指令，输出 `srt_edit_plan.v1` JSON、`render_config.json`、按原素材时间排序的 cut list 和 Markdown review；支持 `title/platform/cover_style/profile` metadata，支持 `keep/include/use/select` 与 `drop/skip/exclude/remove`，`--require-all-reviewed --strict` 可把未复核字幕段作为 blocking。新增 [docs/prompts/55-srt-edit-plan.md](docs/prompts/55-srt-edit-plan.md)，并更新 README、SKILL 和提示词目录。
+
+使用方式：先写 `work/edit_guide.md`，例如 `keep 3-5: 先用产品发布和用户反应`、`drop 1-2: 铺垫太慢`、`keep 8: 补一句核心结论`；再运行 `python3 scripts/srt_edit_plan.py --srt work/captions.srt --guide work/edit_guide.md --source-media origin/talking.mp4 --output work/srt_edit_plan.json --render-config work/render_config.json --cut-list work/srt_edit_cut.json --markdown work/srt_edit_plan.md --strict`。切点复核用 `timeline_view.py --cut-list work/srt_edit_cut.json`，最终渲染用 `render_final.py --config work/render_config.json`。
+
+验证结果：新增 `tests/test_srt_edit_plan.py` 4 项；`.venv/bin/python -m pytest tests/test_srt_edit_plan.py tests/test_import_capcut_subtitles.py tests/test_subtitle_pack.py tests/test_export_edl.py tests/test_export_fcpxml.py -q` 通过 `24 passed in 0.24s`；`.venv/bin/python scripts/srt_edit_plan.py --help` smoke 通过；`.venv/bin/python -m compileall scripts tests` 通过；最终全量 `.venv/bin/python -m pytest tests -q` 通过 `406 passed in 4.42s`。
 
 ### 2026-06-28 自动化升级记录（Audio Master Report）
 
@@ -1359,7 +1407,7 @@ python3 $SKILL/scripts/project_resume.py \
 ## 测试
 
 ```bash
-pytest tests/           # 402 测试，约 5 秒
+pytest tests/           # 406 测试，约 5 秒
 ```
 
 按模块跑：
@@ -1384,6 +1432,7 @@ pytest tests/test_export_edl.py -v          # NLE handoff EDL + manifest
 pytest tests/test_export_fcpxml.py -v       # NLE handoff FCPXML + manifest
 pytest tests/test_screen_focus.py -v        # 录屏点击聚焦计划 + render 接入
 pytest tests/test_subtitle_pack.py -v       # SRT/VTT/ASS/JSON 字幕交付包
+pytest tests/test_srt_edit_plan.py -v       # SRT 编辑指令转 render_config/cut list
 pytest tests/test_audio_cue_sheet.py -v     # BGM/SFX 音频设计清单
 pytest tests/test_color_grade.py -v         # 调色计划 + render_final 接入
 pytest tests/test_edit_preflight.py -v      # 渲染前结构/路径/参数预检 gate
@@ -1538,6 +1587,7 @@ pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 | **50** | **[CapCut Subtitle Import](docs/prompts/50-import-capcut-subtitles.md)** | **剪映/CapCut 自动字幕反向导入** |
 | **52** | **[Project Resume](docs/prompts/52-project-resume.md)** | **生成跨会话续跑上下文包** |
 | **54** | **[Audio Master Report](docs/prompts/54-audio-master-report.md)** | **检查 LUFS、true peak、LRA 和长静音** |
+| **55** | **[SRT Edit Plan](docs/prompts/55-srt-edit-plan.md)** | **SRT + keep/drop 指令转剪辑方案** |
 
 完整列表见 [docs/prompts/README.md](docs/prompts/README.md)。
 
@@ -1597,6 +1647,7 @@ scripts/
 ├── timeline_view.py            filmstrip+waveform 可视化复盘图     [V3]
 ├── subtitle_pack.py            SRT/VTT/ASS/JSON 字幕交付包        [V3]
 ├── import_capcut_subtitles.py  剪映/CapCut 字幕反向导入 + gap cut [V3]
+├── srt_edit_plan.py            SRT 编辑指令 → render_config/cut   [V3]
 ├── project_resume.py           续跑上下文包 + agent handoff           [V3]
 ├── burn_subtitles.py           字幕 ASS 生成
 ├── generate_cover.py           封面生成

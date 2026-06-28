@@ -55,6 +55,7 @@
 | 52 | [Project Resume 续跑上下文包](52-project-resume.md) | 本地 artifacts → agent handoff JSON/Markdown/CLAUDE.md，跨会话继续项目 |
 | 53 | [Edit Preflight 渲染前预检](53-edit-preflight.md) | render_config/enrich_plan/cut list → 缺文件、非法时间段、危险参数 gate |
 | 54 | [Audio Master Report 成片响度报告](54-audio-master-report.md) | final master → LUFS / true peak / LRA / silence 发布门禁 |
+| 55 | [SRT Edit Plan 字幕编辑指令转剪辑方案](55-srt-edit-plan.md) | SRT + keep/drop 编辑指令 → render_config / cut list / review |
 
 ## 快速上手
 
@@ -108,3 +109,4 @@
 | 视频项目暂停后想让下一位 agent 接着做 | [52-Project Resume](52-project-resume.md) |
 | 渲染前想先挡住缺文件/坏时间段 | [53-Edit Preflight](53-edit-preflight.md) |
 | 想确认成片音量、爆峰和长静音是否达标 | [54-Audio Master Report](54-audio-master-report.md) |
+| 已有 SRT 和保留/删除字幕编号，想生成剪辑方案 | [55-SRT Edit Plan](55-srt-edit-plan.md) |
