@@ -56,6 +56,7 @@
 | 53 | [Edit Preflight 渲染前预检](53-edit-preflight.md) | render_config/enrich_plan/cut list → 缺文件、非法时间段、危险参数 gate |
 | 54 | [Audio Master Report 成片响度报告](54-audio-master-report.md) | final master → LUFS / true peak / LRA / silence 发布门禁 |
 | 55 | [SRT Edit Plan 字幕编辑指令转剪辑方案](55-srt-edit-plan.md) | SRT + keep/drop 编辑指令 → render_config / cut list / review |
+| 56 | [Audio Sync 外录音频自动对齐](56-audio-sync.md) | scratch audio + 外录音轨 → offset / replace-audio command / gate |
 
 ## 快速上手
 
@@ -110,3 +111,4 @@
 | 渲染前想先挡住缺文件/坏时间段 | [53-Edit Preflight](53-edit-preflight.md) |
 | 想确认成片音量、爆峰和长静音是否达标 | [54-Audio Master Report](54-audio-master-report.md) |
 | 已有 SRT 和保留/删除字幕编号，想生成剪辑方案 | [55-SRT Edit Plan](55-srt-edit-plan.md) |
+| 相机内录音和外录麦克风音频需要自动对齐 | [56-Audio Sync](56-audio-sync.md) |

@@ -1,6 +1,6 @@
 ---
 name: video-editing
-description: "Xiaohongshu/RED-tuned short-form video production workflow. Use when Codex needs to turn raw voice-over, talking-head, tutorial, interview, podcast, long-video, screen recording, B-roll, captions, or generated assets into auditable social-video artifacts for 小红书, 抖音, 微信视频号, TikTok, Reels, or YouTube Shorts. Covers transcription, transcript cleanup, highlight picking, rough/jump cuts, SRT edit-guide planning, story rewrite, content guard, B-roll/enrich plans, gpt-image-2 prompt routing, storyboard and video-generation prompt packs, async generation task logs, media-library recommendations, screen focus, facecam PIP, color grade, edit preflight, render, QA review packets, audio master loudness reports, subtitle sidecars, CapCut subtitle import, multi-platform exports, captions, publish packages, project_resume handoff packets, EDL/FCPXML handoff, and Remotion voiceover animation."
+description: "Xiaohongshu/RED-tuned short-form video production workflow. Use when Codex needs to turn raw voice-over, talking-head, tutorial, interview, podcast, long-video, screen recording, B-roll, captions, or generated assets into auditable social-video artifacts for 小红书, 抖音, 微信视频号, TikTok, Reels, or YouTube Shorts. Covers transcription, external audio sync, transcript cleanup, highlight picking, rough/jump cuts, SRT edit-guide planning, story rewrite, content guard, B-roll/enrich plans, gpt-image-2 prompt routing, storyboard and video-generation prompt packs, async generation task logs, media-library recommendations, screen focus, facecam PIP, color grade, edit preflight, render, QA review packets, audio master loudness reports, subtitle sidecars, CapCut subtitle import, multi-platform exports, captions, publish packages, project_resume handoff packets, EDL/FCPXML handoff, and Remotion voiceover animation."
 metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
 ---
 
@@ -14,6 +14,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 口播音频 + 无声素材
    │
    ├─→ transcribe.py            转写 + 词级时间戳 + 口误标记
+   ├─→ audio_sync.py            外录音轨自动对齐 / 替换音轨计划
    ├─→ video_understanding.py   抽样帧 + 可选 YOLO 检测 / tracks / scene_tags
    ├─→ highlight_picker.py      长视频精华候选 / brief-query 定向找片段
    ├─→ rough_cut.py             ASR 粗剪：去纯口头禅 / 相邻重复句
@@ -60,6 +61,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 |---|---|---|
 | `_internal_text_guard.py` | 拦截内部 token 进画面 | 内部模块，render_final 自动调 |
 | `content_guard.py` | 平台雷区 lint | `--script` `--title` `--caption` `--strict` |
+| `audio_sync.py` | scratch audio + 外录音轨 → offset / 替换音轨命令 / gate | `--reference-media` `--external-audio` `--replace-output` `--apply` `--strict` |
 | `rough_cut.py` | transcript 粗剪：去口头禅/重复句 | `--transcript` `--cut-list` / `--input` `--output` |
 | `video_understanding.py` | 抽样帧 + 可选 YOLO 物体检测 + 轻量 tracklets | `--detector yolo` `--scene-boundaries` `--external-detections` `--strict` |
 | `highlight_picker.py` | 长视频精华候选 + brief/query 定向找片段 | `--transcript` `--brief`/`--query` `--scene-boundaries` `--render-config` |
@@ -750,6 +752,13 @@ python3 scripts/render_final.py --config script/render_config.json --output medi
 - 渲染时追加 `--enrich-plan work/pip_overlay_plan.json`；可和 `screen_focus_plan.json`、`enrich_plan.json` 重复传入
 - 输出 `pip_overlay_plan.v1`，包含 `pip_overlays[]`、每段位置、source_start、sync offset、尺寸比例、透明度和淡入淡出
 - `render_final.py` 会随 `--primary-speed` / `--speed` 同步压缩 camera 小窗时间线，避免变速输出时 PIP 和主画面错位
+
+**Audio Sync 外录音频自动对齐**（相机内录 + 外录麦克风时推荐）：
+- 运行 `audio_sync.py --reference-media origin/camera.mp4 --external-audio origin/lav.wav --output work/audio_sync_plan.json --markdown work/audio_sync_plan.md --replace-output output/camera_lav_synced.mp4 --strict`
+- 输出 `audio_sync_plan.v1`，包含 `alignment.offset_seconds`、`confidence`、`replace_audio.command`、Markdown 复核表和 `summary.blocking`
+- 正数 offset 表示延迟外录音轨；负数 offset 表示裁掉外录音轨开头
+- 确认计划后再加 `--apply` 执行 FFmpeg 替换音轨；脚本会 copy 原视频流、用同步后的外录音轨编码 AAC
+- 如果自动估计低置信度，可用 `--offset 0.18` 这类手动偏移跳过估计；`pipeline_manifest.py` 会拦截低置信度或缺文件的 audio sync artifact
 
 **Storyboard Plan 分镜与生成路由**（生成素材前推荐）：
 - 运行 `storyboard_plan.py --transcript work/transcript.json --clean-script work/clean_script.md --output work/storyboard_plan.json --markdown work/storyboard_plan.md`

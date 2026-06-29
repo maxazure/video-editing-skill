@@ -244,6 +244,26 @@ def test_optional_audio_cue_sheet_blocks_when_unresolved(tmp_path):
     assert "2 blocking item(s) in summary.blocking" in gate["notes"]
 
 
+def test_optional_audio_sync_blocks_when_low_confidence(tmp_path):
+    _publish_ready_project(tmp_path)
+    _write(tmp_path / "work" / "audio_sync_plan.json", {
+        "version": "audio_sync_plan.v1",
+        "summary": {
+            "status": "review",
+            "blocking": 1,
+            "offset_seconds": 0.36,
+            "confidence": 0.22,
+        },
+    })
+
+    manifest = build_manifest(str(tmp_path), target_stage="publish_ready")
+
+    assert manifest["status"] == "blocked"
+    assert "audio_sync" in manifest["blocked_gates"]
+    gate = next(g for g in manifest["gates"] if g["category"] == "audio_sync")
+    assert "1 blocking item(s) in summary.blocking" in gate["notes"]
+
+
 def test_optional_audio_master_report_blocks_when_unresolved(tmp_path):
     _publish_ready_project(tmp_path)
     _write(tmp_path / "output" / "day58_audio_master_report.json", {

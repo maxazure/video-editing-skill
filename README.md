@@ -98,6 +98,8 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    │
    ├─→ transcribe.py            转写 + 词级时间戳 + 口误标记
    │                            (mlx-whisper / faster-whisper / openai-whisper)
+   ├─→ audio_sync.py            外录音轨自动对齐 / 替换音轨计划
+   │                            scratch audio + lav/recorder track → offset + gate
    │
    ├─→ video_understanding.py   抽样帧 + 可选 YOLO 物体检测
    │                            frames / detections / tracks / scene_tags
@@ -578,6 +580,35 @@ python3 scripts/render_final.py \
 ```
 
 `pip_overlays[]` 支持每段独立 `position`、`source_start`、`sync_offset`、`width_ratio`、`margin_ratio`、`opacity` 和 `transition`；`render_final.py` 会随 `--primary-speed` / `--speed` 同步压缩 camera 小窗时间线，避免变速输出时讲解人画面和主画面错位。
+
+### 🎙️ Audio Sync — 外录音频自动对齐
+[`scripts/audio_sync.py`](scripts/audio_sync.py) · [详细文档](docs/prompts/56-audio-sync.md)
+
+借鉴 AICW Video 和 ffsubsync 把“同步”做成独立可复核能力的思路：先用相机/录屏 scratch audio 和外录 lav/recorder 音频估计 offset，输出 `audio_sync_plan.v1` 和 Markdown，再确认是否执行替换音轨。
+
+常用：
+```bash
+python3 scripts/audio_sync.py \
+  --reference-media origin/camera.mp4 \
+  --external-audio origin/lav.wav \
+  --output work/audio_sync_plan.json \
+  --markdown work/audio_sync_plan.md \
+  --replace-output output/camera_lav_synced.mp4 \
+  --max-offset 5 \
+  --strict
+
+# 复核 work/audio_sync_plan.md 后再执行
+python3 scripts/audio_sync.py \
+  --reference-media origin/camera.mp4 \
+  --external-audio origin/lav.wav \
+  --output work/audio_sync_plan.json \
+  --markdown work/audio_sync_plan.md \
+  --replace-output output/camera_lav_synced.mp4 \
+  --apply \
+  --strict
+```
+
+`alignment.offset_seconds` 为正表示延迟外录音轨；为负表示裁掉外录音轨开头。自动估计低置信度时 status 会变成 `review`，也可以用 `--offset 0.18` 手动指定偏移。`pipeline_manifest.py` 会发现 `audio_sync_plan.json` 并在低置信度或缺文件时阻塞发布 gate。
 
 ### 📝 Subtitle Pack — SRT/VTT/ASS 字幕交付
 [`scripts/subtitle_pack.py`](scripts/subtitle_pack.py) · [详细文档](docs/prompts/29-subtitle-pack.md)
@@ -1491,6 +1522,24 @@ pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 
 验证结果：新增 `tests/test_video_understanding.py` 8 项，更新 `tests/test_pipeline_manifest.py`；`.venv/bin/python -m pytest tests/test_video_understanding.py tests/test_smart_reframe.py tests/test_privacy_redact.py tests/test_pipeline_manifest.py -q` 通过 `36 passed in 1.12s`；`.venv/bin/python scripts/video_understanding.py --help`、`.venv/bin/python scripts/pipeline_manifest.py --list-categories | rg video_understanding` smoke 通过；`.venv/bin/python -m compileall scripts tests` 通过；`git diff --check` 通过；最终全量 `.venv/bin/python -m pytest tests -q` 通过 `343 passed in 3.63s`。
 
+### 2026-06-30 自动化升级记录（Audio Sync）
+
+本次联网研究的 GitHub 参考：
+
+| 项目 | 看到的优点 | 本项目吸收方式 |
+|---|---|---|
+| [`aicw-io/aicw-video`](https://github.com/aicw-io/aicw-video) | 把 separate audio tracks 的 auto-match / sync 作为人物视频剪辑核心能力，并和 caption、privacy、export 放在同一工作流里 | 新增本地 `audio_sync.py`，用 scratch audio + 外录音轨生成可审计 offset 和替换音轨计划 |
+| [`smacke/ffsubsync`](https://github.com/smacke/ffsubsync) | 把同步做成独立 CLI，输出前强调质量阈值、低质量跳过和可重复执行 | `audio_sync_plan.v1` 保留 confidence、score、warnings、`summary.blocking`，低置信度先 review |
+| [`Huanshere/VideoLingo`](https://github.com/Huanshere/VideoLingo) | 重视字幕/配音对齐、单行字幕、word-level alignment 和可恢复处理流程 | 本项目继续保持音频对齐与字幕/配音分离，只补外录主音轨同步，不引入翻译/配音依赖 |
+| [`ClipsAI/clipsai`](https://github.com/ClipsAI/clipsai) | 面向访谈/播客/演讲这类 audio-centric 视频，用 transcript 驱动剪辑和重构图 | 新能力优先服务访谈、教程、播客切片里常见的相机内录 + 外录麦克风素材 |
+| [`haidrrrry/claude-remotion-skill`](https://github.com/haidrrrry/claude-remotion-skill) | 强制 render / inspect / fix 循环，不盲目交付 | `--apply` 默认不执行，先产 JSON/Markdown 让 agent 或人工复核 offset 后再替换音轨 |
+
+新增/调整能力：新增 `scripts/audio_sync.py`，可从 `--reference-media` 的相机/录屏 scratch audio 和 `--external-audio` 的 lav/recorder 音频估计 `alignment.offset_seconds`；输出 `audio_sync_plan.v1`、Markdown review、FFmpeg replace-audio command；支持 `--offset` 手动偏移、`--replace-output` 生成命令、`--apply` 确认后执行替换；`pipeline_manifest.py` 新增 `audio_sync` 可选 gate，发现低置信度或缺文件的 `audio_sync_plan.json` 会阻塞发布清单。
+
+使用方式：先跑 `python3 scripts/audio_sync.py --reference-media origin/camera.mp4 --external-audio origin/lav.wav --output work/audio_sync_plan.json --markdown work/audio_sync_plan.md --replace-output output/camera_lav_synced.mp4 --strict`；正数 offset 表示延迟外录音轨，负数 offset 表示裁掉外录音轨开头；复核 Markdown 后再加 `--apply` 执行替换。如果自动估计低置信度，但已经用拍手点/波形确认偏移，可用 `--offset 0.18` 跳过估计。
+
+验证结果：新增 `tests/test_audio_sync.py` 6 项，更新 `tests/test_pipeline_manifest.py`；`.venv/bin/python -m pytest tests/test_audio_sync.py tests/test_pipeline_manifest.py -q` 通过 `26 passed in 0.36s`；合成 WAV smoke 用 FFmpeg 生成已知偏移音频，`audio_sync.py` 自动估到 `offset_seconds=0.24`、`confidence=0.884` 并通过 `--strict`；`.venv/bin/python scripts/audio_sync.py --help`、`.venv/bin/python scripts/pipeline_manifest.py --list-categories | rg audio_sync` 通过；`.venv/bin/python -m compileall scripts tests` 通过；`git diff --check` 通过；最终全量 `.venv/bin/python -m pytest tests -q` 通过 `413 passed in 3.92s`。
+
 ### 2026-06-14 自动化升级记录（Generation Task Log）
 
 本次联网研究的 GitHub 参考：
@@ -1588,6 +1637,7 @@ pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 | **52** | **[Project Resume](docs/prompts/52-project-resume.md)** | **生成跨会话续跑上下文包** |
 | **54** | **[Audio Master Report](docs/prompts/54-audio-master-report.md)** | **检查 LUFS、true peak、LRA 和长静音** |
 | **55** | **[SRT Edit Plan](docs/prompts/55-srt-edit-plan.md)** | **SRT + keep/drop 指令转剪辑方案** |
+| **56** | **[Audio Sync](docs/prompts/56-audio-sync.md)** | **外录音轨自动对齐和替换计划** |
 
 完整列表见 [docs/prompts/README.md](docs/prompts/README.md)。
 
@@ -1617,6 +1667,7 @@ scripts/
 ├── utils.py                    平台/字体/编码器自检
 ├── _internal_text_guard.py     内部 token 拦截器
 ├── transcribe.py               Whisper 转写
+├── audio_sync.py               外录音轨自动对齐 / 替换音轨计划        [V3]
 ├── video_understanding.py      抽样帧 + 可选 YOLO 检测 artifact       [V3]
 ├── highlight_picker.py         长视频精华候选 / brief 定向找片段      [V3]
 ├── rough_cut.py                transcript 粗剪：去口头禅/重复句      [V3]

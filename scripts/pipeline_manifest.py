@@ -239,6 +239,18 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         blocks_when_present=True,
     ),
     ArtifactDef(
+        "audio_sync",
+        "Audio Sync",
+        (
+            "**/audio_sync.json",
+            "**/*_audio_sync.json",
+            "**/audio_sync_plan.json",
+            "**/*_audio_sync_plan.json",
+        ),
+        "Run audio_sync.py and review low-confidence external-audio alignment before replacing production audio.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "chapter_markers",
         "Chapter Markers",
         ("**/chapters.json", "**/chapters-youtube.txt", "**/chapters.ffmetadata"),
@@ -386,6 +398,7 @@ def evaluate_category(definition: ArtifactDef, artifacts: Sequence[ArtifactRecor
             "localization_pack",
             "asset_provenance",
             "audio_cue_sheet",
+            "audio_sync",
             "audio_master_report",
             "publish_package",
             "edit_preflight",
