@@ -170,6 +170,8 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    │
    ├─→ project_resume.py        续跑上下文包 / agent handoff / 可选 CLAUDE.md
    │
+   ├─→ review_dashboard.py      静态 HTML/JSON 人工复核面板 / gate review queue
+   │
    ├─→ export_edl.py            render_config / cut list → EDL + manifest
    ├─→ export_fcpxml.py         render_config / cut list → FCPXML + manifest
    │                            交给 Premiere / Final Cut Pro / Resolve
@@ -199,7 +201,7 @@ cd ~/projects/video-editing-skill
 python3 scripts/utils.py
 
 # 4. 跑一遍测试套件确认 OK
-pytest tests/           # 406 个测试，约 5 秒
+pytest tests/           # 418 个测试，约 5 秒
 ```
 
 每天做一条视频的完整模板：**[docs/prompts/15-xhs-daily-tech-video.md](docs/prompts/15-xhs-daily-tech-video.md)**
@@ -832,6 +834,23 @@ python3 scripts/export_fcpxml.py \
 
 适合把自动粗剪交给 Premiere / Final Cut Pro / DaVinci Resolve 做调色、混音、精剪或协作复核。EDL 更通用，FCPXML 对 FCP / Resolve 更直接；复杂字幕、overlay、章节卡和 B-roll 仍以 `render_final.py` / `export_capcut.py` 为准。
 
+### 2026-07-01 自动化升级记录（Review Dashboard）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`znyupup/ai-video-editing-skill`](https://github.com/znyupup/ai-video-editing-skill) | 自动 vlog workflow 把浏览器 Dashboard 作为“用户看一眼方案再出片”的确认点 | 新增静态 HTML/JSON review dashboard，不引入视觉 API 或服务端 |
+| [`poseljacob/agentic-video-editor`](https://github.com/poseljacob/agentic-video-editor) | Director → Editor → Reviewer loop 会给 adherence、pacing、visual quality、watchability 打分并决定是否重试 | 本项目不自动重试创意判断，先把现有 gate/blocker 汇总成可复核队列 |
+| [`laozuzhen/chatvideo-yucut`](https://github.com/laozuzhen/chatvideo-yucut) | Agent workflow 强调自动计划、执行、验证和修复，并有视觉验证/时间线界面 | 复用 `pipeline_manifest.py` 的本地 gate，生成一页 HTML 给人/agent 处理 blocker |
+| [`lennoxsaint/eddy`](https://github.com/lennoxsaint/eddy) | 长流程有 simulation、proxy render、QA、judge、repair 和 launch kit gate | 本项目新增最终确认面板，和 `project_resume.py` 一起服务跨会话/自动化收尾 |
+
+新增/调整能力：新增 `scripts/review_dashboard.py`，从项目目录扫描现有 artifacts，复用 `pipeline_manifest.py` 输出 `review_dashboard.v1` JSON 和可直接打开的 `review_dashboard.html`。它把 missing required、blocking 和 warning gate 排进 `review_items[]`，保留 `next_actions[]`、`latest_artifacts[]` 和完整 `gate_snapshot[]`；`pipeline_manifest.py` 新增 `review_dashboard` 可发现 artifact 类别但不把它作为发布 blocker。新增 [docs/prompts/57-review-dashboard.md](docs/prompts/57-review-dashboard.md)，并更新 README、SKILL 和提示词目录。
+
+使用方式：发布确认或自动化收尾前运行 `python3 scripts/review_dashboard.py --project-dir work/day58 --target-stage publish_ready --output work/day58/review_dashboard.json --html work/day58/review_dashboard.html --strict`；需要额外要求音频/发布包 gate 时可重复加 `--require audio_master_report --require publish_package`；打开 HTML 后先处理 `Review Queue`，再按 `Next Actions` 补跑脚本。
+
+验证结果：新增 `tests/test_review_dashboard.py` 4 项，更新 `tests/test_pipeline_manifest.py`；`.venv/bin/python -m pytest tests/test_review_dashboard.py tests/test_pipeline_manifest.py -q` 通过 `25 passed in 0.30s`；`.venv/bin/python scripts/review_dashboard.py --help` 和 `.venv/bin/python scripts/pipeline_manifest.py --list-categories | rg review_dashboard` smoke 通过；`.venv/bin/python -m compileall scripts tests` 通过；`.venv/bin/python /Users/maxazure/.codex/skills/.system/skill-creator/scripts/quick_validate.py /Users/maxazure/projects/video-editing-skill` 通过 `Skill is valid!`；`git diff --check` 通过；最终全量 `.venv/bin/python -m pytest tests -q` 通过 `418 passed in 5.11s`。
+
 ### 2026-06-29 自动化升级记录（SRT Edit Plan）
 
 本次联网研究的 GitHub 参考：
@@ -1229,6 +1248,23 @@ python3 scripts/project_resume.py \
 
 输出 `project_resume.v1`，包含 `phase`、`recommended_first_action`、`next_actions[]`、`latest_artifacts[]`、关键 gate snapshot 和一句 `suggested_prompt`。`--agent-note` 可写出项目级 `CLAUDE.md`；不传路径时默认写到 `--project-dir/CLAUDE.md`。脚本不渲染、不上传、不提交任何生成任务，适合自动化收尾、上下文压缩后续跑和跨 agent 交接。
 
+### 🧾 Review Dashboard — 人工复核面板
+[`scripts/review_dashboard.py`](scripts/review_dashboard.py) · [详细文档](docs/prompts/57-review-dashboard.md)
+
+借鉴自动 vlog 剪辑和 agentic editor 里的浏览器预览 / reviewer loop，但保持本项目静态、可审计：不启动服务、不调用模型，只把本地 artifacts、blocking gates、warning 和下一步动作整理成 HTML + JSON。
+
+常用：
+```bash
+python3 scripts/review_dashboard.py \
+  --project-dir work/day58 \
+  --target-stage publish_ready \
+  --output work/day58/review_dashboard.json \
+  --html work/day58/review_dashboard.html \
+  --strict
+```
+
+输出 `review_dashboard.v1`，包含 `review_state`、`review_items[]`、`next_actions[]`、`latest_artifacts[]` 和完整 `gate_snapshot[]`。HTML 可直接在浏览器打开，适合最终发布前让用户看一眼，也适合自动化结束时把 blocker 留给下一位 agent。
+
 ### 👤 受众 Profile
 [`scripts/profiles/`](scripts/profiles/)
 
@@ -1431,6 +1467,14 @@ python3 $SKILL/scripts/project_resume.py \
   --markdown $WORK/work/project_resume.md \
   --agent-note $WORK/CLAUDE.md \
   --strict
+
+# 10c. 可选：发布确认前打开静态复核面板
+python3 $SKILL/scripts/review_dashboard.py \
+  --project-dir $WORK \
+  --target-stage publish_ready \
+  --output $WORK/work/review_dashboard.json \
+  --html $WORK/work/review_dashboard.html \
+  --strict
 ```
 
 ---
@@ -1438,7 +1482,7 @@ python3 $SKILL/scripts/project_resume.py \
 ## 测试
 
 ```bash
-pytest tests/           # 406 测试，约 5 秒
+pytest tests/           # 418 测试，约 5 秒
 ```
 
 按模块跑：
@@ -1469,6 +1513,7 @@ pytest tests/test_color_grade.py -v         # 调色计划 + render_final 接入
 pytest tests/test_edit_preflight.py -v      # 渲染前结构/路径/参数预检 gate
 pytest tests/test_publish_package.py -v     # 最终上传包 + gate 状态汇总
 pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
+pytest tests/test_review_dashboard.py -v    # 静态人工复核面板 + gate queue
 ```
 
 ### 2026-06-16 自动化升级记录（Publish Package）
@@ -1638,6 +1683,7 @@ pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 | **54** | **[Audio Master Report](docs/prompts/54-audio-master-report.md)** | **检查 LUFS、true peak、LRA 和长静音** |
 | **55** | **[SRT Edit Plan](docs/prompts/55-srt-edit-plan.md)** | **SRT + keep/drop 指令转剪辑方案** |
 | **56** | **[Audio Sync](docs/prompts/56-audio-sync.md)** | **外录音轨自动对齐和替换计划** |
+| **57** | **[Review Dashboard](docs/prompts/57-review-dashboard.md)** | **打开 HTML/JSON 总复核面板** |
 
 完整列表见 [docs/prompts/README.md](docs/prompts/README.md)。
 
@@ -1700,6 +1746,7 @@ scripts/
 ├── import_capcut_subtitles.py  剪映/CapCut 字幕反向导入 + gap cut [V3]
 ├── srt_edit_plan.py            SRT 编辑指令 → render_config/cut   [V3]
 ├── project_resume.py           续跑上下文包 + agent handoff           [V3]
+├── review_dashboard.py         静态 HTML/JSON 人工复核面板         [V3]
 ├── burn_subtitles.py           字幕 ASS 生成
 ├── generate_cover.py           封面生成
 ├── generate_cover_image.py     Chrome-rendered 封面

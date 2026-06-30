@@ -276,6 +276,17 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         blocks_when_present=True,
     ),
     ArtifactDef(
+        "review_dashboard",
+        "Review Dashboard",
+        (
+            "**/review_dashboard.json",
+            "**/*_review_dashboard.json",
+            "**/review_dashboard.html",
+            "**/*_review_dashboard.html",
+        ),
+        "Run review_dashboard.py when a browser-readable human review queue is needed.",
+    ),
+    ArtifactDef(
         "nle_handoff",
         "NLE Handoff",
         ("**/*.edl", "**/*.edl.json", "**/*.fcpxml", "**/*.fcpxml.json"),

@@ -187,6 +187,21 @@ def test_publish_package_can_be_required(tmp_path):
     assert gate["status"] == "ready"
 
 
+def test_review_dashboard_artifact_is_discovered_without_blocking(tmp_path):
+    _publish_ready_project(tmp_path)
+    _write(tmp_path / "work" / "review_dashboard.json", {
+        "version": "review_dashboard.v1",
+        "status": "ready",
+    })
+
+    manifest = build_manifest(str(tmp_path), target_stage="publish_ready")
+
+    assert manifest["status"] == "ready"
+    gate = next(g for g in manifest["gates"] if g["category"] == "review_dashboard")
+    assert gate["status"] == "ready"
+    assert gate["blocks_when_present"] is False
+
+
 def test_optional_localization_pack_blocks_when_unresolved(tmp_path):
     _publish_ready_project(tmp_path)
     _write(tmp_path / "work" / "localization_pack.json", {

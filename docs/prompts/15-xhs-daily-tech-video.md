@@ -212,11 +212,19 @@
      --markdown work/project_resume.md \
      --agent-note CLAUDE.md
 
+16. python3 scripts/review_dashboard.py \
+     --project-dir . \
+     --target-stage publish_ready \
+     --output work/review_dashboard.json \
+     --html work/review_dashboard.html \
+     --strict
+
 最后给我：
 - 三个平台的 mp4 路径
 - caption.json 里的 title + caption_body + tags + publish_time_hint
 - publish_package.md 里的每个平台上传 checklist 和 blockers
 - project_resume.md 里的 status / phase / recommended_first_action（方便下次续跑）
+- review_dashboard.html 路径，以及 review_dashboard.json 的 review_state / review_items 数量
 - enrich_plan.json 里 broll/sticker/chapter 总数（确认丰富度足够）
 - content_guard 的输出（必须 ✅ 无违规）
 - render_qa 的输出（必须没有 FAIL；WARN 要解释）
@@ -265,7 +273,9 @@ day<NN>/
 │   ├── publish_package.json # 最终上传包
 │   ├── publish_package.md
 │   ├── project_resume.json # 续跑上下文包
-│   └── project_resume.md
+│   ├── project_resume.md
+│   ├── review_dashboard.json # 人工复核面板
+│   └── review_dashboard.html
 └── output/
     ├── verify/                         # 可选：timeline_view PNG
     ├── day<NN>_master.mp4              # 9:16 主版本

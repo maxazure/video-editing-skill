@@ -57,6 +57,7 @@
 | 54 | [Audio Master Report 成片响度报告](54-audio-master-report.md) | final master → LUFS / true peak / LRA / silence 发布门禁 |
 | 55 | [SRT Edit Plan 字幕编辑指令转剪辑方案](55-srt-edit-plan.md) | SRT + keep/drop 编辑指令 → render_config / cut list / review |
 | 56 | [Audio Sync 外录音频自动对齐](56-audio-sync.md) | scratch audio + 外录音轨 → offset / replace-audio command / gate |
+| 57 | [Review Dashboard 人工复核面板](57-review-dashboard.md) | 本地 artifacts → HTML/JSON review queue、next actions 和 gate snapshot |
 
 ## 快速上手
 
@@ -112,3 +113,4 @@
 | 想确认成片音量、爆峰和长静音是否达标 | [54-Audio Master Report](54-audio-master-report.md) |
 | 已有 SRT 和保留/删除字幕编号，想生成剪辑方案 | [55-SRT Edit Plan](55-srt-edit-plan.md) |
 | 相机内录音和外录麦克风音频需要自动对齐 | [56-Audio Sync](56-audio-sync.md) |
+| 渲染或发布前想打开一个总复核面板 | [57-Review Dashboard](57-review-dashboard.md) |

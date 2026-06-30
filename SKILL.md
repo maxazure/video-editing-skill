@@ -1,6 +1,6 @@
 ---
 name: video-editing
-description: "Xiaohongshu/RED-tuned short-form video production workflow. Use when Codex needs to turn raw voice-over, talking-head, tutorial, interview, podcast, long-video, screen recording, B-roll, captions, or generated assets into auditable social-video artifacts for 小红书, 抖音, 微信视频号, TikTok, Reels, or YouTube Shorts. Covers transcription, external audio sync, transcript cleanup, highlight picking, rough/jump cuts, SRT edit-guide planning, story rewrite, content guard, B-roll/enrich plans, gpt-image-2 prompt routing, storyboard and video-generation prompt packs, async generation task logs, media-library recommendations, screen focus, facecam PIP, color grade, edit preflight, render, QA review packets, audio master loudness reports, subtitle sidecars, CapCut subtitle import, multi-platform exports, captions, publish packages, project_resume handoff packets, EDL/FCPXML handoff, and Remotion voiceover animation."
+description: "Xiaohongshu/RED-tuned short-form video production workflow. Use when Codex needs to turn raw voice-over, talking-head, tutorial, interview, podcast, long-video, screen recording, B-roll, captions, or generated assets into auditable social-video artifacts for 小红书, 抖音, 微信视频号, TikTok, Reels, or YouTube Shorts. Covers transcription, external audio sync, transcript cleanup, highlight picking, rough/jump cuts, SRT edit-guide planning, story rewrite, content guard, B-roll/enrich plans, gpt-image-2 prompt routing, storyboard and video-generation prompt packs, async generation task logs, media-library recommendations, screen focus, facecam PIP, color grade, edit preflight, render, QA review packets, audio master loudness reports, subtitle sidecars, CapCut subtitle import, multi-platform exports, captions, publish packages, review dashboards, project_resume handoff packets, EDL/FCPXML handoff, and Remotion voiceover animation."
 metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
 ---
 
@@ -44,6 +44,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    │                            剪映/CapCut 自动字幕 → transcript / gap cut list
    ├─→ srt_edit_plan.py         SRT + keep/drop 编辑指令 → render_config / cut list
    ├─→ project_resume.py        续跑上下文包 / agent handoff / 可选 CLAUDE.md
+   ├─→ review_dashboard.py      静态 HTML/JSON 人工复核面板 / gate review queue
    ├─→ export_edl.py            render_config / cut list → EDL + manifest
    ├─→ export_fcpxml.py         render_config / cut list → FCPXML + manifest
    ├─→ multi_export.py          小红书 3:4 / 抖音 9:16 / 视频号 ≤60s
@@ -92,6 +93,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `import_capcut_subtitles.py` | 剪映/CapCut 自动字幕或 SRT → transcript + gap cut list | `--draft <draft_dir>` / `--srt captions.srt` `--transcript work/capcut_transcript.json` `--cut-list work/capcut_gap_cut.json` |
 | `srt_edit_plan.py` | SRT + 人工/agent keep/drop 指令 → edit plan / render_config / cut list | `--srt captions.srt --guide edit_guide.md --source-media origin/talking.mp4 --render-config work/render_config.json --strict` |
 | `project_resume.py` | 本地 artifacts → 续跑上下文包 / agent handoff | `--project-dir work/day58 --markdown work/day58/project_resume.md --agent-note work/day58/CLAUDE.md` |
+| `review_dashboard.py` | 本地 artifacts → 静态 HTML/JSON review queue + gate snapshot | `--project-dir work/day58 --html work/day58/review_dashboard.html --strict` |
 | `export_edl.py` | NLE handoff：导出 EDL + manifest | `--config render_config.json --output edit.edl` / `--cut-list rough_cut.json --output rough.edl` |
 | `export_fcpxml.py` | NLE handoff：导出 FCPXML + manifest | `--config render_config.json --output edit.fcpxml` / `--cut-list rough_cut.json --output rough.fcpxml` |
 | `multi_export.py` | 三平台导出 | `<input.mp4>` `--platforms xhs douyin wxch` |
@@ -1108,13 +1110,25 @@ python3 scripts/project_resume.py \
 
 `project_resume.py` 复用 `pipeline_manifest.py` 的本地 gate，不渲染、不上传、不提交生成任务。它输出 `project_resume.v1`，包含 `phase`、`recommended_first_action`、`next_actions[]`、最近 artifacts、关键 gate snapshot 和一句可直接交给下一位 agent 的 `suggested_prompt`。长流程被压缩上下文、自动化结束、或要交给另一位 agent 时，优先把 Markdown/agent note 作为接手入口。
 
-**6f. 音频重复检测**：
+**6f. 人工复核面板（最终确认/交接前跑）**：
+```bash
+python3 scripts/review_dashboard.py \
+  --project-dir work/day58 \
+  --target-stage publish_ready \
+  --output work/day58/review_dashboard.json \
+  --html work/day58/review_dashboard.html \
+  --strict
+```
+
+`review_dashboard.py` 复用 `pipeline_manifest.py` 的本地 gate，输出 `review_dashboard.v1` 和一个可直接在浏览器打开的 HTML。它把 blocking/missing/warning gate 放进 `review_items[]`，同时列出 `next_actions[]`、最新 artifacts 和完整 gate snapshot。适合用户最终确认，也适合自动化结束时留给下一位 agent。
+
+**6g. 音频重复检测**：
 1. 提取最终视频的音频
 2. 重新进行语音识别
 3. 检查识别结果中是否存在相邻片段的文字重复（前一句末尾 2-3 个字与后一句开头重复）
 4. 如发现技术性重复（非自然语言重复），需要调整 render_config.json 中的片段选择
 
-**6g. 字幕文字最终校验**：
+**6h. 字幕文字最终校验**：
 1. 读取最终视频使用的所有 transcript 片段的文字
 2. 按最终视频的片段顺序，逐条检查以下问题：
    - **语音识别残留错误**：Phase 2.5 可能遗漏的同音字、专有名词错误
