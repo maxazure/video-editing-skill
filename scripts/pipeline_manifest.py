@@ -229,6 +229,16 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         blocks_when_present=True,
     ),
     ArtifactDef(
+        "source_receipts",
+        "Source Receipts",
+        (
+            "**/source_receipts.json",
+            "**/*_source_receipts.json",
+        ),
+        "Run source_receipts.py and clear missing proof URL, screenshot, or primary-source blockers.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "audio_cue_sheet",
         "Audio Cue Sheet",
         (
@@ -408,6 +418,7 @@ def evaluate_category(definition: ArtifactDef, artifacts: Sequence[ArtifactRecor
             "privacy_redaction",
             "localization_pack",
             "asset_provenance",
+            "source_receipts",
             "audio_cue_sheet",
             "audio_sync",
             "audio_master_report",

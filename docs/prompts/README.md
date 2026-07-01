@@ -58,6 +58,7 @@
 | 55 | [SRT Edit Plan 字幕编辑指令转剪辑方案](55-srt-edit-plan.md) | SRT + keep/drop 编辑指令 → render_config / cut list / review |
 | 56 | [Audio Sync 外录音频自动对齐](56-audio-sync.md) | scratch audio + 外录音轨 → offset / replace-audio command / gate |
 | 57 | [Review Dashboard 人工复核面板](57-review-dashboard.md) | 本地 artifacts → HTML/JSON review queue、next actions 和 gate snapshot |
+| 58 | [Source Receipts 事实来源复核](58-source-receipts.md) | 视频 claim → URL/截图 proof deck、Markdown/HTML source deck 和发布 gate |
 
 ## 快速上手
 
@@ -114,3 +115,4 @@
 | 已有 SRT 和保留/删除字幕编号，想生成剪辑方案 | [55-SRT Edit Plan](55-srt-edit-plan.md) |
 | 相机内录音和外录麦克风音频需要自动对齐 | [56-Audio Sync](56-audio-sync.md) |
 | 渲染或发布前想打开一个总复核面板 | [57-Review Dashboard](57-review-dashboard.md) |
+| 视频里有事实、数据、新闻或来源截图要复核 | [58-Source Receipts](58-source-receipts.md) |

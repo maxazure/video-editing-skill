@@ -125,6 +125,19 @@
 
    (任何 HARD violation 必须先去掉再继续；SOFT 警告需要权衡)
 
+5a. # 如果视频包含新闻、数据、产品事实、来源页或截图证据，先做 source receipts：
+    python3 scripts/source_receipts.py \
+      --claims work/source_claims.json \
+      --project-dir . \
+      --output work/source_receipts.json \
+      --markdown work/source_receipts.md \
+      --html work/source_receipts.html \
+      --require-primary-source \
+      --strict
+   # source_claims.json 里的 screenshot/source_file 路径相对该 JSON 所在目录；
+   # 纯观点类视频可跳过，事实型视频发布前建议在 pipeline_manifest 里 --require source_receipts。
+   # 详见 docs/prompts/58-source-receipts.md
+
 5b. python3 scripts/edit_preflight.py \
       --config work/render_config.json \
       --enrich-plan work/enrich_plan.json \
@@ -225,6 +238,7 @@
 - publish_package.md 里的每个平台上传 checklist 和 blockers
 - project_resume.md 里的 status / phase / recommended_first_action（方便下次续跑）
 - review_dashboard.html 路径，以及 review_dashboard.json 的 review_state / review_items 数量
+- 如果跑了 source_receipts，给我 source_receipts.html 路径和 `summary.blocking` 数量
 - enrich_plan.json 里 broll/sticker/chapter 总数（确认丰富度足够）
 - content_guard 的输出（必须 ✅ 无违规）
 - render_qa 的输出（必须没有 FAIL；WARN 要解释）
@@ -251,6 +265,8 @@ day<NN>/
 │   ├── llm_prompt.md       # 喂给 LLM 的 prompt
 │   ├── llm.json            # LLM 返回的 JSON
 │   ├── clean_script.md     # 5 字段重组后的清稿
+│   ├── source_receipts.json # 事实来源 proof deck（事实型视频可选/推荐）
+│   ├── source_receipts.html # 浏览器复核版 source deck
 │   ├── enrich_plan.json    # broll/sticker/chapter cues
 │   ├── storyboard_plan.json # 分镜 shot cards + 生成路由
 │   ├── storyboard_plan.md   # 人工 review 版分镜卡

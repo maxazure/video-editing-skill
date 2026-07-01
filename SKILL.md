@@ -1,6 +1,6 @@
 ---
 name: video-editing
-description: "Xiaohongshu/RED-tuned short-form video production workflow. Use when Codex needs to turn raw voice-over, talking-head, tutorial, interview, podcast, long-video, screen recording, B-roll, captions, or generated assets into auditable social-video artifacts for 小红书, 抖音, 微信视频号, TikTok, Reels, or YouTube Shorts. Covers transcription, external audio sync, transcript cleanup, highlight picking, rough/jump cuts, SRT edit-guide planning, story rewrite, content guard, B-roll/enrich plans, gpt-image-2 prompt routing, storyboard and video-generation prompt packs, async generation task logs, media-library recommendations, screen focus, facecam PIP, color grade, edit preflight, render, QA review packets, audio master loudness reports, subtitle sidecars, CapCut subtitle import, multi-platform exports, captions, publish packages, review dashboards, project_resume handoff packets, EDL/FCPXML handoff, and Remotion voiceover animation."
+description: "Xiaohongshu/RED-tuned short-form video production workflow. Use when Codex needs to turn raw voice-over, talking-head, tutorial, interview, podcast, long-video, screen recording, B-roll, captions, or generated assets into auditable social-video artifacts for 小红书, 抖音, 微信视频号, TikTok, Reels, or YouTube Shorts. Covers transcription, external audio sync, transcript cleanup, highlight picking, rough/jump cuts, SRT edit-guide planning, story rewrite, content guard, source receipts, B-roll/enrich plans, gpt-image-2 prompt routing, storyboard and video-generation prompt packs, async generation task logs, media-library recommendations, screen focus, facecam PIP, color grade, edit preflight, render, QA review packets, audio master loudness reports, subtitle sidecars, CapCut subtitle import, multi-platform exports, captions, publish packages, review dashboards, project_resume handoff packets, EDL/FCPXML handoff, and Remotion voiceover animation."
 metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
 ---
 
@@ -20,6 +20,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ rough_cut.py             ASR 粗剪：去纯口头禅 / 相邻重复句
    ├─→ rewrite_script.py        LLM 重组 5 段式（hook/pain/turn/value/cta）
    ├─→ content_guard.py         80+ 条平台雷区 lint
+   ├─→ source_receipts.py       事实 claim → URL/截图 source deck + publish gate
    ├─→ auto_enrich.py           B-roll / 章节卡 / 贴纸 / BGM 卡点 / imagegen 提示词
    │       └─→ Codex imagegen   gpt-image-2 自动生图（抽象概念配图）
    ├─→ audio_cue_sheet.py       BGM / SFX 音频设计清单 / 生成审批 gate
@@ -62,6 +63,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 |---|---|---|
 | `_internal_text_guard.py` | 拦截内部 token 进画面 | 内部模块，render_final 自动调 |
 | `content_guard.py` | 平台雷区 lint | `--script` `--title` `--caption` `--strict` |
+| `source_receipts.py` | 事实 claim → URL/截图 proof deck、Markdown/HTML 和发布 gate | `--claims source_claims.json` `--html` `--require-primary-source` `--strict` |
 | `audio_sync.py` | scratch audio + 外录音轨 → offset / 替换音轨命令 / gate | `--reference-media` `--external-audio` `--replace-output` `--apply` `--strict` |
 | `rough_cut.py` | transcript 粗剪：去口头禅/重复句 | `--transcript` `--cut-list` / `--input` `--output` |
 | `video_understanding.py` | 抽样帧 + 可选 YOLO 物体检测 + 轻量 tracklets | `--detector yolo` `--scene-boundaries` `--external-detections` `--strict` |
@@ -416,6 +418,23 @@ python3 scripts/media_library.py annotate media/broll/downloaded.mp4 \
 ```
 
 登记后的 `provider`、`source_url`、`creator`、`license` 会进入 `media_index.json/db`，后续由 `asset_provenance.py` 做发布门禁。
+
+### Phase 0.5: Source Receipts（事实来源 proof deck，可选但推荐）
+
+如果视频包含新闻、数据、产品事实、健康/金融/法律判断、来源页截图或“官方说法”，在进入分镜/发布前先把 claim 和证据落成 source receipts：
+
+```bash
+python3 scripts/source_receipts.py \
+  --claims work/source_claims.json \
+  --project-dir . \
+  --output work/source_receipts.json \
+  --markdown work/source_receipts.md \
+  --html work/source_receipts.html \
+  --require-primary-source \
+  --strict
+```
+
+`source_receipts.py` 只验证已提供的 URL 和本地截图/证据文件；不联网抓取、不截图、不上传。`source_claims.json` 里的 `screenshot` / `source_file` 相对 claims JSON 所在目录解析。新闻、数据、金融、健康、法律等高风险 claim 必须有 `source_url`；需要视觉 proof card 时加 `--require-screenshot`。发布门禁可用 `pipeline_manifest.py --require source_receipts --strict` 强制检查，`summary.blocking > 0` 会阻塞。
 
 ### Phase 1: Audio Extraction（音频提取）
 

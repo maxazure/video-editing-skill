@@ -240,6 +240,42 @@ def test_optional_asset_provenance_blocks_when_unresolved(tmp_path):
     assert "1 blocking item(s) in summary.blocking" in gate["notes"]
 
 
+def test_optional_source_receipts_blocks_when_unresolved(tmp_path):
+    _publish_ready_project(tmp_path)
+    _write(tmp_path / "work" / "source_receipts.json", {
+        "version": "source_receipts.v1",
+        "summary": {
+            "claims": 2,
+            "blocking": 1,
+        },
+    })
+
+    manifest = build_manifest(str(tmp_path), target_stage="publish_ready")
+
+    assert manifest["status"] == "blocked"
+    assert "source_receipts" in manifest["blocked_gates"]
+    gate = next(g for g in manifest["gates"] if g["category"] == "source_receipts")
+    assert "1 blocking item(s) in summary.blocking" in gate["notes"]
+
+
+def test_source_receipts_can_be_required(tmp_path):
+    _publish_ready_project(tmp_path)
+    _write(tmp_path / "work" / "source_receipts.json", {
+        "version": "source_receipts.v1",
+        "summary": {
+            "claims": 1,
+            "blocking": 0,
+        },
+    })
+
+    manifest = build_manifest(str(tmp_path), target_stage="publish_ready", required=["source_receipts"])
+
+    assert manifest["status"] == "ready"
+    gate = next(g for g in manifest["gates"] if g["category"] == "source_receipts")
+    assert gate["required"] is True
+    assert gate["status"] == "ready"
+
+
 def test_optional_audio_cue_sheet_blocks_when_unresolved(tmp_path):
     _publish_ready_project(tmp_path)
     _write(tmp_path / "work" / "audio_cue_sheet.json", {

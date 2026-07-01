@@ -2,12 +2,13 @@
 
 这是一个面向 **口播、教程、访谈、播客切片、录屏演示 / facecam demo** 的 AI 视频剪辑生产线：给它原始口播音频/视频、transcript、B-roll、摄像头小窗或素材目录，它可以把“还没整理的素材”推进到 **可发布的小红书 / 抖音 / 视频号短视频**。
 
-它不是一个单点 FFmpeg 脚本，而是一条完整工作流：**转写 → 长视频择段 → 清稿 → 去口头禅/停顿 → 重组故事 → 分镜 → B-roll/生图/生成视频规划 → 字幕与声音设计 → 渲染前预检 → 单次编码渲染 → 质检 → 多平台导出 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
+它不是一个单点 FFmpeg 脚本，而是一条完整工作流：**转写 → 长视频择段 → 清稿 → 去口头禅/停顿 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 字幕与声音设计 → 渲染前预检 → 单次编码渲染 → 质检 → 多平台导出 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
 
 ## 适合做什么
 
 - **把口播短视频从“素材堆”推进到“发布包”**：转写、清稿、分镜、素材清单、渲染配置、字幕 sidecar、QA、标题正文和标签都能落成可审计 artifact。
 - **针对中文社媒口播做过生产化调参**：Heavy CJK 字幕、1.25x 主输出、响度规范化、平台违禁词 lint、章节卡、贴纸、BGM/SFX cue、三平台导出都不是通用 demo。
+- **事实型内容有 proof deck**：新闻、数据、产品事实或来源页截图可用 `source_receipts.py` 生成 URL/截图复核包，作为发布前 gate。
 - **生成式素材有明确审批和台账**：Codex `image_gen` / GPT Image 2 提示词、Dreamina/Veo/LTX/Wan/Sora 视频提示词、provider 决策、`submit_id` 轮询下载和本地落盘 gate 都先记录再执行。
 - **适合交给强推理模型做长流程代理执行**：在 [GPT-5.5](https://developers.openai.com/api/docs/models/gpt-5.5) 和 [Claude Opus 4.8](https://docs.anthropic.com/en/docs/about-claude/models) 这类面向复杂专业任务、agent 工作流的模型下，本 skill 对 **口播类短视频** 至少可以替代 **80% 的常规视频剪辑工作**。
 
@@ -115,6 +116,9 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    │
    ├─→ content_guard.py         80+ 条平台雷区 lint (HARD-BLOCK / SOFT-WARN)
    │     极限词 / 导流 / 医美 / 财富诱导 ...
+   │
+   ├─→ source_receipts.py       事实 claim → URL/截图 source deck
+   │                            Markdown/HTML proof deck + publish gate
    │
    ├─→ auto_enrich.py           调度 B-roll / 章节卡 / 贴纸 / BGM 卡点
    │     │ transition / entity match / silence boundary / beat snap
@@ -834,6 +838,23 @@ python3 scripts/export_fcpxml.py \
 
 适合把自动粗剪交给 Premiere / Final Cut Pro / DaVinci Resolve 做调色、混音、精剪或协作复核。EDL 更通用，FCPXML 对 FCP / Resolve 更直接；复杂字幕、overlay、章节卡和 B-roll 仍以 `render_final.py` / `export_capcut.py` 为准。
 
+### 2026-07-02 自动化升级记录（Source Receipts）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`browser-use/video-use`](https://github.com/browser-use/video-use) | 把编辑会话和输出文件持久化，强调 agent 不依赖聊天上下文交付 | 新增独立 `source_receipts.v1` artifact，claim 和证据落盘后可复核 |
+| [`Bomx/super-video-maker-skill`](https://github.com/Bomx/super-video-maker-skill) | source deck、timestamp、layout、technical QC 都作为质量 gate | 本项目补上 URL/截图 proof deck，和现有 publish gate 汇总 |
+| [`KyaniteLabs/mcp-video`](https://github.com/KyaniteLabs/mcp-video) | structured guardrails / preflight checkpoint 避免 agent 直接产出不可审计结果 | `source_receipts.py --strict` 在缺 URL、截图或 primary source 时返回 2 |
+| [`GoogleCloudPlatform/vertex-ai-creative-studio`](https://github.com/GoogleCloudPlatform/vertex-ai-creative-studio/tree/main/experiments/mcp-genmedia) | 生成视频工作流把 source、layout、media artifact 分开管理 | 本项目保持本地 JSON/Markdown/HTML，不引入 MCP server 或远程截图服务 |
+
+新增/调整能力：新增 `scripts/source_receipts.py`，读取 `source_claims.json` 或 `--claim` 内联 claim，输出 `source_receipts.v1`、Markdown review 和可直接打开的 HTML source deck。每条 claim 支持 `text`、`source_url`、`source_title`、`source_type`、`screenshot/source_file`、`risk` 和 `timecode`；高风险 claim（news/data/finance/health/legal 等）必须有 URL，`--require-screenshot` 可强制本地截图/证据文件，`--require-primary-source` 可强制官方/primary/owned/government/academic 等来源类型。`pipeline_manifest.py` 新增 `source_receipts` artifact 类别，发现 `summary.blocking > 0` 会作为 publish blocker；新增 [docs/prompts/58-source-receipts.md](docs/prompts/58-source-receipts.md)，并更新 daily workflow、SKILL、提示词目录和 README。
+
+使用方式：先写 `work/source_claims.json`，再跑 `python3 scripts/source_receipts.py --claims work/source_claims.json --project-dir . --output work/source_receipts.json --markdown work/source_receipts.md --html work/source_receipts.html --require-primary-source --strict`。事实型视频发布前可用 `python3 scripts/pipeline_manifest.py --project-dir . --target-stage publish_ready --require source_receipts --strict` 强制检查；纯观点类视频可跳过。
+
+验证结果：新增 `tests/test_source_receipts.py` 8 项，更新 `tests/test_pipeline_manifest.py`；`.venv/bin/python -m pytest tests/test_source_receipts.py tests/test_pipeline_manifest.py -q` 通过 `31 passed in 0.31s`；`.venv/bin/python scripts/source_receipts.py --help`、`.venv/bin/python scripts/pipeline_manifest.py --list-categories | rg source_receipts` smoke 通过；`.venv/bin/python -m compileall scripts tests` 通过；`.venv/bin/python /Users/maxazure/.codex/skills/.system/skill-creator/scripts/quick_validate.py /Users/maxazure/projects/video-editing-skill` 通过 `Skill is valid!`；`git diff --check` 通过；最终全量 `.venv/bin/python -m pytest tests -q` 通过 `428 passed in 4.86s`。
+
 ### 2026-07-01 自动化升级记录（Review Dashboard）
 
 本次联网研究的 GitHub 参考：
@@ -1195,6 +1216,25 @@ python3 scripts/audio_master_report.py output/day58_master.mp4 \
 
 默认检查 -16 LUFS ±2 LU、true peak ≤ -1 dBFS、LRA ≤ 18 LU、长静音总量 ≤ 3 秒。输出 `audio_master_report.v1`，如果 `summary.blocking > 0`，`pipeline_manifest.py` 会把它列为 blocking gate。若失败，优先回到 `render_final.py` 默认响度链路重新渲染，不要反复压缩已完成 master。
 
+### 🧾 Source Receipts — 事实来源 proof deck
+[`scripts/source_receipts.py`](scripts/source_receipts.py) · [详细文档](docs/prompts/58-source-receipts.md)
+
+借鉴 proof-backed video skill 对 source deck 的要求，但保持本地优先：脚本只验证你提供的 claim、URL 和本地截图/证据文件，输出 `source_receipts.v1`、Markdown review 和可直接打开的 HTML source deck，不联网抓取、不截图、不上传。
+
+常用：
+```bash
+python3 scripts/source_receipts.py \
+  --claims work/source_claims.json \
+  --project-dir . \
+  --output work/source_receipts.json \
+  --markdown work/source_receipts.md \
+  --html work/source_receipts.html \
+  --require-primary-source \
+  --strict
+```
+
+`source_claims.json` 中每条 claim 可写 `text`、`source_url`、`source_title`、`source_type`、`screenshot/source_file`、`risk` 和 `timecode`。新闻、数据、金融、健康、法律等高风险 claim 必须有 URL；需要视觉 proof card 时加 `--require-screenshot`。`pipeline_manifest.py --require source_receipts --strict` 会把未解决的 `summary.blocking` 列为发布 blocker。
+
 ### 📦 多平台导出
 [`scripts/multi_export.py`](scripts/multi_export.py) · [详细文档](docs/prompts/17-multi-platform.md)
 
@@ -1482,7 +1522,7 @@ python3 $SKILL/scripts/review_dashboard.py \
 ## 测试
 
 ```bash
-pytest tests/           # 418 测试，约 5 秒
+pytest tests/           # 428 测试，约 5 秒
 ```
 
 按模块跑：
@@ -1514,6 +1554,7 @@ pytest tests/test_edit_preflight.py -v      # 渲染前结构/路径/参数预�
 pytest tests/test_publish_package.py -v     # 最终上传包 + gate 状态汇总
 pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 pytest tests/test_review_dashboard.py -v    # 静态人工复核面板 + gate queue
+pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 gate
 ```
 
 ### 2026-06-16 自动化升级记录（Publish Package）
@@ -1684,6 +1725,7 @@ pytest tests/test_review_dashboard.py -v    # 静态人工复核面板 + gate qu
 | **55** | **[SRT Edit Plan](docs/prompts/55-srt-edit-plan.md)** | **SRT + keep/drop 指令转剪辑方案** |
 | **56** | **[Audio Sync](docs/prompts/56-audio-sync.md)** | **外录音轨自动对齐和替换计划** |
 | **57** | **[Review Dashboard](docs/prompts/57-review-dashboard.md)** | **打开 HTML/JSON 总复核面板** |
+| **58** | **[Source Receipts](docs/prompts/58-source-receipts.md)** | **事实 claim 的 URL/截图 proof deck 和发布 gate** |
 
 完整列表见 [docs/prompts/README.md](docs/prompts/README.md)。
 
@@ -1722,6 +1764,7 @@ scripts/
 ├── media_library.py            素材库索引（CLIP-ready）
 ├── merge_clips.py              合并片段（V2 兼容）
 ├── content_guard.py            平台雷区 lint                   [V3]
+├── source_receipts.py          事实来源 proof deck + 发布 gate    [V3]
 ├── rewrite_script.py           Story Engine                    [V3]
 ├── auto_broll.py               B-roll 调度                      [V3]
 ├── auto_chapter_cards.py       章节卡渲染                       [V3]
