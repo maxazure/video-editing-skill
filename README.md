@@ -178,6 +178,7 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    │
    ├─→ export_edl.py            render_config / cut list → EDL + manifest
    ├─→ export_fcpxml.py         render_config / cut list → FCPXML + manifest
+   ├─→ export_otio.py           render_config / cut list → OTIO + manifest
    │                            交给 Premiere / Final Cut Pro / Resolve
    │
    ├─→ multi_export.py          小红书 3:4 / 抖音 9:16 / 视频号 ≤60s
@@ -205,7 +206,7 @@ cd ~/projects/video-editing-skill
 python3 scripts/utils.py
 
 # 4. 跑一遍测试套件确认 OK
-pytest tests/           # 418 个测试，约 5 秒
+pytest tests/           # 434 个测试，约 5 秒
 ```
 
 每天做一条视频的完整模板：**[docs/prompts/15-xhs-daily-tech-video.md](docs/prompts/15-xhs-daily-tech-video.md)**
@@ -810,10 +811,10 @@ python3 scripts/render_final.py \
 }
 ```
 
-### 🧭 NLE Handoff — EDL / FCPXML 导出
-[`scripts/export_edl.py`](scripts/export_edl.py) · [`scripts/export_fcpxml.py`](scripts/export_fcpxml.py) · [详细文档](docs/prompts/27-export-edl.md)
+### 🧭 NLE Handoff — EDL / FCPXML / OTIO 导出
+[`scripts/export_edl.py`](scripts/export_edl.py) · [`scripts/export_fcpxml.py`](scripts/export_fcpxml.py) · [`scripts/export_otio.py`](scripts/export_otio.py) · [详细文档](docs/prompts/27-export-edl.md)
 
-借鉴自动剪辑/生成类项目常见的“先产 timeline，再交给专业剪辑软件继续精修”工作流：`export_edl.py` 可把本项目的 `render_config.json` 或 `rough_cut.py` / `jump_cut.py` 产生的 `keep_segments` 导出成单轨 CMX 3600 风格 EDL；`export_fcpxml.py` 导出 Final Cut Pro / DaVinci Resolve 更友好的单 spine FCPXML。两者都会写 JSON manifest，保留绝对源路径和精确秒数。
+借鉴自动剪辑/生成类项目常见的“先产 timeline，再交给专业剪辑软件继续精修”工作流：`export_edl.py` 可把本项目的 `render_config.json` 或 `rough_cut.py` / `jump_cut.py` 产生的 `keep_segments` 导出成单轨 CMX 3600 风格 EDL；`export_fcpxml.py` 导出 Final Cut Pro / DaVinci Resolve 更友好的单 spine FCPXML；`export_otio.py` 导出 OpenTimelineIO `.otio`，默认包含 V1 + A1 track。三者都会写 JSON manifest，保留绝对源路径和精确秒数。
 
 常用：
 ```bash
@@ -834,9 +835,31 @@ python3 scripts/export_fcpxml.py \
   --fps 30 \
   --width 1080 \
   --height 1920
+
+python3 scripts/export_otio.py \
+  --config work/render_config.json \
+  --output work/day58_edit.otio \
+  --fps 30 \
+  --title DAY58_EDIT
 ```
 
-适合把自动粗剪交给 Premiere / Final Cut Pro / DaVinci Resolve 做调色、混音、精剪或协作复核。EDL 更通用，FCPXML 对 FCP / Resolve 更直接；复杂字幕、overlay、章节卡和 B-roll 仍以 `render_final.py` / `export_capcut.py` 为准。
+适合把自动粗剪交给 Premiere / Final Cut Pro / DaVinci Resolve 做调色、混音、精剪或协作复核。EDL 更通用，FCPXML 对 FCP / Resolve 更直接，OTIO 更适合使用 OpenTimelineIO adapter 的跨工具流程；复杂字幕、overlay、章节卡和 B-roll 仍以 `render_final.py` / `export_capcut.py` 为准。
+
+### 2026-07-03 自动化升级记录（OTIO NLE Handoff）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`WyattBlue/auto-editor`](https://github.com/WyattBlue/auto-editor/releases) | 近期发布记录把 `premiere-otio` / `.otio` 作为自动剪辑后的 NLE 交接路径之一 | 在已有 EDL/FCPXML 外新增本地 `export_otio.py`，复用同一份 edit event 解析 |
+| [`AcademySoftwareFoundation/OpenTimelineIO`](https://github.com/AcademySoftwareFoundation/OpenTimelineIO) | OpenTimelineIO 是面向 editorial timeline 的开源 API 和交换格式 | 输出标准 OTIO JSON schema，不引入运行时重依赖 |
+| [`tin2tin/VSE_OTIO_Export`](https://github.com/tin2tin/VSE_OTIO_Export) | Blender VSE 通过 `.otio` 交给 Resolve 等 NLE，说明轻量视频/音频 track 交接有实际价值 | 先支持连续 V1 + 可选 A1 track，保持复杂 overlay 仍由本项目 manifest 审计 |
+
+新增/调整能力：新增 `scripts/export_otio.py`，可读取 `render_config.json`、`rough_cut.py` 或 `jump_cut.py` 的 `keep_segments`，输出 OpenTimelineIO `.otio` 和 `<output>.json` manifest。OTIO timeline 使用 `Timeline.1` / `Stack.1` / `Track.1` / `Clip.2` 结构，默认写 V1 视频 track 和 A1 音频 track；`--no-audio-track` 可只导出视频，`--include-transcript-metadata` 可把口播文本写进 clip metadata。`pipeline_manifest.py` 的 `nle_handoff` 类别新增 `.otio` / `.otio.json` 发现规则；README、SKILL、daily workflow 和 [docs/prompts/27-export-edl.md](docs/prompts/27-export-edl.md) 已同步为 EDL/FCPXML/OTIO 三种交接格式。
+
+使用方式：从成片配置导出用 `python3 scripts/export_otio.py --config work/render_config.json --output work/day58_edit.otio --fps 30 --title DAY58_EDIT`；从粗剪 cut list 导出用 `python3 scripts/export_otio.py --cut-list work/rough_cut.json --output work/rough_cut.otio --fps 30 --include-transcript-metadata`。复杂字幕、overlay、章节卡、B-roll 和生成素材仍以 `render_final.py` / `export_capcut.py` / JSON manifest 为准；OTIO 只负责轻量选段时间线交接。
+
+验证结果：新增 `tests/test_export_otio.py` 5 项，更新 `tests/test_pipeline_manifest.py` 覆盖 NLE handoff 发现；`.venv/bin/python -m pytest tests/test_export_otio.py tests/test_export_edl.py tests/test_export_fcpxml.py tests/test_pipeline_manifest.py -q` 通过 `40 passed in 0.40s`；`.venv/bin/python scripts/export_otio.py --help`、`.venv/bin/python scripts/pipeline_manifest.py --list-categories | rg nle_handoff` smoke 通过；`.venv/bin/python -m compileall scripts tests` 通过；`.venv/bin/python /Users/maxazure/.codex/skills/.system/skill-creator/scripts/quick_validate.py /Users/maxazure/projects/video-editing-skill` 通过 `Skill is valid!`；最终全量 `.venv/bin/python -m pytest tests -q` 通过 `434 passed in 4.48s`。
 
 ### 2026-07-02 自动化升级记录（Source Receipts）
 
@@ -1470,6 +1493,10 @@ python3 $SKILL/scripts/export_fcpxml.py \
   --fps 30 \
   --width 1080 \
   --height 1920
+python3 $SKILL/scripts/export_otio.py \
+  --config $WORK/work/render_config.json \
+  --output $WORK/work/day${DAY}_edit.otio \
+  --fps 30
 
 # 8. 平台导出质检
 python3 $SKILL/scripts/render_qa.py \
@@ -1522,7 +1549,7 @@ python3 $SKILL/scripts/review_dashboard.py \
 ## 测试
 
 ```bash
-pytest tests/           # 428 测试，约 5 秒
+pytest tests/           # 434 测试，约 5 秒
 ```
 
 按模块跑：
@@ -1545,6 +1572,7 @@ pytest tests/test_video_understanding.py -v # 抽样帧 + 可选 YOLO 检测 art
 pytest tests/test_storyboard_assets.py -v   # 分镜素材 readiness manifest
 pytest tests/test_export_edl.py -v          # NLE handoff EDL + manifest
 pytest tests/test_export_fcpxml.py -v       # NLE handoff FCPXML + manifest
+pytest tests/test_export_otio.py -v         # NLE handoff OTIO + manifest
 pytest tests/test_screen_focus.py -v        # 录屏点击聚焦计划 + render 接入
 pytest tests/test_subtitle_pack.py -v       # SRT/VTT/ASS/JSON 字幕交付包
 pytest tests/test_srt_edit_plan.py -v       # SRT 编辑指令转 render_config/cut list
@@ -1712,7 +1740,7 @@ pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 g
 | **24** | **[Storyboard Plan](docs/prompts/24-storyboard-plan.md)** | **分镜 shot cards + 生成路由** |
 | **25** | **[Storyboard Assets](docs/prompts/25-storyboard-assets.md)** | **分镜素材任务清单 + ready 预检** |
 | **26** | **[ASR Rough Cut](docs/prompts/26-rough-cut.md)** | **去口头禅/重复句粗剪** |
-| **27** | **[NLE Handoff](docs/prompts/27-export-edl.md)** | **导出 EDL / FCPXML 给 Premiere/FCP/Resolve** |
+| **27** | **[NLE Handoff](docs/prompts/27-export-edl.md)** | **导出 EDL / FCPXML / OTIO 给 Premiere/FCP/Resolve** |
 | **28** | **[Screen Focus](docs/prompts/28-screen-focus.md)** | **录屏点击/热点自动聚焦** |
 | **29** | **[Subtitle Pack](docs/prompts/29-subtitle-pack.md)** | **导出 SRT/VTT/ASS/JSON 字幕包** |
 | **43** | **[Audio Cue Sheet](docs/prompts/43-audio-cue-sheet.md)** | **规划 BGM/SFX 和生成审批** |
@@ -1797,6 +1825,7 @@ scripts/
 ├── export_capcut.py            剪映工程导出
 ├── export_edl.py               NLE handoff EDL + manifest          [V3]
 ├── export_fcpxml.py            NLE handoff FCPXML + manifest       [V3]
+├── export_otio.py              NLE handoff OTIO + manifest         [V3]
 ├── generate_standup_timeline.py Remotion timeline
 ├── multi_export.py             三平台导出                       [V3]
 ├── generate_caption.py         标题/正文/标签                   [V3]

@@ -48,6 +48,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ review_dashboard.py      静态 HTML/JSON 人工复核面板 / gate review queue
    ├─→ export_edl.py            render_config / cut list → EDL + manifest
    ├─→ export_fcpxml.py         render_config / cut list → FCPXML + manifest
+   ├─→ export_otio.py           render_config / cut list → OTIO + manifest
    ├─→ multi_export.py          小红书 3:4 / 抖音 9:16 / 视频号 ≤60s
    ├─→ generate_caption.py      标题 + 200-500 字正文 + 3-6 tags + 发布时段
    └─→ publish_package.py       平台视频/封面/字幕/章节/文案上传包 + gate 状态
@@ -98,6 +99,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `review_dashboard.py` | 本地 artifacts → 静态 HTML/JSON review queue + gate snapshot | `--project-dir work/day58 --html work/day58/review_dashboard.html --strict` |
 | `export_edl.py` | NLE handoff：导出 EDL + manifest | `--config render_config.json --output edit.edl` / `--cut-list rough_cut.json --output rough.edl` |
 | `export_fcpxml.py` | NLE handoff：导出 FCPXML + manifest | `--config render_config.json --output edit.fcpxml` / `--cut-list rough_cut.json --output rough.fcpxml` |
+| `export_otio.py` | NLE handoff：导出 OpenTimelineIO `.otio` + manifest | `--config render_config.json --output edit.otio` / `--cut-list rough_cut.json --output rough.otio` |
 | `multi_export.py` | 三平台导出 | `<input.mp4>` `--platforms xhs douyin wxch` |
 | `generate_caption.py` | 标题/正文/tag | `--script` `--profile` `--output` |
 | `publish_package.py` | 发布上传包：平台视频、封面、字幕、章节、文案和 gate 状态 | `--project-dir` `--platforms` `--video xhs=...` `--strict` |
@@ -1055,18 +1057,20 @@ python3 scripts/srt_edit_plan.py \
 
 `keep/include/use/select` 行按出现顺序生成最终输出顺序；`drop/skip/exclude/remove` 行写入 review。`--cut-list` 输出按原素材时间排序，适合 `timeline_view.py --cut-list` 看切点；真正的重排序输出看 `--render-config`。需要强制每个字幕编号都被审过时，加 `--require-all-reviewed --strict`。
 
-### Phase 5c: NLE Handoff EDL / FCPXML（交给 Premiere / FCP / Resolve）
+### Phase 5c: NLE Handoff EDL / FCPXML / OTIO（交给 Premiere / FCP / Resolve）
 
-如果用户不需要剪映草稿，而是要把自动剪辑方案交给专业剪辑软件做调色、混音、精剪或协作复核，可导出单轨 EDL 或单 spine FCPXML：
+如果用户不需要剪映草稿，而是要把自动剪辑方案交给专业剪辑软件做调色、混音、精剪或协作复核，可导出单轨 EDL、单 spine FCPXML 或 OpenTimelineIO `.otio`：
 
 ```bash
 python3 scripts/export_edl.py --config render_config.json --output work/edit.edl --fps 30
 python3 scripts/export_edl.py --cut-list work/rough_cut.json --output work/rough_cut.edl --fps 30
 python3 scripts/export_fcpxml.py --config render_config.json --output work/edit.fcpxml --fps 30 --width 1080 --height 1920
 python3 scripts/export_fcpxml.py --cut-list work/rough_cut.json --output work/rough_cut.fcpxml --fps 30
+python3 scripts/export_otio.py --config render_config.json --output work/edit.otio --fps 30
+python3 scripts/export_otio.py --cut-list work/rough_cut.json --output work/rough_cut.otio --fps 30
 ```
 
-`export_edl.py` / `export_fcpxml.py` 都会同时写 `<output>.json` manifest，保留绝对源路径、精确秒数、record/source timecode 和事件清单。复杂字幕、overlay、章节卡、B-roll 仍以 `render_final.py` / `export_capcut.py` 为准；NLE handoff 只负责轻量选段时间线。
+`export_edl.py` / `export_fcpxml.py` / `export_otio.py` 都会同时写 `<output>.json` manifest，保留绝对源路径、精确秒数、record/source timecode 和事件清单。`export_otio.py` 默认写 V1 + A1 两条 track，可用 `--no-audio-track` 只交接视频；复杂字幕、overlay、章节卡、B-roll 仍以 `render_final.py` / `export_capcut.py` 为准；NLE handoff 只负责轻量选段时间线。
 
 ### Phase 6: Post-render Validation（渲染后验证）
 
