@@ -34,6 +34,17 @@ def test_merge_enrich_plan_translates_cues(tmp_path):
         "stickers": [
             {"sticker": "OK", "start": 7.0, "end": 8.0, "emotion": "conclusion"}
         ],
+        "emphasis_cues": [
+            {
+                "start": 10.0,
+                "end": 11.0,
+                "label": "重点",
+                "trigger": "payoff_line",
+                "matched_text": "所以",
+                "effect": "badge_push_in",
+                "zoom": 1.12,
+            }
+        ],
         "imagegen": [
             {"image_path": "concept.png", "timing_seconds": 9.0, "duration": 2.0}
         ],
@@ -43,10 +54,12 @@ def test_merge_enrich_plan_translates_cues(tmp_path):
     assert merged["broll_overlays"][0]["video"] == str(broll)
     assert merged["broll_overlays"][0]["source_start"] == 1.2
     assert merged["chapters"][0]["title"] == "关键转折"
-    assert [b["text"] for b in merged["text_badges"]] == ["关键转折", "OK"]
+    assert [b["text"] for b in merged["text_badges"]] == ["关键转折", "OK", "重点"]
+    assert merged["focus_events"][0]["marker"] is False
     assert merged["image_overlays"][0]["image"] == str(image)
     assert merged["_enrich_plan_stats"]["broll_overlays"] == 1
-    assert merged["_enrich_plan_stats"]["text_badges"] == 2
+    assert merged["_enrich_plan_stats"]["text_badges"] == 3
+    assert merged["_enrich_plan_stats"]["emphasis_cues"] == 1
 
 
 def test_merge_enrich_plan_keeps_imagegen_advisory_when_no_file(tmp_path):

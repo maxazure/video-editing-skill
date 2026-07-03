@@ -130,6 +130,20 @@ def test_color_grade_can_be_required(tmp_path):
     assert gate["status"] == "ready"
 
 
+def test_emphasis_plan_is_discovered_as_enrich_plan(tmp_path):
+    _publish_ready_project(tmp_path)
+    _write(tmp_path / "work" / "emphasis_plan.json", {
+        "version": "auto_emphasis_plan.v1",
+        "emphasis_cues": [{"start": 1.0, "end": 2.0, "label": "重点"}],
+    })
+
+    manifest = build_manifest(str(tmp_path), target_stage="publish_ready")
+
+    gate = next(g for g in manifest["gates"] if g["category"] == "enrich_plan")
+    assert gate["status"] == "ready"
+    assert gate["artifact_count"] == 1
+
+
 def test_optional_edit_preflight_blocks_when_unresolved(tmp_path):
     _publish_ready_project(tmp_path)
     _write(tmp_path / "work" / "edit_preflight.json", {

@@ -30,7 +30,7 @@
 | 15 | [小红书每日科技短视频（V3 完整流水线）](15-xhs-daily-tech-video.md) | 一条提示词跑完转写 → 重组 → 丰富 → 渲染 → 多平台 → 文案 |
 | 16 | [Content Guard 平台雷区 lint](16-content-guard.md) | 自动检测违禁词/导流/医美/财富诱导，导出前拦截 |
 | 17 | [一条视频 × 三平台导出](17-multi-platform.md) | 主视频 → 小红书 3:4 / 抖音 / 视频号 三版本 |
-| 18 | [Auto-Enrich 自动丰富](18-auto-enrich.md) | 自动 B-roll / 章节卡 / 贴纸 / BGM 卡点 |
+| 18 | [Auto-Enrich 自动丰富](18-auto-enrich.md) | 自动 B-roll / 章节卡 / 贴纸 / 强调点 / BGM 卡点 |
 | 19 | [AI 生图（gpt-image-2 / Codex imagegen）](19-imagegen.md) | 抽象概念自动配图，提示词适配 gpt-image-2 |
 | 20 | [Render QA 渲染后质检](20-render-qa.md) | 检查尺寸/音频/黑屏/静帧/静音，批量留 QA JSON |
 | 21 | [Jump Cut 自动去停顿](21-jump-cut.md) | 自适应静音检测，先出 cut list，再一次渲染去停顿成片，默认切点音频 fade |
@@ -59,6 +59,7 @@
 | 56 | [Audio Sync 外录音频自动对齐](56-audio-sync.md) | scratch audio + 外录音轨 → offset / replace-audio command / gate |
 | 57 | [Review Dashboard 人工复核面板](57-review-dashboard.md) | 本地 artifacts → HTML/JSON review queue、next actions 和 gate snapshot |
 | 58 | [Source Receipts 事实来源复核](58-source-receipts.md) | 视频 claim → URL/截图 proof deck、Markdown/HTML source deck 和发布 gate |
+| 59 | [Auto Emphasis 口播重点自动落点](59-auto-emphasis.md) | 问句 / 数字 claim / 转折 / 结论 → badge + subtle push-in |
 
 ## 快速上手
 
@@ -88,6 +89,7 @@
 | 担心标题/正文触发平台限流 | [16-Content Guard](16-content-guard.md) |
 | 一次发小红书+抖音+视频号 | [17-三平台导出](17-multi-platform.md) |
 | 想让视频更"有质感"自动加丰富度 | [18-Auto-Enrich](18-auto-enrich.md) |
+| 只想给口播重点加轻强调 | [59-Auto Emphasis](59-auto-emphasis.md) |
 | 抽象概念想用 AI 生图（注意力机制/复利…） | [19-imagegen](19-imagegen.md) |
 | 渲染后想确认没有黑屏/静帧/静音/尺寸错 | [20-Render QA](20-render-qa.md) |
 | 口播停顿太多想自动剪紧 | [21-Jump Cut](21-jump-cut.md) |
@@ -116,3 +118,4 @@
 | 相机内录音和外录麦克风音频需要自动对齐 | [56-Audio Sync](56-audio-sync.md) |
 | 渲染或发布前想打开一个总复核面板 | [57-Review Dashboard](57-review-dashboard.md) |
 | 视频里有事实、数据、新闻或来源截图要复核 | [58-Source Receipts](58-source-receipts.md) |
+| 数字、转折、结论想自动落视觉重点 | [59-Auto Emphasis](59-auto-emphasis.md) |

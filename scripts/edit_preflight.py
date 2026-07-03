@@ -456,6 +456,32 @@ def _check_focus_events(items: Any, timeline_duration: Optional[float], checks: 
             checks.warn("focus_zoom_clamped", f"{source}.zoom", "render_final will clamp focus zoom to 1.05-4.0.", value=zoom)
 
 
+def _check_emphasis_cues(items: Any, timeline_duration: Optional[float], checks: CheckList, source_prefix: str) -> int:
+    if not isinstance(items, list):
+        checks.block("invalid_emphasis_list", source_prefix, "emphasis_cues must be a list.")
+        return 0
+    count = 0
+    for index, cue in enumerate(items, start=1):
+        source = f"{source_prefix}[{index}]"
+        if not isinstance(cue, Mapping):
+            checks.block("invalid_emphasis_cue", source, "Emphasis cue must be an object.")
+            continue
+        timing = _time_range(cue, source, checks, default_duration=1.0, required=False)
+        if timing:
+            count += 1
+            _check_timeline_bound(timing[0], timing[1], timeline_duration=timeline_duration, source=source, checks=checks)
+        if cue.get("show_badge", True) and not str(cue.get("label") or cue.get("text") or cue.get("matched_text") or "").strip():
+            checks.warn("empty_emphasis_label", f"{source}.label", "Emphasis cue has no badge label.")
+        zoom = _as_float(cue.get("zoom"))
+        if zoom is not None and not (1.0 <= zoom <= 4.0):
+            checks.warn("emphasis_zoom_clamped", f"{source}.zoom", "render_final will clamp emphasis zoom.", value=zoom)
+        for axis in ("x", "y"):
+            value = _as_float(cue.get(axis))
+            if value is not None and not (0.0 <= value <= 1.0):
+                checks.warn("emphasis_coordinate_clamped", f"{source}.{axis}", "Emphasis coordinates should be normalized 0-1.", value=value)
+    return count
+
+
 def _check_pip_params(item: Mapping[str, Any], source: str, checks: CheckList) -> None:
     width_ratio = _as_float(item.get("width_ratio"))
     if width_ratio is not None and not (0.08 <= width_ratio <= 0.6):
@@ -512,6 +538,12 @@ def check_enrich_plan(path: str, checks: CheckList, timeline_duration: Optional[
         check_pip_params=True,
     )
     _check_text_badges(plan.get("stickers") or [], timeline_duration, checks, "enrich_plan.stickers")
+    timed_items += _check_emphasis_cues(
+        plan.get("emphasis_cues") or plan.get("emphasis") or [],
+        timeline_duration,
+        checks,
+        "enrich_plan.emphasis_cues",
+    )
     _check_focus_events(plan.get("focus_events") or [], timeline_duration, checks, "enrich_plan.focus_events")
     _check_chapter_cards(plan.get("chapter_cards") or [], base_dir, timeline_duration, checks)
 

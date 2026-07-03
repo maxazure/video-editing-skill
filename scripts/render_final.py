@@ -183,6 +183,7 @@ def merge_enrich_plan(config, plan, *, plan_base_dir):
         "image_overlays": 0,
         "focus_events": 0,
         "pip_overlays": 0,
+        "emphasis_cues": 0,
         "missing_broll_assets": 0,
         "missing_image_assets": 0,
         "missing_pip_assets": 0,
@@ -266,6 +267,45 @@ def merge_enrich_plan(config, plan, *, plan_base_dir):
             "emotion": cue.get("emotion"),
         })
         stats["text_badges"] += 1
+
+    for cue in (plan.get("emphasis_cues") or plan.get("emphasis") or []):
+        if not isinstance(cue, dict):
+            continue
+        start, end = _cue_time_range(cue, default_duration=1.0)
+        label = str(
+            cue.get("label")
+            or cue.get("text")
+            or cue.get("matched_text")
+            or ""
+        ).strip()
+        if label and cue.get("show_badge", True):
+            text_badges.append({
+                "text": label,
+                "start": start,
+                "end": end,
+                "fade_in": int(_float_or_default(cue.get("fade_in"), 120)),
+                "fade_out": int(_float_or_default(cue.get("fade_out"), 160)),
+                "source": f"enrich_plan:emphasis:{cue.get('trigger', 'cue')}",
+                "matched_text": cue.get("matched_text"),
+            })
+            stats["text_badges"] += 1
+
+        effect = str(cue.get("effect") or "").strip().lower()
+        zoom = _float_or_default(cue.get("zoom"), 1.0)
+        if effect in {"push_in", "badge_push_in", "zoom"} or zoom > 1.0:
+            focus_events.append({
+                "start": start,
+                "end": end,
+                "x": _float_or_default(cue.get("x"), 0.5),
+                "y": _float_or_default(cue.get("y"), 0.5),
+                "zoom": max(1.05, zoom),
+                "transition": _float_or_default(cue.get("transition"), 0.10),
+                "marker": bool(cue.get("marker", False)),
+                "show_label": False,
+            })
+            stats["focus_events"] += 1
+
+        stats["emphasis_cues"] += 1
 
     for cue in plan.get("focus_events") or []:
         start, end = _cue_time_range(cue, start_key="start", default_duration=1.2)

@@ -26,10 +26,12 @@ def test_build_plan_no_extras():
     plan = build_plan(_sample_transcript())
     assert "broll" in plan
     assert "stickers" in plan
+    assert "emphasis_cues" in plan
     assert "chapter_cards" in plan
     assert "imagegen" in plan
     # At minimum the transition word "但是" + the long-shot gap should yield broll cues
     assert len(plan["broll"]) >= 1
+    assert any(cue["trigger"] == "contrast_turn" for cue in plan["emphasis_cues"])
 
 
 def test_build_plan_includes_imagegen_for_abstract_concept():
@@ -65,3 +67,4 @@ def test_cli_writes_plan(tmp_path):
     assert out.returncode == 0, f"stderr: {out.stderr}"
     plan = json.loads(out_path.read_text())
     assert "broll" in plan and "stickers" in plan and "chapter_cards" in plan
+    assert "emphasis_cues" in plan

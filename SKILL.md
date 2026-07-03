@@ -21,7 +21,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ rewrite_script.py        LLM 重组 5 段式（hook/pain/turn/value/cta）
    ├─→ content_guard.py         80+ 条平台雷区 lint
    ├─→ source_receipts.py       事实 claim → URL/截图 source deck + publish gate
-   ├─→ auto_enrich.py           B-roll / 章节卡 / 贴纸 / BGM 卡点 / imagegen 提示词
+   ├─→ auto_enrich.py           B-roll / 章节卡 / 贴纸 / 强调点 / BGM 卡点 / imagegen 提示词
    │       └─→ Codex imagegen   gpt-image-2 自动生图（抽象概念配图）
    ├─→ audio_cue_sheet.py       BGM / SFX 音频设计清单 / 生成审批 gate
    ├─→ storyboard_plan.py       分镜 shot cards / 生成路由 / 连续性锚点
@@ -75,8 +75,9 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `stock_material_plan.py` | 主题/脚本 → Pexels/Pixabay/Coverr stock 查询计划 | `--subject` `--script` `--provider` `--media-library` `--output` `--markdown` |
 | `auto_chapter_cards.py` | 章节卡 PNG | `--script` `--audio` `--style` `--output-dir` |
 | `auto_stickers.py` | 情绪→贴纸 | `--transcript` `--min-interval` |
+| `auto_emphasis.py` | 问句/数字/转折/结论 → badge + subtle push-in cues | `--transcript` `--output` `--markdown` |
 | `beat_sync.py` | BGM 卡点 | `--bgm` `--cuts` `--window` |
-| `auto_enrich.py` | 编排上面四个 | `--transcript` `--clean-script` `--bgm` `--output` |
+| `auto_enrich.py` | 编排 B-roll / 贴纸 / 强调点 / 章节卡 / imagegen cues | `--transcript` `--clean-script` `--bgm` `--output` |
 | `imagegen_hint.py` | 检测抽象概念 → 产 gpt-image-2 提示词 | `--transcript` `--clean-script` `--codex-md` |
 | `audio_cue_sheet.py` | transcript → BGM/SFX cue、生成审批和音频门禁 | `--transcript` `--asset-root` `--require-local-music` `--require-local-sfx` `--strict` |
 | `storyboard_plan.py` | transcript/clean_script → 分镜 shot cards + 生成路由 | `--transcript` `--clean-script` `--output` `--markdown` |
@@ -765,7 +766,7 @@ python3 scripts/render_final.py --config script/render_config.json --output medi
 **Auto-Enrich 自动接入**（推荐）：
 - 先运行 `auto_enrich.py --output work/enrich_plan.json`
 - 渲染时加 `--enrich-plan work/enrich_plan.json`
-- `broll[].suggested_asset` 会转成定时 B-roll video overlay；`chapter_cards[]` 和 `stickers[]` 会转成 ASS badge；`chapter_cards[].png` / `imagegen[].image_path` / `imagegen[].generated_path` 会转成定时图片 overlay
+- `broll[].suggested_asset` 会转成定时 B-roll video overlay；`chapter_cards[]`、`stickers[]` 和 `emphasis_cues[]` 会转成 ASS badge；`emphasis_cues[]` 还可生成无红框的轻微 center push-in；`chapter_cards[].png` / `imagegen[].image_path` / `imagegen[].generated_path` 会转成定时图片 overlay
 - `pip_overlays[]` 会转成定时 facecam / camera 小窗；camera audio 默认忽略，主音频仍来自 render config
 - 没有实际生成文件的 imagegen cue 只作为提示输出，不会阻塞渲染
 - 合并后的可见文字仍会走 `_internal_text_guard` 和 `content_guard.py`
@@ -939,7 +940,7 @@ python3 scripts/render_final.py --config render_config.json \
 
 参数说明：
 - `--config`：渲染配置 JSON 路径
-- `--enrich-plan`：可选，读取 `auto_enrich.py` 输出的 JSON，把 B-roll / 章节卡 / 贴纸 / 已生成图片 cue 自动接回渲染
+- `--enrich-plan`：可选，读取 `auto_enrich.py` 输出的 JSON，把 B-roll / 章节卡 / 贴纸 / 强调点 / 已生成图片 cue 自动接回渲染
 - `--output`：输出文件路径
 - `--speed 1.25 1.5`：同时输出变速版本（每个变速版本也是从原始视频直接编码，不是从已编码视频二次压缩）
 - `--cover-duration 2.0`：封面冻结时长（秒），覆盖配置中的 `cover_duration`

@@ -116,6 +116,29 @@ def test_focus_pixel_coordinate_without_source_size_blocks(tmp_path):
     assert any(item["code"] == "pixel_coordinate_without_source_size" for item in report["checks"])
 
 
+def test_enrich_plan_checks_emphasis_cues(tmp_path):
+    video = tmp_path / "talking.mp4"
+    _write(video, b"fake video")
+    config = tmp_path / "render_config.json"
+    plan = tmp_path / "emphasis_plan.json"
+    _write(config, {"clips": [{"video": "talking.mp4", "start": 0, "end": 3, "text": "ok"}]})
+    _write(plan, {
+        "emphasis_cues": [
+            {"start": 0.5, "duration": 1.0, "label": "重点", "zoom": 1.1},
+            {"start": 1.5, "duration": 1.0, "zoom": 0.5, "x": 1.4},
+        ]
+    })
+
+    report = build_preflight(render_config=str(config), enrich_plans=[str(plan)])
+    codes = {item["code"] for item in report["checks"]}
+
+    assert report["status"] == "warn"
+    assert "empty_emphasis_label" in codes
+    assert "emphasis_zoom_clamped" in codes
+    assert "emphasis_coordinate_clamped" in codes
+    assert report["artifacts"]["enrich_plans"][0]["timed_items"] == 2
+
+
 def test_cli_writes_json_markdown_and_strict_returns_two_on_warning(tmp_path):
     video = tmp_path / "talking.mp4"
     _write(video, b"fake video")

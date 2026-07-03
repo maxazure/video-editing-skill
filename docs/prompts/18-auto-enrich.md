@@ -2,7 +2,7 @@
 
 V3 加入了一套调度模块，决定**在哪儿**给视频加 B-roll / 章节卡 / 贴纸 / 卡点。
 
-## 五个组件
+## 六个组件
 
 | 模块 | 输出 | 触发逻辑 |
 |---|---|---|
@@ -10,7 +10,8 @@ V3 加入了一套调度模块，决定**在哪儿**给视频加 B-roll / 章节
 | `auto_chapter_cards.py` | 1080×1920 PNG | `## ` 标题 / 静音 ≥1.5s 边界 |
 | `beat_sync.py` | 节拍时间表 + 对齐函数 | librosa beat_track，缺时回落到固定 BPM 网格 |
 | `auto_stickers.py` | emoji 贴纸 cue | 情绪关键词分类（excited/doubt/conclusion/data/warning/joke） |
-| `auto_enrich.py` | 综合 plan JSON | 调用以上 4 个，并对 broll/sticker 跑 beat snap |
+| `auto_emphasis.py` | emphasis cue | 问句 / 数字 claim / 转折 / 结论 / 风险提示 / 停顿后恢复 |
+| `auto_enrich.py` | 综合 plan JSON | 调用以上模块，并对 broll/sticker/emphasis 跑 beat snap |
 
 ## 一键执行
 
@@ -33,6 +34,11 @@ python3 scripts/auto_enrich.py \
   "stickers": [
     {"start": 12.20, "end": 13.60, "emotion": "data",
      "sticker": "📈", "text_anchor": "增长50%"}
+  ],
+  "emphasis_cues": [
+    {"start": 18.20, "end": 19.25, "trigger": "numeric_claim",
+     "label": "数据点", "matched_text": "42%", "effect": "badge_push_in",
+     "zoom": 1.1}
   ],
   "chapter_cards": [
     {"title": "Hook", "start": 5.0, "duration": 1.0,
@@ -64,6 +70,12 @@ python3 scripts/beat_sync.py \
   --cuts work/cut_times.json \
   --window 0.20 \
   --output work/cut_times_snapped.json
+
+# 只生成强调点 review
+python3 scripts/auto_emphasis.py \
+  --transcript work/transcript.json \
+  --output work/emphasis_plan.json \
+  --markdown work/emphasis_plan.md
 ```
 
 ## 触发规则细节
@@ -95,6 +107,21 @@ python3 scripts/beat_sync.py \
 
 - 默认每 8-15 秒 1 个，单段不超过 2 个
 
+### auto_emphasis
+
+`auto_emphasis.py` 会把 transcript 里适合“落一下”的口播点转成 `emphasis_cues[]`：
+
+| trigger | 典型触发 | 默认呈现 |
+|---|---|---|
+| `question_hook` | 为什么 / 怎么 / `?` / `why` | “问题来了” badge + 轻微 push-in |
+| `numeric_claim` | `42%` / `3倍` / `1 million` | “数据点” badge + 轻微 push-in |
+| `contrast_turn` | 但是 / 然而 / actually / however | “转折” badge + 轻微 push-in |
+| `payoff_line` | 所以 / 结论 / 答案是 / therefore | “重点” badge + 轻微 push-in |
+| `risk_warning` | 注意 / 风险 / 千万别 / warning | “注意” badge + 轻微 push-in |
+| `pause_resume` | 前一句后停顿超过阈值 | “停顿后重点” badge + 轻微 push-in |
+
+如果 transcript 带 `words[]`，数字或转折词会尽量锚到具体词的时间戳；否则按段落内字符位置估算。默认 `--min-interval 3`，避免短时间堆太多效果。
+
 ### beat_sync
 
 - 用 librosa 提取节拍；没装时回落到 120 bpm 固定网格
@@ -118,6 +145,7 @@ python3 scripts/render_final.py \
 - `chapter_cards[]` → `chapters` 时间轴 + ASS `text_badges`
 - `chapter_cards[].png` / `image_path` → 定时图片 overlay
 - `stickers[]` → ASS `text_badges`，普通字幕和 karaoke 字幕都支持
+- `emphasis_cues[]` → ASS `text_badges` + marker-free center push-in
 - `imagegen[].image_path` / `generated_path` → 定时图片 overlay
 - 没有实际图片文件的 `imagegen[]` 只作为提示输出，不阻塞渲染
 

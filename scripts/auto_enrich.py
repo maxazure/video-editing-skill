@@ -6,6 +6,7 @@ plan (cue list) that the final render reads from. Combines:
   - auto_broll.schedule_broll
   - auto_chapter_cards.schedule_cards
   - auto_stickers.schedule_stickers
+  - auto_emphasis.schedule_emphasis
   - beat_sync.snap_to_beats (optional, when BGM provided)
 
 Output is a single JSON the render layer consumes.
@@ -23,6 +24,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from auto_broll import schedule_broll  # noqa: E402
 from auto_chapter_cards import parse_chapters_from_md, schedule_cards  # noqa: E402
+from auto_emphasis import schedule_emphasis  # noqa: E402
 from auto_stickers import schedule_stickers  # noqa: E402
 from imagegen_hint import detect_opportunities as detect_imagegen_opportunities  # noqa: E402
 
@@ -42,6 +44,7 @@ def build_plan(
 
     broll = schedule_broll(transcript, available_assets=assets)
     stickers = schedule_stickers(transcript)
+    emphasis_cues = schedule_emphasis(transcript)
     chapters = []
     clean_text = None
     if clean_script_path:
@@ -69,12 +72,17 @@ def build_plan(
                     dataclasses.replace(s, start=snap_to_beats([s.start], beats)[0])
                     for s in stickers
                 ]
+                emphasis_cues = [
+                    dataclasses.replace(c, start=snap_to_beats([c.start], beats)[0])
+                    for c in emphasis_cues
+                ]
         except ImportError:
             pass
 
     return {
         "broll": [dataclasses.asdict(c) for c in broll],
         "stickers": [dataclasses.asdict(c) for c in stickers],
+        "emphasis_cues": [dataclasses.asdict(c) for c in emphasis_cues],
         "chapter_cards": [dataclasses.asdict(c) for c in chapters],
         "imagegen": [dataclasses.asdict(c) for c in imagegen_cues],
     }
@@ -109,6 +117,7 @@ def main() -> int:
     print(f"✅ enrichment plan → {args.output}")
     print(f"   broll:    {len(plan['broll'])}")
     print(f"   stickers: {len(plan['stickers'])}")
+    print(f"   emphasis: {len(plan['emphasis_cues'])}")
     print(f"   chapters: {len(plan['chapter_cards'])}")
     print(f"   imagegen: {len(plan['imagegen'])}")
     return 0

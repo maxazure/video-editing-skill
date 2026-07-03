@@ -81,7 +81,14 @@ ARTIFACTS: Sequence[ArtifactDef] = (
     ArtifactDef(
         "enrich_plan",
         "Enrich Plan",
-        ("**/enrich_plan.json", "**/*_enrich_plan.json", "**/screen_focus_plan.json", "**/speaker_badges.json"),
+        (
+            "**/enrich_plan.json",
+            "**/*_enrich_plan.json",
+            "**/emphasis_plan.json",
+            "**/*_emphasis_plan.json",
+            "**/screen_focus_plan.json",
+            "**/speaker_badges.json",
+        ),
         "Run auto_enrich.py and optional screen_focus.py before final render.",
     ),
     ArtifactDef(

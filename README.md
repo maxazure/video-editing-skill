@@ -120,8 +120,8 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    ├─→ source_receipts.py       事实 claim → URL/截图 source deck
    │                            Markdown/HTML proof deck + publish gate
    │
-   ├─→ auto_enrich.py           调度 B-roll / 章节卡 / 贴纸 / BGM 卡点
-   │     │ transition / entity match / silence boundary / beat snap
+   ├─→ auto_enrich.py           调度 B-roll / 章节卡 / 贴纸 / 强调点 / BGM 卡点
+   │     │ transition / entity match / emphasis cue / silence boundary / beat snap
    │     │
    │     └─→ imagegen_hint.py   抽象概念检测 → gpt-image-2 提示词
    │           ↓                 (Codex 内置 imagegen 工具直接执行；无 API key)
@@ -206,7 +206,7 @@ cd ~/projects/video-editing-skill
 python3 scripts/utils.py
 
 # 4. 跑一遍测试套件确认 OK
-pytest tests/           # 434 个测试，约 5 秒
+pytest tests/           # 440 个测试，约 5 秒
 ```
 
 每天做一条视频的完整模板：**[docs/prompts/15-xhs-daily-tech-video.md](docs/prompts/15-xhs-daily-tech-video.md)**
@@ -289,7 +289,7 @@ NVIDIA GPU 配置详见本文末尾的 [Linux GPU 配置](#linux-gpu-配置) 段
 
 不绑定任何 LLM 提供商——脚本输出 prompt，你喂给 Claude / ChatGPT，把返回 JSON 喂回脚本验证 + 物化为 `clean_script.md`。
 
-### 🎬 Auto-Enrich — 自动加 B-roll / 章节卡 / 贴纸 / 卡点
+### 🎬 Auto-Enrich — 自动加 B-roll / 章节卡 / 贴纸 / 强调点 / 卡点
 [详细文档](docs/prompts/18-auto-enrich.md)
 
 | 模块 | 触发逻辑 |
@@ -298,9 +298,10 @@ NVIDIA GPU 配置详见本文末尾的 [Linux GPU 配置](#linux-gpu-配置) 段
 | [`auto_chapter_cards.py`](scripts/auto_chapter_cards.py) | `## ` 章节标题 / 静音 ≥1.5s 边界 / Pillow PNG 渲染 |
 | [`beat_sync.py`](scripts/beat_sync.py) | librosa beat_track + ±200ms snap（缺时回落固定网格） |
 | [`auto_stickers.py`](scripts/auto_stickers.py) | 情绪关键词→emoji 池（excited 🚀✨🔥 / doubt 🤔 / data 📈 等） |
-| [`auto_enrich.py`](scripts/auto_enrich.py) | 编排上面四个，输出综合 plan JSON（含 imagegen cues） |
+| [`auto_emphasis.py`](scripts/auto_emphasis.py) | 问句 / 数字 claim / 转折 / 结论 / 风险提醒 / 停顿恢复 → `emphasis_cues[]` |
+| [`auto_enrich.py`](scripts/auto_enrich.py) | 编排上面模块，输出综合 plan JSON（含 emphasis 和 imagegen cues） |
 
-`render_final.py --enrich-plan work/enrich_plan.json` 会把 plan 里的 B-roll、章节卡、贴纸和已生成图片 cue 自动接回单次渲染；`--enrich-plan` 可重复传入，用来叠加 `screen_focus_plan.json` 这类独立计划。没有实际文件的 imagegen cue 会保留为提示，不会阻塞导出。
+`render_final.py --enrich-plan work/enrich_plan.json` 会把 plan 里的 B-roll、章节卡、贴纸、强调点和已生成图片 cue 自动接回单次渲染；`emphasis_cues[]` 会转成 timed badge 和 marker-free center push-in。`--enrich-plan` 可重复传入，用来叠加 `screen_focus_plan.json` 这类独立计划。没有实际文件的 imagegen cue 会保留为提示，不会阻塞导出。
 
 ### 👁️ Video Understanding — 抽样帧 + 可选 YOLO 检测
 [`scripts/video_understanding.py`](scripts/video_understanding.py) · [详细文档](docs/prompts/47-video-understanding.md)
@@ -844,6 +845,23 @@ python3 scripts/export_otio.py \
 ```
 
 适合把自动粗剪交给 Premiere / Final Cut Pro / DaVinci Resolve 做调色、混音、精剪或协作复核。EDL 更通用，FCPXML 对 FCP / Resolve 更直接，OTIO 更适合使用 OpenTimelineIO adapter 的跨工具流程；复杂字幕、overlay、章节卡和 B-roll 仍以 `render_final.py` / `export_capcut.py` 为准。
+
+### 2026-07-04 自动化升级记录（Auto Emphasis Cues）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`AKMessi/vex`](https://github.com/AKMessi/vex) | 把 context-aware auto emphasis effects 接到节奏、停顿、问句、数字 claim、转折和 payoff line | 新增本地 `auto_emphasis.py`，用确定性规则产出可复核 `emphasis_cues[]` |
+| [`louisedesadeleer/b-roll-finder`](https://github.com/louisedesadeleer/b-roll-finder) | 强调用 word-level timestamps 把 cutaway 精确落在 spoken word 上，而不是只靠关键词 | `auto_emphasis.py` 优先读取 segment `words[]`，数字和转折词尽量锚到具体词时间戳 |
+| [`KyaniteLabs/mcp-video`](https://github.com/KyaniteLabs/mcp-video) | effects / overlays / preflight guardrails 都作为结构化 agent 工具，而不是裸 FFmpeg 参数 | `render_final.py` 只消费 bounded cue 字段；`edit_preflight.py` 新增 `emphasis_cues[]` 校验 |
+| [`browser-use/video-use`](https://github.com/browser-use/video-use) | overlay animations、cut-boundary 自检和项目状态持久化都进入剪辑闭环 | `auto_enrich.py` 现在自动合并 emphasis；`pipeline_manifest.py` 可发现独立 `emphasis_plan.json` |
+
+新增/调整能力：新增 [`scripts/auto_emphasis.py`](scripts/auto_emphasis.py)，可从 transcript 检测 `question_hook`、`numeric_claim`、`contrast_turn`、`payoff_line`、`risk_warning` 和 `pause_resume`，输出 `auto_emphasis_plan.v1` JSON + Markdown review；[`scripts/auto_enrich.py`](scripts/auto_enrich.py) 现在会把 `emphasis_cues[]` 放进综合 enrich plan；[`scripts/render_final.py`](scripts/render_final.py) 会把 cue 转成 timed ASS badge 和无红框的轻微 center push-in；[`scripts/edit_preflight.py`](scripts/edit_preflight.py) 会检查 emphasis cue 的时间、label、zoom 和坐标风险；[`scripts/pipeline_manifest.py`](scripts/pipeline_manifest.py) 会把 `emphasis_plan.json` 识别为 enrich artifact。新增 [docs/prompts/59-auto-emphasis.md](docs/prompts/59-auto-emphasis.md)，并更新 Auto-Enrich 文档、提示词索引、SKILL 和 README。
+
+使用方式：单独生成强调计划用 `python3 scripts/auto_emphasis.py --transcript work/transcript.json --output work/emphasis_plan.json --markdown work/emphasis_plan.md --min-interval 3 --max-cues 12`；渲染前用 `python3 scripts/edit_preflight.py --config work/render_config.json --enrich-plan work/emphasis_plan.json --output work/edit_preflight.json --markdown work/edit_preflight.md --strict`；最终渲染加 `python3 scripts/render_final.py --config work/render_config.json --enrich-plan work/emphasis_plan.json --output output/master.mp4`。如果已经跑完整自动丰富，直接用 `auto_enrich.py --output work/enrich_plan.json`，其中会自动包含 `emphasis_cues[]`。
+
+验证结果：新增 `tests/test_auto_emphasis.py` 4 项，并更新 `tests/test_auto_enrich.py`、`tests/test_render_enrich_plan.py`、`tests/test_edit_preflight.py` 和 `tests/test_pipeline_manifest.py`；`.venv/bin/python -m pytest tests/test_auto_emphasis.py tests/test_auto_enrich.py tests/test_render_enrich_plan.py tests/test_edit_preflight.py tests/test_pipeline_manifest.py -q` 通过 `46 passed in 0.58s`；`.venv/bin/python scripts/auto_emphasis.py --help`、`.venv/bin/python scripts/auto_enrich.py --help`、`.venv/bin/python scripts/render_final.py --help` 和 `.venv/bin/python scripts/edit_preflight.py --help` smoke 通过；`.venv/bin/python -m compileall scripts tests` 通过；`.venv/bin/python /Users/maxazure/.codex/skills/.system/skill-creator/scripts/quick_validate.py /Users/maxazure/projects/video-editing-skill` 通过 `Skill is valid!`；最终全量 `.venv/bin/python -m pytest tests -q` 通过 `440 passed in 4.96s`。
 
 ### 2026-07-03 自动化升级记录（OTIO NLE Handoff）
 
@@ -1549,7 +1567,7 @@ python3 $SKILL/scripts/review_dashboard.py \
 ## 测试
 
 ```bash
-pytest tests/           # 434 测试，约 5 秒
+pytest tests/           # 440 测试，约 5 秒
 ```
 
 按模块跑：
@@ -1561,6 +1579,7 @@ pytest tests/test_multi_export.py -v        # 多平台比例转换
 pytest tests/test_render_qa.py -v           # 渲染后质检
 pytest tests/test_audio_master_report.py -v # 成片响度 / true peak / LRA 门禁
 pytest tests/test_render_enrich_plan.py -v  # enrich_plan 自动接入渲染
+pytest tests/test_auto_emphasis.py -v      # 问句/数字/转折/结论 emphasis cues
 pytest tests/test_rough_cut.py -v           # ASR 粗剪：口头禅/重复句 cut list
 pytest tests/test_timeline_view.py -v       # 切点/QA 可视化复盘图
 pytest tests/test_generate_caption.py -v    # 文案合成
@@ -1754,6 +1773,7 @@ pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 g
 | **56** | **[Audio Sync](docs/prompts/56-audio-sync.md)** | **外录音轨自动对齐和替换计划** |
 | **57** | **[Review Dashboard](docs/prompts/57-review-dashboard.md)** | **打开 HTML/JSON 总复核面板** |
 | **58** | **[Source Receipts](docs/prompts/58-source-receipts.md)** | **事实 claim 的 URL/截图 proof deck 和发布 gate** |
+| **59** | **[Auto Emphasis](docs/prompts/59-auto-emphasis.md)** | **数字/转折/结论自动落视觉重点** |
 
 完整列表见 [docs/prompts/README.md](docs/prompts/README.md)。
 
@@ -1799,8 +1819,9 @@ scripts/
 ├── beat_sync.py                BGM 卡点                         [V3]
 ├── audio_cue_sheet.py          BGM/SFX 音频设计清单               [V3]
 ├── auto_stickers.py            情绪→贴纸                        [V3]
+├── auto_emphasis.py            问句/数字/转折/结论强调点          [V3]
 ├── imagegen_hint.py            抽象概念→gpt-image-2 提示词       [V3]
-├── auto_enrich.py              丰富度编排                       [V3]
+├── auto_enrich.py              丰富度编排（B-roll/贴纸/强调点）  [V3]
 ├── storyboard_plan.py          分镜 shot cards + 生成路由         [V3]
 ├── video_prompt_pack.py        多模型视频生成提示词包 + 审批 gate  [V3]
 ├── generation_task_log.py      异步生成任务台账 + 下载 gate         [V3]
