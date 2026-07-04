@@ -49,6 +49,12 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         "Run transcribe.py and save work/transcript.json.",
     ),
     ArtifactDef(
+        "takes_pack",
+        "Takes Pack",
+        ("**/takes_pack.json", "**/*_takes_pack.json", "**/takes_packed.md", "**/*_takes_packed.md"),
+        "Run takes_pack.py when multiple transcripts need a compact phrase-level review view.",
+    ),
+    ArtifactDef(
         "clean_script",
         "Clean Script",
         ("**/clean_script.md", "**/*_clean_script.md"),

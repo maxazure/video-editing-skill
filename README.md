@@ -99,6 +99,8 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    │
    ├─→ transcribe.py            转写 + 词级时间戳 + 口误标记
    │                            (mlx-whisper / faster-whisper / openai-whisper)
+   ├─→ takes_pack.py            多 take transcript → phrase-level 阅读视图
+   │                            takes_packed.md / takes_pack.json
    ├─→ audio_sync.py            外录音轨自动对齐 / 替换音轨计划
    │                            scratch audio + lav/recorder track → offset + gate
    │
@@ -206,7 +208,7 @@ cd ~/projects/video-editing-skill
 python3 scripts/utils.py
 
 # 4. 跑一遍测试套件确认 OK
-pytest tests/           # 440 个测试，约 5 秒
+pytest tests/           # 446 个测试，约 5 秒
 ```
 
 每天做一条视频的完整模板：**[docs/prompts/15-xhs-daily-tech-video.md](docs/prompts/15-xhs-daily-tech-video.md)**
@@ -325,6 +327,23 @@ python3 scripts/video_understanding.py origin/talk.mp4 \
 ```
 
 输出可以直接交给 `smart_reframe.py --detections` 做主体感知裁切，也可以交给 `privacy_redact.py --detections` 做隐私遮挡计划。`ultralytics` 不是必装依赖；没有 detector 时仍然能生成抽样帧和 review shell。
+
+### 🧩 Takes Pack — 多 take phrase-level 阅读视图
+[`scripts/takes_pack.py`](scripts/takes_pack.py) · [详细文档](docs/prompts/60-takes-pack.md)
+
+借鉴 `browser-use/video-use` 把 phrase-level transcript 作为主要阅读视图的做法，但保持本项目 artifact-first：只读本地 `transcript.json`，输出 `takes_packed.md` 和可选 `takes_pack.json`，不转写、不渲染、不调用 LLM。
+
+常用：
+```bash
+python3 scripts/takes_pack.py \
+  --transcript take1=work/take1_transcript.json \
+  --transcript take2=work/take2_transcript.json \
+  --output work/takes_packed.md \
+  --json work/takes_pack.json \
+  --break-gap 0.5
+```
+
+`takes_packed.md` 按 source 分组列出 `take1-003` 这类 phrase id、源时间码、speaker、segment ids 和压缩文本，适合先比较多个 take 的表达质量，再把确认后的 time range 交给 `highlight_picker.py`、`srt_edit_plan.py`、`render_config.json` 或 EDL/FCPXML/OTIO。`pipeline_manifest.py` 会发现 `takes_pack.json`，但默认不把它作为 blocker；需要强制多 take review 时可加 `--require takes_pack`。
 
 ### 🔎 Highlight Picker — 长视频精华候选 / brief 定向找片段
 [`scripts/highlight_picker.py`](scripts/highlight_picker.py) · [详细文档](docs/prompts/31-highlight-picker.md)
@@ -845,6 +864,23 @@ python3 scripts/export_otio.py \
 ```
 
 适合把自动粗剪交给 Premiere / Final Cut Pro / DaVinci Resolve 做调色、混音、精剪或协作复核。EDL 更通用，FCPXML 对 FCP / Resolve 更直接，OTIO 更适合使用 OpenTimelineIO adapter 的跨工具流程；复杂字幕、overlay、章节卡和 B-roll 仍以 `render_final.py` / `export_capcut.py` 为准。
+
+### 2026-07-05 自动化升级记录（Takes Pack）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`browser-use/video-use`](https://github.com/browser-use/video-use) | 把 `takes_packed.md` 作为 agent 主要阅读视图，并强调 audio-first、phrase-level cut decision | 新增本地 `takes_pack.py`，把多个 transcript 压成 phrase-level Markdown/JSON |
+| [`Square-Zero-Labs/video-prompting-skill`](https://github.com/Square-Zero-Labs/video-prompting-skill) | video model routing、character sheet、scene-still handoff 做得完整 | 本项目已有 `video_prompt_pack.py`，本次不重复扩 provider prompt 层 |
+| [`video-db/skills`](https://github.com/video-db/skills) | spoken/visual moments 可索引、可搜索、可回放 | 本项目保持本地优先，把多 take 先压成可搜索/可引用的 phrase artifact |
+| [`GoogleCloudPlatform/vertex-ai-creative-studio` genmedia-video-editor](https://github.com/GoogleCloudPlatform/vertex-ai-creative-studio/blob/main/experiments/mcp-genmedia/skills/genmedia-video-editor/SKILL.md) | 把生成视频、overlay、concat、音画同步作为清晰工具面 | 本项目已有 overlay/render/audio sync，本次只补选段前阅读视图缺口 |
+
+新增/调整能力：新增 `scripts/takes_pack.py`，可读取多份 `transcript.json`（支持 `label=path` 或 `--transcripts-dir`），按 word/segment 时间戳、静音 gap 和 speaker change 生成 `takes_packed.md` 与 `takes_pack.v1` JSON。`pipeline_manifest.py` 新增 `takes_pack` 可发现 artifact 类别，但默认不阻塞发布；需要强制多 take review 时可 `--require takes_pack`。新增 [docs/prompts/60-takes-pack.md](docs/prompts/60-takes-pack.md)，并更新 README、SKILL 和提示词目录。
+
+使用方式：多 take 粗选前运行 `python3 scripts/takes_pack.py --transcript take1=work/take1_transcript.json --transcript take2=work/take2_transcript.json --output work/takes_packed.md --json work/takes_pack.json --break-gap 0.5`；让 agent/剪辑师按 `take1-003` 这类 phrase id 或源时间码挑选最佳表达，再进入 `highlight_picker.py`、`srt_edit_plan.py`、`render_config.json` 或 EDL/FCPXML/OTIO。
+
+验证结果：新增 `tests/test_takes_pack.py` 5 项，更新 `tests/test_pipeline_manifest.py`；`.venv/bin/python -m pytest tests/test_takes_pack.py tests/test_pipeline_manifest.py -q` 通过 `31 passed in 0.33s`；`.venv/bin/python scripts/takes_pack.py --help` 和 `.venv/bin/python scripts/pipeline_manifest.py --list-categories | rg takes_pack` smoke 通过；`.venv/bin/python -m compileall scripts tests` 通过；`.venv/bin/python /Users/maxazure/.codex/skills/.system/skill-creator/scripts/quick_validate.py /Users/maxazure/projects/video-editing-skill` 通过 `Skill is valid!`；`git diff --check` 通过；最终全量 `.venv/bin/python -m pytest tests -q` 通过 `446 passed in 4.02s`。
 
 ### 2026-07-04 自动化升级记录（Auto Emphasis Cues）
 
@@ -1567,7 +1603,7 @@ python3 $SKILL/scripts/review_dashboard.py \
 ## 测试
 
 ```bash
-pytest tests/           # 440 测试，约 5 秒
+pytest tests/           # 446 测试，约 5 秒
 ```
 
 按模块跑：
@@ -1580,6 +1616,7 @@ pytest tests/test_render_qa.py -v           # 渲染后质检
 pytest tests/test_audio_master_report.py -v # 成片响度 / true peak / LRA 门禁
 pytest tests/test_render_enrich_plan.py -v  # enrich_plan 自动接入渲染
 pytest tests/test_auto_emphasis.py -v      # 问句/数字/转折/结论 emphasis cues
+pytest tests/test_takes_pack.py -v          # 多 take phrase-level 阅读视图
 pytest tests/test_rough_cut.py -v           # ASR 粗剪：口头禅/重复句 cut list
 pytest tests/test_timeline_view.py -v       # 切点/QA 可视化复盘图
 pytest tests/test_generate_caption.py -v    # 文案合成
@@ -1774,6 +1811,7 @@ pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 g
 | **57** | **[Review Dashboard](docs/prompts/57-review-dashboard.md)** | **打开 HTML/JSON 总复核面板** |
 | **58** | **[Source Receipts](docs/prompts/58-source-receipts.md)** | **事实 claim 的 URL/截图 proof deck 和发布 gate** |
 | **59** | **[Auto Emphasis](docs/prompts/59-auto-emphasis.md)** | **数字/转折/结论自动落视觉重点** |
+| **60** | **[Takes Pack](docs/prompts/60-takes-pack.md)** | **多 take transcript 压成 phrase-level 阅读视图** |
 
 完整列表见 [docs/prompts/README.md](docs/prompts/README.md)。
 
@@ -1803,6 +1841,7 @@ scripts/
 ├── utils.py                    平台/字体/编码器自检
 ├── _internal_text_guard.py     内部 token 拦截器
 ├── transcribe.py               Whisper 转写
+├── takes_pack.py               多 take phrase-level 阅读视图        [V3]
 ├── audio_sync.py               外录音轨自动对齐 / 替换音轨计划        [V3]
 ├── video_understanding.py      抽样帧 + 可选 YOLO 检测 artifact       [V3]
 ├── highlight_picker.py         长视频精华候选 / brief 定向找片段      [V3]

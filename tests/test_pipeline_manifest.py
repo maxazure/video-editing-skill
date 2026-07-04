@@ -130,6 +130,22 @@ def test_color_grade_can_be_required(tmp_path):
     assert gate["status"] == "ready"
 
 
+def test_takes_pack_artifact_is_discovered_without_blocking(tmp_path):
+    _publish_ready_project(tmp_path)
+    _write(tmp_path / "work" / "takes_pack.json", {
+        "version": "takes_pack.v1",
+        "summary": {"sources": 2, "phrases": 8, "warnings": 0},
+    })
+
+    manifest = build_manifest(str(tmp_path), target_stage="publish_ready")
+
+    assert manifest["status"] == "ready"
+    gate = next(g for g in manifest["gates"] if g["category"] == "takes_pack")
+    assert gate["status"] == "ready"
+    assert gate["artifact_count"] == 1
+    assert gate["blocks_when_present"] is False
+
+
 def test_emphasis_plan_is_discovered_as_enrich_plan(tmp_path):
     _publish_ready_project(tmp_path)
     _write(tmp_path / "work" / "emphasis_plan.json", {
