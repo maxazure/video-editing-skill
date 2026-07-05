@@ -2,11 +2,11 @@
 
 这是一个面向 **口播、教程、访谈、播客切片、录屏演示 / facecam demo** 的 AI 视频剪辑生产线：给它原始口播音频/视频、transcript、B-roll、摄像头小窗或素材目录，它可以把“还没整理的素材”推进到 **可发布的小红书 / 抖音 / 视频号短视频**。
 
-它不是一个单点 FFmpeg 脚本，而是一条完整工作流：**转写 → 长视频择段 → 清稿 → 去口头禅/停顿 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 字幕与声音设计 → 渲染前预检 → 单次编码渲染 → 质检 → 多平台导出 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
+它不是一个单点 FFmpeg 脚本，而是一条完整工作流：**项目启动/素材导入 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 字幕与声音设计 → 渲染前预检 → 单次编码渲染 → 质检 → 多平台导出 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
 
 ## 适合做什么
 
-- **把口播短视频从“素材堆”推进到“发布包”**：转写、清稿、分镜、素材清单、渲染配置、字幕 sidecar、QA、标题正文和标签都能落成可审计 artifact。
+- **把口播短视频从“素材堆”推进到“发布包”**：项目目录、source inventory、转写、清稿、分镜、素材清单、渲染配置、字幕 sidecar、QA、标题正文和标签都能落成可审计 artifact。
 - **针对中文社媒口播做过生产化调参**：Heavy CJK 字幕、1.25x 主输出、响度规范化、平台违禁词 lint、章节卡、贴纸、BGM/SFX cue、三平台导出都不是通用 demo。
 - **事实型内容有 proof deck**：新闻、数据、产品事实或来源页截图可用 `source_receipts.py` 生成 URL/截图复核包，作为发布前 gate。
 - **生成式素材有明确审批和台账**：Codex `image_gen` / GPT Image 2 提示词、Dreamina/Veo/LTX/Wan/Sora 视频提示词、provider 决策、`submit_id` 轮询下载和本地落盘 gate 都先记录再执行。
@@ -97,6 +97,7 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
 ```
 口播音频 + 无声素材
    │
+   ├─→ project_bootstrap.py     原始素材目录 → origin/work/output/verify/edit + source inventory
    ├─→ transcribe.py            转写 + 词级时间戳 + 口误标记
    │                            (mlx-whisper / faster-whisper / openai-whisper)
    ├─→ takes_pack.py            多 take transcript → phrase-level 阅读视图
@@ -208,7 +209,7 @@ cd ~/projects/video-editing-skill
 python3 scripts/utils.py
 
 # 4. 跑一遍测试套件确认 OK
-pytest tests/           # 446 个测试，约 5 秒
+pytest tests/           # 453 个测试，约 5 秒
 ```
 
 每天做一条视频的完整模板：**[docs/prompts/15-xhs-daily-tech-video.md](docs/prompts/15-xhs-daily-tech-video.md)**
@@ -304,6 +305,25 @@ NVIDIA GPU 配置详见本文末尾的 [Linux GPU 配置](#linux-gpu-配置) 段
 | [`auto_enrich.py`](scripts/auto_enrich.py) | 编排上面模块，输出综合 plan JSON（含 emphasis 和 imagegen cues） |
 
 `render_final.py --enrich-plan work/enrich_plan.json` 会把 plan 里的 B-roll、章节卡、贴纸、强调点和已生成图片 cue 自动接回单次渲染；`emphasis_cues[]` 会转成 timed badge 和 marker-free center push-in。`--enrich-plan` 可重复传入，用来叠加 `screen_focus_plan.json` 这类独立计划。没有实际文件的 imagegen cue 会保留为提示，不会阻塞导出。
+
+### 🧱 Project Bootstrap — 项目启动与素材导入
+[`scripts/project_bootstrap.py`](scripts/project_bootstrap.py) · [详细文档](docs/prompts/61-project-bootstrap.md)
+
+借鉴 agent-native 视频工具的 folder-first / safe working copy / project memory 思路，但保持本项目本地 artifact-first：把原始素材目录整理成 `origin/`、`work/`、`output/`、`verify/`、`edit/`，并写出 `source_inventory.json`、`source_inventory.md`、`project.md` 和 `next_steps.md`。
+
+常用：
+```bash
+python3 scripts/project_bootstrap.py \
+  --source ~/Downloads/raw-shoot \
+  --project-dir work/day61 \
+  --title "Day61 launch edit" \
+  --output work/day61/work/source_inventory.json \
+  --markdown work/day61/work/source_inventory.md \
+  --project-note work/day61/project.md \
+  --strict
+```
+
+默认 `--mode copy`，会按路径和扩展名把素材归入 `origin/raw`、`origin/broll`、`origin/audio`、`origin/bgm`、`origin/images`、`origin/assets` 或 `origin/sidecars`；同名文件自动加后缀，不覆盖已有文件。`pipeline_manifest.py` 会发现 `source_inventory.json`，需要把素材导入作为 analysis gate 时可加 `--require source_inventory`。脚本不转码、不渲染、不上传，也不调用 LLM 或生成服务。
 
 ### 👁️ Video Understanding — 抽样帧 + 可选 YOLO 检测
 [`scripts/video_understanding.py`](scripts/video_understanding.py) · [详细文档](docs/prompts/47-video-understanding.md)
@@ -864,6 +884,23 @@ python3 scripts/export_otio.py \
 ```
 
 适合把自动粗剪交给 Premiere / Final Cut Pro / DaVinci Resolve 做调色、混音、精剪或协作复核。EDL 更通用，FCPXML 对 FCP / Resolve 更直接，OTIO 更适合使用 OpenTimelineIO adapter 的跨工具流程；复杂字幕、overlay、章节卡和 B-roll 仍以 `render_final.py` / `export_capcut.py` 为准。
+
+### 2026-07-06 自动化升级记录（Project Bootstrap）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`browser-use/video-use`](https://github.com/browser-use/video-use) | 从“原始素材文件夹 → edit/final.mp4”开工，并把 `project.md` 作为跨会话记忆 | 新增 `project_bootstrap.py`，先生成项目目录、source inventory 和 `project.md` |
+| [`AKMessi/vex`](https://github.com/AKMessi/vex) | 不直接编辑 original source，保存 working copy、timeline operations、session log 和 metadata | 默认 copy 到 `origin/`，保留外部 `source_path`，后续只在项目 working copy 上推进 |
+| [`KyaniteLabs/mcp-video`](https://github.com/KyaniteLabs/mcp-video) | agent-safe workflow 强调 inspect/edit/verify、release checkpoint 和结构化结果 | `source_inventory.json` 作为第一个可审计 artifact，并接入 `pipeline_manifest.py --require source_inventory` |
+| [`calesthio/OpenMontage`](https://github.com/calesthio/OpenMontage) | pipeline-driven 项目、reference/source 分析和 human approval gate 都落到项目文件 | 本项目先补轻量本地 bootstrap，不引入服务端或生成 provider |
+
+新增/调整能力：新增 [`scripts/project_bootstrap.py`](scripts/project_bootstrap.py)，可从一个或多个素材文件/目录创建 `origin/`、`work/`、`output/`、`verify/`、`edit/`，按 raw/broll/audio/bgm/image/asset/sidecar 分类复制或 hardlink 素材，并输出 `project_bootstrap.v1` 的 `work/source_inventory.json`、`work/source_inventory.md`、`project.md` 和 `next_steps.md`。[`scripts/pipeline_manifest.py`](scripts/pipeline_manifest.py) 新增 `source_inventory` artifact 类别；需要把素材导入作为 analysis gate 时可 `--require source_inventory`。新增 [docs/prompts/61-project-bootstrap.md](docs/prompts/61-project-bootstrap.md)，并更新 README、SKILL 和提示词目录。
+
+使用方式：新项目开工先运行 `python3 scripts/project_bootstrap.py --source ~/Downloads/raw-shoot --project-dir work/day61 --title "Day61 launch edit" --strict`；检查 `work/day61/work/source_inventory.md` 后，对主素材跑 `transcribe.py`，再用 `python3 scripts/pipeline_manifest.py --project-dir work/day61 --target-stage analysis --require source_inventory --strict` 确认项目入口和 transcript gate。默认 `--mode copy` 不改外部原始素材；同盘大素材可用 `--mode hardlink`，失败会回退 copy 并记录 warning。
+
+验证结果：新增 `tests/test_project_bootstrap.py` 6 项，更新 `tests/test_pipeline_manifest.py`；`.venv/bin/python -m pytest tests/test_project_bootstrap.py tests/test_pipeline_manifest.py -q` 通过 `33 passed in 0.35s`；`.venv/bin/python scripts/project_bootstrap.py --help` 和 `.venv/bin/python scripts/pipeline_manifest.py --list-categories | rg source_inventory` smoke 通过；`.venv/bin/python -m compileall scripts tests` 通过；`.venv/bin/python /Users/maxazure/.codex/skills/.system/skill-creator/scripts/quick_validate.py /Users/maxazure/projects/video-editing-skill` 通过 `Skill is valid!`；`git diff --check` 通过；最终全量 `.venv/bin/python -m pytest tests -q` 通过 `453 passed in 4.60s`。
 
 ### 2026-07-05 自动化升级记录（Takes Pack）
 
@@ -1603,7 +1640,7 @@ python3 $SKILL/scripts/review_dashboard.py \
 ## 测试
 
 ```bash
-pytest tests/           # 446 测试，约 5 秒
+pytest tests/           # 453 测试，约 5 秒
 ```
 
 按模块跑：
@@ -1617,6 +1654,7 @@ pytest tests/test_audio_master_report.py -v # 成片响度 / true peak / LRA 门
 pytest tests/test_render_enrich_plan.py -v  # enrich_plan 自动接入渲染
 pytest tests/test_auto_emphasis.py -v      # 问句/数字/转折/结论 emphasis cues
 pytest tests/test_takes_pack.py -v          # 多 take phrase-level 阅读视图
+pytest tests/test_project_bootstrap.py -v   # 项目启动与 source inventory
 pytest tests/test_rough_cut.py -v           # ASR 粗剪：口头禅/重复句 cut list
 pytest tests/test_timeline_view.py -v       # 切点/QA 可视化复盘图
 pytest tests/test_generate_caption.py -v    # 文案合成
@@ -1812,6 +1850,7 @@ pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 g
 | **58** | **[Source Receipts](docs/prompts/58-source-receipts.md)** | **事实 claim 的 URL/截图 proof deck 和发布 gate** |
 | **59** | **[Auto Emphasis](docs/prompts/59-auto-emphasis.md)** | **数字/转折/结论自动落视觉重点** |
 | **60** | **[Takes Pack](docs/prompts/60-takes-pack.md)** | **多 take transcript 压成 phrase-level 阅读视图** |
+| **61** | **[Project Bootstrap](docs/prompts/61-project-bootstrap.md)** | **原始素材目录 → source inventory + project memory** |
 
 完整列表见 [docs/prompts/README.md](docs/prompts/README.md)。
 
@@ -1839,6 +1878,7 @@ pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 g
 ```
 scripts/
 ├── utils.py                    平台/字体/编码器自检
+├── project_bootstrap.py        项目启动 + source inventory             [V3]
 ├── _internal_text_guard.py     内部 token 拦截器
 ├── transcribe.py               Whisper 转写
 ├── takes_pack.py               多 take phrase-level 阅读视图        [V3]

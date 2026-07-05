@@ -1,18 +1,19 @@
 ---
 name: video-editing
-description: "Xiaohongshu/RED-tuned short-form video production workflow. Use when Codex needs to turn raw voice-over, talking-head, tutorial, interview, podcast, long-video, screen recording, B-roll, captions, or generated assets into auditable social-video artifacts for 小红书, 抖音, 微信视频号, TikTok, Reels, or YouTube Shorts. Covers transcription, multi-take phrase packs, external audio sync, transcript cleanup, highlight picking, rough/jump cuts, SRT edit-guide planning, story rewrite, content guard, source receipts, B-roll/enrich plans, gpt-image-2 prompt routing, storyboard and video-generation prompt packs, async generation task logs, media-library recommendations, screen focus, facecam PIP, color grade, edit preflight, render, QA review packets, audio master loudness reports, subtitle sidecars, CapCut subtitle import, multi-platform exports, captions, publish packages, review dashboards, project_resume handoff packets, EDL/FCPXML handoff, and Remotion voiceover animation."
+description: "Xiaohongshu/RED-tuned short-form video production workflow. Use when Codex needs to turn raw voice-over, talking-head, tutorial, interview, podcast, long-video, screen recording, B-roll, captions, or generated assets into auditable social-video artifacts for 小红书, 抖音, 微信视频号, TikTok, Reels, or YouTube Shorts. Covers project bootstrap/source inventory, transcription, multi-take phrase packs, external audio sync, transcript cleanup, highlight picking, rough/jump cuts, SRT edit-guide planning, story rewrite, content guard, source receipts, B-roll/enrich plans, gpt-image-2 prompt routing, storyboard and video-generation prompt packs, async generation task logs, media-library recommendations, screen focus, facecam PIP, color grade, edit preflight, render, QA review packets, audio master loudness reports, subtitle sidecars, CapCut subtitle import, multi-platform exports, captions, publish packages, review dashboards, project_resume handoff packets, EDL/FCPXML/OTIO handoff, and Remotion voiceover animation."
 metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
 ---
 
 # Video Editing Skill — 视频剪辑技能（V3）
 
-适配 **小红书 / 抖音 / 微信视频号** 三大主流平台。一条 **从口播 → 重组故事 → 平台守门 → 自动丰富 → 渲染 → 三平台导出 → 标题文案** 的端到端流水线，按各平台的算法、比例、时长、审核规则调过参——不只是剪辑工具。
+适配 **小红书 / 抖音 / 微信视频号** 三大主流平台。一条 **从素材导入 → 口播 → 重组故事 → 平台守门 → 自动丰富 → 渲染 → 三平台导出 → 标题文案** 的端到端流水线，按各平台的算法、比例、时长、审核规则调过参——不只是剪辑工具。
 
 ## V3 完整流水线（一图看懂）
 
 ```
 口播音频 + 无声素材
    │
+   ├─→ project_bootstrap.py     原始素材目录 → source inventory / project.md
    ├─→ transcribe.py            转写 + 词级时间戳 + 口误标记
    ├─→ takes_pack.py            多 take transcript → phrase-level 阅读视图
    ├─→ audio_sync.py            外录音轨自动对齐 / 替换音轨计划
@@ -63,6 +64,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 
 | 脚本 | 职责 | 关键 CLI |
 |---|---|---|
+| `project_bootstrap.py` | 原始素材目录 → 项目结构 / source inventory / project.md | `--source raw_dir` `--project-dir work/day61` `--mode copy|hardlink` `--strict` |
 | `_internal_text_guard.py` | 拦截内部 token 进画面 | 内部模块，render_final 自动调 |
 | `content_guard.py` | 平台雷区 lint | `--script` `--title` `--caption` `--strict` |
 | `source_receipts.py` | 事实 claim → URL/截图 proof deck、Markdown/HTML 和发布 gate | `--claims source_claims.json` `--html` `--require-primary-source` `--strict` |
@@ -328,6 +330,38 @@ cmake --build build --config Release
 | 无独显 | CPU | N/A | N/A | 任意版本 | int8 (CPU) | faster-whisper (CPU 模式) |
 
 ## Workflow（工作流程）
+
+### Phase 0a: Project Bootstrap（项目启动 / 原始素材导入）
+
+当用户给的是一个原始素材文件夹、下载目录或一组还没整理的素材时，先用 [project_bootstrap.py](./scripts/project_bootstrap.py) 建立稳定项目结构，而不是直接在外部原始路径上剪辑：
+
+```bash
+python3 scripts/project_bootstrap.py \
+  --source ~/Downloads/raw-shoot \
+  --project-dir work/day61 \
+  --title "Day61 launch edit" \
+  --output work/day61/work/source_inventory.json \
+  --markdown work/day61/work/source_inventory.md \
+  --project-note work/day61/project.md \
+  --strict
+```
+
+输出：
+- `origin/raw|broll|audio|bgm|images|assets|sidecars/`：项目内 working copy。
+- `work/source_inventory.json`：`project_bootstrap.v1`，记录外部 `source_path`、项目内 `project_path`、分类、动作和 next actions。
+- `work/source_inventory.md`：给人审的素材清单。
+- `project.md`：跨会话项目记忆。
+- `next_steps.md`：下一步命令清单。
+
+默认 `--mode copy`，同名文件自动加后缀，不覆盖。大素材同盘可用 `--mode hardlink`，失败会回退 copy 并写入 warning。此脚本不转码、不渲染、不上传、不调用 LLM，也不提交任何生成任务。需要把素材导入作为 analysis gate 时，跑：
+
+```bash
+python3 scripts/pipeline_manifest.py \
+  --project-dir work/day61 \
+  --target-stage analysis \
+  --require source_inventory \
+  --strict
+```
 
 ### Phase 0: Media Library Setup（素材库初始化）
 

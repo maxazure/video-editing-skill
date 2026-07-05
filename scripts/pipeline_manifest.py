@@ -43,6 +43,12 @@ class ArtifactRecord:
 
 ARTIFACTS: Sequence[ArtifactDef] = (
     ArtifactDef(
+        "source_inventory",
+        "Source Inventory",
+        ("**/source_inventory.json", "**/*_source_inventory.json"),
+        "Run project_bootstrap.py to create origin/, work/, output/, verify/, source inventory, and project memory.",
+    ),
+    ArtifactDef(
         "transcript",
         "Transcript",
         ("**/transcript.json", "**/*_transcript.json"),

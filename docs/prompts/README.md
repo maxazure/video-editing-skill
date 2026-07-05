@@ -61,6 +61,7 @@
 | 58 | [Source Receipts 事实来源复核](58-source-receipts.md) | 视频 claim → URL/截图 proof deck、Markdown/HTML source deck 和发布 gate |
 | 59 | [Auto Emphasis 口播重点自动落点](59-auto-emphasis.md) | 问句 / 数字 claim / 转折 / 结论 → badge + subtle push-in |
 | 60 | [Takes Pack 多 take 阅读视图](60-takes-pack.md) | 多个 transcript → phrase-level Markdown/JSON，方便跨 take 选段 |
+| 61 | [Project Bootstrap 项目启动与素材导入](61-project-bootstrap.md) | 原始素材目录 → origin/work/output/verify/edit + source inventory + project memory |
 
 ## 快速上手
 
@@ -121,3 +122,4 @@
 | 视频里有事实、数据、新闻或来源截图要复核 | [58-Source Receipts](58-source-receipts.md) |
 | 数字、转折、结论想自动落视觉重点 | [59-Auto Emphasis](59-auto-emphasis.md) |
 | 多个 take 想先压成可读时间码清单 | [60-Takes Pack](60-takes-pack.md) |
+| 刚拿到一批原始素材，想先建项目目录 | [61-Project Bootstrap](61-project-bootstrap.md) |

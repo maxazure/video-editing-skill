@@ -48,6 +48,24 @@ def test_missing_required_artifacts_block_publish_ready(tmp_path):
     assert any("render_final.py" in action for action in manifest["next_actions"])
 
 
+def test_source_inventory_can_be_required_for_analysis(tmp_path):
+    _write(tmp_path / "work" / "source_inventory.json", {
+        "version": "project_bootstrap.v1",
+        "status": "ready",
+        "summary": {"files": 1, "warnings": 0},
+        "files": [{"relative_path": "origin/raw/talk.mp4"}],
+    })
+    _write(tmp_path / "work" / "transcript.json", {"segments": []})
+
+    manifest = build_manifest(str(tmp_path), target_stage="analysis", required=["source_inventory"])
+
+    assert manifest["status"] == "ready"
+    gate = next(g for g in manifest["gates"] if g["category"] == "source_inventory")
+    assert gate["required"] is True
+    assert gate["status"] == "ready"
+    assert gate["artifact_count"] == 1
+
+
 def test_render_qa_fail_blocks_even_when_file_exists(tmp_path):
     _publish_ready_project(tmp_path)
     _write(tmp_path / "output" / "day58_qa.json", {
