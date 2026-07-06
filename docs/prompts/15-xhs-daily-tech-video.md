@@ -33,6 +33,18 @@
      --engine auto --model auto --language zh --word-timestamps --detect-fillers \
      > work/transcript.json
 
+1b. # 可选：先生成多个前三秒 hook 角度，选一个再进入清稿：
+    python3 scripts/hook_variants.py \
+      --transcript work/transcript.json \
+      --topic "<主题描述>" \
+      --persona "BestAI Labs 创始人 / Mac mini M1 / AI + 小公司" \
+      --platform xhs \
+      --output work/hook_variants.json \
+      --markdown work/hook_variants.md \
+      --strict
+    # 打开 work/hook_variants.md，选中的 hook 文本放进下一步 LLM prompt。
+    # 详见 docs/prompts/62-hook-variants.md
+
 2. python3 scripts/rewrite_script.py \
      --transcript work/transcript.json \
      --structure pain_solve \

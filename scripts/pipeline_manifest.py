@@ -67,6 +67,12 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         "Run rewrite_script.py or save a reviewed clean_script.md.",
     ),
     ArtifactDef(
+        "hook_variants",
+        "Hook Variants",
+        ("**/hook_variants.json", "**/*_hook_variants.json"),
+        "Run hook_variants.py after transcription when the opening 3 seconds need multiple testable angles.",
+    ),
+    ArtifactDef(
         "rough_cut",
         "Rough / Jump Cut",
         ("**/rough_cut.json", "**/jump_cut.json", "**/*_cut_list.json"),

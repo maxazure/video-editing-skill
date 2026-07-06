@@ -114,6 +114,9 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    ├─→ rough_cut.py             ASR 粗剪 → 去纯口头禅 / 相邻重复句
    │                            输出可审计 cut list，可选单次 concat 渲染
    │
+   ├─→ hook_variants.py         transcript/clean_script → 8 个前三秒 hook 角度
+   │                            推荐排序 / content guard 风险 / visual cue
+   │
    ├─→ rewrite_script.py        LLM 重组为 5 段式 (hook/pain/turn/value[]/cta)
    │     ↑ 8 hook 模板 + 5 CTA 模板 + 3 故事结构
    │
@@ -209,7 +212,7 @@ cd ~/projects/video-editing-skill
 python3 scripts/utils.py
 
 # 4. 跑一遍测试套件确认 OK
-pytest tests/           # 453 个测试，约 5 秒
+pytest tests/           # 461 个测试，约 5 秒
 ```
 
 每天做一条视频的完整模板：**[docs/prompts/15-xhs-daily-tech-video.md](docs/prompts/15-xhs-daily-tech-video.md)**
@@ -289,6 +292,7 @@ NVIDIA GPU 配置详见本文末尾的 [Linux GPU 配置](#linux-gpu-配置) 段
 - **8 个钩子模板**：反常识、痛点共鸣、数字成绩、悬念问句、身份标签、反差对比、利益承诺、场景代入
 - **5 个 CTA 模板**：按小红书 CES 权重（关注 8 > 评论/分享 4 > 收藏/点赞 1）排序
 - **3 种故事结构**：`pain_solve`（干货）/ `story_reversal`（故事）/ `listicle`（盘点）
+- **Hook Variants**：`hook_variants.py` 可先生成 8 个前三秒开头角度、风险检查、推荐排序和 visual cue，再把选中的 hook 放进清稿提示或 `clean_script.md`
 
 不绑定任何 LLM 提供商——脚本输出 prompt，你喂给 Claude / ChatGPT，把返回 JSON 喂回脚本验证 + 物化为 `clean_script.md`。
 
@@ -884,6 +888,23 @@ python3 scripts/export_otio.py \
 ```
 
 适合把自动粗剪交给 Premiere / Final Cut Pro / DaVinci Resolve 做调色、混音、精剪或协作复核。EDL 更通用，FCPXML 对 FCP / Resolve 更直接，OTIO 更适合使用 OpenTimelineIO adapter 的跨工具流程；复杂字幕、overlay、章节卡和 B-roll 仍以 `render_final.py` / `export_capcut.py` 为准。
+
+### 2026-07-07 自动化升级记录（Hook Variants）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`rishidandu/cutagent`](https://github.com/rishidandu/cutagent) | Hook Lab 一次生成 8 个不同开头角度，并把 hook 视为广告/短视频最重要的前三秒变量 | 新增本地 `hook_variants.py`，为同一 transcript 生成 8 个可审的 hook angle |
+| [`KyaniteLabs/mcp-video`](https://github.com/KyaniteLabs/mcp-video) | 用结构化工具、preflight guardrails 和 release checkpoint 避免 agent 直接猜 FFmpeg/发布参数 | `hook_variants.json` 输出结构化 `summary`、`variants[]`、`risks[]`，并接入 `pipeline_manifest.py --require hook_variants` |
+| [`louisedesadeleer/b-roll-finder`](https://github.com/louisedesadeleer/b-roll-finder) | 强调 talking-head 视频里每个 cutaway/素材决策要贴合具体词、人物、产品或 claim，而不是随机 stock | 每个 hook variant 保留 `source_terms` 和 `visual_cue`，方便把选中的 hook 转成分镜第一镜或 B-roll 任务 |
+| [`digitalsamba/claude-code-video-toolkit`](https://github.com/digitalsamba/claude-code-video-toolkit) | 多会话项目状态、scene/audio/status artifact 帮助 agent 继续视频项目 | 本项目继续保持本地 JSON/Markdown review artifact，不引入服务端状态或发布 API |
+
+新增/调整能力：新增 [`scripts/hook_variants.py`](scripts/hook_variants.py)，可从 `transcript.json`、`clean_script.md`、`--topic` 和 `--persona` 生成 `hook_variants.v1`；内置 `pattern_interrupt`、`pain_question`、`number_map`、`contrast_turn`、`proof_first`、`time_box`、`mistake_fix`、`identity_lens` 8 类前三秒 hook；自动按平台限制长度，调用 `content_guard.scan_text()` 标记导流、极限词、医疗/财富等风险，输出推荐排序、visual cue、pacing、source terms 和 Markdown review 表。新增 [docs/prompts/62-hook-variants.md](docs/prompts/62-hook-variants.md)，更新 daily workflow、SKILL、提示词目录、README 和 `pipeline_manifest.py` artifact 类别。
+
+使用方式：转写后先跑 `python3 scripts/hook_variants.py --transcript work/transcript.json --topic "AI剪辑" --persona "剪辑师" --platform xhs --output work/hook_variants.json --markdown work/hook_variants.md --strict`；打开 `work/hook_variants.md` 选择一个 `hook_XX`，把对应 `hook` 文本放进 `rewrite_script.py --emit-prompt` 生成的 LLM 提示，或直接替换 `clean_script.md` 的 `## Hook` 段。需要把这一步作为 review gate 时用 `python3 scripts/pipeline_manifest.py --project-dir . --target-stage analysis --require hook_variants --strict`。
+
+验证结果：新增 `tests/test_hook_variants.py` 7 项，更新 `tests/test_pipeline_manifest.py`；`.venv/bin/python -m pytest tests/test_hook_variants.py tests/test_pipeline_manifest.py -q` 通过 `35 passed in 0.38s`；`.venv/bin/python scripts/hook_variants.py --help`、`.venv/bin/python scripts/pipeline_manifest.py --list-categories | rg hook_variants` smoke 通过；`.venv/bin/python -m compileall scripts tests` 通过；`.venv/bin/python /Users/maxazure/.codex/skills/.system/skill-creator/scripts/quick_validate.py /Users/maxazure/projects/video-editing-skill` 通过 `Skill is valid!`；`git diff --check` 通过；最终全量 `.venv/bin/python -m pytest tests -q` 通过 `461 passed in 4.61s`。
 
 ### 2026-07-06 自动化升级记录（Project Bootstrap）
 
@@ -1640,7 +1661,7 @@ python3 $SKILL/scripts/review_dashboard.py \
 ## 测试
 
 ```bash
-pytest tests/           # 453 测试，约 5 秒
+pytest tests/           # 461 测试，约 5 秒
 ```
 
 按模块跑：
@@ -1655,6 +1676,7 @@ pytest tests/test_render_enrich_plan.py -v  # enrich_plan 自动接入渲染
 pytest tests/test_auto_emphasis.py -v      # 问句/数字/转折/结论 emphasis cues
 pytest tests/test_takes_pack.py -v          # 多 take phrase-level 阅读视图
 pytest tests/test_project_bootstrap.py -v   # 项目启动与 source inventory
+pytest tests/test_hook_variants.py -v       # 前三秒 hook 批量角度 + 风险检查
 pytest tests/test_rough_cut.py -v           # ASR 粗剪：口头禅/重复句 cut list
 pytest tests/test_timeline_view.py -v       # 切点/QA 可视化复盘图
 pytest tests/test_generate_caption.py -v    # 文案合成
@@ -1851,6 +1873,7 @@ pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 g
 | **59** | **[Auto Emphasis](docs/prompts/59-auto-emphasis.md)** | **数字/转折/结论自动落视觉重点** |
 | **60** | **[Takes Pack](docs/prompts/60-takes-pack.md)** | **多 take transcript 压成 phrase-level 阅读视图** |
 | **61** | **[Project Bootstrap](docs/prompts/61-project-bootstrap.md)** | **原始素材目录 → source inventory + project memory** |
+| **62** | **[Hook Variants](docs/prompts/62-hook-variants.md)** | **同一视频批量生成前三秒 hook 角度** |
 
 完整列表见 [docs/prompts/README.md](docs/prompts/README.md)。
 
@@ -1893,6 +1916,7 @@ scripts/
 ├── content_guard.py            平台雷区 lint                   [V3]
 ├── source_receipts.py          事实来源 proof deck + 发布 gate    [V3]
 ├── rewrite_script.py           Story Engine                    [V3]
+├── hook_variants.py            前三秒 hook 批量角度 + 风险检查     [V3]
 ├── auto_broll.py               B-roll 调度                      [V3]
 ├── auto_chapter_cards.py       章节卡渲染                       [V3]
 ├── beat_sync.py                BGM 卡点                         [V3]

@@ -1,6 +1,6 @@
 ---
 name: video-editing
-description: "Xiaohongshu/RED-tuned short-form video production workflow. Use when Codex needs to turn raw voice-over, talking-head, tutorial, interview, podcast, long-video, screen recording, B-roll, captions, or generated assets into auditable social-video artifacts for 小红书, 抖音, 微信视频号, TikTok, Reels, or YouTube Shorts. Covers project bootstrap/source inventory, transcription, multi-take phrase packs, external audio sync, transcript cleanup, highlight picking, rough/jump cuts, SRT edit-guide planning, story rewrite, content guard, source receipts, B-roll/enrich plans, gpt-image-2 prompt routing, storyboard and video-generation prompt packs, async generation task logs, media-library recommendations, screen focus, facecam PIP, color grade, edit preflight, render, QA review packets, audio master loudness reports, subtitle sidecars, CapCut subtitle import, multi-platform exports, captions, publish packages, review dashboards, project_resume handoff packets, EDL/FCPXML/OTIO handoff, and Remotion voiceover animation."
+description: "Xiaohongshu/RED-tuned short-form video production workflow. Use when Codex needs to turn raw voice-over, talking-head, tutorial, interview, podcast, long-video, screen recording, B-roll, captions, or generated assets into auditable social-video artifacts for 小红书, 抖音, 微信视频号, TikTok, Reels, or YouTube Shorts. Covers project bootstrap/source inventory, transcription, multi-take phrase packs, external audio sync, transcript cleanup, highlight picking, rough/jump cuts, SRT edit planning, opening-hook variants, story rewrite, content guard, source receipts, B-roll/enrich plans, gpt-image-2 routing, storyboard/video-generation prompt packs, async generation task logs, media-library recommendations, screen focus, facecam PIP, color grade, edit preflight, render, QA packets, audio master reports, subtitle sidecars, CapCut subtitle import, multi-platform exports, captions, publish packages, review dashboards, project_resume packets, EDL/FCPXML/OTIO handoff, and Remotion voiceover animation."
 metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
 ---
 
@@ -20,6 +20,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ video_understanding.py   抽样帧 + 可选 YOLO 检测 / tracks / scene_tags
    ├─→ highlight_picker.py      长视频精华候选 / brief-query 定向找片段
    ├─→ rough_cut.py             ASR 粗剪：去纯口头禅 / 相邻重复句
+   ├─→ hook_variants.py         前三秒 hook 批量角度 / 推荐排序 / 风险检查
    ├─→ rewrite_script.py        LLM 重组 5 段式（hook/pain/turn/value/cta）
    ├─→ content_guard.py         80+ 条平台雷区 lint
    ├─→ source_receipts.py       事实 claim → URL/截图 source deck + publish gate
@@ -73,6 +74,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `rough_cut.py` | transcript 粗剪：去口头禅/重复句 | `--transcript` `--cut-list` / `--input` `--output` |
 | `video_understanding.py` | 抽样帧 + 可选 YOLO 物体检测 + 轻量 tracklets | `--detector yolo` `--scene-boundaries` `--external-detections` `--strict` |
 | `highlight_picker.py` | 长视频精华候选 + brief/query 定向找片段 | `--transcript` `--brief`/`--query` `--scene-boundaries` `--render-config` |
+| `hook_variants.py` | transcript/clean_script → 8 个前三秒 hook 角度、风险检查和推荐排序 | `--transcript` `--topic` `--platform` `--output` `--markdown` `--strict` |
 | `rewrite_script.py` | LLM 5 段式重组 + 验证 | `--transcript` `--structure` `--hook-template` `--emit-prompt` / `--llm-output` |
 | `auto_broll.py` | B-roll 调度 | `--transcript` `--assets` `--max-single-shot` |
 | `media_library.py` | 本地素材库索引 + B-roll 候选推荐 + 素材来源登记 | `init` `scan` `search` `recommend --category broll --json` `import` `annotate` |

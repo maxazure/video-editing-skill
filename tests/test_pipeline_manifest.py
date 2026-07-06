@@ -66,6 +66,23 @@ def test_source_inventory_can_be_required_for_analysis(tmp_path):
     assert gate["artifact_count"] == 1
 
 
+def test_hook_variants_can_be_required_for_review(tmp_path):
+    _write(tmp_path / "work" / "transcript.json", {"segments": []})
+    _write(tmp_path / "work" / "hook_variants.json", {
+        "version": "hook_variants.v1",
+        "summary": {"variants": 2, "usable": 2, "blocking": 0},
+        "variants": [{"id": "hook_01", "hook": "别再卡开头了"}],
+    })
+
+    manifest = build_manifest(str(tmp_path), target_stage="analysis", required=["hook_variants"])
+
+    assert manifest["status"] == "ready"
+    gate = next(g for g in manifest["gates"] if g["category"] == "hook_variants")
+    assert gate["required"] is True
+    assert gate["status"] == "ready"
+    assert gate["artifact_count"] == 1
+
+
 def test_render_qa_fail_blocks_even_when_file_exists(tmp_path):
     _publish_ready_project(tmp_path)
     _write(tmp_path / "output" / "day58_qa.json", {
