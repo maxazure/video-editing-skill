@@ -19,6 +19,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ audio_sync.py            外录音轨自动对齐 / 替换音轨计划
    ├─→ video_understanding.py   抽样帧 + 可选 YOLO 检测 / tracks / scene_tags
    ├─→ highlight_picker.py      长视频精华候选 / brief-query 定向找片段
+   ├─→ shorts_batch.py          精华候选 → per-short render_config / render + QA job sheet
    ├─→ rough_cut.py             ASR 粗剪：去纯口头禅 / 相邻重复句
    ├─→ hook_variants.py         前三秒 hook 批量角度 / 推荐排序 / 风险检查
    ├─→ rewrite_script.py        LLM 重组 5 段式（hook/pain/turn/value/cta）
@@ -74,6 +75,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `rough_cut.py` | transcript 粗剪：去口头禅/重复句 | `--transcript` `--cut-list` / `--input` `--output` |
 | `video_understanding.py` | 抽样帧 + 可选 YOLO 物体检测 + 轻量 tracklets | `--detector yolo` `--scene-boundaries` `--external-detections` `--strict` |
 | `highlight_picker.py` | 长视频精华候选 + brief/query 定向找片段 | `--transcript` `--brief`/`--query` `--scene-boundaries` `--render-config` |
+| `shorts_batch.py` | highlight_candidates → 多条短视频 render_config / render + QA job sheet | `--highlights` `--video` `--render-config-dir` `--output-dir` `--strict` |
 | `hook_variants.py` | transcript/clean_script → 8 个前三秒 hook 角度、风险检查和推荐排序 | `--transcript` `--topic` `--platform` `--output` `--markdown` `--strict` |
 | `rewrite_script.py` | LLM 5 段式重组 + 验证 | `--transcript` `--structure` `--hook-template` `--emit-prompt` / `--llm-output` |
 | `auto_broll.py` | B-roll 调度 | `--transcript` `--assets` `--max-single-shot` |

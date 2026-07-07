@@ -110,6 +110,8 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    │
    ├─→ highlight_picker.py      长视频精华候选 / brief-query 定向找片段
    │                            输出 score / hook / reason / render_config
+   ├─→ shorts_batch.py          精华候选 → 多条短视频渲染 job sheet
+   │                            per-short render_config / render command / QA command
    │
    ├─→ rough_cut.py             ASR 粗剪 → 去纯口头禅 / 相邻重复句
    │                            输出可审计 cut list，可选单次 concat 渲染
@@ -212,7 +214,7 @@ cd ~/projects/video-editing-skill
 python3 scripts/utils.py
 
 # 4. 跑一遍测试套件确认 OK
-pytest tests/           # 461 个测试，约 5 秒
+pytest tests/           # 468 个测试，约 5 秒
 ```
 
 每天做一条视频的完整模板：**[docs/prompts/15-xhs-daily-tech-video.md](docs/prompts/15-xhs-daily-tech-video.md)**
@@ -390,6 +392,28 @@ python3 scripts/highlight_picker.py \
 ```
 
 `--brief` 会把自然语言意图拆成英文关键词和中文短语片段，写入每条 candidate 的 `brief_match.score` 与 `matched_terms`，但仍保留原来的自包含结尾、弱 hook、时长偏离等 warning。适合“找产品 reveal / 用户强反应 / 教程关键步骤 / 失败教训”这类定向剪片。
+
+### 🎞️ Shorts Batch — 多条精华短视频渲染 job sheet
+[`scripts/shorts_batch.py`](scripts/shorts_batch.py) · [详细文档](docs/prompts/63-shorts-batch.md)
+
+借鉴 AI shorts 类项目“长视频一次上传，产出多条可追踪短视频”的做法，但保持本项目本地优先：读取 `highlight_picker.py` 的 `highlight_candidates.v1`，为每条 selected highlight 写一份独立 `render_config`，并输出 `shorts_batch.v1` JSON、Markdown job sheet、`render_final.py` 命令和 `render_qa.py` 命令。脚本不渲染、不上传、不调用 LLM。
+
+常用：
+```bash
+python3 scripts/shorts_batch.py \
+  --highlights work/highlight_candidates.json \
+  --video origin/long-talk.mp4 \
+  --output work/shorts_batch.json \
+  --markdown work/shorts_batch.md \
+  --render-config-dir work/shorts_render_configs \
+  --output-dir output/shorts \
+  --qa-dir verify/shorts \
+  --basename day63 \
+  --platform douyin \
+  --strict
+```
+
+输出后先打开 `work/shorts_batch.md` 看每条 job 的 hook、ending 和 warnings；确认后逐条运行表内 `render_shell`，再运行 `qa_shell` 生成 QA JSON/复核包。`pipeline_manifest.py` 会发现 `shorts_batch.json`；当 batch 自身有 `summary.blocking > 0`（例如源视频缺失）时会作为可见 blocker。
 
 ### 🎨 Color Grade — 可审计调色计划
 [`scripts/color_grade.py`](scripts/color_grade.py) · [详细文档](docs/prompts/48-color-grade.md)
@@ -888,6 +912,23 @@ python3 scripts/export_otio.py \
 ```
 
 适合把自动粗剪交给 Premiere / Final Cut Pro / DaVinci Resolve 做调色、混音、精剪或协作复核。EDL 更通用，FCPXML 对 FCP / Resolve 更直接，OTIO 更适合使用 OpenTimelineIO adapter 的跨工具流程；复杂字幕、overlay、章节卡和 B-roll 仍以 `render_final.py` / `export_capcut.py` 为准。
+
+### 2026-07-08 自动化升级记录（Shorts Batch Planner）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`backblaze-b2-samples/ai-shorts-generator`](https://github.com/backblaze-b2-samples/ai-shorts-generator) | 长视频 → 多条 9:16 shorts，并把每个 source/transcript/caption/rendered clip 持久化成可下载结果 | 新增本地 `shorts_batch.py`，把 selected highlights 变成多条可追踪 render job |
+| [`AKMessi/vex`](https://github.com/AKMessi/vex) | 候选片段有质量评分、topic diversity、pre-render validation 和 creative-run history | batch job 保留 highlight score、warnings、segment ids、输出路径和 QA 命令 |
+| [`KyaniteLabs/mcp-video`](https://github.com/KyaniteLabs/mcp-video) | 结构化工具、preflight guardrails、release checkpoint，避免 agent 直接猜 FFmpeg 参数 | 本项目不引入 MCP server；输出 `render_shell` + `qa_shell`，并让 `pipeline_manifest.py` 发现 `shorts_batch` gate |
+| [`calesthio/OpenMontage`](https://github.com/calesthio/OpenMontage) | pipeline-driven 视频生产强调多阶段 artifact 和质量 enforcement | 保持 JSON/Markdown artifact-first，不新增服务端 queue 或 provider 依赖 |
+
+新增/调整能力：新增 [`scripts/shorts_batch.py`](scripts/shorts_batch.py)，读取 `highlight_picker.py` 产出的 `highlight_candidates.v1`，为每个 `selected[]` 生成独立 `render_config`、计划输出 MP4、`render_final.py` 命令、`render_qa.py` 命令和 `shorts_batch.v1` JSON/Markdown job sheet。新增 [docs/prompts/63-shorts-batch.md](docs/prompts/63-shorts-batch.md)，更新提示词目录、SKILL、README 和 `pipeline_manifest.py` artifact 类别；`shorts_batch.json` 默认不阻塞，但当自身 `summary.blocking > 0`（如源视频缺失）时会作为 publish/render gate blocker。
+
+使用方式：先运行 `highlight_picker.py` 选出多个精华候选，再运行 `python3 scripts/shorts_batch.py --highlights work/highlight_candidates.json --video origin/long-talk.mp4 --output work/shorts_batch.json --markdown work/shorts_batch.md --render-config-dir work/shorts_render_configs --output-dir output/shorts --qa-dir verify/shorts --basename day63 --platform douyin --strict`；打开 `work/shorts_batch.md` 确认每条 job 后，逐条执行表内 `render_shell` 和 `qa_shell`。
+
+验证结果：新增 `tests/test_shorts_batch.py` 5 项，更新 `tests/test_pipeline_manifest.py`；`.venv/bin/python -m pytest tests/test_shorts_batch.py tests/test_pipeline_manifest.py -q` 通过 `35 passed in 0.40s`；`.venv/bin/python scripts/shorts_batch.py --help`、`.venv/bin/python scripts/pipeline_manifest.py --list-categories | rg shorts_batch` smoke 通过；`.venv/bin/python -m compileall scripts tests` 通过；`.venv/bin/python /Users/maxazure/.codex/skills/.system/skill-creator/scripts/quick_validate.py /Users/maxazure/projects/video-editing-skill` 通过 `Skill is valid!`；`git diff --check` 通过；最终全量 `.venv/bin/python -m pytest tests -q` 通过 `468 passed in 5.25s`。
 
 ### 2026-07-07 自动化升级记录（Hook Variants）
 

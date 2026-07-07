@@ -181,6 +181,39 @@ def test_takes_pack_artifact_is_discovered_without_blocking(tmp_path):
     assert gate["blocks_when_present"] is False
 
 
+def test_shorts_batch_artifact_is_discovered_without_blocking_when_ready(tmp_path):
+    _publish_ready_project(tmp_path)
+    _write(tmp_path / "work" / "shorts_batch.json", {
+        "version": "shorts_batch.v1",
+        "status": "ready",
+        "summary": {"jobs": 2, "planned": 2, "blocking": 0},
+    })
+
+    manifest = build_manifest(str(tmp_path), target_stage="publish_ready")
+
+    assert manifest["status"] == "ready"
+    gate = next(g for g in manifest["gates"] if g["category"] == "shorts_batch")
+    assert gate["status"] == "ready"
+    assert gate["artifact_count"] == 1
+    assert gate["blocks_when_present"] is True
+
+
+def test_optional_shorts_batch_blocks_when_source_missing(tmp_path):
+    _publish_ready_project(tmp_path)
+    _write(tmp_path / "work" / "shorts_batch.json", {
+        "version": "shorts_batch.v1",
+        "status": "blocked",
+        "summary": {"jobs": 2, "planned": 0, "blocking": 2},
+    })
+
+    manifest = build_manifest(str(tmp_path), target_stage="publish_ready")
+
+    assert manifest["status"] == "blocked"
+    assert "shorts_batch" in manifest["blocked_gates"]
+    gate = next(g for g in manifest["gates"] if g["category"] == "shorts_batch")
+    assert "2 blocking item(s) in summary.blocking" in gate["notes"]
+
+
 def test_emphasis_plan_is_discovered_as_enrich_plan(tmp_path):
     _publish_ready_project(tmp_path)
     _write(tmp_path / "work" / "emphasis_plan.json", {

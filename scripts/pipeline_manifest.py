@@ -97,6 +97,13 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         "Run highlight_picker.py for long-to-short candidate review.",
     ),
     ArtifactDef(
+        "shorts_batch",
+        "Shorts Batch",
+        ("**/shorts_batch.json", "**/*_shorts_batch.json"),
+        "Run shorts_batch.py after highlight_picker.py to create per-short render jobs and QA commands.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "enrich_plan",
         "Enrich Plan",
         (
@@ -456,6 +463,7 @@ def evaluate_category(definition: ArtifactDef, artifacts: Sequence[ArtifactRecor
             "audio_master_report",
             "publish_package",
             "edit_preflight",
+            "shorts_batch",
         }:
             blocking = _int_at(data, "summary", "blocking")
             if blocking:
