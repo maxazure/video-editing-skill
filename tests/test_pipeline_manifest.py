@@ -66,6 +66,40 @@ def test_source_inventory_can_be_required_for_analysis(tmp_path):
     assert gate["artifact_count"] == 1
 
 
+def test_edit_brief_plan_can_be_required_for_analysis(tmp_path):
+    _write(tmp_path / "work" / "transcript.json", {"segments": []})
+    _write(tmp_path / "work" / "edit_brief_plan.json", {
+        "version": "edit_brief_plan.v1",
+        "status": "ready",
+        "summary": {"steps": 6, "blocking": 0},
+    })
+
+    manifest = build_manifest(str(tmp_path), target_stage="analysis", required=["edit_brief_plan"])
+
+    assert manifest["status"] == "ready"
+    gate = next(g for g in manifest["gates"] if g["category"] == "edit_brief_plan")
+    assert gate["required"] is True
+    assert gate["status"] == "ready"
+    assert gate["artifact_count"] == 1
+
+
+def test_optional_edit_brief_plan_blocks_when_brief_unusable(tmp_path):
+    _publish_ready_project(tmp_path)
+    _write(tmp_path / "work" / "edit_brief_plan.json", {
+        "version": "edit_brief_plan.v1",
+        "status": "blocked",
+        "summary": {"steps": 0, "blocking": 1},
+        "blockers": ["brief is empty"],
+    })
+
+    manifest = build_manifest(str(tmp_path), target_stage="publish_ready")
+
+    assert manifest["status"] == "blocked"
+    assert "edit_brief_plan" in manifest["blocked_gates"]
+    gate = next(g for g in manifest["gates"] if g["category"] == "edit_brief_plan")
+    assert "1 blocking item(s) in summary.blocking" in gate["notes"]
+
+
 def test_hook_variants_can_be_required_for_review(tmp_path):
     _write(tmp_path / "work" / "transcript.json", {"segments": []})
     _write(tmp_path / "work" / "hook_variants.json", {

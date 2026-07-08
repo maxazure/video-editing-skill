@@ -49,6 +49,13 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         "Run project_bootstrap.py to create origin/, work/, output/, verify/, source inventory, and project memory.",
     ),
     ArtifactDef(
+        "edit_brief_plan",
+        "Edit Brief Plan",
+        ("**/edit_brief_plan.json", "**/*_edit_brief_plan.json"),
+        "Run edit_brief_plan.py to turn the natural-language edit request into an ordered local runbook.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "transcript",
         "Transcript",
         ("**/transcript.json", "**/*_transcript.json"),
@@ -464,6 +471,7 @@ def evaluate_category(definition: ArtifactDef, artifacts: Sequence[ArtifactRecor
             "publish_package",
             "edit_preflight",
             "shorts_batch",
+            "edit_brief_plan",
         }:
             blocking = _int_at(data, "summary", "blocking")
             if blocking:

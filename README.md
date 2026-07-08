@@ -98,6 +98,7 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
 口播音频 + 无声素材
    │
    ├─→ project_bootstrap.py     原始素材目录 → origin/work/output/verify/edit + source inventory
+   ├─→ edit_brief_plan.py       用户一句话需求 → 本地脚本 runbook / commands / gates
    ├─→ transcribe.py            转写 + 词级时间戳 + 口误标记
    │                            (mlx-whisper / faster-whisper / openai-whisper)
    ├─→ takes_pack.py            多 take transcript → phrase-level 阅读视图
@@ -214,7 +215,7 @@ cd ~/projects/video-editing-skill
 python3 scripts/utils.py
 
 # 4. 跑一遍测试套件确认 OK
-pytest tests/           # 468 个测试，约 5 秒
+pytest tests/           # 476 个测试，约 5 秒
 ```
 
 每天做一条视频的完整模板：**[docs/prompts/15-xhs-daily-tech-video.md](docs/prompts/15-xhs-daily-tech-video.md)**
@@ -330,6 +331,23 @@ python3 scripts/project_bootstrap.py \
 ```
 
 默认 `--mode copy`，会按路径和扩展名把素材归入 `origin/raw`、`origin/broll`、`origin/audio`、`origin/bgm`、`origin/images`、`origin/assets` 或 `origin/sidecars`；同名文件自动加后缀，不覆盖已有文件。`pipeline_manifest.py` 会发现 `source_inventory.json`，需要把素材导入作为 analysis gate 时可加 `--require source_inventory`。脚本不转码、不渲染、不上传，也不调用 LLM 或生成服务。
+
+### 🧭 Edit Brief Plan — 自然语言剪辑需求路由
+[`scripts/edit_brief_plan.py`](scripts/edit_brief_plan.py) · [详细文档](docs/prompts/64-edit-brief-plan.md)
+
+借鉴 GitHub 上视频 skill / MCP 项目的“用户自然语言 → agent 选工具、排顺序、留 checkpoint”的优点，但保持本项目轻量：只做本地确定性路由，输出 `edit_brief_plan.v1` JSON 和 Markdown runbook，不调用 LLM、不渲染、不上传、不提交付费生成任务。
+
+常用：
+```bash
+python3 scripts/edit_brief_plan.py \
+  --brief "把 origin/interview.mp4 剪成三条抖音短视频，去停顿，加B-roll、BGM和字幕，最后生成发布包" \
+  --project-dir . \
+  --output work/edit_brief_plan.json \
+  --markdown work/edit_brief_plan.md \
+  --strict
+```
+
+它会识别 `origin/interview.mp4` 这类源素材路径、目标平台、长视频拆条、批量短视频、字幕、B-roll、BGM、去停顿、生成素材、PIP、调色、QA、发布包等信号，并把它们映射到已有脚本，例如 `highlight_picker.py`、`shorts_batch.py`、`jump_cut.py`、`auto_enrich.py`、`render_final.py`、`render_qa.py` 和 `publish_package.py`。`pipeline_manifest.py` 会发现 `edit_brief_plan.json`；当 `summary.blocking > 0`（例如 brief 为空或显式 source 缺失）时会作为 blocker，也可以用 `--require edit_brief_plan` 把需求路由作为 analysis gate。
 
 ### 👁️ Video Understanding — 抽样帧 + 可选 YOLO 检测
 [`scripts/video_understanding.py`](scripts/video_understanding.py) · [详细文档](docs/prompts/47-video-understanding.md)
@@ -912,6 +930,24 @@ python3 scripts/export_otio.py \
 ```
 
 适合把自动粗剪交给 Premiere / Final Cut Pro / DaVinci Resolve 做调色、混音、精剪或协作复核。EDL 更通用，FCPXML 对 FCP / Resolve 更直接，OTIO 更适合使用 OpenTimelineIO adapter 的跨工具流程；复杂字幕、overlay、章节卡和 B-roll 仍以 `render_final.py` / `export_capcut.py` 为准。
+
+### 2026-07-09 自动化升级记录（Edit Brief Plan Router）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`6missedcalls/video-editing-skill`](https://github.com/6missedcalls/video-editing-skill) | 用户用自然语言说 trim / jump cut / captions / overlay / speed，agent 读取 skill 后选择对应脚本 | 新增本地 `edit_brief_plan.py`，把一句话需求映射成本项目脚本 runbook |
+| [`FireRedTeam/FireRed-OpenStoryline`](https://github.com/FireRedTeam/FireRed-OpenStoryline) | intention-driven directing、LLM planning、precise tool orchestration 和 human-in-the-loop | 本项目不新增 agent 框架；只输出可复核 JSON/Markdown、命令和 gate |
+| [`KyaniteLabs/mcp-video`](https://github.com/KyaniteLabs/mcp-video) | typed operations、structured results、preflight guardrails、quality checkpoints，避免 agent 猜 FFmpeg 参数 | router 输出 `steps[]`、`gates[]`、`summary.blocking`，并接入 `pipeline_manifest.py` |
+| [`hiteshK03/video-production-skill`](https://github.com/hiteshK03/video-production-skill) | skill 文件教 agent 选工具、传参数、排调用顺序和跨工具链编排 | 复用已有本地脚本，不引入 Resolve/MCP 依赖；只补“选哪个脚本、先后顺序”入口 |
+| [`htekdev/vidpipe`](https://github.com/htekdev/vidpipe) | 从录制内容自动走 shorts、captions、social posts、brand voice 等发布链路 | router 可把发布、标题、字幕、BGM、短视频批量和 QA 一次排入本项目 artifact-first 流程 |
+
+新增/调整能力：新增 [`scripts/edit_brief_plan.py`](scripts/edit_brief_plan.py)，可从 `--brief` 或 `--brief-file` 读取自然语言剪辑需求，自动识别源素材路径、目标平台、长视频拆条、批量短视频、字幕、B-roll、生成素材、BGM/SFX、去停顿、PIP、录屏聚焦、调色、QA、NLE handoff 和发布包等信号，输出 `edit_brief_plan.v1` JSON 与 Markdown runbook。新增 [docs/prompts/64-edit-brief-plan.md](docs/prompts/64-edit-brief-plan.md)，更新 daily workflow、提示词目录、SKILL、README 和 `pipeline_manifest.py` artifact 类别；`edit_brief_plan.json` 默认不阻塞，但当自身 `summary.blocking > 0`（如 brief 为空或显式 source 缺失）时会作为 gate blocker。
+
+使用方式：先运行 `python3 scripts/edit_brief_plan.py --brief "把 origin/interview.mp4 剪成三条抖音短视频，去停顿，加B-roll、BGM和字幕，最后生成发布包" --project-dir . --output work/edit_brief_plan.json --markdown work/edit_brief_plan.md --strict`；打开 `work/edit_brief_plan.md` 检查每一步命令和产物，再按需要执行 runbook。需要把需求路由作为显式 gate 时用 `python3 scripts/pipeline_manifest.py --project-dir . --target-stage analysis --require edit_brief_plan --strict`。
+
+验证结果：新增 `tests/test_edit_brief_plan.py` 6 项，更新 `tests/test_pipeline_manifest.py` 2 项；`.venv/bin/python -m pytest tests/test_edit_brief_plan.py tests/test_pipeline_manifest.py -q` 通过 `38 passed in 0.38s`；`.venv/bin/python scripts/edit_brief_plan.py --help`、`.venv/bin/python scripts/pipeline_manifest.py --list-categories | rg edit_brief_plan` smoke 通过；`.venv/bin/python -m compileall scripts tests` 通过；`.venv/bin/python /Users/maxazure/.codex/skills/.system/skill-creator/scripts/quick_validate.py /Users/maxazure/projects/video-editing-skill` 通过 `Skill is valid!`；`git diff --check` 通过；最终全量 `.venv/bin/python -m pytest tests -q` 通过 `476 passed in 4.67s`。
 
 ### 2026-07-08 自动化升级记录（Shorts Batch Planner）
 
@@ -1702,7 +1738,7 @@ python3 $SKILL/scripts/review_dashboard.py \
 ## 测试
 
 ```bash
-pytest tests/           # 461 测试，约 5 秒
+pytest tests/           # 476 测试，约 5 秒
 ```
 
 按模块跑：
@@ -1717,6 +1753,7 @@ pytest tests/test_render_enrich_plan.py -v  # enrich_plan 自动接入渲染
 pytest tests/test_auto_emphasis.py -v      # 问句/数字/转折/结论 emphasis cues
 pytest tests/test_takes_pack.py -v          # 多 take phrase-level 阅读视图
 pytest tests/test_project_bootstrap.py -v   # 项目启动与 source inventory
+pytest tests/test_edit_brief_plan.py -v     # 自然语言剪辑需求 → 本地 runbook
 pytest tests/test_hook_variants.py -v       # 前三秒 hook 批量角度 + 风险检查
 pytest tests/test_rough_cut.py -v           # ASR 粗剪：口头禅/重复句 cut list
 pytest tests/test_timeline_view.py -v       # 切点/QA 可视化复盘图
@@ -1943,6 +1980,7 @@ pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 g
 scripts/
 ├── utils.py                    平台/字体/编码器自检
 ├── project_bootstrap.py        项目启动 + source inventory             [V3]
+├── edit_brief_plan.py          自然语言剪辑需求 → 本地 runbook          [V3]
 ├── _internal_text_guard.py     内部 token 拦截器
 ├── transcribe.py               Whisper 转写
 ├── takes_pack.py               多 take phrase-level 阅读视图        [V3]

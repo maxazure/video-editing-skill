@@ -29,6 +29,15 @@
 
 跑这套：
 
+0. # 可选：先把这次自然语言需求固化成本地 runbook：
+   python3 scripts/edit_brief_plan.py \
+     --brief "day<NN> 小红书短视频，主题 <主题描述>，口播 + 无声素材，重组故事、自动丰富、渲染、多平台导出和发布文案" \
+     --project-dir . \
+     --output work/edit_brief_plan.json \
+     --markdown work/edit_brief_plan.md \
+     --platform xhs
+   # 详见 docs/prompts/64-edit-brief-plan.md
+
 1. python3 scripts/transcribe.py origin/<voice>.mp3 \
      --engine auto --model auto --language zh --word-timestamps --detect-fillers \
      > work/transcript.json

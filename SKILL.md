@@ -1,6 +1,6 @@
 ---
 name: video-editing
-description: "Xiaohongshu/RED-tuned short-form video production workflow. Use when Codex needs to turn raw voice-over, talking-head, tutorial, interview, podcast, long-video, screen recording, B-roll, captions, or generated assets into auditable social-video artifacts for 小红书, 抖音, 微信视频号, TikTok, Reels, or YouTube Shorts. Covers project bootstrap/source inventory, transcription, multi-take phrase packs, external audio sync, transcript cleanup, highlight picking, rough/jump cuts, SRT edit planning, opening-hook variants, story rewrite, content guard, source receipts, B-roll/enrich plans, gpt-image-2 routing, storyboard/video-generation prompt packs, async generation task logs, media-library recommendations, screen focus, facecam PIP, color grade, edit preflight, render, QA packets, audio master reports, subtitle sidecars, CapCut subtitle import, multi-platform exports, captions, publish packages, review dashboards, project_resume packets, EDL/FCPXML/OTIO handoff, and Remotion voiceover animation."
+description: "Xiaohongshu/RED-tuned short-form video workflow for raw voice-over, talking-head, tutorials, interviews, podcasts, long videos, screen recordings, B-roll, captions, and generated assets. Covers natural-language edit brief routing, project bootstrap, transcription, multi-take packs, audio sync, cleanup, highlights/shorts, hook/story rewrite, content/source gates, B-roll/enrich/gpt-image-2/video-generation planning, async generation logs, media recommendations, screen focus, PIP, color grade, preflight/render/QA/audio master, subtitles, CapCut import, multi-platform exports, captions, publish packages, dashboards, resume packets, EDL/FCPXML/OTIO, and Remotion animation."
 metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
 ---
 
@@ -14,6 +14,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 口播音频 + 无声素材
    │
    ├─→ project_bootstrap.py     原始素材目录 → source inventory / project.md
+   ├─→ edit_brief_plan.py       用户一句话需求 → 本地脚本 runbook / gates
    ├─→ transcribe.py            转写 + 词级时间戳 + 口误标记
    ├─→ takes_pack.py            多 take transcript → phrase-level 阅读视图
    ├─→ audio_sync.py            外录音轨自动对齐 / 替换音轨计划
@@ -67,6 +68,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | 脚本 | 职责 | 关键 CLI |
 |---|---|---|
 | `project_bootstrap.py` | 原始素材目录 → 项目结构 / source inventory / project.md | `--source raw_dir` `--project-dir work/day61` `--mode copy|hardlink` `--strict` |
+| `edit_brief_plan.py` | 自然语言剪辑需求 → 本地脚本 runbook / 命令 / manifest gate | `--brief` `--brief-file` `--source-media` `--platform` `--markdown` `--strict` |
 | `_internal_text_guard.py` | 拦截内部 token 进画面 | 内部模块，render_final 自动调 |
 | `content_guard.py` | 平台雷区 lint | `--script` `--title` `--caption` `--strict` |
 | `source_receipts.py` | 事实 claim → URL/截图 proof deck、Markdown/HTML 和发布 gate | `--claims source_claims.json` `--html` `--require-primary-source` `--strict` |
