@@ -101,8 +101,8 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    ├─→ edit_brief_plan.py       用户一句话需求 → 本地脚本 runbook / commands / gates
    ├─→ transcribe.py            转写 + 词级时间戳 + 口误标记
    │                            (mlx-whisper / faster-whisper / openai-whisper)
-   ├─→ takes_pack.py            多 take transcript → phrase-level 阅读视图
-   │                            takes_packed.md / takes_pack.json
+   ├─→ takes_pack.py            多 take / Scribe transcript → phrase-level 阅读视图
+   │                            speaker / audio_event / takes_packed.md / takes_pack.json
    ├─→ audio_sync.py            外录音轨自动对齐 / 替换音轨计划
    │                            scratch audio + lav/recorder track → offset + gate
    │
@@ -215,7 +215,7 @@ cd ~/projects/video-editing-skill
 python3 scripts/utils.py
 
 # 4. 跑一遍测试套件确认 OK
-pytest tests/           # 476 个测试，约 5 秒
+pytest tests/           # 477 个测试，约 6 秒
 ```
 
 每天做一条视频的完整模板：**[docs/prompts/15-xhs-daily-tech-video.md](docs/prompts/15-xhs-daily-tech-video.md)**
@@ -375,7 +375,7 @@ python3 scripts/video_understanding.py origin/talk.mp4 \
 ### 🧩 Takes Pack — 多 take phrase-level 阅读视图
 [`scripts/takes_pack.py`](scripts/takes_pack.py) · [详细文档](docs/prompts/60-takes-pack.md)
 
-借鉴 `browser-use/video-use` 把 phrase-level transcript 作为主要阅读视图的做法，但保持本项目 artifact-first：只读本地 `transcript.json`，输出 `takes_packed.md` 和可选 `takes_pack.json`，不转写、不渲染、不调用 LLM。
+借鉴 `browser-use/video-use` 把 phrase-level transcript 作为主要阅读视图、并保留音频事件的做法，但保持本项目 artifact-first：只读本地 `transcript.json`，输出 `takes_packed.md` 和可选 `takes_pack.json`，不转写、不渲染、不调用 LLM。除现有 `segments[].words[]` 外，也可直接读取 ElevenLabs Scribe 风格的顶层 `words[]`；`speaker_id` 会参与分段，`audio_event` 会作为带时间码的笑声、掌声、叹气或音乐剪辑节拍保留。
 
 常用：
 ```bash
@@ -387,7 +387,7 @@ python3 scripts/takes_pack.py \
   --break-gap 0.5
 ```
 
-`takes_packed.md` 按 source 分组列出 `take1-003` 这类 phrase id、源时间码、speaker、segment ids 和压缩文本，适合先比较多个 take 的表达质量，再把确认后的 time range 交给 `highlight_picker.py`、`srt_edit_plan.py`、`render_config.json` 或 EDL/FCPXML/OTIO。`pipeline_manifest.py` 会发现 `takes_pack.json`，但默认不把它作为 blocker；需要强制多 take review 时可加 `--require takes_pack`。
+`takes_packed.md` 按 source 分组列出 `take1-003` 这类 phrase id、源时间码、speaker、segment ids、audio events 和压缩文本，适合先比较多个 take 的表达质量，也能避免在笑点、掌声或反应声中间误切。`takes_pack.json` 还会给每个事件保留 label/start/end；确认后的 time range 可继续交给 `highlight_picker.py`、`srt_edit_plan.py`、`render_config.json` 或 EDL/FCPXML/OTIO。`pipeline_manifest.py` 会发现 `takes_pack.json`，但默认不把它作为 blocker；需要强制多 take review 时可加 `--require takes_pack`。
 
 ### 🔎 Highlight Picker — 长视频精华候选 / brief 定向找片段
 [`scripts/highlight_picker.py`](scripts/highlight_picker.py) · [详细文档](docs/prompts/31-highlight-picker.md)
@@ -930,6 +930,23 @@ python3 scripts/export_otio.py \
 ```
 
 适合把自动粗剪交给 Premiere / Final Cut Pro / DaVinci Resolve 做调色、混音、精剪或协作复核。EDL 更通用，FCPXML 对 FCP / Resolve 更直接，OTIO 更适合使用 OpenTimelineIO adapter 的跨工具流程；复杂字幕、overlay、章节卡和 B-roll 仍以 `render_final.py` / `export_capcut.py` 为准。
+
+### 2026-07-11 自动化升级记录（Audio-event-aware Takes Pack）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`browser-use/video-use`](https://github.com/browser-use/video-use) | Scribe transcript 用顶层 `words[]` 同时保留词、静音 spacing、speaker diarization 和 laughter/applause 等 `audio_event`；剪辑时把反应声当成应保留节拍 | 增强现有 `takes_pack.py`，直接读取该结构并输出带时间码的 `audio_events[]` |
+| [`hoodini/ai-agents-skills` video-edit](https://github.com/hoodini/ai-agents-skills/tree/master/skills/video-edit) | 最终渲染前提供 transcript review/editor，降低字幕错词返工 | 本项目已有 `transcript_review.py` 的 export/apply 校稿闭环，本次不重复新增编辑器 |
+| [`remotion-dev/skills`](https://github.com/remotion-dev/skills/blob/main/skills/remotion/SKILL.md) | 用 preview/still 做低成本视觉 sanity check | 本项目已有 `timeline_view.py` 与 `render_qa.py`，本次不再新增单帧工具 |
+| [`video-db/skills`](https://github.com/video-db/skills) | 统一 spoken/visual moment 搜索与编辑接口，适合服务端实时/批处理 | 本项目继续保持本地 artifact-first，不引入 API key、上传或服务端依赖 |
+
+新增/调整能力：[`scripts/takes_pack.py`](scripts/takes_pack.py) 现在除 `segments[].words[]` 外，也能直接读取 ElevenLabs Scribe 风格的顶层 `words[]`；`type=spacing` 不会混进正文，`speaker_id` 会和原有 `speaker` 一样触发 phrase 分段，`type=audio_event` 会以 `(laughter)` 形式留在可读文本，并在 `phrases[].audio_events[]` 中保留 label/start/end。`summary.audio_events` 与 `sources[].audio_events` 便于快速确认事件覆盖；没有 Scribe 或 ElevenLabs API key 也不影响原有 Whisper transcript 路径。
+
+使用方式：`python3 scripts/takes_pack.py --transcript interview=work/scribe_transcript.json --output work/takes_packed.md --json work/takes_pack.json --break-gap 0.5`。打开 Markdown 的 Events 列复核笑声、掌声、叹气、音乐等反应节拍；选段时保留事件前后余量，再把 phrase time range 交给 `highlight_picker.py`、`render_config.json` 或 NLE handoff。详细格式见 [docs/prompts/60-takes-pack.md](docs/prompts/60-takes-pack.md)。
+
+验证结果：新增 `tests/test_takes_pack.py` 顶层 Scribe words / spacing / speaker_id / audio_event 覆盖；`.venv/bin/python -m pytest tests/test_takes_pack.py -q` 通过 `6 passed in 0.06s`；`.venv/bin/python scripts/takes_pack.py --help`、`.venv/bin/python -m compileall -q scripts tests`、skill `quick_validate.py` 和 `git diff --check` 通过；最终全量 `.venv/bin/python -m pytest tests -q` 通过 `477 passed in 4.26s`。
 
 ### 2026-07-09 自动化升级记录（Edit Brief Plan Router）
 
@@ -1949,7 +1966,7 @@ pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 g
 | **57** | **[Review Dashboard](docs/prompts/57-review-dashboard.md)** | **打开 HTML/JSON 总复核面板** |
 | **58** | **[Source Receipts](docs/prompts/58-source-receipts.md)** | **事实 claim 的 URL/截图 proof deck 和发布 gate** |
 | **59** | **[Auto Emphasis](docs/prompts/59-auto-emphasis.md)** | **数字/转折/结论自动落视觉重点** |
-| **60** | **[Takes Pack](docs/prompts/60-takes-pack.md)** | **多 take transcript 压成 phrase-level 阅读视图** |
+| **60** | **[Takes Pack](docs/prompts/60-takes-pack.md)** | **多 take / Scribe transcript 压成保留 speaker/audio events 的 phrase-level 阅读视图** |
 | **61** | **[Project Bootstrap](docs/prompts/61-project-bootstrap.md)** | **原始素材目录 → source inventory + project memory** |
 | **62** | **[Hook Variants](docs/prompts/62-hook-variants.md)** | **同一视频批量生成前三秒 hook 角度** |
 
@@ -1983,7 +2000,7 @@ scripts/
 ├── edit_brief_plan.py          自然语言剪辑需求 → 本地 runbook          [V3]
 ├── _internal_text_guard.py     内部 token 拦截器
 ├── transcribe.py               Whisper 转写
-├── takes_pack.py               多 take phrase-level 阅读视图        [V3]
+├── takes_pack.py               多 take / Scribe phrase + audio event 阅读视图 [V3]
 ├── audio_sync.py               外录音轨自动对齐 / 替换音轨计划        [V3]
 ├── video_understanding.py      抽样帧 + 可选 YOLO 检测 artifact       [V3]
 ├── highlight_picker.py         长视频精华候选 / brief 定向找片段      [V3]

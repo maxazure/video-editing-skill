@@ -7,6 +7,7 @@
 - 同一段内容录了 `take1/take2/take3`，需要快速挑最自然的一版。
 - 访谈、播客或课程有多份 transcript，需要先扫可引用的短语级片段。
 - 原始 transcript 带 `words[]`，JSON 太大，不适合直接塞进 LLM 上下文。
+- ElevenLabs Scribe 一类 transcript 把 `word` / `spacing` / `audio_event` 放在顶层 `words[]`，需要保留 speaker 和笑声、掌声等剪辑节拍。
 - 要把“候选片段 + reason”交给人工确认，但还不想渲染任何视频。
 
 ## 常用方式
@@ -29,6 +30,17 @@ python3 scripts/takes_pack.py \
   --json work/takes_pack.json
 ```
 
+顶层 `words[]` 也可直接读取，不需要先转换成 `segments[]`：
+
+```bash
+python3 scripts/takes_pack.py \
+  --transcript interview=work/scribe_transcript.json \
+  --output work/takes_packed.md \
+  --json work/takes_pack.json
+```
+
+`type=spacing` 只用于静音边界，不会混进正文；`type=audio_event` 会以 `(laughter)` 形式留在短语文本，并写入对应 phrase 的 `audio_events[]`（含 label/start/end）。`speaker_id` 与已有的 `speaker` 都会触发说话人切换分段。
+
 ## 输出
 
 `takes_packed.md` 按 source 分组，每行包含：
@@ -37,9 +49,10 @@ python3 scripts/takes_pack.py \
 - 源时间码，例如 `00:12.40-00:16.80`
 - speaker（如果 transcript 有）
 - 来源 segment ids
+- audio events（如果 transcript 有笑声、掌声、叹气、音乐等标签）
 - 压缩后的短语文本
 
-`takes_pack.json` 使用 `takes_pack.v1`，包含 `sources[]`、`phrases[]` 和 `summary`。`pipeline_manifest.py` 会识别它，但它默认不阻塞发布；需要强制多 take review 时再加：
+`takes_pack.json` 使用 `takes_pack.v1`，包含 `sources[]`、`phrases[]` 和 `summary`；`summary.audio_events`、`sources[].audio_events` 会给出事件数量，每个 phrase 的 `audio_events[]` 保留可定位时间码。`pipeline_manifest.py` 会识别它，但它默认不阻塞发布；需要强制多 take review 时再加：
 
 ```bash
 python3 scripts/pipeline_manifest.py \
@@ -60,5 +73,6 @@ python3 scripts/pipeline_manifest.py \
 ## 注意
 
 - `takes_pack.py` 不转写、不渲染、不调用 LLM，也不提交任何生成任务。
-- 默认 `--break-gap 0.5` 会在 0.5 秒以上静音处拆 phrase；speaker 变化也会拆 phrase。
+- 默认 `--break-gap 0.5` 会在 0.5 秒以上静音处拆 phrase；`speaker` / `speaker_id` 变化也会拆 phrase。
+- 顶层 Scribe JSON 是可选输入格式；本脚本不会调用 ElevenLabs，也不会产生 API 费用。
 - 如果只传一份 transcript，脚本仍会输出阅读视图，但 Markdown 会提示 multi-take 比较能力有限。

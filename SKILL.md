@@ -16,7 +16,8 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ project_bootstrap.py     原始素材目录 → source inventory / project.md
    ├─→ edit_brief_plan.py       用户一句话需求 → 本地脚本 runbook / gates
    ├─→ transcribe.py            转写 + 词级时间戳 + 口误标记
-   ├─→ takes_pack.py            多 take transcript → phrase-level 阅读视图
+   ├─→ takes_pack.py            多 take / Scribe transcript → phrase-level 阅读视图
+   │                            speaker / audio_event 编辑节拍
    ├─→ audio_sync.py            外录音轨自动对齐 / 替换音轨计划
    ├─→ video_understanding.py   抽样帧 + 可选 YOLO 检测 / tracks / scene_tags
    ├─→ highlight_picker.py      长视频精华候选 / brief-query 定向找片段
@@ -72,7 +73,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `_internal_text_guard.py` | 拦截内部 token 进画面 | 内部模块，render_final 自动调 |
 | `content_guard.py` | 平台雷区 lint | `--script` `--title` `--caption` `--strict` |
 | `source_receipts.py` | 事实 claim → URL/截图 proof deck、Markdown/HTML 和发布 gate | `--claims source_claims.json` `--html` `--require-primary-source` `--strict` |
-| `takes_pack.py` | 多 take transcript → phrase-level Markdown/JSON 阅读视图 | `--transcript take1=...` `--transcripts-dir` `--json` `--break-gap` |
+| `takes_pack.py` | 多 take / 顶层 Scribe words → phrase-level Markdown/JSON，保留 speaker/audio events | `--transcript take1=...` `--transcripts-dir` `--json` `--break-gap` |
 | `audio_sync.py` | scratch audio + 外录音轨 → offset / 替换音轨命令 / gate | `--reference-media` `--external-audio` `--replace-output` `--apply` `--strict` |
 | `rough_cut.py` | transcript 粗剪：去口头禅/重复句 | `--transcript` `--cut-list` / `--input` `--output` |
 | `video_understanding.py` | 抽样帧 + 可选 YOLO 物体检测 + 轻量 tracklets | `--detector yolo` `--scene-boundaries` `--external-detections` `--strict` |

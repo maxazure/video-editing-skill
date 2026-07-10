@@ -2,7 +2,8 @@
 """Pack one or more transcripts into a phrase-level multi-take reading view.
 
 The output is deliberately small and local: a Markdown file for agent/human
-review, plus an optional JSON artifact that other scripts can discover.
+review, plus an optional JSON artifact that other scripts can discover. Both
+segment-based transcripts and top-level Scribe words/audio events are accepted.
 """
 
 from __future__ import annotations
@@ -28,6 +29,7 @@ class TimedUnit:
     end: float
     text: str
     speaker: str = ""
+    kind: str = "word"
 
 
 def _round3(value: float) -> float:
@@ -105,28 +107,51 @@ def _write_json(path: str, payload: Mapping[str, Any]) -> None:
         f.write("\n")
 
 
+def _token_text(token: Mapping[str, Any]) -> str:
+    value = token.get("word")
+    if value is None:
+        value = token.get("text", "")
+    return _clean_text(value)
+
+
+def _audio_event_label(text: str) -> str:
+    return _clean_text(text).strip("()[]{}")
+
+
 def _word_units(segment: Mapping[str, Any], source_label: str, segment_id: Any) -> List[TimedUnit]:
     units: List[TimedUnit] = []
     for word in segment.get("words") or []:
         if not isinstance(word, Mapping):
+            continue
+        kind = _clean_text(word.get("type") or "word").lower()
+        if kind == "spacing":
             continue
         try:
             start = float(word["start"])
             end = float(word["end"])
         except (KeyError, TypeError, ValueError):
             continue
-        text = _clean_text(word.get("word", word.get("text", "")))
+        text = _token_text(word)
         if end <= start or not text:
             continue
-        speaker = _clean_text(word.get("speaker") or segment.get("speaker") or "")
+        if kind == "audio_event" and not text.startswith(("(", "[", "{")):
+            text = f"({text})"
+        speaker = _clean_text(
+            word.get("speaker")
+            or word.get("speaker_id")
+            or segment.get("speaker")
+            or segment.get("speaker_id")
+            or ""
+        )
         units.append(
             TimedUnit(
                 source_label=source_label,
-                segment_id=segment_id,
+                segment_id=word.get("segment_id", segment_id),
                 start=_round3(start),
                 end=_round3(end),
                 text=text,
                 speaker=speaker,
+                kind="audio_event" if kind == "audio_event" else "word",
             )
         )
     return units
@@ -134,7 +159,8 @@ def _word_units(segment: Mapping[str, Any], source_label: str, segment_id: Any) 
 
 def timed_units_from_transcript(transcript: Mapping[str, Any], source_label: str) -> List[TimedUnit]:
     units: List[TimedUnit] = []
-    for pos, segment in enumerate(transcript.get("segments") or [], start=1):
+    segments = transcript.get("segments") or []
+    for pos, segment in enumerate(segments, start=1):
         if not isinstance(segment, Mapping):
             continue
         segment_id = segment.get("id", pos)
@@ -157,9 +183,11 @@ def timed_units_from_transcript(transcript: Mapping[str, Any], source_label: str
                 start=_round3(start),
                 end=_round3(end),
                 text=text,
-                speaker=_clean_text(segment.get("speaker", "")),
+                speaker=_clean_text(segment.get("speaker") or segment.get("speaker_id") or ""),
             )
         )
+    if not segments and isinstance(transcript.get("words"), list):
+        units.extend(_word_units(transcript, source_label, "words"))
     return sorted(units, key=lambda item: (item.start, item.end, str(item.segment_id)))
 
 
@@ -182,6 +210,18 @@ def _phrase_speaker(units: Sequence[TimedUnit]) -> str:
     return speakers[0] if all(speaker == speakers[0] for speaker in speakers) else "mixed"
 
 
+def _phrase_audio_events(units: Sequence[TimedUnit]) -> List[Dict[str, Any]]:
+    return [
+        {
+            "label": _audio_event_label(unit.text),
+            "start": _round3(unit.start),
+            "end": _round3(unit.end),
+        }
+        for unit in units
+        if unit.kind == "audio_event"
+    ]
+
+
 def _phrase_dict(units: Sequence[TimedUnit], local_index: int) -> Dict[str, Any]:
     start = units[0].start
     end = units[-1].end
@@ -196,6 +236,7 @@ def _phrase_dict(units: Sequence[TimedUnit], local_index: int) -> Dict[str, Any]
         "speaker": _phrase_speaker(units),
         "segment_ids": _segment_ids(units),
         "text": _phrase_text(units),
+        "audio_events": _phrase_audio_events(units),
     }
 
 
@@ -265,6 +306,7 @@ def build_takes_pack(
             max_phrase_chars=max_phrase_chars,
         )
         phrases.extend(source_phrases)
+        audio_event_count = sum(1 for unit in units if unit.kind == "audio_event")
         sources.append(
             {
                 "label": label,
@@ -274,6 +316,7 @@ def build_takes_pack(
                 "segments": len(transcript.get("segments") or []),
                 "timed_units": len(units),
                 "phrases": len(source_phrases),
+                "audio_events": audio_event_count,
             }
         )
 
@@ -292,6 +335,7 @@ def build_takes_pack(
         "summary": {
             "sources": len(sources),
             "phrases": len(phrases),
+            "audio_events": sum(int(source.get("audio_events") or 0) for source in sources),
             "warnings": len(warnings),
         },
         "sources": sources,
@@ -308,6 +352,7 @@ def emit_markdown(pack: Mapping[str, Any]) -> str:
         "",
         f"- Sources: {summary.get('sources', 0)}",
         f"- Phrases: {summary.get('phrases', 0)}",
+        f"- Audio events: {summary.get('audio_events', 0)}",
         f"- Break gap: {params.get('break_gap', 0.5)}s",
         f"- Max phrase chars: {params.get('max_phrase_chars', 220)}",
         "",
@@ -337,16 +382,22 @@ def emit_markdown(pack: Mapping[str, Any]) -> str:
                 f"- Source media: `{source.get('source_media', '')}`" if source.get("source_media") else "- Source media: not recorded",
                 f"- Duration: {_format_time(float(source.get('duration') or 0.0))}",
                 f"- Segments / timed units / phrases: {source.get('segments', 0)} / {source.get('timed_units', 0)} / {source.get('phrases', 0)}",
+                f"- Audio events: {source.get('audio_events', 0)}",
                 "",
-                "| ID | Time | Speaker | Segments | Text |",
-                "|---|---:|---|---|---|",
+                "| ID | Time | Speaker | Segments | Events | Text |",
+                "|---|---:|---|---|---|---|",
             ]
         )
         for phrase in phrases_by_source.get(label, []):
             time_range = f"{_format_time(float(phrase.get('start') or 0.0))}-{_format_time(float(phrase.get('end') or 0.0))}"
             segment_ids = ", ".join(str(item) for item in phrase.get("segment_ids") or [])
+            audio_events = ", ".join(
+                str(item.get("label") or "")
+                for item in phrase.get("audio_events") or []
+                if isinstance(item, Mapping)
+            )
             lines.append(
-                f"| `{_escape_md(phrase.get('id', ''))}` | {time_range} | {_escape_md(phrase.get('speaker', ''))} | {_escape_md(segment_ids)} | {_escape_md(phrase.get('text', ''))} |"
+                f"| `{_escape_md(phrase.get('id', ''))}` | {time_range} | {_escape_md(phrase.get('speaker', ''))} | {_escape_md(segment_ids)} | {_escape_md(audio_events)} | {_escape_md(phrase.get('text', ''))} |"
             )
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"

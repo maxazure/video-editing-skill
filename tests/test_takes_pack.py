@@ -63,7 +63,7 @@ def test_segment_transcripts_are_grouped_by_silence_gap(tmp_path):
     pack = build_takes_pack([str(first), f"alt={second}"], break_gap=0.5)
     markdown = emit_markdown(pack)
 
-    assert pack["summary"] == {"sources": 2, "phrases": 3, "warnings": 0}
+    assert pack["summary"] == {"sources": 2, "phrases": 3, "audio_events": 0, "warnings": 0}
     assert pack["sources"][0]["label"] == "take_a"
     assert [phrase["text"] for phrase in pack["phrases"][:2]] == ["第一句第二句", "第三句"]
     assert "## take_a" in markdown
@@ -99,9 +99,38 @@ def test_single_source_pack_warns_but_stays_usable(tmp_path):
 
     pack = build_takes_pack([str(transcript)])
 
-    assert pack["summary"] == {"sources": 1, "phrases": 1, "warnings": 1}
+    assert pack["summary"] == {"sources": 1, "phrases": 1, "audio_events": 0, "warnings": 1}
     assert "only one transcript supplied" in pack["warnings"][0]
     assert "single take" in emit_markdown(pack)
+
+
+def test_top_level_scribe_words_preserve_audio_events_and_speaker_ids(tmp_path):
+    transcript = tmp_path / "scribe_transcript.json"
+    _write_json(transcript, {
+        "duration": 2.2,
+        "words": [
+            {"type": "word", "text": "Hello", "start": 0.0, "end": 0.3, "speaker_id": "speaker_0"},
+            {"type": "audio_event", "text": "laughter", "start": 0.35, "end": 0.7, "speaker_id": "speaker_0"},
+            {"type": "spacing", "text": " ", "start": 0.7, "end": 1.3},
+            {"type": "word", "text": "Again", "start": 1.3, "end": 1.6, "speaker_id": "speaker_0"},
+            {"type": "word", "text": "Hi", "start": 1.65, "end": 2.0, "speaker_id": "speaker_1"},
+        ],
+    })
+
+    pack = build_takes_pack([f"launch={transcript}"], break_gap=0.5)
+    markdown = emit_markdown(pack)
+
+    assert pack["summary"]["phrases"] == 3
+    assert pack["summary"]["audio_events"] == 1
+    assert pack["sources"][0]["segments"] == 0
+    assert pack["sources"][0]["audio_events"] == 1
+    assert [phrase["speaker"] for phrase in pack["phrases"]] == ["speaker_0", "speaker_0", "speaker_1"]
+    assert pack["phrases"][0]["text"] == "Hello (laughter)"
+    assert pack["phrases"][0]["audio_events"] == [
+        {"label": "laughter", "start": 0.35, "end": 0.7}
+    ]
+    assert "| Events | Text |" in markdown
+    assert "laughter" in markdown
 
 
 def test_cli_writes_markdown_and_json(tmp_path):

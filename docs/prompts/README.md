@@ -60,7 +60,7 @@
 | 57 | [Review Dashboard 人工复核面板](57-review-dashboard.md) | 本地 artifacts → HTML/JSON review queue、next actions 和 gate snapshot |
 | 58 | [Source Receipts 事实来源复核](58-source-receipts.md) | 视频 claim → URL/截图 proof deck、Markdown/HTML source deck 和发布 gate |
 | 59 | [Auto Emphasis 口播重点自动落点](59-auto-emphasis.md) | 问句 / 数字 claim / 转折 / 结论 → badge + subtle push-in |
-| 60 | [Takes Pack 多 take 阅读视图](60-takes-pack.md) | 多个 transcript → phrase-level Markdown/JSON，方便跨 take 选段 |
+| 60 | [Takes Pack 多 take 阅读视图](60-takes-pack.md) | 多个 transcript / 顶层 Scribe words → phrase-level Markdown/JSON，保留 speaker 与 audio events |
 | 61 | [Project Bootstrap 项目启动与素材导入](61-project-bootstrap.md) | 原始素材目录 → origin/work/output/verify/edit + source inventory + project memory |
 | 62 | [Hook Variants 开头钩子批量方案](62-hook-variants.md) | transcript/clean script → 多个前三秒 hook 角度、风险检查和推荐排序 |
 | 63 | [Shorts Batch 多条精华短视频渲染 job sheet](63-shorts-batch.md) | highlight_candidates → per-short render_config、渲染命令和 QA 命令 |
@@ -124,7 +124,7 @@
 | 渲染或发布前想打开一个总复核面板 | [57-Review Dashboard](57-review-dashboard.md) |
 | 视频里有事实、数据、新闻或来源截图要复核 | [58-Source Receipts](58-source-receipts.md) |
 | 数字、转折、结论想自动落视觉重点 | [59-Auto Emphasis](59-auto-emphasis.md) |
-| 多个 take 想先压成可读时间码清单 | [60-Takes Pack](60-takes-pack.md) |
+| 多个 take 或带笑声/掌声事件的 Scribe transcript 想先压成可读时间码清单 | [60-Takes Pack](60-takes-pack.md) |
 | 刚拿到一批原始素材，想先建项目目录 | [61-Project Bootstrap](61-project-bootstrap.md) |
 | 想给同一条视频准备多个前三秒开头 | [62-Hook Variants](62-hook-variants.md) |
 | 长视频已选好多个精华片段，想批量规划渲染 | [63-Shorts Batch](63-shorts-batch.md) |
