@@ -399,6 +399,37 @@ def build_plan(
             ),
         )
 
+        _add_step(
+            steps,
+            seen,
+            _step(
+                "audio_boundary_plan",
+                phase="analysis",
+                script="audio_boundary_snap.py",
+                label="Snap selected highlights to safe audio boundaries",
+                reason="Word, sentence, and silence alignment prevents mid-word or mid-thought short-video cuts.",
+                command=shell(
+                    [
+                        python_bin,
+                        "scripts/audio_boundary_snap.py",
+                        "--candidates",
+                        "work/highlight_candidates.json",
+                        "--transcript",
+                        transcript_path,
+                        "--media",
+                        source,
+                        "--output",
+                        "work/audio_boundary_plan.json",
+                        "--markdown",
+                        "work/audio_boundary_plan.md",
+                        "--strict",
+                    ]
+                ),
+                outputs=["work/audio_boundary_plan.json", "work/audio_boundary_plan.md"],
+                gate_category="audio_boundary_plan",
+            ),
+        )
+
     if "batch_shorts" in ids or ("long_to_short" in ids and "publish" in ids):
         _add_step(
             steps,
@@ -414,7 +445,7 @@ def build_plan(
                         python_bin,
                         "scripts/shorts_batch.py",
                         "--highlights",
-                        "work/highlight_candidates.json",
+                        "work/audio_boundary_plan.json",
                         "--video",
                         source,
                         "--output",

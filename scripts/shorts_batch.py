@@ -94,7 +94,7 @@ def _render_config_for_job(
         "highlight_score": candidate.get("score", 0),
         "segment_ids": list(candidate.get("segment_ids") or []),
     }
-    for key in ("brief_match", "scene_snap"):
+    for key in ("brief_match", "scene_snap", "audio_boundary_snap"):
         if candidate.get(key):
             clip[key] = candidate[key]
 

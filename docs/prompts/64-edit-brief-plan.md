@@ -41,7 +41,7 @@ python3 scripts/edit_brief_plan.py \
 
 | 用户提法 | 路由方向 |
 |---|---|
-| 长视频、访谈、播客、拆短视频、精华 | `highlight_picker.py`，多条时接 `shorts_batch.py` |
+| 长视频、访谈、播客、拆短视频、精华 | `highlight_picker.py` → `audio_boundary_snap.py`，多条时接 `shorts_batch.py` |
 | 停顿、剪紧、jump cut | `jump_cut.py` |
 | 口头禅、卡壳、重复句 | `rough_cut.py` |
 | 开头、前三秒、hook | `hook_variants.py` |

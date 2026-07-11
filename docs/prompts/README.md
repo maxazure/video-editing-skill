@@ -65,6 +65,7 @@
 | 62 | [Hook Variants 开头钩子批量方案](62-hook-variants.md) | transcript/clean script → 多个前三秒 hook 角度、风险检查和推荐排序 |
 | 63 | [Shorts Batch 多条精华短视频渲染 job sheet](63-shorts-batch.md) | highlight_candidates → per-short render_config、渲染命令和 QA 命令 |
 | 64 | [Edit Brief Plan 自然语言剪辑需求路由](64-edit-brief-plan.md) | 用户一句话需求 → 本地脚本 runbook、命令、产物和 manifest gate |
+| 65 | [Audio Boundary Snap 音频感知剪辑边界](65-audio-boundary-snap.md) | selected highlights → 词/句末/静音边界、delta、blocker |
 
 ## 快速上手
 
@@ -129,3 +130,4 @@
 | 想给同一条视频准备多个前三秒开头 | [62-Hook Variants](62-hook-variants.md) |
 | 长视频已选好多个精华片段，想批量规划渲染 | [63-Shorts Batch](63-shorts-batch.md) |
 | 只有一句剪辑需求，不确定该跑哪些脚本 | [64-Edit Brief Plan](64-edit-brief-plan.md) |
+| 精华片段已经选好，想避免吞字或半句结尾 | [65-Audio Boundary Snap](65-audio-boundary-snap.md) |

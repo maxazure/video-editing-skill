@@ -232,6 +232,36 @@ def test_shorts_batch_artifact_is_discovered_without_blocking_when_ready(tmp_pat
     assert gate["blocks_when_present"] is True
 
 
+def test_audio_boundary_plan_can_be_required_for_analysis(tmp_path):
+    _write(tmp_path / "work" / "transcript.json", {"segments": []})
+    _write(tmp_path / "work" / "audio_boundary_plan.json", {
+        "version": "audio_boundary_plan.v1",
+        "status": "ready",
+        "summary": {"selected": 2, "adjusted": 2, "blocking": 0},
+    })
+
+    manifest = build_manifest(str(tmp_path), target_stage="analysis", required=["audio_boundary_plan"])
+
+    assert manifest["status"] == "ready"
+    gate = next(g for g in manifest["gates"] if g["category"] == "audio_boundary_plan")
+    assert gate["required"] is True
+    assert gate["status"] == "ready"
+
+
+def test_optional_audio_boundary_plan_blocks_when_word_timestamps_missing(tmp_path):
+    _publish_ready_project(tmp_path)
+    _write(tmp_path / "work" / "audio_boundary_plan.json", {
+        "version": "audio_boundary_plan.v1",
+        "status": "blocked",
+        "summary": {"selected": 1, "adjusted": 0, "blocking": 1},
+    })
+
+    manifest = build_manifest(str(tmp_path), target_stage="publish_ready")
+
+    assert manifest["status"] == "blocked"
+    assert "audio_boundary_plan" in manifest["blocked_gates"]
+
+
 def test_optional_shorts_batch_blocks_when_source_missing(tmp_path):
     _publish_ready_project(tmp_path)
     _write(tmp_path / "work" / "shorts_batch.json", {

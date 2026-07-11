@@ -25,6 +25,13 @@ def _highlights():
                 "text": "为什么很多团队做 AI 自动化会失败？关键不是工具。",
                 "segment_ids": [2, 3],
                 "warnings": [],
+                "audio_boundary_snap": {
+                    "applied": True,
+                    "original_start": 8.2,
+                    "original_end": 41.8,
+                    "start_delta": -0.2,
+                    "end_delta": 0.2,
+                },
             },
             {
                 "id": "highlight_002",
@@ -145,6 +152,7 @@ def test_cli_writes_batch_markdown_and_render_configs(tmp_path):
     assert config["source"] == "shorts_batch.py"
     assert config["clips"][0]["start"] == 8.0
     assert config["clips"][0]["highlight_score"] == 78.5
+    assert config["clips"][0]["audio_boundary_snap"]["applied"] is True
     assert "daily_001" in markdown.read_text(encoding="utf-8")
 
 
@@ -163,6 +171,8 @@ def test_cli_strict_returns_two_when_source_missing(tmp_path):
             str(tmp_path / "missing.mp4"),
             "--output",
             str(output),
+            "--render-config-dir",
+            str(tmp_path / "render_configs"),
             "--strict",
         ],
         capture_output=True,

@@ -111,6 +111,8 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    │
    ├─→ highlight_picker.py      长视频精华候选 / brief-query 定向找片段
    │                            输出 score / hook / reason / render_config
+   ├─→ audio_boundary_snap.py   已选片段 → 词/句末/静音边界校正
+   │                            adjustment delta / blocker / shorts_batch 兼容输出
    ├─→ shorts_batch.py          精华候选 → 多条短视频渲染 job sheet
    │                            per-short render_config / render command / QA command
    │
@@ -215,7 +217,7 @@ cd ~/projects/video-editing-skill
 python3 scripts/utils.py
 
 # 4. 跑一遍测试套件确认 OK
-pytest tests/           # 477 个测试，约 6 秒
+pytest tests/           # 487 个测试，约 6 秒
 ```
 
 每天做一条视频的完整模板：**[docs/prompts/15-xhs-daily-tech-video.md](docs/prompts/15-xhs-daily-tech-video.md)**
@@ -411,10 +413,34 @@ python3 scripts/highlight_picker.py \
 
 `--brief` 会把自然语言意图拆成英文关键词和中文短语片段，写入每条 candidate 的 `brief_match.score` 与 `matched_terms`，但仍保留原来的自包含结尾、弱 hook、时长偏离等 warning。适合“找产品 reveal / 用户强反应 / 教程关键步骤 / 失败教训”这类定向剪片。
 
+### 🎧 Audio Boundary Snap — 词/句末/静音剪辑边界校正
+[`scripts/audio_boundary_snap.py`](scripts/audio_boundary_snap.py) · [详细文档](docs/prompts/65-audio-boundary-snap.md)
+
+在 `highlight_picker.py` 已经选好内容以后，用 transcript 词级时间戳把每条 start/end 对齐到完整词，必要时把结尾扩到附近句号、问号或感叹号；如果 transcript 已有 `silences[]`，或提供 `--media` 让 FFmpeg 跑 `silencedetect`，还会优先把切点放到相邻静音区中点。每条调整都会保留原始时间、前后 delta、首尾词、reason、warning 和 blocker，不渲染也不改源文件。
+
+常用：
+```bash
+python3 scripts/audio_boundary_snap.py \
+  --candidates work/highlight_candidates.json \
+  --transcript work/long_transcript.json \
+  --media origin/long-talk.mp4 \
+  --output work/audio_boundary_plan.json \
+  --markdown work/audio_boundary_plan.md \
+  --strict
+
+python3 scripts/shorts_batch.py \
+  --highlights work/audio_boundary_plan.json \
+  --video origin/long-talk.mp4 \
+  --output work/shorts_batch.json \
+  --strict
+```
+
+支持 Whisper `segments[].words[]` 和 ElevenLabs Scribe 风格顶层 `words[]`，其中 spacing/audio event 不会当成词。没有词级时间戳、候选时间非法、源媒体缺失或安全边界超出平台时长时，`summary.blocking` 会非零；`pipeline_manifest.py --require audio_boundary_plan --strict` 可把它设为显式 gate。
+
 ### 🎞️ Shorts Batch — 多条精华短视频渲染 job sheet
 [`scripts/shorts_batch.py`](scripts/shorts_batch.py) · [详细文档](docs/prompts/63-shorts-batch.md)
 
-借鉴 AI shorts 类项目“长视频一次上传，产出多条可追踪短视频”的做法，但保持本项目本地优先：读取 `highlight_picker.py` 的 `highlight_candidates.v1`，为每条 selected highlight 写一份独立 `render_config`，并输出 `shorts_batch.v1` JSON、Markdown job sheet、`render_final.py` 命令和 `render_qa.py` 命令。脚本不渲染、不上传、不调用 LLM。
+借鉴 AI shorts 类项目“长视频一次上传，产出多条可追踪短视频”的做法，但保持本项目本地优先：读取 `highlight_picker.py` 的 `highlight_candidates.v1` 或 `audio_boundary_snap.py` 的 `audio_boundary_plan.v1`，为每条 selected highlight 写一份独立 `render_config`，并输出 `shorts_batch.v1` JSON、Markdown job sheet、`render_final.py` 命令和 `render_qa.py` 命令。脚本不渲染、不上传、不调用 LLM。
 
 常用：
 ```bash
@@ -930,6 +956,24 @@ python3 scripts/export_otio.py \
 ```
 
 适合把自动粗剪交给 Premiere / Final Cut Pro / DaVinci Resolve 做调色、混音、精剪或协作复核。EDL 更通用，FCPXML 对 FCP / Resolve 更直接，OTIO 更适合使用 OpenTimelineIO adapter 的跨工具流程；复杂字幕、overlay、章节卡和 B-roll 仍以 `render_final.py` / `export_capcut.py` 为准。
+
+### 2026-07-12 自动化升级记录（Audio-aware Boundary Snap）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`AgriciDaniel/claude-shorts`](https://github.com/AgriciDaniel/claude-shorts) | 把已批准短视频范围再对齐到词边界、完整句结尾和 FFmpeg 静音区，并报告每条 adjustment delta | 新增本地 `audio_boundary_snap.py`，用本项目 artifact schema 重做可审计边界校正，不复制对方实现 |
+| [`marvellam/interview-skill`](https://github.com/marvellam/interview-skill) | 长访谈重构强调每个剪辑块必须保留可追溯 source anchor，内部删除不能伪装成连续引语 | 校正后继续保留 highlight id、rank、segment ids、原始时间和首尾词，并附 `audio_boundary_snap` 审计字段 |
+| [`imhzm/EDIT-REELS-LIKE-PRO-Claude-Skill`](https://github.com/imhzm/EDIT-REELS-LIKE-PRO-Claude-Skill) | 先做 silence/bad-take razor pass，再做动画和三层声音设计；切点需服务节奏而不是只看画面 | 本项目已有 `jump_cut.py`、`audio_cue_sheet.py` 和防爆音 fade，本次不重复声音设计，只补“已选片段的安全边界” |
+| [`Canibuild-Ops/sketch-to-video-skill`](https://github.com/Canibuild-Ops/sketch-to-video-skill) | 用 beat-synced cut、speed ramp 和 transition 组织音乐视频 | 本项目已有 `beat_sync.py` / `transition_bridge.py`，本次不新增另一套节拍编辑器 |
+| [`aiworkflowpro/video-editing-skill`](https://github.com/aiworkflowpro/video-editing-skill) | 用视觉 scene change 给 jump-cut 素材找 trim point | 本项目已有 `scene_boundaries.py` 和 `highlight_picker.py --scene-boundaries`，保留视觉吸附并在其后增加独立音频吸附 |
+
+新增/调整能力：新增 [`scripts/audio_boundary_snap.py`](scripts/audio_boundary_snap.py)，可读取 `highlight_candidates.v1` 或其他含 `selected[]` / `segments[]` / `clips[]` 的候选计划，以及 Whisper `segments[].words[]` 或 ElevenLabs Scribe 顶层 `words[]`。脚本把 start/end 校正到完整词，在 `--sentence-window` 内补到句末，用 transcript `silences[]` 或可选 `--media` + FFmpeg `silencedetect` 吸附静音区中点，输出 `audio_boundary_plan.v1` JSON/Markdown；每条保留 original/snapped time、delta、reason、首尾词、warning 和 blocker。`shorts_batch.py` 现在直接接受该输出并把 `audio_boundary_snap` 写入 per-short render config；`edit_brief_plan.py` 的长视频拆短路由会自动把它排在 highlight 与 batch 之间；`pipeline_manifest.py` 新增 `audio_boundary_plan` 类别，发现 `summary.blocking > 0` 会阻塞。
+
+使用方式：先跑 `highlight_picker.py` 并人工确认 selected 候选，再运行 `python3 scripts/audio_boundary_snap.py --candidates work/highlight_candidates.json --transcript work/long_transcript.json --media origin/long-talk.mp4 --output work/audio_boundary_plan.json --markdown work/audio_boundary_plan.md --strict`；打开 Markdown 复核 start/end delta 后，用 `python3 scripts/shorts_batch.py --highlights work/audio_boundary_plan.json --video origin/long-talk.mp4 --output work/shorts_batch.json --strict` 继续。缺词级时间戳、非法范围、显式媒体缺失或安全边界超平台时长会形成 blocker。详细说明见 [docs/prompts/65-audio-boundary-snap.md](docs/prompts/65-audio-boundary-snap.md)。
+
+验证结果：新增 `tests/test_audio_boundary_snap.py` 8 项，更新 `tests/test_edit_brief_plan.py`、`tests/test_pipeline_manifest.py` 和 `tests/test_shorts_batch.py`；定向 `.venv/bin/python -m pytest tests/test_audio_boundary_snap.py tests/test_edit_brief_plan.py tests/test_shorts_batch.py tests/test_pipeline_manifest.py -q` 通过 `53 passed in 0.52s`；最终全量 `.venv/bin/python -m pytest tests -q` 通过 `487 passed in 4.42s`。8 秒真实 FFmpeg smoke 检出 3 段静音，把候选从 `1.1-3.0s` 校正到 `0.5-4.5s`，句末扩展、静音吸附、`summary.blocking=0` 均符合预期；`.venv/bin/python -m compileall -q scripts tests`、`audio_boundary_snap.py --help`、`edit_brief_plan.py --help`、manifest category smoke、skill `quick_validate.py` 和 `git diff --check` 全部通过。
 
 ### 2026-07-11 自动化升级记录（Audio-event-aware Takes Pack）
 
@@ -2004,6 +2048,7 @@ scripts/
 ├── audio_sync.py               外录音轨自动对齐 / 替换音轨计划        [V3]
 ├── video_understanding.py      抽样帧 + 可选 YOLO 检测 artifact       [V3]
 ├── highlight_picker.py         长视频精华候选 / brief 定向找片段      [V3]
+├── audio_boundary_snap.py      词/句末/静音剪辑边界校正              [V3]
 ├── rough_cut.py                transcript 粗剪：去口头禅/重复句      [V3]
 ├── extract_audio.py            音频提取
 ├── split_video.py              按句切片（V2 兼容）

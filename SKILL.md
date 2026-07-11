@@ -21,6 +21,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ audio_sync.py            外录音轨自动对齐 / 替换音轨计划
    ├─→ video_understanding.py   抽样帧 + 可选 YOLO 检测 / tracks / scene_tags
    ├─→ highlight_picker.py      长视频精华候选 / brief-query 定向找片段
+   ├─→ audio_boundary_snap.py   已选片段 → 词/句末/静音边界校正
    ├─→ shorts_batch.py          精华候选 → per-short render_config / render + QA job sheet
    ├─→ rough_cut.py             ASR 粗剪：去纯口头禅 / 相邻重复句
    ├─→ hook_variants.py         前三秒 hook 批量角度 / 推荐排序 / 风险检查
@@ -78,6 +79,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `rough_cut.py` | transcript 粗剪：去口头禅/重复句 | `--transcript` `--cut-list` / `--input` `--output` |
 | `video_understanding.py` | 抽样帧 + 可选 YOLO 物体检测 + 轻量 tracklets | `--detector yolo` `--scene-boundaries` `--external-detections` `--strict` |
 | `highlight_picker.py` | 长视频精华候选 + brief/query 定向找片段 | `--transcript` `--brief`/`--query` `--scene-boundaries` `--render-config` |
+| `audio_boundary_snap.py` | selected highlights → 词级、句末和静音边界校正 + blocker | `--candidates` `--transcript` `--media` `--markdown` `--strict` |
 | `shorts_batch.py` | highlight_candidates → 多条短视频 render_config / render + QA job sheet | `--highlights` `--video` `--render-config-dir` `--output-dir` `--strict` |
 | `hook_variants.py` | transcript/clean_script → 8 个前三秒 hook 角度、风险检查和推荐排序 | `--transcript` `--topic` `--platform` `--output` `--markdown` `--strict` |
 | `rewrite_script.py` | LLM 5 段式重组 + 验证 | `--transcript` `--structure` `--hook-template` `--emit-prompt` / `--llm-output` |
@@ -716,6 +718,20 @@ AI agent 应分析 transcript 识别话题转换点（语义断裂、过渡词�
 ```
 
 等待用户回复选择后，进入 Phase 4。
+
+选择完成后、批量渲染前，建议用词级时间戳校正切点，避免候选范围落在词中间或半句结尾：
+
+```bash
+python3 scripts/audio_boundary_snap.py \
+  --candidates work/highlight_candidates.json \
+  --transcript work/transcript.json \
+  --media origin/long-talk.mp4 \
+  --output work/audio_boundary_plan.json \
+  --markdown work/audio_boundary_plan.md \
+  --strict
+```
+
+输出 `audio_boundary_plan.v1` 的 `selected[]` 可直接传给 `shorts_batch.py --highlights`。脚本只读本地候选、transcript 和可选媒体；它不渲染、不上传、不调用 provider。`--strict` 会在缺词级时间戳、非法时间段、源媒体缺失或安全边界超平台时长时返回 2。
 
 ### Phase 4: Render Config（渲染配置）
 

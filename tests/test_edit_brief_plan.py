@@ -27,14 +27,17 @@ def test_batch_short_brief_routes_highlights_before_batch(tmp_path):
     assert plan["status"] == "ready"
     ids = [step["id"] for step in plan["steps"]]
     assert "highlight_candidates" in ids
+    assert "audio_boundary_plan" in ids
     assert "shorts_batch" in ids
-    assert ids.index("highlight_candidates") < ids.index("shorts_batch")
+    assert ids.index("highlight_candidates") < ids.index("audio_boundary_plan") < ids.index("shorts_batch")
     assert "jump_cut" in ids
     assert "audio_cue_sheet" in ids
     assert "publish_package" in ids
     assert plan["source"]["source_media"] == str(source)
     highlight = next(step for step in plan["steps"] if step["id"] == "highlight_candidates")
     assert "--platform douyin" in highlight["command"]
+    batch = next(step for step in plan["steps"] if step["id"] == "shorts_batch")
+    assert "work/audio_boundary_plan.json" in batch["command"]
 
 
 def test_generated_assets_note_and_prompt_pack_steps(tmp_path):

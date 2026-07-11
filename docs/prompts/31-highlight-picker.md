@@ -112,3 +112,19 @@ python3 scripts/highlight_picker.py \
 ```
 
 `--strict` 会在最优候选低于 `--min-score` 时返回退出码 2，适合自动化里提示人工重写 hook 或重新拆段。
+
+## 选中后校正音频边界
+
+`scene_boundaries.py` 负责把候选扩到附近视觉切点；如果还要确保不在词中间或半句结尾硬切，接着运行 [65 Audio Boundary Snap](65-audio-boundary-snap.md)：
+
+```bash
+python3 scripts/audio_boundary_snap.py \
+  --candidates work/highlight_candidates.json \
+  --transcript work/long_transcript.json \
+  --media origin/long-talk.mp4 \
+  --output work/audio_boundary_plan.json \
+  --markdown work/audio_boundary_plan.md \
+  --strict
+```
+
+复核 `audio_boundary_plan.md` 的 start/end delta 后，可把 JSON 直接传给 `shorts_batch.py --highlights`。

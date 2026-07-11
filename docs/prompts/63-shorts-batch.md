@@ -25,11 +25,23 @@ python3 scripts/highlight_picker.py \
 
 先看 `work/highlight_candidates.md`，确认 selected 片段没有明显弱 hook、断尾或误选。
 
+如 transcript 有词级时间戳，建议先运行 [65 Audio Boundary Snap](65-audio-boundary-snap.md)，再把校正后的 JSON 交给 batch：
+
+```bash
+python3 scripts/audio_boundary_snap.py \
+  --candidates work/highlight_candidates.json \
+  --transcript work/long_transcript.json \
+  --media origin/long-talk.mp4 \
+  --output work/audio_boundary_plan.json \
+  --markdown work/audio_boundary_plan.md \
+  --strict
+```
+
 ## 生成 batch job sheet
 
 ```bash
 python3 scripts/shorts_batch.py \
-  --highlights work/highlight_candidates.json \
+  --highlights work/audio_boundary_plan.json \
   --video origin/long-talk.mp4 \
   --output work/shorts_batch.json \
   --markdown work/shorts_batch.md \
@@ -81,6 +93,7 @@ python3 scripts/pipeline_manifest.py \
 ## 使用建议
 
 - `shorts_batch.py` 不替代 `highlight_picker.py`，只负责把已选候选变成可执行 job sheet。
+- `--highlights` 同时接受原始 `highlight_candidates.v1` 和校正后的 `audio_boundary_plan.v1`；后者会把 `audio_boundary_snap` delta 带进每条 render config。
 - 候选 warning 不是自动 blocker；弱 hook、断尾、时长偏离仍需要人工判断是否先回到 highlight plan 修改。
 - 大批量渲染前先跑 1 条 smoke：确认字幕、封面、响度和画幅，再执行剩余 job。
 - 每条渲染后都跑 `render_qa.py`；不要只看 render 命令成功。

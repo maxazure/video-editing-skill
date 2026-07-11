@@ -104,6 +104,13 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         "Run highlight_picker.py for long-to-short candidate review.",
     ),
     ArtifactDef(
+        "audio_boundary_plan",
+        "Audio Boundary Plan",
+        ("**/audio_boundary_plan.json", "**/*_audio_boundary_plan.json"),
+        "Run audio_boundary_snap.py after highlight review to align cuts with words, sentence endings, and silence.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "shorts_batch",
         "Shorts Batch",
         ("**/shorts_batch.json", "**/*_shorts_batch.json"),
@@ -472,6 +479,7 @@ def evaluate_category(definition: ArtifactDef, artifacts: Sequence[ArtifactRecor
             "edit_preflight",
             "shorts_batch",
             "edit_brief_plan",
+            "audio_boundary_plan",
         }:
             blocking = _int_at(data, "summary", "blocking")
             if blocking:
