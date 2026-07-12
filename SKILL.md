@@ -1,6 +1,6 @@
 ---
 name: video-editing
-description: "Xiaohongshu/RED-tuned short-form video workflow for raw voice-over, talking-head, tutorials, interviews, podcasts, long videos, screen recordings, B-roll, captions, and generated assets. Covers natural-language edit brief routing, project bootstrap, transcription, multi-take packs, audio sync, cleanup, highlights/shorts, hook/story rewrite, content/source gates, B-roll/enrich/gpt-image-2/video-generation planning, async generation logs, media recommendations, screen focus, PIP, color grade, preflight/render/QA/audio master, subtitles, CapCut import, multi-platform exports, captions, publish packages, dashboards, resume packets, EDL/FCPXML/OTIO, and Remotion animation."
+description: "Xiaohongshu/RED-tuned short-form video workflow for raw voice-over, talking-head, tutorials, interviews, podcasts, long videos, screen recordings, B-roll, captions, and generated assets. Covers natural-language edit brief routing, project bootstrap, transcription, multi-take packs, audio sync, cleanup, highlights/shorts, hook/story rewrite, content/source gates, B-roll/enrich/gpt-image-2/video-generation planning, async generation logs, media recommendations, screen focus, PIP, color grade, preflight/render/QA/audio master, timecoded review proxies, subtitles, CapCut import, multi-platform exports, captions, publish packages, dashboards, resume packets, EDL/FCPXML/OTIO, and Remotion animation."
 metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
 ---
 
@@ -46,6 +46,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ render_final.py          单次编码渲染（enrich_plan/focus_events/pip_overlays + Heavy 字幕 + 响度规范化）
    │                            可选 --versioned-output 防覆盖旧成片
    ├─→ render_qa.py             渲染后黑屏/静帧/静音/尺寸质检 + review packet
+   ├─→ review_proxy.py          低码率完整审片 MP4 / 可见时间码 / faststart
    ├─→ timeline_view.py         切点/QA 可疑区间 filmstrip + waveform 复盘图
    ├─→ subtitle_pack.py         SRT/VTT/ASS/JSON 字幕交付包（speed/offset 对齐）
    ├─→ import_capcut_subtitles.py
@@ -104,6 +105,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `edit_preflight.py` | render_config/enrich_plan/cut list 渲染前预检 gate | `--config render_config.json` `--enrich-plan enrich_plan.json` `--output edit_preflight.json` `--strict` |
 | `render_final.py` | 单次编码渲染 + enrich_plan 接入 | `--config render_config.json` `--enrich-plan enrich_plan.json` `--output final.mp4` |
 | `render_qa.py` | 渲染后 QA：尺寸/音频/黑屏/静帧/静音 + review packet | `<video.mp4>` `--platform douyin` `--json qa.json` `--review-dir verify/qa` |
+| `review_proxy.py` | master/platform MP4 → 低码率 timecoded 审片视频 + JSON/Markdown | `<video.mp4>` `--output verify/review_proxy.mp4` `--dry-run` `--no-timecode` |
 | `audio_master_report.py` | 成片响度报告：LUFS / true peak / LRA / 长静音 gate | `<video.mp4>` `--output audio_master_report.json` `--markdown audio_master_report.md` `--strict` |
 | `timeline_view.py` | 切点/QA 可疑区间可视化复盘图 | `<video.mp4>` `--at 42.5` `--output view.png` / `--cut-list cuts.json` `--output-dir verify/` |
 | `subtitle_pack.py` | transcript/render_config → SRT/VTT/ASS/JSON 字幕包 | `--transcript work/transcript.json --output-dir output/subtitles` / `--config render_config.json --speed 1.25 --offset 2.0` |
@@ -1147,7 +1149,17 @@ python3 scripts/render_qa.py final.mp4 \
 
 `render_qa.py` 会检查容器元数据、平台尺寸、视频/音频流、黑屏、长静帧和长静音。对小红书派生文件使用 `--platform xhs`，对抖音/视频号使用 `--platform douyin` 或 `--platform wxch`。`--review-dir` 会写 `render_qa_review.json` / `.md`，`--review-clips` 会为可疑区间抽取短 MP4；如果只想快速查元数据，可加 `--no-filters`。
 
-**6b. 可视化复盘（QA 有 WARN/FAIL 或抽查切点时跑）**：
+**6b. 完整审片代理（需要分享整条视频或精确时间码反馈时跑）**：
+```bash
+python3 scripts/review_proxy.py final.mp4 \
+  --output verify/final_review_proxy.mp4 \
+  --manifest verify/final_review_proxy.json \
+  --markdown verify/final_review_proxy.md
+```
+
+`review_proxy.py` 不修改 master；它输出最大 720p、24fps、H.264/AAC、`+faststart` 的轻量 MP4，并在左上角烧入 `REVIEW PROXY` 和 elapsed timecode。审片意见应引用可见时间码，最终 QA 和发布仍使用 master / platform export。`--dry-run` 只写可复现命令和 artifact，`--no-timecode` 可关闭时间码。
+
+**6c. 可视化复盘（QA 有 WARN/FAIL 或抽查切点时跑）**：
 ```bash
 python3 scripts/timeline_view.py final.mp4 --at 42.5 --radius 1.5 --output verify/42_5s.png
 python3 scripts/timeline_view.py origin/talking.mp4 --cut-list work/jumpcut.json --output-dir verify/cuts --limit 12
@@ -1155,7 +1167,7 @@ python3 scripts/timeline_view.py origin/talking.mp4 --cut-list work/jumpcut.json
 
 `timeline_view.py` 会生成 filmstrip + waveform PNG；上半部分看画面连续性，下半部分看人声/静音边界。无音频视频会自动只输出 filmstrip。
 
-**6c. 字幕 sidecar 交付（平台需要 SRT/VTT 时跑）**：
+**6d. 字幕 sidecar 交付（平台需要 SRT/VTT 时跑）**：
 ```bash
 python3 scripts/subtitle_pack.py \
   --config render_config.json \
@@ -1168,7 +1180,7 @@ python3 scripts/subtitle_pack.py \
 
 `subtitle_pack.py` 可从 `transcript.json` 或 `render_config.json` 生成 SRT/VTT/ASS/JSON。`--config` 会按最终 clips 顺序串接字幕时间线；`--speed` 对齐 `render_final.py --primary-speed`；`--offset` 对齐片头封面秒数。JSON manifest 保留每条 cue 的来源片段和 `over_max_chars` 之类校对警告。
 
-**6d. 发布上传包（最终上传前跑）**：
+**6e. 发布上传包（最终上传前跑）**：
 ```bash
 python3 scripts/publish_package.py \
   --project-dir work/day58 \
@@ -1180,7 +1192,7 @@ python3 scripts/publish_package.py \
 
 `publish_package.py` 不上传、不调用平台 API；它只把 `multi_export.py` 的平台 MP4、`generate_caption.py` 的标题/正文/tags、封面、SRT/VTT、章节文本和 `pipeline_manifest` gate 状态合成 `publish_package.v1`。如果缺少某个平台视频、caption 为空、或 pipeline manifest 已 blocked，`--strict` 返回 2。需要交给外部发布 connector 时，用这份 JSON 作为 handoff；手工上传时看 Markdown checklist。
 
-**6e. 续跑上下文包（跨会话/自动化收尾时跑）**：
+**6f. 续跑上下文包（跨会话/自动化收尾时跑）**：
 ```bash
 python3 scripts/project_resume.py \
   --project-dir work/day58 \
@@ -1193,7 +1205,7 @@ python3 scripts/project_resume.py \
 
 `project_resume.py` 复用 `pipeline_manifest.py` 的本地 gate，不渲染、不上传、不提交生成任务。它输出 `project_resume.v1`，包含 `phase`、`recommended_first_action`、`next_actions[]`、最近 artifacts、关键 gate snapshot 和一句可直接交给下一位 agent 的 `suggested_prompt`。长流程被压缩上下文、自动化结束、或要交给另一位 agent 时，优先把 Markdown/agent note 作为接手入口。
 
-**6f. 人工复核面板（最终确认/交接前跑）**：
+**6g. 人工复核面板（最终确认/交接前跑）**：
 ```bash
 python3 scripts/review_dashboard.py \
   --project-dir work/day58 \
@@ -1205,13 +1217,13 @@ python3 scripts/review_dashboard.py \
 
 `review_dashboard.py` 复用 `pipeline_manifest.py` 的本地 gate，输出 `review_dashboard.v1` 和一个可直接在浏览器打开的 HTML。它把 blocking/missing/warning gate 放进 `review_items[]`，同时列出 `next_actions[]`、最新 artifacts 和完整 gate snapshot。适合用户最终确认，也适合自动化结束时留给下一位 agent。
 
-**6g. 音频重复检测**：
+**6h. 音频重复检测**：
 1. 提取最终视频的音频
 2. 重新进行语音识别
 3. 检查识别结果中是否存在相邻片段的文字重复（前一句末尾 2-3 个字与后一句开头重复）
 4. 如发现技术性重复（非自然语言重复），需要调整 render_config.json 中的片段选择
 
-**6h. 字幕文字最终校验**：
+**6i. 字幕文字最终校验**：
 1. 读取最终视频使用的所有 transcript 片段的文字
 2. 按最终视频的片段顺序，逐条检查以下问题：
    - **语音识别残留错误**：Phase 2.5 可能遗漏的同音字、专有名词错误

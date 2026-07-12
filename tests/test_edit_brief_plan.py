@@ -56,6 +56,33 @@ def test_generated_assets_note_and_prompt_pack_steps(tmp_path):
     assert any("gpt-image-2" in note for note in plan["notes"])
 
 
+def test_review_proxy_brief_routes_timecoded_review_video(tmp_path):
+    source = tmp_path / "talk.mp4"
+    source.write_text("fake video", encoding="utf-8")
+
+    plan = build_plan(
+        f"{source} 渲染后生成低码率时间码审片视频",
+        project_dir=str(tmp_path),
+    )
+
+    step = next(step for step in plan["steps"] if step["id"] == "review_proxy")
+    assert step["script"] == "review_proxy.py"
+    assert "verify/final_review_proxy.mp4" in step["command"]
+    assert step["gate_category"] == "review_proxy"
+
+
+def test_review_proxy_only_uses_supplied_render_without_rerendering(tmp_path):
+    source = tmp_path / "master.mp4"
+    source.write_text("fake master", encoding="utf-8")
+
+    plan = build_plan(f"把 {source} 做成审片代理", project_dir=str(tmp_path))
+
+    ids = [step["id"] for step in plan["steps"]]
+    assert "master_video" not in ids
+    proxy = next(step for step in plan["steps"] if step["id"] == "review_proxy")
+    assert str(source) in proxy["command"]
+
+
 def test_empty_brief_is_blocked():
     plan = build_plan("")
 

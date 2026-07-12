@@ -364,6 +364,45 @@ def test_review_dashboard_artifact_is_discovered_without_blocking(tmp_path):
     assert gate["blocks_when_present"] is False
 
 
+def test_review_proxy_artifact_is_discovered_without_blocking(tmp_path):
+    _publish_ready_project(tmp_path)
+    _write(tmp_path / "verify" / "day66_review_proxy.json", {
+        "version": "review_proxy.v1",
+        "status": "ready",
+        "summary": {"blocking": 0, "warnings": 0},
+    })
+    _write(tmp_path / "verify" / "day66_review_proxy.mp4", "fake review proxy")
+
+    manifest = build_manifest(str(tmp_path), target_stage="publish_ready")
+
+    assert manifest["status"] == "ready"
+    gate = next(g for g in manifest["gates"] if g["category"] == "review_proxy")
+    assert gate["status"] == "ready"
+    assert gate["artifact_count"] == 2
+    assert gate["blocks_when_present"] is False
+
+
+def test_review_proxy_cannot_satisfy_master_video_gate(tmp_path):
+    _write(tmp_path / "work" / "transcript.json", {"segments": []})
+    _write(tmp_path / "work" / "clean_script.md", "# Clean")
+    _write(tmp_path / "work" / "render_config.json", {"clips": []})
+    _write(tmp_path / "output" / "day66_qa.json", {"status": "pass", "files": []})
+    _write(tmp_path / "output" / "day66_caption.json", {"title": "demo"})
+    _write(tmp_path / "output" / "day66_master_review_proxy.mp4", "fake proxy")
+    _write(tmp_path / "output" / "day66_master_review_proxy.json", {
+        "version": "review_proxy.v1",
+        "status": "ready",
+        "summary": {"blocking": 0, "warnings": 0},
+    })
+
+    manifest = build_manifest(str(tmp_path), target_stage="publish_ready")
+
+    assert manifest["status"] == "blocked"
+    assert "master_video" in manifest["missing_required"]
+    proxy_gate = next(g for g in manifest["gates"] if g["category"] == "review_proxy")
+    assert proxy_gate["status"] == "ready"
+
+
 def test_otio_handoff_artifact_is_discovered_without_blocking(tmp_path):
     _publish_ready_project(tmp_path)
     _write(tmp_path / "work" / "day58_edit.otio", {

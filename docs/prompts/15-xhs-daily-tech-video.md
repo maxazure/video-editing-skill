@@ -250,7 +250,13 @@
      --markdown work/project_resume.md \
      --agent-note CLAUDE.md
 
-16. python3 scripts/review_dashboard.py \
+16. python3 scripts/review_proxy.py \
+     output/day<NN>_master.mp4 \
+     --output output/verify/day<NN>_review_proxy.mp4 \
+     --manifest output/verify/day<NN>_review_proxy.json \
+     --markdown output/verify/day<NN>_review_proxy.md
+
+17. python3 scripts/review_dashboard.py \
      --project-dir . \
      --target-stage publish_ready \
      --output work/review_dashboard.json \
@@ -262,6 +268,7 @@
 - caption.json 里的 title + caption_body + tags + publish_time_hint
 - publish_package.md 里的每个平台上传 checklist 和 blockers
 - project_resume.md 里的 status / phase / recommended_first_action（方便下次续跑）
+- review_proxy.mp4 路径；审片反馈要引用画面可见时间码，不能把它当发布成片
 - review_dashboard.html 路径，以及 review_dashboard.json 的 review_state / review_items 数量
 - 如果跑了 source_receipts，给我 source_receipts.html 路径和 `summary.blocking` 数量
 - enrich_plan.json 里 broll/sticker/chapter 总数（确认丰富度足够）
@@ -320,7 +327,10 @@ day<NN>/
 │   ├── review_dashboard.json # 人工复核面板
 │   └── review_dashboard.html
 └── output/
-    ├── verify/                         # 可选：timeline_view PNG
+    ├── verify/                         # timeline_view / review proxy 审片产物
+    │   ├── day<NN>_review_proxy.mp4     # 低码率 timecoded 审片视频，不可发布
+    │   ├── day<NN>_review_proxy.json    # review_proxy.v1 / 可复现命令
+    │   └── day<NN>_review_proxy.md      # 审片说明
     ├── day<NN>_master.mp4              # 9:16 主版本
     ├── day<NN>_master_xhs.mp4          # 3:4 小红书发布版
     ├── day<NN>_master_douyin.mp4       # 9:16 抖音版

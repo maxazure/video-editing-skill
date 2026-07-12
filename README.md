@@ -173,6 +173,7 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    │     可选 --versioned-output：输出 _V<N>，避免覆盖旧成片
    │
    ├─→ render_qa.py             渲染后黑屏/静帧/静音/尺寸质检 + review packet
+   ├─→ review_proxy.py          低码率完整审片 MP4 / 可见时间码 / faststart
    ├─→ audio_master_report.py   成片响度 / true peak / LRA / 长静音发布 gate
    │     └─→ timeline_view.py   QA 可疑区间可视化复盘
    │
@@ -217,7 +218,7 @@ cd ~/projects/video-editing-skill
 python3 scripts/utils.py
 
 # 4. 跑一遍测试套件确认 OK
-pytest tests/           # 487 个测试，约 6 秒
+pytest tests/           # 498 个测试，约 6 秒
 ```
 
 每天做一条视频的完整模板：**[docs/prompts/15-xhs-daily-tech-video.md](docs/prompts/15-xhs-daily-tech-video.md)**
@@ -956,6 +957,23 @@ python3 scripts/export_otio.py \
 ```
 
 适合把自动粗剪交给 Premiere / Final Cut Pro / DaVinci Resolve 做调色、混音、精剪或协作复核。EDL 更通用，FCPXML 对 FCP / Resolve 更直接，OTIO 更适合使用 OpenTimelineIO adapter 的跨工具流程；复杂字幕、overlay、章节卡和 B-roll 仍以 `render_final.py` / `export_capcut.py` 为准。
+
+### 2026-07-13 自动化升级记录（Timecoded Review Proxy）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`heygen-com/hyperframes`](https://github.com/heygen-com/hyperframes) / [`NousResearch/hermes-agent` HyperFrames skill](https://github.com/NousResearch/hermes-agent/blob/main/optional-skills/creative/hyperframes/SKILL.md) | 把 `preview` 和 `render --quality draft\|standard\|high` 作为正式迭代阶段，先低成本看完整节奏再出高质量版本 | 新增独立 `review_proxy.py`，不改 `render_final.py` 的 publish master 参数，也不重复渲染素材时间线 |
+| [`lennoxsaint/eddy`](https://github.com/lennoxsaint/eddy) | transcript → cut plan → simulation → proxy render → QA → judge/repair 的本地审片闭环 | 把完整审片代理放在 render/QA 后、dashboard/publish handoff 前，并接入 artifact manifest |
+| [`lazniak/videoclipgenerator`](https://github.com/lazniak/videoclipgenerator) | TC burn-in 让剪辑反馈可以按精确时间码定位，容器 fast index/metadata 便于 seek | 默认烧入 elapsed timecode 与 `REVIEW PROXY` 标签，反馈可直接引用画面时间 |
+| [`ychoi-kr/claude-ffmpeg-skill`](https://github.com/ychoi-kr/claude-ffmpeg-skill) | web-ready output、`faststart`、质量/体积平衡与输入校验 | 代理使用 H.264/AAC、`+faststart`、CRF 28、veryfast、最大 720p/24fps，原 master 保持不变 |
+
+新增/调整能力：新增 [`scripts/review_proxy.py`](scripts/review_proxy.py)，可把任何已渲染 master / platform MP4 转成低码率完整审片副本，默认不放大源视频、最大 720p、24fps、H.264 `libx264 veryfast`、CRF 28、AAC 96k、`yuv420p` 和 `+faststart`；左上角默认烧入 `REVIEW PROXY` + elapsed timecode。脚本同时输出 `review_proxy.v1` JSON 和 Markdown，记录源/代理媒体参数、完整可复现 FFmpeg 命令、warning 与“不可发布”说明；`--dry-run` 只出计划，`--no-timecode` 可关闭时间码。`edit_brief_plan.py` 新增“审片代理/低码率时间码审片”路由，`pipeline_manifest.py` / `review_dashboard.py` 可发现 review proxy，但默认不阻塞发布；新增 [docs/prompts/66-review-proxy.md](docs/prompts/66-review-proxy.md)。
+
+使用方式：`python3 scripts/review_proxy.py output/day66_master.mp4 --output verify/day66_review_proxy.mp4 --manifest verify/day66_review_proxy.json --markdown verify/day66_review_proxy.md`。把 `*_review_proxy.mp4` 发给审片人，要求按画面可见时间码反馈；具体疑点再用 `timeline_view.py --at <seconds>` 深查。最终 QA、平台导出和发布仍必须使用 master，不得把 review proxy 当成片。
+
+验证结果：新增 `tests/test_review_proxy.py` 7 项，更新 `tests/test_edit_brief_plan.py` 和 `tests/test_pipeline_manifest.py`；定向 `.venv/bin/python -m pytest tests/test_review_proxy.py tests/test_edit_brief_plan.py tests/test_pipeline_manifest.py -q` 通过 `51 passed in 0.48s`；最终全量 `.venv/bin/python -m pytest tests -q` 通过 `498 passed in 4.74s`。4 秒真实 FFmpeg smoke 生成 360×640、24fps、H.264/AAC、4.01 秒的代理，抽取 1.25 秒帧确认双行 label/timecode 在小竖屏完整可读；文件头 `ftyp` 后紧接 `moov`（offset `0x20`），确认 `+faststart` 生效。新增回归测试确认 `*_master_review_proxy.mp4` 不能误满足正式 master gate。`.venv/bin/python -m compileall -q scripts tests`、`review_proxy.py --help`、`edit_brief_plan.py --help`、manifest category smoke、skill `quick_validate.py` 和 `git diff --check` 全部通过。
 
 ### 2026-07-12 自动化升级记录（Audio-aware Boundary Snap）
 

@@ -89,6 +89,7 @@ SIGNAL_KEYWORDS: Mapping[str, Sequence[str]] = {
     "color_grade": ("调色", "lut", "color grade", "cinematic", "色彩", "film look"),
     "render": ("render", "渲染", "导出", "输出", "成片", "final mp4"),
     "qa": ("qa", "质检", "黑屏", "静音", "静帧", "检查成片"),
+    "review_proxy": ("review proxy", "审片代理", "审片视频", "低码率审片", "时间码审片", "timecode review"),
     "multi_platform": ("三平台", "多平台", "multi platform", "多个平台", "xhs douyin", "小红书 抖音"),
     "publish": ("发布", "上传", "publish", "upload", "发布包", "标题", "文案", "hashtag", "tags"),
     "subtitle_sidecar": ("srt", "vtt", "ass", "字幕文件", "sidecar"),
@@ -117,6 +118,7 @@ SIGNAL_LABELS: Mapping[str, str] = {
     "color_grade": "调色计划",
     "render": "渲染成片",
     "qa": "成片质检",
+    "review_proxy": "低码率时间码审片视频",
     "multi_platform": "多平台导出",
     "publish": "发布包 / 文案",
     "subtitle_sidecar": "字幕 sidecar",
@@ -274,7 +276,7 @@ def build_plan(
 
     if source_media and not Path(source_media).expanduser().exists():
         blockers.append(f"source media not found: {source_media}")
-    elif not source_media and ids.intersection({"source_ingest", "transcript", "long_to_short", "render", "publish"}):
+    elif not source_media and ids.intersection({"source_ingest", "transcript", "long_to_short", "render", "publish", "review_proxy"}):
         warnings.append("source media was not provided; commands use <source_media> placeholders")
 
     if transcript and not Path(transcript).expanduser().exists():
@@ -794,6 +796,24 @@ def build_plan(
                 command=shell([python_bin, "scripts/subtitle_pack.py", "--transcript", transcript_path, "--output-dir", "output/subtitles"]),
                 outputs=["output/subtitles/"],
                 gate_category="subtitles",
+                required=False,
+            ),
+        )
+
+    if "review_proxy" in ids:
+        proxy_input = "output/final.mp4" if wants_render else source
+        _add_step(
+            steps,
+            seen,
+            _step(
+                "review_proxy",
+                phase="review",
+                script="review_proxy.py",
+                label="Create a lightweight timecoded review proxy",
+                reason="The brief asks for a shareable review video with precise timecode feedback.",
+                command=shell([python_bin, "scripts/review_proxy.py", proxy_input, "--output", "verify/final_review_proxy.mp4", "--manifest", "verify/final_review_proxy.json", "--markdown", "verify/final_review_proxy.md"]),
+                outputs=["verify/final_review_proxy.mp4", "verify/final_review_proxy.json", "verify/final_review_proxy.md"],
+                gate_category="review_proxy",
                 required=False,
             ),
         )

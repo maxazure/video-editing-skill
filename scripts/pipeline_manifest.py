@@ -227,6 +227,17 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         blocks_when_present=True,
     ),
     ArtifactDef(
+        "review_proxy",
+        "Review Proxy",
+        (
+            "**/review_proxy.json",
+            "**/*_review_proxy.json",
+            "**/review_proxy.mp4",
+            "**/*_review_proxy.mp4",
+        ),
+        "Run review_proxy.py when a lightweight, timecoded full-video review copy is needed.",
+    ),
+    ArtifactDef(
         "audio_master_report",
         "Audio Master Report",
         (
@@ -408,6 +419,8 @@ def find_artifacts(
     for pattern in definition.patterns:
         for path in project_dir.glob(pattern):
             if not path.is_file() or _is_excluded(path, project_dir, excludes):
+                continue
+            if definition.category == "master_video" and "review_proxy" in path.stem.lower():
                 continue
             abs_path = path.resolve()
             records[str(abs_path)] = ArtifactRecord(
