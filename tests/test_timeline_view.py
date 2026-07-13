@@ -5,13 +5,17 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts"))
 
 from timeline_view import (  # noqa: E402
+    OutputCutBoundary,
     TimelineWindow,
     build_ffmpeg_command,
     build_filter,
+    build_output_cut_boundaries,
     clamp_window,
     explicit_window,
     grid_for_frames,
     load_cut_windows,
+    load_output_cut_boundaries,
+    output_boundary_windows,
 )
 
 
@@ -93,3 +97,74 @@ def test_load_cut_windows_uses_removed_segment_midpoints(tmp_path):
         TimelineWindow(start=2.0, end=4.0, duration=2.0, label="removed_segments_001_2.00-4.00s"),
         TimelineWindow(start=8.0, end=10.0, duration=2.0, label="removed_segments_002_9.00-10.00s"),
     ]
+
+
+def test_build_output_cut_boundaries_maps_speed_and_cover_offset():
+    boundaries = build_output_cut_boundaries(
+        [
+            {"start": 1.0, "end": 5.0},
+            {"start": 8.0, "end": 11.0},
+            {"start": 14.0, "end": 16.0},
+        ],
+        speed=2.0,
+        offset=0.5,
+    )
+
+    assert boundaries == [
+        OutputCutBoundary(
+            index=1,
+            output_time=2.5,
+            previous_source_start=1.0,
+            previous_source_end=5.0,
+            next_source_start=8.0,
+            next_source_end=11.0,
+            source_gap=3.0,
+        ),
+        OutputCutBoundary(
+            index=2,
+            output_time=4.0,
+            previous_source_start=8.0,
+            previous_source_end=11.0,
+            next_source_start=14.0,
+            next_source_end=16.0,
+            source_gap=3.0,
+        ),
+    ]
+
+
+def test_load_output_cut_boundaries_reads_keep_segments_and_respects_limit(tmp_path):
+    cut_list = tmp_path / "cuts.json"
+    cut_list.write_text(json.dumps({
+        "keep_segments": [
+            {"start": 0.0, "end": 2.0},
+            {"start": 3.0, "end": 5.0},
+            {"start": 6.0, "end": 8.0},
+        ]
+    }), encoding="utf-8")
+
+    boundaries = load_output_cut_boundaries(str(cut_list), limit=1)
+
+    assert len(boundaries) == 1
+    assert boundaries[0].output_time == 2.0
+    assert boundaries[0].source_gap == 1.0
+
+
+def test_output_boundary_windows_center_on_rendered_cut_times():
+    boundaries = [OutputCutBoundary(1, 2.5, 0.0, 2.5, 4.0, 6.0, 1.5)]
+
+    windows = output_boundary_windows(boundaries, radius=1.0, duration=8.0)
+
+    assert windows == [
+        TimelineWindow(start=1.5, end=3.5, duration=2.0, label="output_cut_001_2.50s")
+    ]
+
+
+def test_output_boundary_windows_reject_plan_beyond_rendered_duration():
+    boundaries = [OutputCutBoundary(1, 9.0, 0.0, 9.0, 10.0, 12.0, 1.0)]
+
+    try:
+        output_boundary_windows(boundaries, radius=1.0, duration=8.0)
+    except ValueError as exc:
+        assert "check --output-speed and --output-offset" in str(exc)
+    else:
+        raise AssertionError("expected a duration mismatch error")

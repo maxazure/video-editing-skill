@@ -14,7 +14,7 @@ import os
 import subprocess
 import sys
 from dataclasses import asdict, dataclass
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 
 @dataclass(frozen=True)
@@ -23,6 +23,17 @@ class TimelineWindow:
     end: float
     duration: float
     label: str = ""
+
+
+@dataclass(frozen=True)
+class OutputCutBoundary:
+    index: int
+    output_time: float
+    previous_source_start: float
+    previous_source_end: float
+    next_source_start: float
+    next_source_end: float
+    source_gap: float
 
 
 def _run(cmd: List[str]) -> subprocess.CompletedProcess:
@@ -184,6 +195,94 @@ def load_cut_windows(
     return windows
 
 
+def build_output_cut_boundaries(
+    segments: Sequence[Mapping[str, Any]],
+    *,
+    speed: float = 1.0,
+    offset: float = 0.0,
+    limit: int = 20,
+) -> List[OutputCutBoundary]:
+    """Map source keep-segment joins onto the rendered output timeline."""
+    if speed <= 0:
+        raise ValueError("output speed must be greater than 0")
+    if offset < 0:
+        raise ValueError("output offset must be non-negative")
+    if limit <= 0:
+        raise ValueError("limit must be greater than 0")
+    if len(segments) < 2:
+        raise ValueError("rendered cut review needs at least two keep segments")
+
+    normalized: List[Tuple[float, float]] = []
+    for index, segment in enumerate(segments, start=1):
+        try:
+            start = float(segment["start"])
+            end = float(segment["end"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError(f"bad keep segment #{index}: {segment!r}") from exc
+        if start < 0 or end <= start:
+            raise ValueError(f"bad keep segment #{index}: start={start} end={end}")
+        normalized.append((start, end))
+
+    output_cursor = float(offset)
+    boundaries: List[OutputCutBoundary] = []
+    for index, ((previous_start, previous_end), (next_start, next_end)) in enumerate(
+        zip(normalized, normalized[1:]),
+        start=1,
+    ):
+        output_cursor += (previous_end - previous_start) / speed
+        boundaries.append(OutputCutBoundary(
+            index=index,
+            output_time=round(output_cursor, 4),
+            previous_source_start=round(previous_start, 4),
+            previous_source_end=round(previous_end, 4),
+            next_source_start=round(next_start, 4),
+            next_source_end=round(next_end, 4),
+            source_gap=round(next_start - previous_end, 4),
+        ))
+        if len(boundaries) >= limit:
+            break
+    return boundaries
+
+
+def load_output_cut_boundaries(
+    cut_list_path: str,
+    *,
+    key: str = "keep_segments",
+    speed: float = 1.0,
+    offset: float = 0.0,
+    limit: int = 20,
+) -> List[OutputCutBoundary]:
+    with open(cut_list_path, "r", encoding="utf-8") as f:
+        plan = json.load(f)
+    segments = plan.get(key)
+    if not isinstance(segments, list):
+        raise ValueError(f"cut list does not contain a {key!r} segment list")
+    return build_output_cut_boundaries(segments, speed=speed, offset=offset, limit=limit)
+
+
+def output_boundary_windows(
+    boundaries: Sequence[OutputCutBoundary],
+    *,
+    radius: float,
+    duration: Optional[float],
+) -> List[TimelineWindow]:
+    windows: List[TimelineWindow] = []
+    for boundary in boundaries:
+        if duration is not None and boundary.output_time > duration + 0.05:
+            raise ValueError(
+                f"computed output cut {boundary.output_time:.3f}s exceeds rendered duration "
+                f"{duration:.3f}s; check --output-speed and --output-offset"
+            )
+        window = clamp_window(boundary.output_time, radius, duration)
+        windows.append(TimelineWindow(
+            window.start,
+            window.end,
+            window.duration,
+            f"output_cut_{boundary.index:03d}_{boundary.output_time:.2f}s",
+        ))
+    return windows
+
+
 def render_window(cmd: List[str]) -> None:
     result = _run(cmd)
     if result.returncode != 0:
@@ -217,8 +316,17 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--frames", type=int, default=12, help="Number of filmstrip frames")
     p.add_argument("--width", type=int, default=1600, help="Output image width before waveform stacking")
     p.add_argument("--waveform-height", type=int, default=180, help="Waveform height when audio exists")
-    p.add_argument("--cut-list", help="Jump-cut JSON from scripts/jump_cut.py")
+    cut_mode = p.add_mutually_exclusive_group()
+    cut_mode.add_argument("--cut-list", help="Source-time jump-cut JSON from scripts/jump_cut.py")
+    cut_mode.add_argument(
+        "--rendered-cut-list",
+        help="Map keep_segments from a cut-list onto cut boundaries in the rendered input",
+    )
     p.add_argument("--cut-source", choices=["removed_segments", "keep_segments"], default="removed_segments")
+    p.add_argument("--output-speed", type=float, default=1.0,
+                   help="Global playback speed used for the rendered input (default 1.0)")
+    p.add_argument("--output-offset", type=float, default=0.0,
+                   help="Seconds before the first keep segment in the rendered input (default 0)")
     p.add_argument("--output-dir", help="Output directory when using --cut-list")
     p.add_argument("--limit", type=int, default=20, help="Maximum cut-list windows to render")
     p.add_argument("--json", dest="json_path", help="Write metadata about rendered windows")
@@ -248,16 +356,30 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         duration = media_duration(meta)
         has_audio = has_stream(meta, "audio")
 
-        if args.cut_list:
+        boundaries: List[OutputCutBoundary] = []
+        if args.cut_list or args.rendered_cut_list:
             if not args.output_dir:
-                raise ValueError("--output-dir is required with --cut-list")
-            windows = load_cut_windows(
-                args.cut_list,
-                key=args.cut_source,
-                radius=args.radius,
-                duration=duration,
-                limit=args.limit,
-            )
+                raise ValueError("--output-dir is required with a cut-list mode")
+            if args.rendered_cut_list:
+                boundaries = load_output_cut_boundaries(
+                    args.rendered_cut_list,
+                    speed=args.output_speed,
+                    offset=args.output_offset,
+                    limit=args.limit,
+                )
+                windows = output_boundary_windows(
+                    boundaries,
+                    radius=args.radius,
+                    duration=duration,
+                )
+            else:
+                windows = load_cut_windows(
+                    args.cut_list,
+                    key=args.cut_source,
+                    radius=args.radius,
+                    duration=duration,
+                    limit=args.limit,
+                )
             os.makedirs(args.output_dir, exist_ok=True)
             outputs = [
                 os.path.join(args.output_dir, f"{idx:03d}_{_safe_label(window.label)}.png")
@@ -270,7 +392,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
             outputs = [args.output]
 
         rendered = []
-        for window, output_path in zip(windows, outputs):
+        for index, (window, output_path) in enumerate(zip(windows, outputs)):
             os.makedirs(os.path.dirname(os.path.abspath(output_path)) or ".", exist_ok=True)
             cmd = build_ffmpeg_command(
                 args.input,
@@ -281,13 +403,21 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
                 waveform_height=args.waveform_height,
                 has_audio=has_audio,
             )
-            rendered.append({"output": os.path.abspath(output_path), "window": asdict(window), "command": cmd})
+            record: Dict[str, Any] = {
+                "output": os.path.abspath(output_path),
+                "window": asdict(window),
+                "command": cmd,
+            }
+            if boundaries:
+                record["boundary"] = asdict(boundaries[index])
+            rendered.append(record)
             if not args.dry_run:
                 render_window(cmd)
                 print(f"Timeline view written: {output_path}")
 
         payload = {
             "input": os.path.abspath(args.input),
+            "mode": "rendered_output_boundaries" if boundaries else ("source_cut_list" if args.cut_list else "window"),
             "has_audio": has_audio,
             "duration": duration,
             "views": rendered,

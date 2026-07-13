@@ -47,7 +47,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    │                            可选 --versioned-output 防覆盖旧成片
    ├─→ render_qa.py             渲染后黑屏/静帧/静音/尺寸质检 + review packet
    ├─→ review_proxy.py          低码率完整审片 MP4 / 可见时间码 / faststart
-   ├─→ timeline_view.py         切点/QA 可疑区间 filmstrip + waveform 复盘图
+   ├─→ timeline_view.py         源素材删除段 / 成片输出切点 filmstrip + waveform 复盘图
    ├─→ subtitle_pack.py         SRT/VTT/ASS/JSON 字幕交付包（speed/offset 对齐）
    ├─→ import_capcut_subtitles.py
    │                            剪映/CapCut 自动字幕 → transcript / gap cut list
@@ -107,7 +107,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `render_qa.py` | 渲染后 QA：尺寸/音频/黑屏/静帧/静音 + review packet | `<video.mp4>` `--platform douyin` `--json qa.json` `--review-dir verify/qa` |
 | `review_proxy.py` | master/platform MP4 → 低码率 timecoded 审片视频 + JSON/Markdown | `<video.mp4>` `--output verify/review_proxy.mp4` `--dry-run` `--no-timecode` |
 | `audio_master_report.py` | 成片响度报告：LUFS / true peak / LRA / 长静音 gate | `<video.mp4>` `--output audio_master_report.json` `--markdown audio_master_report.md` `--strict` |
-| `timeline_view.py` | 切点/QA 可疑区间可视化复盘图 | `<video.mp4>` `--at 42.5` `--output view.png` / `--cut-list cuts.json` `--output-dir verify/` |
+| `timeline_view.py` | 源素材删除段 / 成片输出切点可视化复盘图 | `<video.mp4>` `--at 42.5` `--output view.png` / `--rendered-cut-list cuts.json` `--output-dir verify/` |
 | `subtitle_pack.py` | transcript/render_config → SRT/VTT/ASS/JSON 字幕包 | `--transcript work/transcript.json --output-dir output/subtitles` / `--config render_config.json --speed 1.25 --offset 2.0` |
 | `import_capcut_subtitles.py` | 剪映/CapCut 自动字幕或 SRT → transcript + gap cut list | `--draft <draft_dir>` / `--srt captions.srt` `--transcript work/capcut_transcript.json` `--cut-list work/capcut_gap_cut.json` |
 | `srt_edit_plan.py` | SRT + 人工/agent keep/drop 指令 → edit plan / render_config / cut list | `--srt captions.srt --guide edit_guide.md --source-media origin/talking.mp4 --render-config work/render_config.json --strict` |
@@ -664,7 +664,7 @@ python3 scripts/rough_cut.py \
   --cut-list work/rough_cut.json
 ```
 
-`rough_cut.py` 会输出 `decisions` / `removed_segments` / `keep_segments` / `speedup_ratio`。它不调用 LLM，不提交任何付费任务；只用 `transcribe.py --detect-fillers` 的 filler metadata 和相邻文本相似度做保守粗剪。激进切点应再用 `timeline_view.py --cut-list work/rough_cut.json` 复核。
+`rough_cut.py` 会输出 `decisions` / `removed_segments` / `keep_segments` / `speedup_ratio`。它不调用 LLM，不提交任何付费任务；只用 `transcribe.py --detect-fillers` 的 filler metadata 和相邻文本相似度做保守粗剪。渲染前用 `timeline_view.py --cut-list work/rough_cut.json` 看源素材删除段；渲染后用 `--rendered-cut-list work/rough_cut.json` 看成片实际拼接点。
 
 ### Phase 3: User Interaction（用户交互）
 
@@ -1163,9 +1163,10 @@ python3 scripts/review_proxy.py final.mp4 \
 ```bash
 python3 scripts/timeline_view.py final.mp4 --at 42.5 --radius 1.5 --output verify/42_5s.png
 python3 scripts/timeline_view.py origin/talking.mp4 --cut-list work/jumpcut.json --output-dir verify/cuts --limit 12
+python3 scripts/timeline_view.py output/rough_cut.mp4 --rendered-cut-list work/rough_cut.json --output-speed 1.25 --output-offset 1.0 --output-dir verify/rendered_cuts --json verify/rendered_cuts.json
 ```
 
-`timeline_view.py` 会生成 filmstrip + waveform PNG；上半部分看画面连续性，下半部分看人声/静音边界。无音频视频会自动只输出 filmstrip。
+`timeline_view.py` 会生成 filmstrip + waveform PNG；上半部分看画面连续性，下半部分看人声/静音边界。`--cut-list` 查看源素材时间轴，`--rendered-cut-list` 则按 `keep_segments` 累计时长映射到成片的实际拼接点；有全局变速或片头封面时同步传 `--output-speed` / `--output-offset`。JSON 会保留输出切点和前后 source range；无音频视频会自动只输出 filmstrip。
 
 **6d. 字幕 sidecar 交付（平台需要 SRT/VTT 时跑）**：
 ```bash

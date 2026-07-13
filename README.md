@@ -163,7 +163,7 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    │                            render_final 单次编码合成 PIP camera
    │
    ├─→ jump_cut.py              自适应静音检测 → cut list → 去停顿成片 + 切点音频 fade
-   │     └─→ timeline_view.py   切点 filmstrip + waveform 人工复核图
+   │     └─→ timeline_view.py   源素材删除段 / 成片输出切点 filmstrip + waveform 人工复核图
    │
    ├─→ edit_preflight.py        render_config/enrich_plan/cut list 渲染前预检
    │                            缺文件、空剪辑、非法时间段、危险参数 gate
@@ -843,16 +843,19 @@ python3 scripts/timeline_view.py input/talking.mp4 --cut-list output/talking.jum
 python3 scripts/jump_cut.py input/talking.mp4 --output output/talking.jumpcut.mp4 --cut-list output/talking.jumpcut.json --fade-duration 0.03
 ```
 
-### 🔎 Timeline View — 切点/可疑区间复盘图
+### 🔎 Timeline View — 源素材/成片切点复盘图
 [`scripts/timeline_view.py`](scripts/timeline_view.py) · [详细文档](docs/prompts/22-timeline-view.md)
 
-借鉴视频剪辑类 skill 的 `timeline_view` 工作台：在跳切前后或 QA 报警区间生成一张 PNG，上半部分是 filmstrip，下半部分是 waveform，方便快速判断“切点是否咬字、画面是否突跳、静音是否自然”。
+借鉴视频剪辑类 skill 的 `timeline_view` 工作台：在跳切前后或 QA 报警区间生成一张 PNG，上半部分是 filmstrip，下半部分是 waveform，方便快速判断“切点是否咬字、画面是否突跳、静音是否自然”。除源素材删除段外，现在也可把 cut list 的 `keep_segments` 累计映射到已渲染成片的实际输出切点，逐个检查拼接结果。
 
 常用：
 ```bash
 python3 scripts/timeline_view.py output/day58_master.mp4 --at 42.5 --radius 1.5 --output output/verify/42_5s.png
 python3 scripts/timeline_view.py origin/talking.mp4 --cut-list work/jumpcut.json --output-dir output/verify/cuts --limit 12
+python3 scripts/timeline_view.py output/rough_cut.mp4 --rendered-cut-list work/rough_cut.json --output-speed 1.25 --output-offset 1.0 --output-dir output/verify/rendered_cuts --json output/verify/rendered_cuts.json
 ```
+
+`--rendered-cut-list` 读取 `keep_segments` 的既定顺序，按每段 source duration / `--output-speed` 累加，并把 `--output-offset` 作为片头封面或其他前置时长。JSON 会为每张复盘图保存 `boundary.output_time`、前后 source range 与 `source_gap`；如果计算切点超过实际成片时长，脚本会提示校正 speed/offset，而不会输出错位证据。
 
 ### 🎨 AI 图像生成（gpt-image-2 / Codex imagegen）
 [`scripts/imagegen_hint.py`](scripts/imagegen_hint.py) · [`scripts/prompts/imagegen_templates.yaml`](scripts/prompts/imagegen_templates.yaml) · [详细文档](docs/prompts/19-imagegen.md)
@@ -957,6 +960,23 @@ python3 scripts/export_otio.py \
 ```
 
 适合把自动粗剪交给 Premiere / Final Cut Pro / DaVinci Resolve 做调色、混音、精剪或协作复核。EDL 更通用，FCPXML 对 FCP / Resolve 更直接，OTIO 更适合使用 OpenTimelineIO adapter 的跨工具流程；复杂字幕、overlay、章节卡和 B-roll 仍以 `render_final.py` / `export_capcut.py` 为准。
+
+### 2026-07-14 自动化升级记录（Rendered Cut Boundary Review）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`browser-use/video-use`](https://github.com/browser-use/video-use) | 在渲染后对成片的每个 cut boundary 生成 timeline view，自检画面跳变、waveform 爆点、overlay/字幕层级与时长 | 扩展现有 `timeline_view.py`，把 `keep_segments` 累计映射到成片输出时间轴，不再把源素材删除段中点误当成最终拼接点 |
+| [`ElliotPadfield/autocut`](https://github.com/ElliotPadfield/autocut) | rough cut assemble 后再复查成片，避免只验证 EDL 而漏掉渲染后的卡壳/重复 | 保持本地零 API 依赖，先补逐切点视觉 + 波形证据；二次 ASR 可按需另跑 `transcribe.py`，本次不强制重复转写 |
+| [`hoodini/ai-agents-skills` video-edit](https://github.com/hoodini/ai-agents-skills/tree/master/skills/video-edit) | 最终交付前做跨时间轴 spot-check，并先完成 transcript 人工批准 | 本项目已有 `transcript_review.py` 和 `render_qa.py`；本次只补它们没有覆盖的“全部成片拼接点”批量视图 |
+| [`ygtec/cut.skill`](https://github.com/ygtec/cut.skill) | 编辑器状态读取、原项目备份和跨剪映/Premiere 操控强调非破坏性 | 本项目继续使用本地 cut list、JSON manifest 与 EDL/FCPXML/OTIO 交接，不引入外部编辑器写入依赖 |
+
+新增/调整能力：[`scripts/timeline_view.py`](scripts/timeline_view.py) 新增 `--rendered-cut-list`，读取 rough/jump cut 的 `keep_segments`，按输出顺序累计每段时长并为每个真实拼接点生成 filmstrip + waveform PNG。`--output-speed` 支持成片全局变速，`--output-offset` 支持片头封面/前置时长；两者映射不匹配、计算切点超过实际成片时长时会显式报错。JSON manifest 新增 `mode=rendered_output_boundaries` 和每张图的 `boundary`：包含 `output_time`、前后 source range 与被跳过的 `source_gap`。原有 `--cut-list` 源素材复核保持兼容；同步更新 SKILL、[`docs/prompts/22-timeline-view.md`](docs/prompts/22-timeline-view.md) 和提示词索引。
+
+使用方式：rough/jump cut 渲染完成后运行 `python3 scripts/timeline_view.py output/rough_cut.mp4 --rendered-cut-list work/rough_cut.json --output-speed 1.25 --output-offset 1.0 --output-dir output/verify/rendered_cuts --json output/verify/rendered_cuts.json`。逐张查看切点前后的主体位置、字幕/overlay 遮挡、黑闪和 waveform 硬断；要看源素材里被删区间，仍使用 `--cut-list`。
+
+验证结果：`tests/test_timeline_view.py` 从 7 项扩展到 11 项，覆盖累计输出时间、变速、片头偏移、limit、source gap、窗口定位和成片时长错配；定向 `.venv/bin/python -m pytest tests/test_timeline_view.py -q` 通过 `11 passed in 0.03s`，最终全量 `.venv/bin/python -m pytest tests -q` 通过 `502 passed in 5.46s`。8 秒真实 FFmpeg smoke 含两段 1 秒静音，`jump_cut.py` 输出 6.433 秒成片，新模式准确定位 `2.10s` / `4.30s` 两个拼接点并生成两张 1600×490 RGB PNG；人工查看图中切点前后 filmstrip 与 waveform 均位于预期窗口。`.venv/bin/python -m compileall -q scripts tests`、`timeline_view.py --help`、skill `quick_validate.py` 和 `git diff --check` 全部通过。
 
 ### 2026-07-13 自动化升级记录（Timecoded Review Proxy）
 
@@ -1835,7 +1855,7 @@ pytest tests/test_project_bootstrap.py -v   # 项目启动与 source inventory
 pytest tests/test_edit_brief_plan.py -v     # 自然语言剪辑需求 → 本地 runbook
 pytest tests/test_hook_variants.py -v       # 前三秒 hook 批量角度 + 风险检查
 pytest tests/test_rough_cut.py -v           # ASR 粗剪：口头禅/重复句 cut list
-pytest tests/test_timeline_view.py -v       # 切点/QA 可视化复盘图
+pytest tests/test_timeline_view.py -v       # 源素材/成片切点可视化复盘图
 pytest tests/test_generate_caption.py -v    # 文案合成
 pytest tests/test_imagegen_hint.py -v       # gpt-image-2 提示词检测
 pytest tests/test_storyboard_plan.py -v     # 分镜 shot cards + 生成路由
@@ -2008,7 +2028,7 @@ pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 g
 | **19** | **[AI 生图（gpt-image-2 / Codex imagegen）](docs/prompts/19-imagegen.md)** | **抽象概念自动配图** |
 | **20** | **[Render QA](docs/prompts/20-render-qa.md)** | **渲染后机器质检** |
 | **21** | **[Jump Cut](docs/prompts/21-jump-cut.md)** | **自动去停顿** |
-| **22** | **[Timeline View](docs/prompts/22-timeline-view.md)** | **切点/可疑区间人工复盘图** |
+| **22** | **[Timeline View](docs/prompts/22-timeline-view.md)** | **源素材删除段 / 成片输出切点人工复盘图** |
 | **23** | **[Versioned Output](docs/prompts/23-versioned-output.md)** | **避免覆盖旧成片** |
 | **24** | **[Storyboard Plan](docs/prompts/24-storyboard-plan.md)** | **分镜 shot cards + 生成路由** |
 | **25** | **[Storyboard Assets](docs/prompts/25-storyboard-assets.md)** | **分镜素材任务清单 + ready 预检** |
@@ -2095,7 +2115,7 @@ scripts/
 ├── render_final.py             单次编码渲染 + enrich_plan 接入（V3 强化）
 ├── render_qa.py                渲染后黑屏/静帧/静音/尺寸质检       [V3]
 ├── audio_master_report.py      成片响度 / true peak / LRA 发布门禁 [V3]
-├── timeline_view.py            filmstrip+waveform 可视化复盘图     [V3]
+├── timeline_view.py            源素材/成片切点 filmstrip+waveform  [V3]
 ├── subtitle_pack.py            SRT/VTT/ASS/JSON 字幕交付包        [V3]
 ├── import_capcut_subtitles.py  剪映/CapCut 字幕反向导入 + gap cut [V3]
 ├── srt_edit_plan.py            SRT 编辑指令 → render_config/cut   [V3]

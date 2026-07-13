@@ -34,7 +34,7 @@
 | 19 | [AI 生图（gpt-image-2 / Codex imagegen）](19-imagegen.md) | 抽象概念自动配图，提示词适配 gpt-image-2 |
 | 20 | [Render QA 渲染后质检](20-render-qa.md) | 检查尺寸/音频/黑屏/静帧/静音，批量留 QA JSON |
 | 21 | [Jump Cut 自动去停顿](21-jump-cut.md) | 自适应静音检测，先出 cut list，再一次渲染去停顿成片，默认切点音频 fade |
-| 22 | [Timeline View 切点/可疑区间复盘图](22-timeline-view.md) | 生成 filmstrip + waveform PNG，人工复核切点和 QA 报警 |
+| 22 | [Timeline View 源素材/成片切点复盘图](22-timeline-view.md) | 生成 filmstrip + waveform PNG，人工复核源素材删除段、成片输出切点和 QA 报警 |
 | 23 | [Versioned Output 成片版本化](23-versioned-output.md) | `render_final.py --versioned-output` 自动写入 `_V<N>`，避免覆盖旧成片 |
 | 24 | [Storyboard Plan 分镜与生成路由](24-storyboard-plan.md) | transcript/clean script → shot cards、生成路由、连续性锚点 |
 | 25 | [Storyboard Assets 素材清单与预检](25-storyboard-assets.md) | storyboard_plan → 素材状态表、paid approval、ready 检查 |
@@ -100,7 +100,7 @@
 | 抽象概念想用 AI 生图（注意力机制/复利…） | [19-imagegen](19-imagegen.md) |
 | 渲染后想确认没有黑屏/静帧/静音/尺寸错 | [20-Render QA](20-render-qa.md) |
 | 口播停顿太多想自动剪紧 | [21-Jump Cut](21-jump-cut.md) |
-| 想人工看切点附近画面和波形 | [22-Timeline View](22-timeline-view.md) |
+| 想人工看源素材或成片切点附近画面和波形 | [22-Timeline View](22-timeline-view.md) |
 | 不想每次渲染覆盖上一版成片 | [23-Versioned Output](23-versioned-output.md) |
 | 生成图/生成视频前想先审分镜和路由 | [24-Storyboard Plan](24-storyboard-plan.md) |
 | 渲染前想确认分镜素材是否都 ready | [25-Storyboard Assets](25-storyboard-assets.md) |
