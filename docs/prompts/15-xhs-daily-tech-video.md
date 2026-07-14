@@ -128,7 +128,8 @@
 4g. # 如果输入是完整口播视频、访谈或录屏，且停顿很多，可先生成去停顿 cut list：
     python3 scripts/jump_cut.py origin/<talking_video>.mp4 \
       --dry-run \
-      --cut-list work/jumpcut.json
+      --cut-list work/jumpcut.json \
+      --strict
     python3 scripts/timeline_view.py origin/<talking_video>.mp4 \
       --cut-list work/jumpcut.json \
       --output-dir output/verify/jumpcut \
@@ -137,6 +138,7 @@
     # 再查看 output/verify/jumpcut/*.png 的 filmstrip + waveform；
     # 需要独立去停顿成片时再加 --output output/day<NN>_jumpcut.mp4；
     # 默认 --fade-duration 0.03 会降低切点爆音，只有需要硬切原声时才设为 0。
+    # 默认最多删除源时长的 20%；超限会 blocked，审查后才调高 --max-removal-ratio 或加 --allow-over-budget。
     # 详见 docs/prompts/21-jump-cut.md 和 docs/prompts/22-timeline-view.md
 
 5. python3 scripts/content_guard.py \

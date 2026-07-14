@@ -21,6 +21,7 @@ from utils import get_ffmpeg_encode_args  # noqa: E402
 
 DEFAULT_NOISE_DB = -35.0
 DEFAULT_FADE_SECONDS = 0.03
+DEFAULT_MAX_REMOVAL_RATIO = 0.20
 
 
 @dataclass(frozen=True)
@@ -161,12 +162,32 @@ def detect_silences(input_path: str, noise_db: float, min_silence: float,
 def build_cut_plan(input_path: str, output_path: Optional[str], duration: float,
                    silences: List[Segment], noise_db: float, min_silence: float,
                    pad: float, min_keep: float,
-                   fade_seconds: float = DEFAULT_FADE_SECONDS) -> Dict:
+                   fade_seconds: float = DEFAULT_FADE_SECONDS,
+                   max_removal_ratio: float = DEFAULT_MAX_REMOVAL_RATIO,
+                   allow_over_budget: bool = False) -> Dict:
     keep_segments = build_keep_segments(duration, silences, pad=pad, min_keep=min_keep)
     removed_segments = infer_removed_segments(duration, keep_segments)
     removed_seconds = sum(s.duration for s in removed_segments)
     kept_seconds = sum(s.duration for s in keep_segments)
+    removed_ratio = removed_seconds / duration if duration > 0 else 0.0
+    over_budget = removed_ratio > max_removal_ratio
+    blocked = over_budget and not allow_over_budget
+    blockers = []
+    warnings = []
+    budget_message = (
+        f"Proposed silence removal is {removed_ratio:.1%} of the source, "
+        f"above the {max_removal_ratio:.1%} safety budget"
+    )
+    if blocked:
+        blockers.append(
+            budget_message
+            + "; review removed_segments, raise --max-removal-ratio, or explicitly pass --allow-over-budget"
+        )
+    elif over_budget:
+        warnings.append(budget_message + "; explicit --allow-over-budget override recorded")
     return {
+        "version": "jump_cut_plan.v2",
+        "status": "blocked" if blocked else "ready",
         "input": os.path.abspath(input_path),
         "output": os.path.abspath(output_path) if output_path else None,
         "duration": _round4(duration),
@@ -181,6 +202,20 @@ def build_cut_plan(input_path: str, output_path: Optional[str], duration: float,
         "removed_seconds": _round4(removed_seconds),
         "output_duration_estimate": _round4(kept_seconds),
         "speedup_ratio": round(duration / kept_seconds, 3) if kept_seconds else None,
+        "removal_budget": {
+            "max_ratio": round(max_removal_ratio, 4),
+            "max_seconds": _round4(duration * max_removal_ratio),
+            "proposed_ratio": round(removed_ratio, 4),
+            "proposed_seconds": _round4(removed_seconds),
+            "over_budget": over_budget,
+            "override": bool(allow_over_budget and over_budget),
+        },
+        "blockers": blockers,
+        "warnings": warnings,
+        "summary": {
+            "blocking": len(blockers),
+            "warnings": len(warnings),
+        },
     }
 
 
@@ -290,6 +325,12 @@ def main() -> int:
     p.add_argument("--fade-duration", type=float, default=DEFAULT_FADE_SECONDS,
                    help="Audio fade-in/out seconds per kept segment to prevent cut pops. Set 0 to disable")
     p.add_argument("--min-keep", type=float, default=0.15, help="Drop accidental kept fragments shorter than this")
+    p.add_argument("--max-removal-ratio", type=float, default=DEFAULT_MAX_REMOVAL_RATIO,
+                   help="Maximum source-duration ratio removable without explicit approval (default: 0.20)")
+    p.add_argument("--allow-over-budget", action="store_true",
+                   help="Record explicit approval and render even when proposed removal exceeds the safety budget")
+    p.add_argument("--strict", action="store_true",
+                   help="Return exit code 2 when a dry-run plan is blocked by the removal budget")
     p.add_argument("--dry-run", action="store_true", help="Only detect and write/print the cut list")
     args = p.parse_args()
 
@@ -301,6 +342,9 @@ def main() -> int:
         return 1
     if args.fade_duration < 0:
         print("Error: --fade-duration must be >= 0", file=sys.stderr)
+        return 1
+    if not 0 <= args.max_removal_ratio <= 1:
+        print("Error: --max-removal-ratio must be between 0 and 1", file=sys.stderr)
         return 1
 
     metadata = probe_media(args.input)
@@ -316,6 +360,8 @@ def main() -> int:
         noise_db=noise_db, min_silence=args.min_silence,
         pad=args.pad, min_keep=args.min_keep,
         fade_seconds=args.fade_duration,
+        max_removal_ratio=args.max_removal_ratio,
+        allow_over_budget=args.allow_over_budget,
     )
 
     if args.cut_list:
@@ -323,6 +369,11 @@ def main() -> int:
         print(f"Cut list written: {args.cut_list}")
     else:
         print(json.dumps(plan, ensure_ascii=False, indent=2))
+
+    if plan["status"] == "blocked":
+        print(f"Blocked: {plan['blockers'][0]}", file=sys.stderr)
+        if not args.dry_run or args.strict:
+            return 2
 
     if args.dry_run:
         return 0

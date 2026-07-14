@@ -83,7 +83,8 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         "rough_cut",
         "Rough / Jump Cut",
         ("**/rough_cut.json", "**/jump_cut.json", "**/*_cut_list.json"),
-        "Run rough_cut.py or jump_cut.py if pause removal is needed.",
+        "Review the rough/jump cut plan and resolve any removal-budget blocker before rendering.",
+        blocks_when_present=True,
     ),
     ArtifactDef(
         "scene_boundaries",
@@ -493,6 +494,7 @@ def evaluate_category(definition: ArtifactDef, artifacts: Sequence[ArtifactRecor
             "shorts_batch",
             "edit_brief_plan",
             "audio_boundary_plan",
+            "rough_cut",
         }:
             blocking = _int_at(data, "summary", "blocking")
             if blocking:

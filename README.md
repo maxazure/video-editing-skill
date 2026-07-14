@@ -162,7 +162,7 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    ├─→ pip_overlay.py           录屏 + facecam → pip_overlays 小窗计划
    │                            render_final 单次编码合成 PIP camera
    │
-   ├─→ jump_cut.py              自适应静音检测 → cut list → 去停顿成片 + 切点音频 fade
+   ├─→ jump_cut.py              自适应静音检测 → 20% 删除预算 → cut list → 去停顿成片 + 切点音频 fade
    │     └─→ timeline_view.py   源素材删除段 / 成片输出切点 filmstrip + waveform 人工复核图
    │
    ├─→ edit_preflight.py        render_config/enrich_plan/cut list 渲染前预检
@@ -832,16 +832,19 @@ python3 scripts/timeline_view.py origin/talking.mp4 --cut-list work/rough_cut.js
 |---|---|
 | 自适应阈值 | 先跑 `loudnorm=print_format=json`，用 `input_thresh` 作为 `silencedetect` 阈值 |
 | 可审计 cut list | 输出 `detected_silences` / `removed_segments` / `keep_segments` / `speedup_ratio` |
+| 删除预算 gate | 默认最多删除源时长 20%；超限写 blocked 计划并拒绝渲染，显式 `--allow-over-budget` 才放行 |
 | 安全 padding | 默认每个切点保留 0.08s，避免咬字被切掉 |
 | 防爆音 fade | 默认每个保留片段加 30ms 音频淡入/淡出；`--fade-duration 0` 可关闭 |
 | 单次编码渲染 | 用 `trim/atrim + concat` 一次输出，不产生中间重编码文件 |
 
 常用：
 ```bash
-python3 scripts/jump_cut.py input/talking.mp4 --dry-run --cut-list output/talking.jumpcut.json
+python3 scripts/jump_cut.py input/talking.mp4 --dry-run --cut-list output/talking.jumpcut.json --strict
 python3 scripts/timeline_view.py input/talking.mp4 --cut-list output/talking.jumpcut.json --output-dir output/verify/cuts
 python3 scripts/jump_cut.py input/talking.mp4 --output output/talking.jumpcut.mp4 --cut-list output/talking.jumpcut.json --fade-duration 0.03
 ```
+
+cut list 会记录 `removal_budget`、`status`、`summary.blocking`、blockers/warnings。若预计删除超过 20%，先检查 `removed_segments` 和切点复盘图，再调整 `--min-silence` / `--pad` / `--max-removal-ratio`；只有明确接受超预算剪辑时才加 `--allow-over-budget`。`pipeline_manifest.py` 会把未批准的超预算 jump cut 识别为 `rough_cut` blocker。
 
 ### 🔎 Timeline View — 源素材/成片切点复盘图
 [`scripts/timeline_view.py`](scripts/timeline_view.py) · [详细文档](docs/prompts/22-timeline-view.md)
@@ -960,6 +963,23 @@ python3 scripts/export_otio.py \
 ```
 
 适合把自动粗剪交给 Premiere / Final Cut Pro / DaVinci Resolve 做调色、混音、精剪或协作复核。EDL 更通用，FCPXML 对 FCP / Resolve 更直接，OTIO 更适合使用 OpenTimelineIO adapter 的跨工具流程；复杂字幕、overlay、章节卡和 B-roll 仍以 `render_final.py` / `export_capcut.py` 为准。
+
+### 2026-07-15 自动化升级记录（Jump Cut Removal Budget）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`htekdev/vidpipe`](https://github.com/htekdev/vidpipe) | 静音剪除先检测、再决定删除段，把总删除量限制为源时长 20%，并与字幕放进 single-pass edit | 为现有本地 `jump_cut.py` 增加同类安全预算；不引入 AI 决策，超限交给人工复核 |
+| [`MastroMimmo/ffmpeg-skill`](https://github.com/MastroMimmo/ffmpeg-skill) | 18 个高层 FFmpeg 命令统一输出结构化 JSON，另有两遍 `vidstab` 稳定化 | 延续本项目 JSON artifact / CLI 模式；稳定化需先设计不破坏最终单次编码的接入方式，本次不混入 |
+| [`luoluoluo22/jianying-editor-skill`](https://github.com/luoluoluo22/jianying-editor-skill) | 网页动效转视频、录屏智能变焦、语义素材匹配和剪映时间线自动化 | 本项目已有 Remotion、`screen_focus.py`、`media_library.py recommend` 和 CapCut handoff，本次不重复增加相邻入口 |
+| [`video-db/skills`](https://github.com/video-db/skills) | 视觉/口播索引、时间戳证据、语义场景搜索和 server-side timeline | 本项目继续 local-first，以 `video_understanding.py`、`highlight_picker.py` 和 `timeline_view.py` 保留本地证据链，不新增云端 API 依赖 |
+
+新增/调整能力：`scripts/jump_cut.py` 新增默认 `--max-removal-ratio 0.20` 删除预算。计划现在写入 `version=jump_cut_plan.v2`、`status`、`removal_budget`、`blockers` / `warnings` 和 `summary.blocking`；预计删除超过 20% 时仍会先写 cut list，但 dry-run 加 `--strict` 返回 2，实际渲染无论是否 strict 都返回 2 且不产生输出。人工检查 `removed_segments` 与 `timeline_view.py` 复盘图后，可调高预算，或用 `--allow-over-budget` 明确批准；批准会留在 JSON 的 `removal_budget.override=true` 和 warning 中。`pipeline_manifest.py` 现在把未批准的超预算 jump cut 识别为 `rough_cut` blocker；同步更新 SKILL、每日工作流和 [Jump Cut 提示词](docs/prompts/21-jump-cut.md)。
+
+使用方式：先运行 `python3 scripts/jump_cut.py input/talking.mp4 --dry-run --cut-list work/jump_cut.json --strict`。如果退出 2，打开 JSON 检查 `removal_budget.proposed_ratio` 和 `removed_segments`，再用 `timeline_view.py --cut-list work/jump_cut.json` 看切点。确认全部删除段都安全后，可调整 `--min-silence` / `--pad` / `--max-removal-ratio`，或在渲染命令上显式加 `--allow-over-budget`；不要把 override 当成默认参数。
+
+验证结果：定向 `.venv/bin/python -m pytest tests/test_jump_cut.py tests/test_pipeline_manifest.py -q` 通过 `47 passed in 0.45s`；最终全量 `.venv/bin/python -m pytest tests -q` 通过 `505 passed in 5.55s`。10 秒真实 FFmpeg 样片含 3 秒静音，默认计划得到 `proposed_ratio=0.284`：strict dry-run 与实际渲染均返回 2，未生成 blocked MP4；加 `--allow-over-budget` 后得到 `status=ready`、`override=true`、`warnings=1`，成功输出 7.163 秒 MP4。`.venv/bin/python -m compileall -q scripts tests`、`jump_cut.py --help`、manifest category smoke、skill `quick_validate.py` 和 `git diff --check` 全部通过。
 
 ### 2026-07-14 自动化升级记录（Rendered Cut Boundary Review）
 

@@ -262,6 +262,24 @@ def test_optional_audio_boundary_plan_blocks_when_word_timestamps_missing(tmp_pa
     assert "audio_boundary_plan" in manifest["blocked_gates"]
 
 
+def test_optional_jump_cut_blocks_when_removal_budget_is_exceeded(tmp_path):
+    _publish_ready_project(tmp_path)
+    _write(tmp_path / "work" / "jump_cut.json", {
+        "version": "jump_cut_plan.v2",
+        "status": "blocked",
+        "summary": {"blocking": 1, "warnings": 0},
+        "removal_budget": {"max_ratio": 0.2, "proposed_ratio": 0.35, "over_budget": True},
+    })
+
+    manifest = build_manifest(str(tmp_path), target_stage="publish_ready")
+
+    assert manifest["status"] == "blocked"
+    assert "rough_cut" in manifest["blocked_gates"]
+    gate = next(g for g in manifest["gates"] if g["category"] == "rough_cut")
+    assert gate["blocks_when_present"] is True
+    assert "1 blocking item(s) in summary.blocking" in gate["notes"]
+
+
 def test_optional_shorts_batch_blocks_when_source_missing(tmp_path):
     _publish_ready_project(tmp_path)
     _write(tmp_path / "work" / "shorts_batch.json", {

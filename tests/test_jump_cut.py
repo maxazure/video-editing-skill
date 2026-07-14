@@ -3,6 +3,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts"))
 
+import jump_cut  # noqa: E402
 from jump_cut import (  # noqa: E402
     Segment,
     build_cut_plan,
@@ -71,6 +72,70 @@ def test_build_cut_plan_reports_speedup_and_removed_segments():
     assert plan["speedup_ratio"] == 1.333
     assert plan["fade_seconds"] == 0.03
     assert plan["removed_segments"] == [{"start": 2.0, "end": 4.0, "duration": 2.0}]
+    assert plan["status"] == "blocked"
+    assert plan["removal_budget"] == {
+        "max_ratio": 0.2,
+        "max_seconds": 1.6,
+        "proposed_ratio": 0.25,
+        "proposed_seconds": 2.0,
+        "over_budget": True,
+        "override": False,
+    }
+    assert plan["summary"]["blocking"] == 1
+
+
+def test_explicit_override_records_warning_and_unblocks_plan():
+    plan = build_cut_plan(
+        "talking.mp4",
+        "talking.jumpcut.mp4",
+        duration=8.0,
+        silences=[Segment(start=2.0, end=4.0, duration=2.0)],
+        noise_db=-34.5,
+        min_silence=0.5,
+        pad=0.0,
+        min_keep=0.15,
+        allow_over_budget=True,
+    )
+
+    assert plan["status"] == "ready"
+    assert plan["removal_budget"]["override"] is True
+    assert plan["summary"] == {"blocking": 0, "warnings": 1}
+    assert "explicit --allow-over-budget" in plan["warnings"][0]
+
+
+def test_cli_refuses_render_when_removal_budget_is_exceeded(tmp_path, monkeypatch):
+    input_path = tmp_path / "talking.mp4"
+    output_path = tmp_path / "jumpcut.mp4"
+    cut_list = tmp_path / "jump_cut.json"
+    input_path.write_bytes(b"fake")
+    metadata = {
+        "format": {"duration": "10.0"},
+        "streams": [{"codec_type": "video"}, {"codec_type": "audio"}],
+    }
+    rendered = []
+    monkeypatch.setattr(jump_cut, "probe_media", lambda _path: metadata)
+    monkeypatch.setattr(jump_cut, "measure_adaptive_noise_db", lambda _path: -35.0)
+    monkeypatch.setattr(
+        jump_cut,
+        "detect_silences",
+        lambda *_args, **_kwargs: [Segment(start=2.0, end=5.0, duration=3.0)],
+    )
+    monkeypatch.setattr(jump_cut, "run_ffmpeg_with_fallback", lambda *_args, **_kwargs: rendered.append(True))
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "jump_cut.py",
+            str(input_path),
+            "--output", str(output_path),
+            "--cut-list", str(cut_list),
+        ],
+    )
+
+    assert jump_cut.main() == 2
+    assert rendered == []
+    assert not output_path.exists()
+    assert cut_list.exists()
 
 
 def test_build_ffmpeg_command_uses_single_concat_encode_for_video():

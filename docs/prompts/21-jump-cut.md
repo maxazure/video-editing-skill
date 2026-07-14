@@ -1,6 +1,6 @@
 # Jump Cut 自动去停顿
 
-用于口播、访谈、课程录屏这类“内容密度比画面连续性更重要”的素材。它会先检测静音/停顿，生成可审计 cut list，再按需一次 ffmpeg concat 渲染成更紧凑的成片。渲染时默认给每个保留片段加 30ms 音频 fade-in/out，降低切点爆音。
+用于口播、访谈、课程录屏这类“内容密度比画面连续性更重要”的素材。它会先检测静音/停顿，生成可审计 cut list，再按需一次 ffmpeg concat 渲染成更紧凑的成片。渲染时默认给每个保留片段加 30ms 音频 fade-in/out，降低切点爆音；总删除量默认不能超过源时长的 20%，防止把长停顿、表情反应或屏幕操作一次性剪掉太多。
 
 ## 什么时候用
 
@@ -15,7 +15,8 @@
 ```bash
 python3 scripts/jump_cut.py input/talking.mp4 \
   --dry-run \
-  --cut-list output/talking.jumpcut.json
+  --cut-list output/talking.jumpcut.json \
+  --strict
 ```
 
 生成切点复盘图，快速查看每段删除区域附近的画面和波形：
@@ -36,6 +37,8 @@ python3 scripts/jump_cut.py input/talking.mp4 \
   --cut-list output/talking.jumpcut.json
 ```
 
+如果 `removal_budget.over_budget=true`，默认会写出 blocked 计划并拒绝渲染。先调整 `--min-silence` / `--pad` 或提高 `--max-removal-ratio`；确实确认全部删除段都安全时，才显式加 `--allow-over-budget`，该批准会记录在 JSON 中。
+
 ## 参数
 
 | 参数 | 默认 | 说明 |
@@ -45,6 +48,9 @@ python3 scripts/jump_cut.py input/talking.mp4 \
 | `--pad 0.08` | 0.08 | 每个切点两侧保留的缓冲，避免咬字被切掉 |
 | `--fade-duration 0.03` | 0.03 | 每个保留片段的音频淡入/淡出秒数，避免 concat 切点 pop；设为 `0` 关闭 |
 | `--min-keep 0.15` | 0.15 | 太短的保留碎片会被丢弃 |
+| `--max-removal-ratio 0.20` | 0.20 | 无显式批准时允许删除的源时长比例，范围 0-1 |
+| `--allow-over-budget` | 关 | 明确批准超预算渲染，并在计划中记录 override warning |
+| `--strict` | 关 | dry-run 计划 blocked 时返回退出码 2；实际渲染超预算始终返回 2 |
 | `--dry-run` | 关 | 只输出 cut list，不渲染视频 |
 
 ## 输出 JSON
@@ -58,10 +64,13 @@ python3 scripts/jump_cut.py input/talking.mp4 \
 - `removed_seconds`：预计删除总秒数。
 - `output_duration_estimate`：预计输出时长。
 - `speedup_ratio`：节奏压缩比例。
+- `removal_budget`：删除预算、预计比例、是否超限和是否显式批准。
+- `status` / `summary.blocking`：超预算未批准时为 blocked，可被 `pipeline_manifest.py` 识别。
 
 ## 注意
 
 - 这是节奏剪辑，不是内容理解剪辑；如果停顿里有重要表情或屏幕操作，先看 cut list。
 - 背景噪声很大的素材可手动指定阈值，例如 `--noise-db -32`。
 - 默认 30ms fade 是为了防止切点爆音；如果要导出完全无淡化的硬切音频，传 `--fade-duration 0`。
+- 默认 20% 删除预算是安全门禁，不会自动替你挑选要保留的表情/停顿；超限后先人工审查，再决定调参或批准 override。
 - 默认只进行最终一次编码，符合本项目“单次编码原则”。
