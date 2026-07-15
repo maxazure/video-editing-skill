@@ -173,6 +173,7 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    │     可选 --versioned-output：输出 _V<N>，避免覆盖旧成片
    │
    ├─→ render_qa.py             渲染后黑屏/静帧/静音/尺寸质检 + review packet
+   ├─→ speech_continuity_qa.py  成片二次 ASR → 切点复读 / 近重复 take / 句内口吃 gate
    ├─→ review_proxy.py          低码率完整审片 MP4 / 可见时间码 / faststart
    ├─→ audio_master_report.py   成片响度 / true peak / LRA / 长静音发布 gate
    │     └─→ timeline_view.py   QA 可疑区间可视化复盘
@@ -964,6 +965,24 @@ python3 scripts/export_otio.py \
 
 适合把自动粗剪交给 Premiere / Final Cut Pro / DaVinci Resolve 做调色、混音、精剪或协作复核。EDL 更通用，FCPXML 对 FCP / Resolve 更直接，OTIO 更适合使用 OpenTimelineIO adapter 的跨工具流程；复杂字幕、overlay、章节卡和 B-roll 仍以 `render_final.py` / `export_capcut.py` 为准。
 
+### 2026-07-16 自动化升级记录（Rendered Speech Continuity QA）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`ElliotPadfield/autocut`](https://github.com/ElliotPadfield/autocut) | rough cut assemble 后重新转录成片，检查卡壳和重复，避免只验证 EDL | 把本项目原有“音频重复检测”人工说明实现成独立、本地、可机读 gate；不复制对方实现或引入 Node 管线 |
+| [`openakita/openakita` ClipSense](https://github.com/openakita/openakita/blob/main/plugins/clip-sense/SKILL.md) | 编辑任务有明确 pipeline step、结构化状态、error kind 和本地/付费成本边界 | 延续本项目 JSON / Markdown / `summary.blocking` 约定；保持只读、零 API、零 credits |
+| [`thesongzhu/Friday` video-editing-planner](https://github.com/thesongzhu/Friday/blob/main/skills/video-editing-planner/SKILL.md) | 以 story clarity 为先，避免为了节奏做过度剪辑 | 检测只报告技术性复读，不自动删片；命中后仍要求人工试听再改源 timeline |
+| [`henryalouf/ruflow` storyboard](https://github.com/henryalouf/ruflow/blob/main/.agents/skills/storyboard/SKILL.md) | 每个镜头服务明确节拍，并与 voiceover beat 对齐 | 本项目已有 storyboard / motion / audio cue 层，本次不重复新增 shot planner，只补 render 后语义验证 |
+| [`nikolovlazar/dotfiles` video-script](https://github.com/nikolovlazar/dotfiles/blob/main/.agents/skills/video-script/SKILL.md) | VIDEO/AUDIO 双栏让每个 beat 的听觉状态显式可查 | 本项目已有 storyboard + audio cue artifacts；保留为后续 AV 合并视图候选，本次聚焦已渲染成片事故 |
+
+新增/调整能力：新增 [`scripts/speech_continuity_qa.py`](scripts/speech_continuity_qa.py)，读取已渲染 master 的二次 transcript，检测 `boundary_exact_repeat`（前段结尾/后段开头精确复读）、`adjacent_near_duplicate`（相邻近重复 take）和 `internal_immediate_repeat`（句内即时口吃）。中文按字、英文按词归一化；默认至少 3 个单位、near-duplicate 相似度 0.90、相邻间隔不超过 2 秒。不同 speaker 默认不互判，可显式加 `--include-speaker-changes`。输出 `speech_continuity_qa.v1` JSON / Markdown，`--strict` 命中返回 2；`pipeline_manifest.py` 会发现报告并把 `summary.blocking > 0` 视为发布 blocker，也支持 `--require speech_continuity_qa`。同步更新 SKILL 和 [Speech Continuity QA 提示词](docs/prompts/67-speech-continuity-qa.md)。
+
+使用方式：先对**已渲染 master**运行 `extract_audio.py` 和 `transcribe.py`，再执行 `python3 scripts/speech_continuity_qa.py output/final_transcript.json --output verify/speech_continuity_qa.json --markdown verify/speech_continuity_qa.md --strict`。如果退出 2，按报告时间范围试听 master，并用 `timeline_view.py --at <seconds>` 看切点；调整源 `render_config` / cut list 后重新渲染、重新转录、复跑，不能复用源素材 transcript 或在成片上二次拼补。
+
+验证结果：定向 `.venv/bin/python -m pytest tests/test_speech_continuity_qa.py tests/test_pipeline_manifest.py -q` 通过 `50 passed in 0.49s`；最终全量 `.venv/bin/python -m pytest tests -q` 通过 `518 passed in 4.61s`。测试覆盖中英 token 化、最长边界复读、句内口吃及 segment evidence、近重复 take、跨 speaker 默认跳过、clean ready、Markdown、strict CLI 和 manifest blocker / required gate。`.venv/bin/python -m compileall -q scripts tests`、`speech_continuity_qa.py --help`、manifest category smoke、skill `quick_validate.py` 和 `git diff --check` 全部通过。
+
 ### 2026-07-15 自动化升级记录（Jump Cut Removal Budget）
 
 本次联网研究的 GitHub 参考：
@@ -1532,6 +1551,23 @@ python3 scripts/timeline_view.py output/day58_master.mp4 --at 42.5 --radius 1.5 
 
 `--review-dir` 会写 `render_qa_review.json` 和 `render_qa_review.md`，把黑屏、静帧、静音的可疑区间按 FAIL/WARN 排序；`--review-clips` 会额外抽取短 MP4 证据片段。只需要审阅清单时不加 `--review-clips`。
 
+### 🗣️ Speech Continuity QA — 成片复读 / 口吃门禁
+[`scripts/speech_continuity_qa.py`](scripts/speech_continuity_qa.py) · [详细文档](docs/prompts/67-speech-continuity-qa.md)
+
+`render_qa.py` 和 waveform 能检查信号，却不能判断“上一句结尾是否又在下一句开头说了一遍”。`speech_continuity_qa.py` 读取**已渲染 master 的二次 transcript**，检测切点精确复读、相邻近重复 take 和句内即时口吃，输出 `speech_continuity_qa.v1` JSON / Markdown；不同 speaker 默认不互判，减少访谈误报。
+
+常用：
+```bash
+python3 scripts/extract_audio.py output/day58_master.mp4
+python3 scripts/transcribe.py output/day58_master_audio.wav --model auto --language zh --word-timestamps
+python3 scripts/speech_continuity_qa.py output/day58_master_transcript.json \
+  --output verify/speech_continuity_qa.json \
+  --markdown verify/speech_continuity_qa.md \
+  --strict
+```
+
+命中项会写入精确成片时间范围、重复文本、segment evidence 和修复建议；`--strict` 返回 2。先试听 master 并用 `timeline_view.py --at <seconds>` 看切点，再回到源 `render_config` / cut list 重渲染，避免在成片上二次拼补。只要报告存在且 `summary.blocking > 0`，`pipeline_manifest.py` 会阻塞；发布流程要强制具备此报告时加 `--require speech_continuity_qa`。
+
 ### 🎚️ Audio Master Report — 成片响度发布门禁
 [`scripts/audio_master_report.py`](scripts/audio_master_report.py) · [详细文档](docs/prompts/54-audio-master-report.md)
 
@@ -2071,6 +2107,7 @@ pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 g
 | **60** | **[Takes Pack](docs/prompts/60-takes-pack.md)** | **多 take / Scribe transcript 压成保留 speaker/audio events 的 phrase-level 阅读视图** |
 | **61** | **[Project Bootstrap](docs/prompts/61-project-bootstrap.md)** | **原始素材目录 → source inventory + project memory** |
 | **62** | **[Hook Variants](docs/prompts/62-hook-variants.md)** | **同一视频批量生成前三秒 hook 角度** |
+| **67** | **[Speech Continuity QA](docs/prompts/67-speech-continuity-qa.md)** | **成片二次 ASR 检查复读、近重复 take 和句内口吃** |
 
 完整列表见 [docs/prompts/README.md](docs/prompts/README.md)。
 
@@ -2134,6 +2171,7 @@ scripts/
 ├── edit_preflight.py           渲染前结构/路径/参数预检 gate       [V3]
 ├── render_final.py             单次编码渲染 + enrich_plan 接入（V3 强化）
 ├── render_qa.py                渲染后黑屏/静帧/静音/尺寸质检       [V3]
+├── speech_continuity_qa.py     成片二次 ASR 复读 / 口吃发布 gate  [V3]
 ├── audio_master_report.py      成片响度 / true peak / LRA 发布门禁 [V3]
 ├── timeline_view.py            源素材/成片切点 filmstrip+waveform  [V3]
 ├── subtitle_pack.py            SRT/VTT/ASS/JSON 字幕交付包        [V3]

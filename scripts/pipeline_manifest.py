@@ -228,6 +228,16 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         blocks_when_present=True,
     ),
     ArtifactDef(
+        "speech_continuity_qa",
+        "Speech Continuity QA",
+        (
+            "**/speech_continuity_qa.json",
+            "**/*_speech_continuity_qa.json",
+        ),
+        "Re-transcribe the rendered master, run speech_continuity_qa.py, and fix repeated speech before publishing.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "review_proxy",
         "Review Proxy",
         (
@@ -495,6 +505,7 @@ def evaluate_category(definition: ArtifactDef, artifacts: Sequence[ArtifactRecor
             "edit_brief_plan",
             "audio_boundary_plan",
             "rough_cut",
+            "speech_continuity_qa",
         }:
             blocking = _int_at(data, "summary", "blocking")
             if blocking:

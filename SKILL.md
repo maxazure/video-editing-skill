@@ -1,6 +1,6 @@
 ---
 name: video-editing
-description: "Xiaohongshu/RED-tuned short-form video workflow for raw voice-over, talking-head, tutorials, interviews, podcasts, long videos, screen recordings, B-roll, captions, and generated assets. Covers natural-language edit brief routing, project bootstrap, transcription, multi-take packs, audio sync, cleanup, highlights/shorts, hook/story rewrite, content/source gates, B-roll/enrich/gpt-image-2/video-generation planning, async generation logs, media recommendations, screen focus, PIP, color grade, preflight/render/QA/audio master, timecoded review proxies, subtitles, CapCut import, multi-platform exports, captions, publish packages, dashboards, resume packets, EDL/FCPXML/OTIO, and Remotion animation."
+description: "Xiaohongshu/RED-tuned short-form video workflow for raw voice-over, talking-head, tutorials, interviews, podcasts, long videos, screen recordings, B-roll, captions, and generated assets. Covers natural-language edit brief routing, project bootstrap, transcription, multi-take packs, audio sync, cleanup, highlights/shorts, hook/story rewrite, content/source gates, B-roll/enrich/gpt-image-2/video-generation planning, async generation logs, media recommendations, screen focus, PIP, color grade, preflight/render/QA/audio master, rendered-speech continuity QA, timecoded review proxies, subtitles, CapCut import, multi-platform exports, captions, publish packages, dashboards, resume packets, EDL/FCPXML/OTIO, and Remotion animation."
 metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
 ---
 
@@ -46,6 +46,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ render_final.py          单次编码渲染（enrich_plan/focus_events/pip_overlays + Heavy 字幕 + 响度规范化）
    │                            可选 --versioned-output 防覆盖旧成片
    ├─→ render_qa.py             渲染后黑屏/静帧/静音/尺寸质检 + review packet
+   ├─→ speech_continuity_qa.py  成片二次 ASR → 切点复读 / 近重复 take / 句内口吃 gate
    ├─→ review_proxy.py          低码率完整审片 MP4 / 可见时间码 / faststart
    ├─→ timeline_view.py         源素材删除段 / 成片输出切点 filmstrip + waveform 复盘图
    ├─→ subtitle_pack.py         SRT/VTT/ASS/JSON 字幕交付包（speed/offset 对齐）
@@ -105,6 +106,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `edit_preflight.py` | render_config/enrich_plan/cut list 渲染前预检 gate | `--config render_config.json` `--enrich-plan enrich_plan.json` `--output edit_preflight.json` `--strict` |
 | `render_final.py` | 单次编码渲染 + enrich_plan 接入 | `--config render_config.json` `--enrich-plan enrich_plan.json` `--output final.mp4` |
 | `render_qa.py` | 渲染后 QA：尺寸/音频/黑屏/静帧/静音 + review packet | `<video.mp4>` `--platform douyin` `--json qa.json` `--review-dir verify/qa` |
+| `speech_continuity_qa.py` | 成片二次 transcript → 复读 / 近重复 take / 句内口吃 gate | `<final_transcript.json>` `--output speech_continuity_qa.json` `--markdown` `--strict` |
 | `review_proxy.py` | master/platform MP4 → 低码率 timecoded 审片视频 + JSON/Markdown | `<video.mp4>` `--output verify/review_proxy.mp4` `--dry-run` `--no-timecode` |
 | `audio_master_report.py` | 成片响度报告：LUFS / true peak / LRA / 长静音 gate | `<video.mp4>` `--output audio_master_report.json` `--markdown audio_master_report.md` `--strict` |
 | `timeline_view.py` | 源素材删除段 / 成片输出切点可视化复盘图 | `<video.mp4>` `--at 42.5` `--output view.png` / `--rendered-cut-list cuts.json` `--output-dir verify/` |
@@ -1218,11 +1220,17 @@ python3 scripts/review_dashboard.py \
 
 `review_dashboard.py` 复用 `pipeline_manifest.py` 的本地 gate，输出 `review_dashboard.v1` 和一个可直接在浏览器打开的 HTML。它把 blocking/missing/warning gate 放进 `review_items[]`，同时列出 `next_actions[]`、最新 artifacts 和完整 gate snapshot。适合用户最终确认，也适合自动化结束时留给下一位 agent。
 
-**6h. 音频重复检测**：
-1. 提取最终视频的音频
-2. 重新进行语音识别
-3. 检查识别结果中是否存在相邻片段的文字重复（前一句末尾 2-3 个字与后一句开头重复）
-4. 如发现技术性重复（非自然语言重复），需要调整 render_config.json 中的片段选择
+**6h. 成片复读 / 口吃门禁**：
+```bash
+python3 scripts/extract_audio.py output/final.mp4
+python3 scripts/transcribe.py output/final_audio.wav --model auto --language zh --word-timestamps
+python3 scripts/speech_continuity_qa.py output/final_transcript.json \
+  --output verify/speech_continuity_qa.json \
+  --markdown verify/speech_continuity_qa.md \
+  --strict
+```
+
+必须对**已渲染 master**重新转录，不能复用源素材 transcript。`speech_continuity_qa.py` 会检查相邻 segment 的结尾/开头精确复读、相邻近重复 take 和句内即时口吃；不同 speaker 默认不互判。命中后先按时间码试听 master，再调整源 `render_config` / cut list，重新渲染并复跑。`pipeline_manifest.py --require speech_continuity_qa --strict` 可把这份报告设为发布必需项。
 
 **6i. 字幕文字最终校验**：
 1. 读取最终视频使用的所有 transcript 片段的文字

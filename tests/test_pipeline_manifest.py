@@ -421,6 +421,35 @@ def test_review_proxy_cannot_satisfy_master_video_gate(tmp_path):
     assert proxy_gate["status"] == "ready"
 
 
+def test_speech_continuity_qa_blocks_when_repeat_is_present(tmp_path):
+    _write(tmp_path / "verify" / "speech_continuity_qa.json", {
+        "version": "speech_continuity_qa.v1",
+        "summary": {"status": "blocked", "blocking": 2, "warnings": 0},
+        "findings": [
+            {"kind": "boundary_exact_repeat"},
+            {"kind": "internal_immediate_repeat"},
+        ],
+    })
+
+    manifest = build_manifest(str(tmp_path), target_stage="analysis")
+
+    assert "speech_continuity_qa" in manifest["blocked_gates"]
+    gate = next(g for g in manifest["gates"] if g["category"] == "speech_continuity_qa")
+    assert gate["status"] == "blocked"
+    assert gate["artifact_count"] == 1
+    assert "2 blocking item(s)" in gate["notes"][0]
+
+
+def test_speech_continuity_qa_can_be_required(tmp_path):
+    manifest = build_manifest(
+        str(tmp_path),
+        target_stage="analysis",
+        required=["speech_continuity_qa"],
+    )
+
+    assert "speech_continuity_qa" in manifest["missing_required"]
+
+
 def test_otio_handoff_artifact_is_discovered_without_blocking(tmp_path):
     _publish_ready_project(tmp_path)
     _write(tmp_path / "work" / "day58_edit.otio", {

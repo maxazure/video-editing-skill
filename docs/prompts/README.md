@@ -67,6 +67,7 @@
 | 64 | [Edit Brief Plan 自然语言剪辑需求路由](64-edit-brief-plan.md) | 用户一句话需求 → 本地脚本 runbook、命令、产物和 manifest gate |
 | 65 | [Audio Boundary Snap 音频感知剪辑边界](65-audio-boundary-snap.md) | selected highlights → 词/句末/静音边界、delta、blocker |
 | 66 | [Review Proxy 低码率时间码审片视频](66-review-proxy.md) | master/platform MP4 → timecoded web-ready review proxy + manifest |
+| 67 | [Speech Continuity QA 成片复读 / 口吃门禁](67-speech-continuity-qa.md) | master 二次 transcript → 切点复读、近重复 take、句内口吃 gate |
 
 ## 快速上手
 
@@ -133,3 +134,4 @@
 | 只有一句剪辑需求，不确定该跑哪些脚本 | [64-Edit Brief Plan](64-edit-brief-plan.md) |
 | 精华片段已经选好，想避免吞字或半句结尾 | [65-Audio Boundary Snap](65-audio-boundary-snap.md) |
 | 想把整条视频发给客户审片并精确引用时间码 | [66-Review Proxy](66-review-proxy.md) |
+| 成片剪完后想检查是否残留复读或口吃 | [67-Speech Continuity QA](67-speech-continuity-qa.md) |
