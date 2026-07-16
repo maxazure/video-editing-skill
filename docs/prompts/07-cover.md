@@ -41,6 +41,23 @@
 标题都用"程序员转行做自媒体"，副标题"第一个月的真实收入"。
 ```
 
+需要把对比方案保存成 JSON/Markdown、批量渲染小尺寸预览并记录最终发布选择时，使用：
+
+```bash
+python3 scripts/cover_variants.py \
+  origin/talking.mp4 \
+  --title "程序员转行" \
+  --subtitle "第一个月真实收入" \
+  --caption output/caption.json \
+  --platform xhs \
+  --output-dir output/covers \
+  --render \
+  --output work/cover_variants.json \
+  --markdown work/cover_variants.md
+```
+
+完整流程见 [68 — Cover Variants](68-cover-variants.md)。
+
 ---
 
 ## 可用的封面风格

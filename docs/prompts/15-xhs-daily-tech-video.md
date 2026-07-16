@@ -231,6 +231,21 @@
      --profile tech_pro \
      --output output/day<NN>_caption.json
 
+12b. # 为同一条视频生成 3 套封面并先看 feed-size 预览：
+     python3 scripts/cover_variants.py \
+       output/day<NN>_master_xhs.mp4 \
+       --title "<4-8字封面文字>" \
+       --subtitle "<可选副标题>" \
+       --caption output/day<NN>_caption.json \
+       --platform xhs \
+       --output-dir output/covers \
+       --render \
+       --output work/cover_variants.json \
+       --markdown work/cover_variants.md
+     # 看完 output/covers/*_preview.png 后，重跑并加：
+     # --select cover-c --require-selection --strict
+     # 详见 docs/prompts/68-cover-variants.md
+
 13. python3 scripts/pipeline_manifest.py \
      --project-dir . \
      --target-stage publish_ready \
@@ -322,6 +337,8 @@ day<NN>/
 │   ├── edit_preflight.md
 │   ├── pipeline_manifest.json # 发布前 gate 汇总
 │   ├── pipeline_manifest.md
+│   ├── cover_variants.json # 封面 A/B 方案 + selected_cover
+│   ├── cover_variants.md
 │   ├── publish_package.json # 最终上传包
 │   ├── publish_package.md
 │   ├── project_resume.json # 续跑上下文包
@@ -343,6 +360,7 @@ day<NN>/
     ├── day<NN>_xhs_qa.json             # 小红书版 QA
     ├── day<NN>_douyin_qa.json          # 抖音版 QA
     ├── day<NN>_caption.json            # 标题 + 正文 + 标签
+    ├── covers/                         # 完整封面 + feed-size preview
     └── multi_export_manifest.json
 ```
 

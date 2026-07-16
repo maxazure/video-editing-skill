@@ -649,10 +649,13 @@ def main():
     parser.add_argument("--use-frame", action="store_true", help="Use video frame as background")
     parser.add_argument("--frame-timestamp", default=None,
                         help="Timestamp for background frame, e.g. 00:10:00 or 600")
+    parser.add_argument("--width", type=int, help="Override output width.")
+    parser.add_argument("--height", type=int, help="Override output height.")
     parser.add_argument("--output", default=None, help="Output PNG path")
     args = parser.parse_args()
 
     result = generate_cover(args.video_path, args.title, args.output,
+                           width=args.width, height=args.height,
                            style=args.style, subtitle=args.subtitle,
                            use_frame=args.use_frame,
                            frame_timestamp=args.frame_timestamp)

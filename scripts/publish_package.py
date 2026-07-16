@@ -13,6 +13,7 @@ import argparse
 import dataclasses
 import json
 import os
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -222,6 +223,51 @@ def _subtitle_files(root: Path) -> Dict[str, str]:
     return out
 
 
+def _selected_cover_from_variants(root: Path) -> Tuple[Optional[Path], List[str]]:
+    warnings: List[str] = []
+    plan_path = _find_latest(root, ("**/cover_variants.json", "**/*_cover_variants.json"))
+    if not plan_path:
+        return None, warnings
+    plan = _load_json(plan_path)
+    if plan is None:
+        return None, [f"cover variants unreadable: {plan_path}"]
+    raw_selected = str(plan.get("selected_cover") or "").strip()
+    if not raw_selected:
+        warnings.append(f"cover variants has no selected_cover: {plan_path}")
+        return None, warnings
+    selected = Path(raw_selected).expanduser()
+    if not selected.is_absolute():
+        selected = (plan_path.parent / selected).resolve()
+    else:
+        selected = selected.resolve()
+    if not selected.is_file():
+        warnings.append(f"selected cover does not exist: {selected}")
+        return None, warnings
+    return selected, warnings
+
+
+def _find_latest_reviewed_cover(root: Path) -> Optional[Path]:
+    covers = _find_all(
+        root,
+        (
+            "**/cover*.png",
+            "**/*cover*.png",
+            "**/cover*.jpg",
+            "**/*cover*.jpg",
+            "**/cover*.jpeg",
+            "**/*cover*.jpeg",
+        ),
+    )
+    for path in covers:
+        stem = path.stem.lower()
+        if stem.endswith("_preview"):
+            continue
+        if re.match(r"cover-[a-d]_", stem):
+            continue
+        return path
+    return None
+
+
 def _parse_video_overrides(values: Optional[Sequence[str]]) -> Dict[str, Path]:
     overrides: Dict[str, Path] = {}
     for value in values or []:
@@ -311,17 +357,13 @@ def build_publish_package(
     caption_file = Path(caption_path).expanduser().resolve() if caption_path else _find_latest(
         root, ("**/caption.json", "**/*_caption.json")
     )
-    cover_file = Path(cover_path).expanduser().resolve() if cover_path else _find_latest(
-        root,
-        (
-            "**/cover*.png",
-            "**/*cover*.png",
-            "**/cover*.jpg",
-            "**/*cover*.jpg",
-            "**/cover*.jpeg",
-            "**/*cover*.jpeg",
-        ),
-    )
+    cover_warnings: List[str] = []
+    if cover_path:
+        cover_file = Path(cover_path).expanduser().resolve()
+    else:
+        cover_file, cover_warnings = _selected_cover_from_variants(root)
+        if cover_file is None:
+            cover_file = _find_latest_reviewed_cover(root)
     chapter_file = Path(chapters_path).expanduser().resolve() if chapters_path else _find_latest(
         root, ("**/chapters-youtube.txt", "**/chapters.json")
     )
@@ -329,7 +371,7 @@ def build_publish_package(
     pipeline_manifest, pipeline_source, pipeline_warnings = _load_or_build_pipeline_manifest(root, pipeline_file)
 
     blockers: List[str] = []
-    warnings: List[str] = list(pipeline_warnings)
+    warnings: List[str] = [*cover_warnings, *pipeline_warnings]
 
     caption_raw = _load_json(caption_file) if caption_file else None
     if caption_raw is None:

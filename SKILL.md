@@ -1,6 +1,6 @@
 ---
 name: video-editing
-description: "Xiaohongshu/RED-tuned short-form video workflow for raw voice-over, talking-head, tutorials, interviews, podcasts, long videos, screen recordings, B-roll, captions, and generated assets. Covers natural-language edit brief routing, project bootstrap, transcription, multi-take packs, audio sync, cleanup, highlights/shorts, hook/story rewrite, content/source gates, B-roll/enrich/gpt-image-2/video-generation planning, async generation logs, media recommendations, screen focus, PIP, color grade, preflight/render/QA/audio master, rendered-speech continuity QA, timecoded review proxies, subtitles, CapCut import, multi-platform exports, captions, publish packages, dashboards, resume packets, EDL/FCPXML/OTIO, and Remotion animation."
+description: "Xiaohongshu/RED-tuned short-form video workflow for raw voice-over, talking-head, tutorials, interviews, podcasts, long videos, screen recordings, B-roll, captions, and generated assets. Covers edit routing, project bootstrap, transcription, multi-take packs, audio sync, cleanup, highlights/shorts, hook/story rewrite, content/source gates, B-roll/enrich/gpt-image-2/video-generation planning, screen focus, PIP, color grade, preflight/render/QA/audio master, rendered-speech continuity QA, review proxies, subtitles, CapCut import, multi-platform exports, cover A/B variants, captions, publish packages, dashboards, resume packets, EDL/FCPXML/OTIO, and Remotion animation."
 metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
 ---
 
@@ -60,6 +60,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ export_otio.py           render_config / cut list → OTIO + manifest
    ├─→ multi_export.py          小红书 3:4 / 抖音 9:16 / 视频号 ≤60s
    ├─→ generate_caption.py      标题 + 200-500 字正文 + 3-6 tags + 发布时段
+   ├─→ cover_variants.py        2-4 套封面 / feed-size 预览 / 最终选择 gate
    └─→ publish_package.py       平台视频/封面/字幕/章节/文案上传包 + gate 状态
 ```
 
@@ -120,6 +121,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `export_otio.py` | NLE handoff：导出 OpenTimelineIO `.otio` + manifest | `--config render_config.json --output edit.otio` / `--cut-list rough_cut.json --output rough.otio` |
 | `multi_export.py` | 三平台导出 | `<input.mp4>` `--platforms xhs douyin wxch` |
 | `generate_caption.py` | 标题/正文/tag | `--script` `--profile` `--output` |
+| `cover_variants.py` | 多套封面 A/B 方案、feed-size 预览、标题协同和最终选择 | `<video>` `--title` `--caption` `--platform` `--render` `--select cover-c` `--strict` |
 | `publish_package.py` | 发布上传包：平台视频、封面、字幕、章节、文案和 gate 状态 | `--project-dir` `--platforms` `--video xhs=...` `--strict` |
 | `profiles/__init__.py` | 受众档位加载 | `load_profile("tech_pro")` |
 
@@ -976,6 +978,22 @@ AI agent 应根据视频主题和内容语气自动选择：
 - 如果背景画面会影响标题识别，优先使用 `bold` / `white` / `minimal` 这类纯底风格。
 - 单独预览封面时，可用 `scripts/generate_cover_image.py --frame-timestamp 00:10:00` 指定取帧时间。
 
+**多封面 A/B 方案与最终选择**：
+```bash
+python3 scripts/cover_variants.py output/final_xhs.mp4 \
+  --title "20分钟出片" \
+  --subtitle "AI剪辑完整流程" \
+  --caption output/caption.json \
+  --platform xhs \
+  --frame-timestamp 12.5 \
+  --output-dir output/covers \
+  --render \
+  --output work/cover_variants.json \
+  --markdown work/cover_variants.md
+```
+
+默认产出 3 套方案和 `*_preview.png` 小图。先按 feed-size 预览比较，再重跑并加 `--select cover-c --require-selection --strict` 记录最终封面。标题负责主题/关键词，封面负责结果/情绪/反差/证据；需要强制不重复时加 `--require-distinct-cover-text`。`pipeline_manifest.py --require cover_variants` 可把选择设为发布 gate。若需要 AI 生成或编辑封面底图，生图优先使用 Codex 内置 `image_gen` 工具，即 OpenAI GPT Image 2（`gpt-image-2`）。
+
 **封面时长**（`cover_duration`）：
 - 默认 2.0 秒，将第一帧冻结并叠加封面
 - 也可通过 `--cover-duration` 命令行参数覆盖
@@ -1193,7 +1211,7 @@ python3 scripts/publish_package.py \
   --strict
 ```
 
-`publish_package.py` 不上传、不调用平台 API；它只把 `multi_export.py` 的平台 MP4、`generate_caption.py` 的标题/正文/tags、封面、SRT/VTT、章节文本和 `pipeline_manifest` gate 状态合成 `publish_package.v1`。如果缺少某个平台视频、caption 为空、或 pipeline manifest 已 blocked，`--strict` 返回 2。需要交给外部发布 connector 时，用这份 JSON 作为 handoff；手工上传时看 Markdown checklist。
+`publish_package.py` 不上传、不调用平台 API；它只把 `multi_export.py` 的平台 MP4、`generate_caption.py` 的标题/正文/tags、封面、SRT/VTT、章节文本和 `pipeline_manifest` gate 状态合成 `publish_package.v1`。如果存在 `cover_variants.json` 且 `selected_cover` 文件有效，会优先使用已复核封面；显式 `--cover` 可覆盖。如果缺少某个平台视频、caption 为空、或 pipeline manifest 已 blocked，`--strict` 返回 2。需要交给外部发布 connector 时，用这份 JSON 作为 handoff；手工上传时看 Markdown checklist。
 
 **6f. 续跑上下文包（跨会话/自动化收尾时跑）**：
 ```bash

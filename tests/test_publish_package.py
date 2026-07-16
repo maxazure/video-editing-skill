@@ -116,6 +116,43 @@ def test_markdown_contains_platform_copy_and_checklist(tmp_path):
     assert "day58_xhs.mp4" in markdown
 
 
+def test_selected_cover_variant_is_used_before_generic_cover(tmp_path):
+    _ready_project(tmp_path)
+    selected = tmp_path / "output" / "cover-b_contrast.png"
+    _write(selected, "selected")
+    _write(tmp_path / "work" / "cover_variants.json", {
+        "version": "cover_variants.v1",
+        "status": "ready",
+        "selected_variant": "cover-b",
+        "selected_cover": str(selected),
+        "summary": {"variants": 3, "selected": 1, "blocking": 0},
+    })
+
+    package = build_publish_package(str(tmp_path))
+
+    assert package["cover_image"] == str(selected.resolve())
+    assert all(item["cover_image"] == str(selected.resolve()) for item in package["platforms"])
+
+
+def test_unselected_cover_variant_is_not_used_as_publish_cover(tmp_path):
+    _ready_project(tmp_path)
+    os.remove(tmp_path / "output" / "cover.png")
+    _write(tmp_path / "output" / "covers" / "cover-a_primary.png", "variant")
+    _write(tmp_path / "output" / "covers" / "cover-a_primary_preview.png", "preview")
+    _write(tmp_path / "work" / "cover_variants.json", {
+        "version": "cover_variants.v1",
+        "status": "ready",
+        "selected_variant": None,
+        "selected_cover": None,
+        "summary": {"variants": 3, "selected": 0, "blocking": 0},
+    })
+
+    package = build_publish_package(str(tmp_path))
+
+    assert package["cover_image"] is None
+    assert any("has no selected_cover" in warning for warning in package["warnings"])
+
+
 def test_cli_writes_json_and_markdown(tmp_path):
     _ready_project(tmp_path)
     out_json = tmp_path / "work" / "publish_package.json"

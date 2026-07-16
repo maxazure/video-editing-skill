@@ -195,8 +195,9 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    │                            交给 Premiere / Final Cut Pro / Resolve
    │
    ├─→ multi_export.py          小红书 3:4 / 抖音 9:16 / 视频号 ≤60s
-   │
-   └─→ generate_caption.py      标题 + 200-500 字正文 + 3-6 tags + 发布时段建议
+   ├─→ generate_caption.py      标题 + 200-500 字正文 + 3-6 tags + 发布时段建议
+   ├─→ cover_variants.py        2-4 套封面 A/B 方案 / 小尺寸预览 / 最终选择 gate
+   └─→ publish_package.py       平台视频 / 已选封面 / 字幕 / 文案上传包
 ```
 
 > **适用场景**：daily 短视频、口播为主的内容（创业/AI/职场/效率/Vlog）、要发小红书/抖音/视频号
@@ -219,7 +220,7 @@ cd ~/projects/video-editing-skill
 python3 scripts/utils.py
 
 # 4. 跑一遍测试套件确认 OK
-pytest tests/           # 498 个测试，约 6 秒
+pytest tests/           # 529 个测试，约 5 秒
 ```
 
 每天做一条视频的完整模板：**[docs/prompts/15-xhs-daily-tech-video.md](docs/prompts/15-xhs-daily-tech-video.md)**
@@ -965,6 +966,23 @@ python3 scripts/export_otio.py \
 
 适合把自动粗剪交给 Premiere / Final Cut Pro / DaVinci Resolve 做调色、混音、精剪或协作复核。EDL 更通用，FCPXML 对 FCP / Resolve 更直接，OTIO 更适合使用 OpenTimelineIO adapter 的跨工具流程；复杂字幕、overlay、章节卡和 B-roll 仍以 `render_final.py` / `export_capcut.py` 为准。
 
+### 2026-07-17 自动化升级记录（Cover Variants + Publish Selection）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`AgriciDaniel/claude-youtube`](https://github.com/AgriciDaniel/claude-youtube) | thumbnail 子技能输出 3 套 A/B variant、构图/配色、移动端可读性和 title-thumbnail synergy | 新增本地 `cover_variants.v1` review artifact；保留标题协同和小图复核，不引入 CTR 伪预测或外部 SERP 服务 |
+| [`mutonby/openshorts`](https://github.com/mutonby/openshorts) | YouTube Studio 把多标题、缩略图生成、真实人物/背景和最终发布放进同一条 creator workflow | 复用现有 Chrome 封面渲染，把多方案和发布选择接到 `publish_package.py`，不上传视频、不调用 Gemini |
+| [`charlie947/social-media-skills`](https://github.com/charlie947/social-media-skills) 的 `youtube-thumbnail` | 3-5 个词、单一焦点、强对比、避免小字和右下角 UI 冲突等缩略图约束明确 | 增加中英文字数警告、平台尺寸和 feed-size preview；现有模板继续负责字体/布局 |
+| [`op7418/guizang-ppt-skill`](https://github.com/op7418/guizang-ppt-skill) | 小红书封面强调 3:4、大标题和批次一致的字号层级 | `xhs` 固定输出 1080×1440；同一批 variant 共用封面文字和输出尺寸 |
+
+新增/调整能力：新增 [`scripts/cover_variants.py`](scripts/cover_variants.py)，支持 `xhs`、`douyin`、`wxch`、`tiktok`、`reels`、`youtube_shorts`、`youtube`，默认输出 3 套 `cover-a/b/c` 方案：主风格、对比风格和真实画面证据风格；`--count 4` 增加去副标题版本。脚本输出 JSON/Markdown、标题—封面 overlap 检查、content guard 风险、每套可复现渲染命令、完整 PNG 和 `*_preview.png` 小图；`--select cover-c --require-selection --strict` 会记录 `selected_cover`。`generate_cover_image.py` 新增 `--width/--height`，保证不同平台封面按目标尺寸渲染；缺 Pillow 时小图自动回退 FFmpeg。`pipeline_manifest.py` 新增 `cover_variants` gate；`publish_package.py` 会优先采用已选择且存在的封面，并避免把未选择的 variant / preview 误当发布封面。同步更新 SKILL、每日工作流、封面 / 发布包文档和 [Cover Variants 提示词](docs/prompts/68-cover-variants.md)。若需要生成或编辑封面底图，生图优先使用 Codex 内置 `image_gen` 工具，即 OpenAI GPT Image 2（`gpt-image-2`）。
+
+使用方式：先运行 `python3 scripts/cover_variants.py output/day68_master_xhs.mp4 --title "20分钟出片" --subtitle "AI剪辑完整流程" --caption output/day68_caption.json --platform xhs --frame-timestamp 12.5 --output-dir output/covers --render --output work/cover_variants.json --markdown work/cover_variants.md`；检查 `output/covers/*_preview.png` 后，重跑并加 `--select cover-c --require-selection --strict`。发布包无需再传 `--cover`，会读取 `selected_cover`；需要显式覆盖时仍可传 `publish_package.py --cover <path>`。
+
+验证结果：新增 `tests/test_cover_variants.py` 7 项，更新 `tests/test_pipeline_manifest.py` 和 `tests/test_publish_package.py`；定向 `.venv/bin/python -m pytest tests/test_cover_variants.py tests/test_publish_package.py tests/test_pipeline_manifest.py -q` 通过 `57 passed in 0.85s`；最终全量 `.venv/bin/python -m pytest tests -q` 通过 `529 passed in 4.91s`。真实 FFmpeg/Chrome smoke 用 1 秒 1080×1920 样片成功生成 3 张 1080×1440 小红书封面和 3 张 240×320 preview，选择 `cover-c` 后得到 `status=ready`、`rendered=3`、`blocking=0`。`.venv/bin/python -m compileall -q scripts tests`、两个 CLI `--help`、manifest category smoke、skill `quick_validate.py` 和 `git diff --check` 全部通过。
+
 ### 2026-07-16 自动化升级记录（Rendered Speech Continuity QA）
 
 本次联网研究的 GitHub 参考：
@@ -1620,6 +1638,28 @@ python3 scripts/source_receipts.py \
 - 3-6 个 # tag，混合垂类 + 长尾（避免纯热词堆叠被判搬运）
 - 发布时段建议来自所选 audience profile
 
+### 🖼️ Cover Variants — 封面 A/B 方案与选择
+[`scripts/cover_variants.py`](scripts/cover_variants.py) · [详细文档](docs/prompts/68-cover-variants.md)
+
+借鉴同类视频 / creator skill 把 3 套缩略图、标题—封面信息分工和移动端小图检查做成一等流程的优点，但保持本项目本地优先：复用现有 `generate_cover_image.py` 的 Chrome 模板，不调用图片模型或外部 API。
+
+常用：
+```bash
+python3 scripts/cover_variants.py \
+  output/day68_master_xhs.mp4 \
+  --title "20分钟出片" \
+  --subtitle "AI剪辑完整流程" \
+  --caption output/day68_caption.json \
+  --platform xhs \
+  --frame-timestamp 12.5 \
+  --output-dir output/covers \
+  --render \
+  --output work/cover_variants.json \
+  --markdown work/cover_variants.md
+```
+
+默认生成 `cover-a` 主方案、`cover-b` 对比色 / 层级方案和 `cover-c` 真实画面证据方案，并为每张图生成 feed-size `*_preview.png`。看完后用 `--select cover-c --require-selection --strict` 记录最终选择；`publish_package.py` 会优先读取 `selected_cover`，`pipeline_manifest.py --require cover_variants` 可把封面选择设为发布 gate。需要自定义 AI 底图时，生图优先使用 Codex 内置 `image_gen` 工具，即 OpenAI GPT Image 2（`gpt-image-2`）。
+
 ### 📤 Publish Package — 最终上传包
 [`scripts/publish_package.py`](scripts/publish_package.py) · [详细文档](docs/prompts/49-publish-package.md)
 
@@ -1635,7 +1675,7 @@ python3 scripts/publish_package.py \
   --strict
 ```
 
-输出 `publish_package.v1`，包含每个平台的 MP4、封面图、SRT/VTT、标题、正文、tags、发布时间建议、上传 checklist、章节文本和 `pipeline_manifest` 阻塞状态。`--strict` 会在缺少平台视频、caption 不完整、或已有 gate blocked 时返回 2；`pipeline_manifest.py` 也会识别 `publish_package.json` 并把 `summary.blocking > 0` 列为 blocking gate。
+输出 `publish_package.v1`，包含每个平台的 MP4、封面图、SRT/VTT、标题、正文、tags、发布时间建议、上传 checklist、章节文本和 `pipeline_manifest` 阻塞状态。若项目有 `cover_variants.json` 且 `selected_cover` 文件存在，会优先采用已复核封面；显式 `--cover` 仍可覆盖。`--strict` 会在缺少平台视频、caption 不完整、或已有 gate blocked 时返回 2；`pipeline_manifest.py` 也会识别 `publish_package.json` 并把 `summary.blocking > 0` 列为 blocking gate。
 
 ### 🧭 Project Resume — 续跑上下文包
 [`scripts/project_resume.py`](scripts/project_resume.py) · [详细文档](docs/prompts/52-project-resume.md)
@@ -1855,6 +1895,20 @@ python3 $SKILL/scripts/generate_caption.py \
   --script $WORK/work/clean_script.md --profile tech_pro \
   --output $WORK/output/day${DAY}_caption.json
 
+# 9b. 生成 3 套封面并在小图里选最终发布版
+python3 $SKILL/scripts/cover_variants.py \
+  $WORK/output/day${DAY}_xhs.mp4 \
+  --title "<4-8字封面文字>" \
+  --caption $WORK/output/day${DAY}_caption.json \
+  --platform xhs \
+  --output-dir $WORK/output/covers \
+  --render \
+  --select cover-c \
+  --require-selection \
+  --output $WORK/work/cover_variants.json \
+  --markdown $WORK/work/cover_variants.md \
+  --strict
+
 # 10. 发布前 gate 汇总 + 最终上传包
 python3 $SKILL/scripts/pipeline_manifest.py \
   --project-dir $WORK \
@@ -1893,7 +1947,7 @@ python3 $SKILL/scripts/review_dashboard.py \
 ## 测试
 
 ```bash
-pytest tests/           # 476 测试，约 5 秒
+pytest tests/           # 529 测试，约 5 秒
 ```
 
 按模块跑：
@@ -1913,6 +1967,7 @@ pytest tests/test_hook_variants.py -v       # 前三秒 hook 批量角度 + 风�
 pytest tests/test_rough_cut.py -v           # ASR 粗剪：口头禅/重复句 cut list
 pytest tests/test_timeline_view.py -v       # 源素材/成片切点可视化复盘图
 pytest tests/test_generate_caption.py -v    # 文案合成
+pytest tests/test_cover_variants.py -v      # 多套封面 + 小图预览 + 发布选择
 pytest tests/test_imagegen_hint.py -v       # gpt-image-2 提示词检测
 pytest tests/test_storyboard_plan.py -v     # 分镜 shot cards + 生成路由
 pytest tests/test_video_prompt_pack.py -v   # 视频生成提示词包 + 审批 gate
@@ -2108,6 +2163,7 @@ pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 g
 | **61** | **[Project Bootstrap](docs/prompts/61-project-bootstrap.md)** | **原始素材目录 → source inventory + project memory** |
 | **62** | **[Hook Variants](docs/prompts/62-hook-variants.md)** | **同一视频批量生成前三秒 hook 角度** |
 | **67** | **[Speech Continuity QA](docs/prompts/67-speech-continuity-qa.md)** | **成片二次 ASR 检查复读、近重复 take 和句内口吃** |
+| **68** | **[Cover Variants](docs/prompts/68-cover-variants.md)** | **多套封面、feed-size 预览、标题协同和最终选择** |
 
 完整列表见 [docs/prompts/README.md](docs/prompts/README.md)。
 
@@ -2182,6 +2238,7 @@ scripts/
 ├── burn_subtitles.py           字幕 ASS 生成
 ├── generate_cover.py           封面生成
 ├── generate_cover_image.py     Chrome-rendered 封面
+├── cover_variants.py           封面 A/B 方案 + 小尺寸预览 + 选择 gate [V3]
 ├── add_chapter_bar.py          章节进度条
 ├── export_capcut.py            剪映工程导出
 ├── export_edl.py               NLE handoff EDL + manifest          [V3]

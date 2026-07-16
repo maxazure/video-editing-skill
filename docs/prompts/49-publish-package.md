@@ -26,6 +26,8 @@ python3 scripts/publish_package.py \
   --strict
 ```
 
+如果项目里有 `cover_variants.json`，并且其中的 `selected_cover` 指向已存在图片，`publish_package.py` 会优先使用这张已复核封面。没有记录选择时，先按 [68 — Cover Variants](68-cover-variants.md) 运行 `--select cover-x --require-selection`；仍可用显式 `--cover` 覆盖自动发现。
+
 ## 指定平台文件
 
 如果平台视频不在默认位置，用 `--video platform=path` 覆盖：

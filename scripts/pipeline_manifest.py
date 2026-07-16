@@ -80,6 +80,13 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         "Run hook_variants.py after transcription when the opening 3 seconds need multiple testable angles.",
     ),
     ArtifactDef(
+        "cover_variants",
+        "Cover Variants",
+        ("**/cover_variants.json", "**/*_cover_variants.json"),
+        "Run cover_variants.py, review feed-size previews, and record the selected publish cover.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "rough_cut",
         "Rough / Jump Cut",
         ("**/rough_cut.json", "**/jump_cut.json", "**/*_cut_list.json"),
@@ -506,6 +513,7 @@ def evaluate_category(definition: ArtifactDef, artifacts: Sequence[ArtifactRecor
             "audio_boundary_plan",
             "rough_cut",
             "speech_continuity_qa",
+            "cover_variants",
         }:
             blocking = _int_at(data, "summary", "blocking")
             if blocking:

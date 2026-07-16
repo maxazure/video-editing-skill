@@ -117,6 +117,40 @@ def test_hook_variants_can_be_required_for_review(tmp_path):
     assert gate["artifact_count"] == 1
 
 
+def test_cover_variants_can_be_required_when_selected(tmp_path):
+    _write(tmp_path / "work" / "transcript.json", {"segments": []})
+    _write(tmp_path / "work" / "cover_variants.json", {
+        "version": "cover_variants.v1",
+        "status": "ready",
+        "selected_variant": "cover-b",
+        "selected_cover": str(tmp_path / "output" / "cover-b.png"),
+        "summary": {"variants": 3, "selected": 1, "blocking": 0},
+    })
+
+    manifest = build_manifest(str(tmp_path), target_stage="analysis", required=["cover_variants"])
+
+    assert manifest["status"] == "ready"
+    gate = next(g for g in manifest["gates"] if g["category"] == "cover_variants")
+    assert gate["required"] is True
+    assert gate["status"] == "ready"
+
+
+def test_cover_variants_blocks_when_selection_is_required(tmp_path):
+    _write(tmp_path / "work" / "cover_variants.json", {
+        "version": "cover_variants.v1",
+        "status": "blocked",
+        "selected_variant": None,
+        "summary": {"variants": 3, "selected": 0, "blocking": 1},
+        "blockers": ["cover selection is required before publish handoff"],
+    })
+
+    manifest = build_manifest(str(tmp_path), target_stage="analysis")
+
+    assert "cover_variants" in manifest["blocked_gates"]
+    gate = next(g for g in manifest["gates"] if g["category"] == "cover_variants")
+    assert "1 blocking item(s)" in gate["notes"][0]
+
+
 def test_render_qa_fail_blocks_even_when_file_exists(tmp_path):
     _publish_ready_project(tmp_path)
     _write(tmp_path / "output" / "day58_qa.json", {
