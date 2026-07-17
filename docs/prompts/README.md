@@ -69,6 +69,7 @@
 | 66 | [Review Proxy 低码率时间码审片视频](66-review-proxy.md) | master/platform MP4 → timecoded web-ready review proxy + manifest |
 | 67 | [Speech Continuity QA 成片复读 / 口吃门禁](67-speech-continuity-qa.md) | master 二次 transcript → 切点复读、近重复 take、句内口吃 gate |
 | 68 | [Cover Variants 封面 A/B 方案](68-cover-variants.md) | 同一视频生成多套封面、feed-size 预览、协同检查和最终选择 |
+| 69 | [Retention Rhythm QA 成片留存节奏风险](69-retention-rhythm-qa.md) | master/platform export → hook activity、长镜头、注意力空窗和 cadence gate |
 
 ## 快速上手
 
@@ -137,3 +138,4 @@
 | 想把整条视频发给客户审片并精确引用时间码 | [66-Review Proxy](66-review-proxy.md) |
 | 成片剪完后想检查是否残留复读或口吃 | [67-Speech Continuity QA](67-speech-continuity-qa.md) |
 | 想给同一条视频生成多套封面并选一张发布 | [68-Cover Variants](68-cover-variants.md) |
+| 成片剪完后想检查前三秒、长镜头和节奏空窗 | [69-Retention Rhythm QA](69-retention-rhythm-qa.md) |

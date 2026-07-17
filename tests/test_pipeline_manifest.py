@@ -164,6 +164,34 @@ def test_render_qa_fail_blocks_even_when_file_exists(tmp_path):
     assert "render_qa" in manifest["blocked_gates"]
 
 
+def test_retention_rhythm_qa_blocks_when_rhythm_risk_is_present(tmp_path):
+    _write(tmp_path / "verify" / "retention_rhythm_qa.json", {
+        "version": "retention_rhythm_qa.v1",
+        "summary": {"status": "blocked", "blocking": 2, "warnings": 1},
+        "findings": [
+            {"kind": "inactive_hook", "severity": "block"},
+            {"kind": "long_visual_hold", "severity": "block"},
+        ],
+    })
+
+    manifest = build_manifest(str(tmp_path), target_stage="analysis")
+
+    assert "retention_rhythm_qa" in manifest["blocked_gates"]
+    gate = next(g for g in manifest["gates"] if g["category"] == "retention_rhythm_qa")
+    assert gate["status"] == "blocked"
+    assert "2 blocking item(s)" in gate["notes"][0]
+
+
+def test_retention_rhythm_qa_can_be_required(tmp_path):
+    manifest = build_manifest(
+        str(tmp_path),
+        target_stage="analysis",
+        required=["retention_rhythm_qa"],
+    )
+
+    assert "retention_rhythm_qa" in manifest["missing_required"]
+
+
 def test_optional_provider_decision_blocks_when_unresolved(tmp_path):
     _publish_ready_project(tmp_path)
     _write(tmp_path / "work" / "provider_decision.json", {

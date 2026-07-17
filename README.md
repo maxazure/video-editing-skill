@@ -173,6 +173,7 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    │     可选 --versioned-output：输出 _V<N>，避免覆盖旧成片
    │
    ├─→ render_qa.py             渲染后黑屏/静帧/静音/尺寸质检 + review packet
+   ├─→ retention_rhythm_qa.py   成片 hook 活动 / 长镜头 / 注意力空窗 / 节奏门禁
    ├─→ speech_continuity_qa.py  成片二次 ASR → 切点复读 / 近重复 take / 句内口吃 gate
    ├─→ review_proxy.py          低码率完整审片 MP4 / 可见时间码 / faststart
    ├─→ audio_master_report.py   成片响度 / true peak / LRA / 长静音发布 gate
@@ -966,6 +967,23 @@ python3 scripts/export_otio.py \
 
 适合把自动粗剪交给 Premiere / Final Cut Pro / DaVinci Resolve 做调色、混音、精剪或协作复核。EDL 更通用，FCPXML 对 FCP / Resolve 更直接，OTIO 更适合使用 OpenTimelineIO adapter 的跨工具流程；复杂字幕、overlay、章节卡和 B-roll 仍以 `render_final.py` / `export_capcut.py` 为准。
 
+### 2026-07-18 自动化升级记录（Retention Rhythm QA）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`nopefallacy/vertical-video-editing-skills`](https://github.com/nopefallacy/vertical-video-editing-skills) | 明确要求前三秒 engineered hook、非机械等距 cut、preview 后再 render，并把 pacing 纳入最终 verification | 新增 render 后节奏报告；保留“非等距”和 hook activity 检查，不引入 HyperFrames 运行时 |
+| [`byteplus-sa/polym` 的 reference video analyzer](https://github.com/byteplus-sa/polym/blob/main/skills/polym-explainer-video/scripts/analyze_reference_video.py) | 用 FFmpeg scene detection 统计 cut count 和 average shot duration，轻量、可复现 | 复用本项目已有 `scene_boundaries.py` 的稳健 `pts_time` 解析，扩展到 shot ranges、p90、CV、长 hold 和 attention gaps |
+| [`liangali/video-editing-skills`](https://github.com/liangali/video-editing-skills) | storyboard guard 把 clip 时长、素材覆盖和“字幕每 3 秒内变化”写成可执行约束 | 可选读取 output-aligned `subtitle_pack.v1`，检查 subtitle hold / uncovered gap；不把每 3 秒硬切当成通用规则 |
+| [`tuanvo2409/srt2viral_de` pacing analyzer](https://github.com/tuanvo2409/srt2viral_de/blob/main/src/viral/pacing_analyzer.py) | Hook / Problem / Content / Payoff 分段审查，结合 shot duration、silence 和 phase score | 吸收“hook 比正文更敏感”和逐项 evidence；不输出虚假的留存提升百分比，声音问题继续交给 `render_qa.py` / `audio_master_report.py` |
+
+新增/调整能力：新增 [`scripts/retention_rhythm_qa.py`](scripts/retention_rhythm_qa.py)，对已渲染 master / platform export 运行 FFmpeg hard scene detection，并可合并与 speed / cover offset 对齐的 subtitle pack JSON；输出 `retention_rhythm_qa.v1` JSON / Markdown，检查前三秒 activity、6/10 秒长视觉 hold、6/10 秒 combined attention gap、镜头时长 CV、0.35 秒以下快切 burst、4.5 秒以上字幕 hold 和 1.5 秒以上无字幕区间。WARN 必须人工看 master，只有高置信严重项进入 `summary.blocking`；报告明确声明不预测真实留存率或爆款概率。`pipeline_manifest.py` 新增 `retention_rhythm_qa` category，报告存在且 blocking 非零会阻塞，也支持 `--require retention_rhythm_qa`。同步更新 SKILL、每日工作流、提示词索引和 [Retention Rhythm QA 文档](docs/prompts/69-retention-rhythm-qa.md)。
+
+使用方式：先运行 `subtitle_pack.py --config work/render_config.json --output-dir output/subtitles --basename final_master --speed 1.25 --offset 2.0` 生成 output-aligned JSON，再运行 `python3 scripts/retention_rhythm_qa.py output/final_master.mp4 --timed-text output/subtitles/final_master.json --output verify/retention_rhythm_qa.json --markdown verify/retention_rhythm_qa.md --strict`。已有 `scene_boundaries.v1` 时可用 `--scene-boundaries <json>` 复用，避免重复检测。若 BLOCK，按报告时间范围看 master / `timeline_view.py`，回到源 `render_config`、enrich plan 或 cut list 重渲染；不要为了清零 WARN 机械加切点。
+
+验证结果：新增 `tests/test_retention_rhythm_qa.py` 10 项，更新 `tests/test_pipeline_manifest.py` 2 项；定向 `.venv/bin/python -m pytest tests/test_retention_rhythm_qa.py tests/test_pipeline_manifest.py -q` 通过 `53 passed in 0.60s`；最终全量 `.venv/bin/python -m pytest tests -q` 通过 `541 passed in 7.40s`。真实 FFmpeg smoke 生成 14 秒 360×640 非等距硬切视频，CLI 实测检出 5 个 cut / 6 个 shot、最长视觉 hold 4.00 秒、cadence CV 0.423，结果 `ready`、`blocking=0`、`warnings=0`。`.venv/bin/python -m compileall -q scripts tests`、CLI `--help`、manifest category smoke、skill `quick_validate.py` 和 `git diff --check` 全部通过。
+
 ### 2026-07-17 自动化升级记录（Cover Variants + Publish Selection）
 
 本次联网研究的 GitHub 参考：
@@ -1569,6 +1587,22 @@ python3 scripts/timeline_view.py output/day58_master.mp4 --at 42.5 --radius 1.5 
 
 `--review-dir` 会写 `render_qa_review.json` 和 `render_qa_review.md`，把黑屏、静帧、静音的可疑区间按 FAIL/WARN 排序；`--review-clips` 会额外抽取短 MP4 证据片段。只需要审阅清单时不加 `--review-clips`。
 
+### 📈 Retention Rhythm QA — 成片留存节奏风险审计
+[`scripts/retention_rhythm_qa.py`](scripts/retention_rhythm_qa.py) · [详细文档](docs/prompts/69-retention-rhythm-qa.md)
+
+`render_qa.py` 能发现信号和容器事故，但不会判断前三秒是否完全没有变化、镜头是否拖得过久、切点是否机械等距或字幕是否长时间不刷新。`retention_rhythm_qa.py` 对**已渲染 master / platform export**运行 FFmpeg scene detection，并可合并与成片速度、片头 offset 对齐的 `subtitle_pack.v1` JSON，输出 `retention_rhythm_qa.v1` JSON / Markdown。
+
+常用：
+```bash
+python3 scripts/retention_rhythm_qa.py output/day58_master.mp4 \
+  --timed-text output/subtitles/day58_master.json \
+  --output verify/retention_rhythm_qa.json \
+  --markdown verify/retention_rhythm_qa.md \
+  --strict
+```
+
+默认检查前三秒 scene/subtitle attention event、6 秒以上视觉 hold、10 秒以上严重长镜头、scene + subtitle 的 combined attention gap、镜头时长 CV、0.35 秒以下快切 burst、4.5 秒以上字幕 hold 和 1.5 秒以上无字幕区间。`inactive_hook` 在没有 timed text 时只警告，避免把持续运镜/kinetic text 误判成硬失败；timed text 也无变化、视觉 hold 超过 10 秒或 combined attention gap 超过 10 秒时会进入 `summary.blocking`。这只是可观测的节奏风险，不预测真实留存率或“爆款概率”。报告存在且 blocking 非零时，`pipeline_manifest.py` 会阻塞；要强制具备报告可加 `--require retention_rhythm_qa`。
+
 ### 🗣️ Speech Continuity QA — 成片复读 / 口吃门禁
 [`scripts/speech_continuity_qa.py`](scripts/speech_continuity_qa.py) · [详细文档](docs/prompts/67-speech-continuity-qa.md)
 
@@ -1842,25 +1876,33 @@ python3 $SKILL/scripts/render_qa.py \
   --review-dir $WORK/output/verify/day${DAY}_qa \
   --review-clips
 
-# 6b. 主片响度/爆峰/长静音门禁
-python3 $SKILL/scripts/audio_master_report.py \
-  $WORK/output/day${DAY}_master.mp4 \
-  --output $WORK/output/day${DAY}_audio_master_report.json \
-  --markdown $WORK/output/day${DAY}_audio_master_report.md \
-  --strict
-
-# 6c. 如果 QA 有 WARN/FAIL，先看 review packet；想抽查关键切点再生成可视化复盘图
-python3 $SKILL/scripts/timeline_view.py \
-  $WORK/output/day${DAY}_master.mp4 --at 42.5 --radius 1.5 \
-  --output $WORK/output/verify/day${DAY}_42_5s.png
-
-# 6d. 可选：导出平台可上传字幕 sidecar
+# 6b. 导出与 1.25x + 片头 offset 对齐的字幕 sidecar / timed-text JSON
 python3 $SKILL/scripts/subtitle_pack.py \
   --config $WORK/work/render_config.json \
   --output-dir $WORK/output/subtitles \
   --basename day${DAY}_master \
   --speed 1.25 \
   --offset 2.0
+
+# 6c. 主片留存节奏风险门禁
+python3 $SKILL/scripts/retention_rhythm_qa.py \
+  $WORK/output/day${DAY}_master.mp4 \
+  --timed-text $WORK/output/subtitles/day${DAY}_master.json \
+  --output $WORK/output/verify/day${DAY}_retention_rhythm_qa.json \
+  --markdown $WORK/output/verify/day${DAY}_retention_rhythm_qa.md \
+  --strict
+
+# 6d. 主片响度/爆峰/长静音门禁
+python3 $SKILL/scripts/audio_master_report.py \
+  $WORK/output/day${DAY}_master.mp4 \
+  --output $WORK/output/day${DAY}_audio_master_report.json \
+  --markdown $WORK/output/day${DAY}_audio_master_report.md \
+  --strict
+
+# 6e. 如果 QA 有 WARN/FAIL，先看 review packet；想抽查关键切点再生成可视化复盘图
+python3 $SKILL/scripts/timeline_view.py \
+  $WORK/output/day${DAY}_master.mp4 --at 42.5 --radius 1.5 \
+  --output $WORK/output/verify/day${DAY}_42_5s.png
 
 # 7. 多平台
 python3 $SKILL/scripts/multi_export.py \
@@ -1947,7 +1989,7 @@ python3 $SKILL/scripts/review_dashboard.py \
 ## 测试
 
 ```bash
-pytest tests/           # 529 测试，约 5 秒
+pytest tests/           # 完整本地测试套件，约 5 秒
 ```
 
 按模块跑：
@@ -1957,6 +1999,7 @@ pytest tests/test_rewrite_script.py -v      # Story Engine
 pytest tests/test_auto_broll.py -v          # B-roll 调度
 pytest tests/test_multi_export.py -v        # 多平台比例转换
 pytest tests/test_render_qa.py -v           # 渲染后质检
+pytest tests/test_retention_rhythm_qa.py -v # 成片 hook / 长镜头 / 节奏风险门禁
 pytest tests/test_audio_master_report.py -v # 成片响度 / true peak / LRA 门禁
 pytest tests/test_render_enrich_plan.py -v  # enrich_plan 自动接入渲染
 pytest tests/test_auto_emphasis.py -v      # 问句/数字/转折/结论 emphasis cues
@@ -2164,6 +2207,7 @@ pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 g
 | **62** | **[Hook Variants](docs/prompts/62-hook-variants.md)** | **同一视频批量生成前三秒 hook 角度** |
 | **67** | **[Speech Continuity QA](docs/prompts/67-speech-continuity-qa.md)** | **成片二次 ASR 检查复读、近重复 take 和句内口吃** |
 | **68** | **[Cover Variants](docs/prompts/68-cover-variants.md)** | **多套封面、feed-size 预览、标题协同和最终选择** |
+| **69** | **[Retention Rhythm QA](docs/prompts/69-retention-rhythm-qa.md)** | **成片前三秒活动、长镜头、注意力空窗和节奏风险门禁** |
 
 完整列表见 [docs/prompts/README.md](docs/prompts/README.md)。
 
@@ -2227,6 +2271,7 @@ scripts/
 ├── edit_preflight.py           渲染前结构/路径/参数预检 gate       [V3]
 ├── render_final.py             单次编码渲染 + enrich_plan 接入（V3 强化）
 ├── render_qa.py                渲染后黑屏/静帧/静音/尺寸质检       [V3]
+├── retention_rhythm_qa.py      成片 hook / 长镜头 / 注意力空窗门禁 [V3]
 ├── speech_continuity_qa.py     成片二次 ASR 复读 / 口吃发布 gate  [V3]
 ├── audio_master_report.py      成片响度 / true peak / LRA 发布门禁 [V3]
 ├── timeline_view.py            源素材/成片切点 filmstrip+waveform  [V3]

@@ -235,6 +235,16 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         blocks_when_present=True,
     ),
     ArtifactDef(
+        "retention_rhythm_qa",
+        "Retention Rhythm QA",
+        (
+            "**/retention_rhythm_qa.json",
+            "**/*_retention_rhythm_qa.json",
+        ),
+        "Run retention_rhythm_qa.py and review inactive hooks, long holds, attention gaps, or cadence warnings.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "speech_continuity_qa",
         "Speech Continuity QA",
         (
@@ -512,6 +522,7 @@ def evaluate_category(definition: ArtifactDef, artifacts: Sequence[ArtifactRecor
             "edit_brief_plan",
             "audio_boundary_plan",
             "rough_cut",
+            "retention_rhythm_qa",
             "speech_continuity_qa",
             "cover_variants",
         }:

@@ -183,7 +183,21 @@
      --platform douyin \
      --json output/day<NN>_master_qa.json
 
-7b. python3 scripts/audio_master_report.py \
+7b. # 先生成与主片 speed / cover offset 对齐的 timed-text JSON，再做留存节奏风险审计。
+     python3 scripts/subtitle_pack.py \
+       --config work/render_config.json \
+       --output-dir output/subtitles \
+       --basename day<NN>_master \
+       --speed 1.25 \
+       --offset 2.0
+     python3 scripts/retention_rhythm_qa.py \
+       output/day<NN>_master.mp4 \
+       --timed-text output/subtitles/day<NN>_master.json \
+       --output output/verify/day<NN>_retention_rhythm_qa.json \
+       --markdown output/verify/day<NN>_retention_rhythm_qa.md \
+       --strict
+
+7c. python3 scripts/audio_master_report.py \
       output/day<NN>_master.mp4 \
       --output output/day<NN>_audio_master_report.json \
       --markdown output/day<NN>_audio_master_report.md \
@@ -291,6 +305,7 @@
 - enrich_plan.json 里 broll/sticker/chapter 总数（确认丰富度足够）
 - content_guard 的输出（必须 ✅ 无违规）
 - render_qa 的输出（必须没有 FAIL；WARN 要解释）
+- retention_rhythm_qa 的输出（BLOCK 必须修；WARN 要结合成片人工判断）
 - audio_master_report 的输出（必须 `summary.blocking == 0`）
 - 如有 jump_cut 或 QA WARN/FAIL，给我 timeline_view PNG 路径和人工判断
 
@@ -299,6 +314,7 @@
 - 字幕字体走 Source Han Sans SC Heavy 或 STHeiti Medium，不要用 W3
 - 1.25x 之后必须做响度规范化（render_final 默认会做，不要 --no-loudnorm）
 - 发布前用 audio_master_report 确认 LUFS / true peak / 长静音，不要只凭耳朵判断
+- retention_rhythm_qa 只是可观测节奏风险，不是留存率或爆款预测；不要为了消除 WARN 机械加切点
 - 如果 content_guard 拦截，先重写标题再继续，不要 --no-content-guard 绕过
 ```
 
@@ -349,7 +365,9 @@ day<NN>/
     ├── verify/                         # timeline_view / review proxy 审片产物
     │   ├── day<NN>_review_proxy.mp4     # 低码率 timecoded 审片视频，不可发布
     │   ├── day<NN>_review_proxy.json    # review_proxy.v1 / 可复现命令
-    │   └── day<NN>_review_proxy.md      # 审片说明
+    │   ├── day<NN>_review_proxy.md      # 审片说明
+    │   ├── day<NN>_retention_rhythm_qa.json # 成片 hook / 长镜头 / 节奏风险门禁
+    │   └── day<NN>_retention_rhythm_qa.md   # 时间范围 + 修复建议
     ├── day<NN>_master.mp4              # 9:16 主版本
     ├── day<NN>_master_xhs.mp4          # 3:4 小红书发布版
     ├── day<NN>_master_douyin.mp4       # 9:16 抖音版
