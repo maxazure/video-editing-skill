@@ -192,6 +192,33 @@ def test_retention_rhythm_qa_can_be_required(tmp_path):
     assert "retention_rhythm_qa" in manifest["missing_required"]
 
 
+def test_subtitle_readability_qa_blocks_when_timing_is_invalid(tmp_path):
+    _write(tmp_path / "verify" / "subtitle_readability_qa.json", {
+        "version": "subtitle_readability_qa.v1",
+        "summary": {"status": "blocked", "blocking": 1, "warnings": 2},
+        "findings": [
+            {"kind": "cue_overlap", "severity": "block"},
+        ],
+    })
+
+    manifest = build_manifest(str(tmp_path), target_stage="analysis")
+
+    assert "subtitle_readability_qa" in manifest["blocked_gates"]
+    gate = next(g for g in manifest["gates"] if g["category"] == "subtitle_readability_qa")
+    assert gate["status"] == "blocked"
+    assert "1 blocking item(s)" in gate["notes"][0]
+
+
+def test_subtitle_readability_qa_can_be_required(tmp_path):
+    manifest = build_manifest(
+        str(tmp_path),
+        target_stage="analysis",
+        required=["subtitle_readability_qa"],
+    )
+
+    assert "subtitle_readability_qa" in manifest["missing_required"]
+
+
 def test_optional_provider_decision_blocks_when_unresolved(tmp_path):
     _publish_ready_project(tmp_path)
     _write(tmp_path / "work" / "provider_decision.json", {

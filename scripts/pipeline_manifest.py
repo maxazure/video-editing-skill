@@ -294,6 +294,16 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         "Run subtitle_pack.py when platform sidecar subtitles are needed.",
     ),
     ArtifactDef(
+        "subtitle_readability_qa",
+        "Subtitle Readability QA",
+        (
+            "**/subtitle_readability_qa.json",
+            "**/*_subtitle_readability_qa.json",
+        ),
+        "Run subtitle_readability_qa.py on output-aligned subtitle JSON and resolve timing/readability blockers.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "localization_pack",
         "Localization Pack",
         (
@@ -524,6 +534,7 @@ def evaluate_category(definition: ArtifactDef, artifacts: Sequence[ArtifactRecor
             "rough_cut",
             "retention_rhythm_qa",
             "speech_continuity_qa",
+            "subtitle_readability_qa",
             "cover_variants",
         }:
             blocking = _int_at(data, "summary", "blocking")

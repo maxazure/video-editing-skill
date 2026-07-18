@@ -181,6 +181,8 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    │
    ├─→ subtitle_pack.py         SRT / VTT / ASS / JSON 字幕交付包
    │                            支持 render_config 串接、加速倍率、片头 offset 对齐
+   ├─→ subtitle_readability_qa.py
+   │                            最终字幕 CPS / 时长 / 行长 / 重叠 / 媒体越界发布 gate
    │
    ├─→ import_capcut_subtitles.py
    │                            剪映/CapCut 自动字幕 → transcript / gap cut list
@@ -221,7 +223,7 @@ cd ~/projects/video-editing-skill
 python3 scripts/utils.py
 
 # 4. 跑一遍测试套件确认 OK
-pytest tests/           # 529 个测试，约 5 秒
+pytest tests/           # 553 个测试，约 6 秒
 ```
 
 每天做一条视频的完整模板：**[docs/prompts/15-xhs-daily-tech-video.md](docs/prompts/15-xhs-daily-tech-video.md)**
@@ -756,6 +758,22 @@ python3 scripts/subtitle_pack.py \
 
 `--transcript` 默认保留原始时间码；`--config` 默认按 `render_final.py` 的 clips 顺序串接时间线。`--speed` 对齐 `--primary-speed`，`--offset` 对齐封面/片头秒数；中文默认 18 字单行、英文默认 42 字单行，也可用 `--max-chars` 覆盖。
 
+### 🔎 Subtitle Readability QA — 最终字幕可读性门禁
+[`scripts/subtitle_readability_qa.py`](scripts/subtitle_readability_qa.py) · [详细文档](docs/prompts/70-subtitle-readability-qa.md)
+
+`subtitle_pack.py` 负责生成字幕，但生成成功不代表最终字幕一定可发布。`subtitle_readability_qa.py` 读取与 master 同速、同片头 offset 的 `subtitle_pack.v1` JSON，检查 cue 时间缺失/倒序、真实重叠、极短闪现、CPS、持续时间、行数、单行长度，并可用 `--media` 检查字幕是否超过成片结尾。
+
+```bash
+python3 scripts/subtitle_readability_qa.py \
+  output/subtitles/day58_master.json \
+  --media output/day58_master.mp4 \
+  --output verify/subtitle_readability_qa.json \
+  --markdown verify/subtitle_readability_qa.md \
+  --strict
+```
+
+默认中文 18 字/行、英文 42 字符/行；18 CPS 以上、0.5 秒以下、7 秒以上或超过 2 行只 WARN，必须结合正常速度成片判断。时间无效、cue 重叠、超过媒体结尾、短于 0.15 秒或超过 25 CPS 会写入 `summary.blocking`，`--strict` 返回 2。报告存在且 blocking 非零时 `pipeline_manifest.py` 会阻塞；要强制具备报告可加 `--require subtitle_readability_qa`。本 gate 只读 timed text，不做 OCR，也不声称能判断字体、颜色、描边或画面安全区。
+
 ### 🔁 CapCut Subtitle Import — 剪映字幕反向导入
 [`scripts/import_capcut_subtitles.py`](scripts/import_capcut_subtitles.py) · [详细文档](docs/prompts/50-import-capcut-subtitles.md)
 
@@ -966,6 +984,23 @@ python3 scripts/export_otio.py \
 ```
 
 适合把自动粗剪交给 Premiere / Final Cut Pro / DaVinci Resolve 做调色、混音、精剪或协作复核。EDL 更通用，FCPXML 对 FCP / Resolve 更直接，OTIO 更适合使用 OpenTimelineIO adapter 的跨工具流程；复杂字幕、overlay、章节卡和 B-roll 仍以 `render_final.py` / `export_capcut.py` 为准。
+
+### 2026-07-19 自动化升级记录（Subtitle Readability QA）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`browser-use/video-use`](https://github.com/browser-use/video-use/blob/main/SKILL.md) | 字幕在最终输出时间线上应用 offset，并在 render 后自检字幕可读性 | 新增 output-aligned subtitle pack 的独立发布前门禁；不重复做转写或渲染 |
+| [`hoodini/ai-agents-skills` 的 video-edit skill](https://github.com/hoodini/ai-agents-skills/blob/master/skills/video-edit/SKILL.md) | 长渲染前先确认 transcript，渲染后抽查 caption quality | 保留“先审文本、后验成片”的两阶段思路，并输出可定位 cue 的 JSON / Markdown evidence |
+| [`SubtitleEdit/subtitleedit`](https://github.com/SubtitleEdit/subtitleedit) | CPS、最短/最长显示时间、最大行数、重叠等规则均可配置 | 默认用 18 CPS 提醒、25 CPS 阻塞，并检查时长、行数、单行长度和 overlap；仅结构错误与极端读速自动 BLOCK |
+| [`SB-Jeff/documentary-junior-editor` 的 timecode validator](https://github.com/SB-Jeff/documentary-junior-editor/blob/main/scripts/validate_timecodes.py) | 用确定性规则尽早拦截塌缩、乱序和越界时间码 | 加入非有限值、非正时长、文件顺序倒退及相对真实媒体时长越界检查 |
+
+新增/调整能力：新增 [`scripts/subtitle_readability_qa.py`](scripts/subtitle_readability_qa.py)，读取 `subtitle_pack.v1` 的 `cues[]`，本地、只读地产生 `subtitle_readability_qa.v1` JSON 和可选 Markdown。报告覆盖无效/负数/非正时长、乱序、空文本、cue overlap、媒体越界、闪现字幕、CPS、过长/过短显示、最大行数与单行字符数；中文/英文默认单行上限分别为 18/42 字符。`pipeline_manifest.py` 新增 `subtitle_readability_qa` category，报告存在且 `summary.blocking > 0` 时阻塞，也支持 `--require subtitle_readability_qa`。同步更新 SKILL、每日工作流、提示词索引和 [Subtitle Readability QA 文档](docs/prompts/70-subtitle-readability-qa.md)。这一步不做 OCR 或视觉安全区判断，字体、遮挡与画面边缘仍需观看 master。
+
+使用方式：先按实际 speed / cover offset 生成 output-aligned subtitle pack，再执行 `python3 scripts/subtitle_readability_qa.py output/subtitles/final_master.json --media output/final_master.mp4 --output verify/subtitle_readability_qa.json --markdown verify/subtitle_readability_qa.md --strict`。`--strict` 在存在 BLOCK 时退出码为 2；必须修正源字幕、speed/offset 或 render config 并重新生成。WARN 用于人工观看相应 cue，不建议为了清零指标机械拆句。
+
+验证结果：新增 `tests/test_subtitle_readability_qa.py` 10 项，更新 `tests/test_pipeline_manifest.py` 2 项；定向 `.venv/bin/python -m pytest tests/test_subtitle_readability_qa.py tests/test_pipeline_manifest.py -q` 通过 `55 passed in 0.63s`；最终全量 `.venv/bin/python -m pytest tests -q` 通过 `553 passed in 5.47s`。真实 FFmpeg smoke 生成 4 秒 360×640 H.264/AAC master：正确对齐的 2 条字幕得到 `ready`、`blocking=0`、`warnings=0`、`max_cps=3.5`、媒体时长 `4.0s`；故意增加错误 offset 后检出 `out_of_bounds=1`，结果 `blocked` 且 strict 退出码为 2。`.venv/bin/python -m compileall -q scripts tests`、CLI `--help`、manifest category smoke、skill `quick_validate.py` 和 `git diff --check` 全部通过。
 
 ### 2026-07-18 自动化升级记录（Retention Rhythm QA）
 
@@ -1884,7 +1919,15 @@ python3 $SKILL/scripts/subtitle_pack.py \
   --speed 1.25 \
   --offset 2.0
 
-# 6c. 主片留存节奏风险门禁
+# 6c. 最终字幕可读性门禁
+python3 $SKILL/scripts/subtitle_readability_qa.py \
+  $WORK/output/subtitles/day${DAY}_master.json \
+  --media $WORK/output/day${DAY}_master.mp4 \
+  --output $WORK/output/verify/day${DAY}_subtitle_readability_qa.json \
+  --markdown $WORK/output/verify/day${DAY}_subtitle_readability_qa.md \
+  --strict
+
+# 6d. 主片留存节奏风险门禁
 python3 $SKILL/scripts/retention_rhythm_qa.py \
   $WORK/output/day${DAY}_master.mp4 \
   --timed-text $WORK/output/subtitles/day${DAY}_master.json \
@@ -1892,14 +1935,14 @@ python3 $SKILL/scripts/retention_rhythm_qa.py \
   --markdown $WORK/output/verify/day${DAY}_retention_rhythm_qa.md \
   --strict
 
-# 6d. 主片响度/爆峰/长静音门禁
+# 6e. 主片响度/爆峰/长静音门禁
 python3 $SKILL/scripts/audio_master_report.py \
   $WORK/output/day${DAY}_master.mp4 \
   --output $WORK/output/day${DAY}_audio_master_report.json \
   --markdown $WORK/output/day${DAY}_audio_master_report.md \
   --strict
 
-# 6e. 如果 QA 有 WARN/FAIL，先看 review packet；想抽查关键切点再生成可视化复盘图
+# 6f. 如果 QA 有 WARN/FAIL，先看 review packet；想抽查关键切点再生成可视化复盘图
 python3 $SKILL/scripts/timeline_view.py \
   $WORK/output/day${DAY}_master.mp4 --at 42.5 --radius 1.5 \
   --output $WORK/output/verify/day${DAY}_42_5s.png
@@ -2000,6 +2043,7 @@ pytest tests/test_auto_broll.py -v          # B-roll 调度
 pytest tests/test_multi_export.py -v        # 多平台比例转换
 pytest tests/test_render_qa.py -v           # 渲染后质检
 pytest tests/test_retention_rhythm_qa.py -v # 成片 hook / 长镜头 / 节奏风险门禁
+pytest tests/test_subtitle_readability_qa.py -v # 最终字幕 CPS / 时长 / 重叠 / 越界门禁
 pytest tests/test_audio_master_report.py -v # 成片响度 / true peak / LRA 门禁
 pytest tests/test_render_enrich_plan.py -v  # enrich_plan 自动接入渲染
 pytest tests/test_auto_emphasis.py -v      # 问句/数字/转折/结论 emphasis cues
@@ -2190,6 +2234,7 @@ pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 g
 | **27** | **[NLE Handoff](docs/prompts/27-export-edl.md)** | **导出 EDL / FCPXML / OTIO 给 Premiere/FCP/Resolve** |
 | **28** | **[Screen Focus](docs/prompts/28-screen-focus.md)** | **录屏点击/热点自动聚焦** |
 | **29** | **[Subtitle Pack](docs/prompts/29-subtitle-pack.md)** | **导出 SRT/VTT/ASS/JSON 字幕包** |
+| **70** | **[Subtitle Readability QA](docs/prompts/70-subtitle-readability-qa.md)** | **检查最终字幕 CPS、时长、行长、重叠和媒体越界** |
 | **43** | **[Audio Cue Sheet](docs/prompts/43-audio-cue-sheet.md)** | **规划 BGM/SFX 和生成审批** |
 | **45** | **[Video Prompt Pack](docs/prompts/45-video-prompt-pack.md)** | **视频生成提示词包 + paid approval gate** |
 | **46** | **[Generation Task Log](docs/prompts/46-generation-task-log.md)** | **跟踪 submit_id、轮询、下载和本地落盘** |
@@ -2276,6 +2321,7 @@ scripts/
 ├── audio_master_report.py      成片响度 / true peak / LRA 发布门禁 [V3]
 ├── timeline_view.py            源素材/成片切点 filmstrip+waveform  [V3]
 ├── subtitle_pack.py            SRT/VTT/ASS/JSON 字幕交付包        [V3]
+├── subtitle_readability_qa.py  最终字幕 CPS/时长/重叠/越界 gate   [V3]
 ├── import_capcut_subtitles.py  剪映/CapCut 字幕反向导入 + gap cut [V3]
 ├── srt_edit_plan.py            SRT 编辑指令 → render_config/cut   [V3]
 ├── project_resume.py           续跑上下文包 + agent handoff           [V3]

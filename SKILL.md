@@ -1,6 +1,6 @@
 ---
 name: video-editing
-description: "Xiaohongshu/RED-tuned short-form video workflow for raw voice-over, talking-head, tutorials, interviews, podcasts, long videos, screen recordings, B-roll, captions, and generated assets. Covers edit routing, project bootstrap, transcription, multi-take packs, audio sync, cleanup, highlights/shorts, hook/story rewrite, content/source gates, B-roll/enrich/gpt-image-2/video-generation planning, screen focus, PIP, color grade, preflight/render/QA/audio master, retention-rhythm and rendered-speech continuity QA, review proxies, subtitles, CapCut import, multi-platform exports, cover A/B variants, captions, publish packages, dashboards, resume packets, EDL/FCPXML/OTIO, and Remotion animation."
+description: "Xiaohongshu/RED-tuned short-form video workflow for raw voice-over, talking-head, tutorials, interviews, podcasts, long videos, screen recordings, B-roll, captions, and generated assets. Covers edit routing, project bootstrap, transcription, multi-take packs, audio sync, cleanup, highlights/shorts, hook/story rewrite, content/source gates, B-roll/enrich/gpt-image-2/video-generation planning, screen focus, PIP, color grade, preflight/render/QA/audio master, retention-rhythm, subtitle-readability and rendered-speech continuity QA, review proxies, subtitles, CapCut import, multi-platform exports, cover A/B variants, captions, publish packages, dashboards, resume packets, EDL/FCPXML/OTIO, and Remotion animation."
 metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
 ---
 
@@ -51,6 +51,8 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ review_proxy.py          低码率完整审片 MP4 / 可见时间码 / faststart
    ├─→ timeline_view.py         源素材删除段 / 成片输出切点 filmstrip + waveform 复盘图
    ├─→ subtitle_pack.py         SRT/VTT/ASS/JSON 字幕交付包（speed/offset 对齐）
+   ├─→ subtitle_readability_qa.py
+   │                            最终字幕 CPS / 时长 / 行长 / 重叠 / 媒体越界 gate
    ├─→ import_capcut_subtitles.py
    │                            剪映/CapCut 自动字幕 → transcript / gap cut list
    ├─→ srt_edit_plan.py         SRT + keep/drop 编辑指令 → render_config / cut list
@@ -114,6 +116,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `audio_master_report.py` | 成片响度报告：LUFS / true peak / LRA / 长静音 gate | `<video.mp4>` `--output audio_master_report.json` `--markdown audio_master_report.md` `--strict` |
 | `timeline_view.py` | 源素材删除段 / 成片输出切点可视化复盘图 | `<video.mp4>` `--at 42.5` `--output view.png` / `--rendered-cut-list cuts.json` `--output-dir verify/` |
 | `subtitle_pack.py` | transcript/render_config → SRT/VTT/ASS/JSON 字幕包 | `--transcript work/transcript.json --output-dir output/subtitles` / `--config render_config.json --speed 1.25 --offset 2.0` |
+| `subtitle_readability_qa.py` | output-aligned 字幕 → CPS、时长、行长、重叠和媒体越界 gate | `<subtitle_pack.json>` `--media final.mp4` `--output subtitle_readability_qa.json` `--strict` |
 | `import_capcut_subtitles.py` | 剪映/CapCut 自动字幕或 SRT → transcript + gap cut list | `--draft <draft_dir>` / `--srt captions.srt` `--transcript work/capcut_transcript.json` `--cut-list work/capcut_gap_cut.json` |
 | `srt_edit_plan.py` | SRT + 人工/agent keep/drop 指令 → edit plan / render_config / cut list | `--srt captions.srt --guide edit_guide.md --source-media origin/talking.mp4 --render-config work/render_config.json --strict` |
 | `project_resume.py` | 本地 artifacts → 续跑上下文包 / agent handoff | `--project-dir work/day58 --markdown work/day58/project_resume.md --agent-note work/day58/CLAUDE.md` |
@@ -1220,6 +1223,19 @@ python3 scripts/subtitle_pack.py \
 ```
 
 `subtitle_pack.py` 可从 `transcript.json` 或 `render_config.json` 生成 SRT/VTT/ASS/JSON。`--config` 会按最终 clips 顺序串接字幕时间线；`--speed` 对齐 `render_final.py --primary-speed`；`--offset` 对齐片头封面秒数。JSON manifest 保留每条 cue 的来源片段和 `over_max_chars` 之类校对警告。
+
+生成 JSON 后，对最终字幕执行只读发布门禁：
+
+```bash
+python3 scripts/subtitle_readability_qa.py \
+  output/subtitles/final_master.json \
+  --media final.mp4 \
+  --output verify/subtitle_readability_qa.json \
+  --markdown verify/subtitle_readability_qa.md \
+  --strict
+```
+
+`subtitle_readability_qa.py` 检查 output-timeline 的无效时间、乱序、重叠、极短闪现、CPS、持续时间、行数/行长，并可用 FFprobe 验证 cue 没有超过成片结尾。普通 CPS/排版风险只 WARN，必须看正常速度 master；确定性时间事故和极端阅读速度写入 `summary.blocking`。它不做 OCR，不替代字体、描边、位置或遮挡人工审片。`pipeline_manifest.py --require subtitle_readability_qa --strict` 可把报告设为发布必需项。
 
 **6f. 发布上传包（最终上传前跑）**：
 ```bash
