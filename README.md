@@ -145,7 +145,9 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    │                            生成路由 / 连续性锚点 / Dreamina 额度提醒
    │
    ├─→ video_prompt_pack.py     Dreamina/Veo/LTX/Wan/Sora 提示词包
-   │                            角色/品牌一致性 / image-to-video / paid approval gate
+   │                            角色/品牌/style lock / image-to-video / paid approval gate
+   ├─→ reference_frame_preflight.py
+   │                            首帧/style key 尺寸/方向/画幅/透明背景 gate
    │
    ├─→ generation_task_log.py   异步生成任务台账
    │                            submit_id / 轮询 / 下载 / 本地落盘 gate
@@ -523,6 +525,7 @@ python3 scripts/audio_cue_sheet.py \
 | `continuity.anchors` | 系列色彩、比例、字幕安全区、上一镜头引用、关键词线索 |
 | `storyboard_plan.md` | 适合人工 review 的 shot cards，含 prompt 和检查项 |
 | `video_prompt_pack.json` | 每个 shot 的 Dreamina/即梦 Seedance、Veo、LTX、Wan、Sora 提示词、参考图路径、负面提示词和审批状态 |
+| `reference_frame_preflight.json` | image-to-video 首帧和共享 style key 的存在性、解码、尺寸、方向、画幅、透明背景 gate |
 | `storyboard_assets.json` | 每个 shot 对应素材是否 ready、需要生成/审批/渲染/搜索；B-roll 可带 `candidate_scores` 排名理由 |
 
 常用：
@@ -557,6 +560,7 @@ python3 scripts/video_prompt_pack.py \
   --asset-root work \
   --character "same Chinese founder-host, navy jacket" \
   --brand-anchor "palette=charcoal,white,signal yellow" \
+  --style-reference work/imagegen/style-key.png \
   --output work/video_prompt_pack.json \
   --markdown work/video_prompt_pack.md \
   --strict
@@ -571,7 +575,23 @@ python3 scripts/video_prompt_pack.py \
   --markdown work/video_prompt_pack.md
 ```
 
-输出 `global.character_sheet_prompt`、`items[].prompt`、`items[].negative_prompt`、`items[].reference.expected_path/resolved_path`、`items[].approval_status` 和 `summary.blocking`。`--strict` 会在 generated-video provider 还没有 `--approved` 时返回 2；`pipeline_manifest.py` 会自动识别 `video_prompt_pack.json` 并把未清零的 `summary.blocking` 列为 blocking gate。Dreamina/即梦、Veo、LTX、Wan、Sora 等视频生成可能消耗 credits，提交前先确认并保持小批量。
+输出 `global.character_sheet_prompt`、`global.style_reference`、`items[].prompt`、`items[].negative_prompt`、`items[].reference.expected_path/resolved_path`、`items[].approval_status` 和 `summary.blocking`。`--style-reference` 会把同一 style key 绑定到每个生成 shot，并给 provider prompt 追加统一 `STYLE LOCK`。`--strict` 会在 generated-video provider 还没有 `--approved` 时返回 2；`pipeline_manifest.py` 会自动识别 `video_prompt_pack.json` 并把未清零的 `summary.blocking` 列为 blocking gate。Dreamina/即梦、Veo、LTX、Wan、Sora 等视频生成可能消耗 credits，提交前先确认并保持小批量。
+
+### 🖼️ Reference Frame Preflight — 生成参考帧预检
+[`scripts/reference_frame_preflight.py`](scripts/reference_frame_preflight.py) · [详细文档](docs/prompts/71-reference-frame-preflight.md)
+
+借鉴 HeyGen 的 Frame Check、Higgsfield 的共享 style key 和 Seedance 的多素材角色标注：paid provider 提交前，先检查 image-to-video 首帧与共享 style reference 是否真的可用。
+
+```bash
+python3 scripts/reference_frame_preflight.py \
+  --prompt-pack work/video_prompt_pack.json \
+  --output work/reference_frame_preflight.json \
+  --markdown work/reference_frame_preflight.md \
+  --require-style-reference \
+  --strict
+```
+
+脚本检查路径存在性、可解码性、尺寸、横竖方向、目标画幅、短边分辨率和透明背景。缺文件、损坏文件、横竖方向冲突或严重画幅冲突会写入 `summary.blocking` 并让 `--strict` 返回 2；低分辨率和透明背景写 warning 与修正建议。默认 20% 画幅容差会接受常见 1024×1536 → 9:16 参考工作流；需要临时改路径时可重复传 `--reference shot_001=/path/to/approved.png`。产物会被 `pipeline_manifest.py` 自动纳入 gate。
 
 ### 🧾 Generation Task Log — 异步生成任务台账
 [`scripts/generation_task_log.py`](scripts/generation_task_log.py) · [详细文档](docs/prompts/46-generation-task-log.md)
@@ -1842,18 +1862,28 @@ python3 $SKILL/scripts/storyboard_plan.py \
 python3 $SKILL/scripts/video_prompt_pack.py \
   --storyboard-plan $WORK/work/storyboard_plan.json \
   --asset-root $WORK/work \
+  --style-reference $WORK/work/imagegen/style-key.png \
   --output $WORK/work/video_prompt_pack.json \
   --markdown $WORK/work/video_prompt_pack.md \
   --strict
+# style-key.png 可按 video_prompt_pack.md 的 Character / Style Reference prompt 用 Codex image_gen 生成。
 
-# 3d. 素材任务清单与预检：哪些已 ready，哪些要生图/审批/渲染/搜索
+# 3d. paid provider 提交前检查首帧和共享 style key
+python3 $SKILL/scripts/reference_frame_preflight.py \
+  --prompt-pack $WORK/work/video_prompt_pack.json \
+  --output $WORK/work/reference_frame_preflight.json \
+  --markdown $WORK/work/reference_frame_preflight.md \
+  --require-style-reference \
+  --strict
+
+# 3e. 素材任务清单与预检：哪些已 ready，哪些要生图/审批/渲染/搜索
 python3 $SKILL/scripts/storyboard_assets.py \
   --storyboard-plan $WORK/work/storyboard_plan.json \
   --asset-root $WORK/work \
   --output $WORK/work/storyboard_assets.json \
   --markdown $WORK/work/storyboard_assets.md
 
-# 3e. 如果 imagegen[] 或 storyboard_assets 里的 needs_generation 非空，在 Codex 里直接调内置 imagegen 工具
+# 3f. 如果 imagegen[] 或 storyboard_assets 里的 needs_generation 非空，在 Codex 里直接调内置 imagegen 工具
 #     生图优先使用 Codex 内置 `image_gen` 工具，即 OpenAI GPT Image 2（`gpt-image-2`）。
 #     把每条 prompt_en 用 imagegen 生成 1024x1536，存到 $WORK/work/imagegen/
 #     不需要 OPENAI_API_KEY；详见 docs/prompts/19-imagegen.md
@@ -2058,6 +2088,7 @@ pytest tests/test_cover_variants.py -v      # 多套封面 + 小图预览 + 发�
 pytest tests/test_imagegen_hint.py -v       # gpt-image-2 提示词检测
 pytest tests/test_storyboard_plan.py -v     # 分镜 shot cards + 生成路由
 pytest tests/test_video_prompt_pack.py -v   # 视频生成提示词包 + 审批 gate
+pytest tests/test_reference_frame_preflight.py -v # 首帧/style key 尺寸/方向/透明背景 gate
 pytest tests/test_generation_task_log.py -v # 异步生成任务台账 + 下载 gate
 pytest tests/test_video_understanding.py -v # 抽样帧 + 可选 YOLO 检测 artifact
 pytest tests/test_storyboard_assets.py -v   # 分镜素材 readiness manifest
@@ -2075,6 +2106,23 @@ pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 pytest tests/test_review_dashboard.py -v    # 静态人工复核面板 + gate queue
 pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 gate
 ```
+
+### 2026-07-20 自动化升级记录（Reference Frame Preflight + Style Lock）
+
+本次联网研究的 GitHub 参考：
+
+| 项目 | 看到的优点 | 本项目吸收方式 |
+|---|---|---|
+| [`heygen-com/skills`](https://github.com/heygen-com/skills/blob/master/heygen-video/references/frame-check.md) | 视频提交前检查 avatar/reference 横竖方向与背景，并为不匹配画幅生成明确 framing correction | 新增首帧方向、画幅和透明背景预检，输出可执行修正建议 |
+| [`higgsfield-ai/skills`](https://github.com/higgsfield-ai/skills/blob/main/higgsfield-video-explainer/SKILL.md) | 同一 style key 和 STYLE descriptor 贯穿全部 clip；参考图与目标画幅冲突时停止 | `video_prompt_pack.py --style-reference` 把共享 style key 绑定到所有 generated shot；preflight 把严重画幅冲突变成 blocker |
+| [`rich5000/seedance-prompt-guide`](https://github.com/rich5000/seedance-prompt-guide/blob/master/SKILL.md) | 多素材输入必须明确角色，首帧、尾帧、人物、场景、动作和风格参考不能含糊 | preflight 区分 `first_frame` / `style_reference` role，并允许 `--reference shot_id=path` 显式覆写 |
+| [`browser-use/video-use`](https://github.com/browser-use/video-use/blob/main/SKILL.md) | 交付前自检、失败修正、产物持久化是 production-correctness 的一部分 | 输出 `reference_frame_preflight.v1` JSON + Markdown，并接入 `pipeline_manifest.py` |
+
+新增/调整能力：新增 `scripts/reference_frame_preflight.py`，读取 `video_prompt_pack.json`，检查 image-to-video 首帧和共享 style key 的路径、解码、尺寸、方向、画幅、短边分辨率和透明背景；缺失/损坏/方向冲突/严重画幅冲突写入 `summary.blocking`，低分辨率和透明背景给 warning 与修正建议。`video_prompt_pack.py` 新增 `--style-reference`，在 `global` 和每个 item 中保存同一路径，并给所有 prompt 追加统一 `STYLE LOCK`。`pipeline_manifest.py` 新增 `reference_frame_preflight` gate；README、SKILL、daily workflow、提示词目录和 `docs/prompts/71-reference-frame-preflight.md` 已更新。
+
+使用方式：先用 `python3 scripts/video_prompt_pack.py --storyboard-plan work/storyboard_plan.json --asset-root work --style-reference work/imagegen/style-key.png --animate-stills --approved --output work/video_prompt_pack.json --markdown work/video_prompt_pack.md` 生成带 style lock 的 prompt pack；再用 `python3 scripts/reference_frame_preflight.py --prompt-pack work/video_prompt_pack.json --output work/reference_frame_preflight.json --markdown work/reference_frame_preflight.md --require-style-reference --strict` 做 paid provider 提交前门禁。需要替换单镜头参考图时重复传 `--reference shot_001=/path/to/approved.png`。
+
+验证结果：`.venv/bin/python -m pytest tests/test_reference_frame_preflight.py tests/test_video_prompt_pack.py tests/test_pipeline_manifest.py -q` 通过 `62 passed in 2.44s`；最终全量 `.venv/bin/python -m pytest tests -q` 通过 `565 passed in 12.21s`；`.venv/bin/python -m compileall -q scripts tests`、CLI `--help` smoke、`pipeline_manifest.py --list-categories` 和 `git diff --check` 通过。
 
 ### 2026-06-16 自动化升级记录（Publish Package）
 
@@ -2235,6 +2283,7 @@ pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 g
 | **28** | **[Screen Focus](docs/prompts/28-screen-focus.md)** | **录屏点击/热点自动聚焦** |
 | **29** | **[Subtitle Pack](docs/prompts/29-subtitle-pack.md)** | **导出 SRT/VTT/ASS/JSON 字幕包** |
 | **70** | **[Subtitle Readability QA](docs/prompts/70-subtitle-readability-qa.md)** | **检查最终字幕 CPS、时长、行长、重叠和媒体越界** |
+| **71** | **[Reference Frame Preflight](docs/prompts/71-reference-frame-preflight.md)** | **检查视频生成首帧/style key 的尺寸、方向、画幅和透明背景** |
 | **43** | **[Audio Cue Sheet](docs/prompts/43-audio-cue-sheet.md)** | **规划 BGM/SFX 和生成审批** |
 | **45** | **[Video Prompt Pack](docs/prompts/45-video-prompt-pack.md)** | **视频生成提示词包 + paid approval gate** |
 | **46** | **[Generation Task Log](docs/prompts/46-generation-task-log.md)** | **跟踪 submit_id、轮询、下载和本地落盘** |
@@ -2308,6 +2357,7 @@ scripts/
 ├── auto_enrich.py              丰富度编排（B-roll/贴纸/强调点）  [V3]
 ├── storyboard_plan.py          分镜 shot cards + 生成路由         [V3]
 ├── video_prompt_pack.py        多模型视频生成提示词包 + 审批 gate  [V3]
+├── reference_frame_preflight.py 首帧/style key 画幅与背景预检 gate [V3]
 ├── generation_task_log.py      异步生成任务台账 + 下载 gate         [V3]
 ├── storyboard_assets.py        分镜素材任务清单 + ready 预检       [V3]
 ├── stock_material_plan.py      远程 stock 搜索规划                 [V3]

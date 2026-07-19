@@ -166,6 +166,13 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         blocks_when_present=True,
     ),
     ArtifactDef(
+        "reference_frame_preflight",
+        "Reference Frame Preflight",
+        ("**/reference_frame_preflight.json", "**/*_reference_frame_preflight.json"),
+        "Run reference_frame_preflight.py and resolve missing, unreadable, or aspect-conflicting generation references.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "provider_decision",
         "Provider Decision",
         ("**/provider_decision.json", "**/*_provider_decision.json"),
@@ -515,6 +522,7 @@ def evaluate_category(definition: ArtifactDef, artifacts: Sequence[ArtifactRecor
         if definition.category in {
             "storyboard_assets",
             "video_prompt_pack",
+            "reference_frame_preflight",
             "generation_task_log",
             "transition_bridge",
             "motion_guard",

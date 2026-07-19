@@ -80,6 +80,38 @@ def test_emit_markdown_includes_prompt_table_and_character_sheet(tmp_path):
     assert ROUTING_SENTENCE in md
 
 
+def test_shared_style_reference_is_attached_to_every_item(tmp_path):
+    style_reference = tmp_path / "style-key.png"
+    style_reference.write_bytes(b"fake style key")
+    plan = build_storyboard_plan(_sample_transcript(), max_shots=4)
+
+    pack = build_video_prompt_pack(
+        plan,
+        asset_root=str(tmp_path),
+        style_reference=str(style_reference),
+    )
+
+    assert pack["global"]["style_reference"]["resolved_path"] == str(style_reference)
+    assert pack["summary"]["style_reference_ready"] == 1
+    assert all(
+        item["style_reference"]["resolved_path"] == str(style_reference)
+        for item in pack["items"]
+    )
+    generated = {
+        "dreamina_seedance",
+        "veo",
+        "ltx",
+        "wan",
+        "sora",
+        "codex_imagegen",
+        "remotion_hyperframes",
+    }
+    assert all(
+        ("STYLE LOCK:" in item["prompt"]) == (item["provider"] in generated)
+        for item in pack["items"]
+    )
+
+
 def test_cli_writes_prompt_pack_and_strict_fails_until_approved(tmp_path):
     plan_path = tmp_path / "storyboard_plan.json"
     plan_path.write_text(

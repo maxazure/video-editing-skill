@@ -97,13 +97,25 @@
     python3 scripts/video_prompt_pack.py \
       --storyboard-plan work/storyboard_plan.json \
       --asset-root work \
+      --style-reference work/imagegen/style-key.png \
       --output work/video_prompt_pack.json \
       --markdown work/video_prompt_pack.md \
       --strict
     # --strict 会在视频生成还没确认 credits 时返回 2；审批后再加 --approved。
+    # style-key.png 可按 video_prompt_pack.md 的 Character / Style Reference prompt 用 Codex image_gen 生成。
     # 详见 docs/prompts/45-video-prompt-pack.md
 
-4e. # 如果已经提交 Dreamina/即梦或其他异步生成任务，保存 submit_id/task id 并跟踪下载：
+4e. # paid provider 提交前，检查 image-to-video 首帧和共享 style key：
+    python3 scripts/reference_frame_preflight.py \
+      --prompt-pack work/video_prompt_pack.json \
+      --output work/reference_frame_preflight.json \
+      --markdown work/reference_frame_preflight.md \
+      --require-style-reference \
+      --strict
+    # blocker 未清零时不要提交生成任务；本步骤不联网、不消耗 credits。
+    # 详见 docs/prompts/71-reference-frame-preflight.md
+
+4f. # 如果已经提交 Dreamina/即梦或其他异步生成任务，保存 submit_id/task id 并跟踪下载：
     python3 scripts/generation_task_log.py add \
       --log work/generation_tasks.json \
       --provider dreamina \
@@ -116,7 +128,7 @@
     # 任务完成并下载后，用 update 写入 asset-path；未完成/未下载会阻塞 pipeline_manifest。
     # 详见 docs/prompts/46-generation-task-log.md
 
-4f. # 把分镜转成素材清单，先审查哪些素材 ready、需要生成、需要审批或要补 B-roll：
+4g. # 把分镜转成素材清单，先审查哪些素材 ready、需要生成、需要审批或要补 B-roll：
     python3 scripts/storyboard_assets.py \
       --storyboard-plan work/storyboard_plan.json \
       --asset-root work \
@@ -125,7 +137,7 @@
     # 渲染前可加 --strict；如果有 needs_approval，提交 Dreamina/即梦前必须确认 credits。
     # 详见 docs/prompts/25-storyboard-assets.md
 
-4g. # 如果输入是完整口播视频、访谈或录屏，且停顿很多，可先生成去停顿 cut list：
+4h. # 如果输入是完整口播视频、访谈或录屏，且停顿很多，可先生成去停顿 cut list：
     python3 scripts/jump_cut.py origin/<talking_video>.mp4 \
       --dry-run \
       --cut-list work/jumpcut.json \
@@ -345,6 +357,8 @@ day<NN>/
 │   ├── storyboard_plan.md   # 人工 review 版分镜卡
 │   ├── video_prompt_pack.json # 视频生成提示词包 + paid approval gate
 │   ├── video_prompt_pack.md   # 人工 review 版 provider prompts
+│   ├── reference_frame_preflight.json # 首帧/style key 画幅与背景 gate
+│   ├── reference_frame_preflight.md   # 人工 review 版参考帧检查
 │   ├── generation_tasks.json # 异步生成任务 submit_id / 下载 gate
 │   ├── generation_tasks.md   # 人工 review 版任务台账
 │   ├── storyboard_assets.json # 素材任务清单 + ready/paid 预检

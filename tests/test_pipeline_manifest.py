@@ -709,6 +709,42 @@ def test_optional_video_prompt_pack_blocks_when_unapproved(tmp_path):
     assert "1 blocking item(s) in summary.blocking" in gate["notes"]
 
 
+def test_reference_frame_preflight_can_be_required(tmp_path):
+    _write(tmp_path / "work" / "transcript.json", {"segments": []})
+    _write(tmp_path / "work" / "reference_frame_preflight.json", {
+        "version": "reference_frame_preflight.v1",
+        "status": "ready",
+        "summary": {"references": 2, "blocking": 0, "warnings": 0},
+    })
+
+    manifest = build_manifest(
+        str(tmp_path),
+        target_stage="analysis",
+        required=["reference_frame_preflight"],
+    )
+
+    assert manifest["status"] == "ready"
+    gate = next(g for g in manifest["gates"] if g["category"] == "reference_frame_preflight")
+    assert gate["required"] is True
+    assert gate["status"] == "ready"
+
+
+def test_reference_frame_preflight_blocks_on_aspect_conflict(tmp_path):
+    _publish_ready_project(tmp_path)
+    _write(tmp_path / "work" / "reference_frame_preflight.json", {
+        "version": "reference_frame_preflight.v1",
+        "status": "blocked",
+        "summary": {"references": 2, "blocking": 1, "warnings": 0},
+        "blockers": ["shot_001: landscape reference conflicts with 9:16 portrait output"],
+    })
+
+    manifest = build_manifest(str(tmp_path), target_stage="publish_ready")
+
+    assert "reference_frame_preflight" in manifest["blocked_gates"]
+    gate = next(g for g in manifest["gates"] if g["category"] == "reference_frame_preflight")
+    assert "1 blocking item(s) in summary.blocking" in gate["notes"]
+
+
 def test_optional_generation_task_log_blocks_when_async_task_unfinished(tmp_path):
     _publish_ready_project(tmp_path)
     _write(tmp_path / "work" / "generation_tasks.json", {

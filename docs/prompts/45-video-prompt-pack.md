@@ -9,6 +9,7 @@
 - 已经有 `storyboard_plan.json`，准备把部分 shot 交给视频生成模型。
 - 想把同一组分镜导出为 Dreamina/即梦、Veo、LTX、Wan 或 Sora 的不同提示词版本。
 - 需要先生成角色/风格参考 sheet，再做 image-to-video。
+- 需要把同一张 style key 绑定到所有生成 shot，减少跨镜头风格漂移。
 - 想在执行 paid video generation 前，用 `--strict` 拦住未审批任务。
 
 ## 命令
@@ -19,6 +20,7 @@ python3 scripts/video_prompt_pack.py \
   --asset-root work \
   --character "same Chinese founder-host, navy jacket" \
   --brand-anchor "palette=charcoal,white,signal yellow" \
+  --style-reference work/imagegen/style-key.png \
   --output work/video_prompt_pack.json \
   --markdown work/video_prompt_pack.md \
   --strict
@@ -55,7 +57,9 @@ python3 scripts/video_prompt_pack.py \
 `video_prompt_pack.v1` 包含：
 
 - `global.character_sheet_prompt`：角色/品牌/风格参考 sheet 提示词。
+- `global.style_reference`：共享 style key 的 expected/resolved path。
 - `items[].prompt`：按 provider 改写后的 shot 提示词。
+- `items[].style_reference`：每个 shot 指向同一 style key；prompt 会追加一致的 `STYLE LOCK`。
 - `items[].reference.expected_path/resolved_path`：默认查找 `work/imagegen/<shot_id>.png`，供 image-to-video 使用。
 - `items[].negative_prompt`：统一避免字幕、水印、UI、畸形手、闪烁等问题。
 - `items[].approval_status`：`needs_approval` / `approved` / `not_required`。
@@ -81,16 +85,25 @@ python3 scripts/video_prompt_pack.py \
 # 3. 按 video_prompt_pack.md 用 Codex image_gen 做 reference sheet / stills
 #    注意：Dreamina/即梦等视频生成可能消耗 credits，提交前先确认。
 
-# 4. 确认后再生成可执行视频提示词包
+# 4. 确认后再生成可执行视频提示词包，并锁定共享 style key
 python3 scripts/video_prompt_pack.py \
   --storyboard-plan work/storyboard_plan.json \
   --asset-root work \
+  --style-reference work/imagegen/style-key.png \
   --animate-stills \
   --approved \
   --output work/video_prompt_pack.json \
   --markdown work/video_prompt_pack.md
 
-# 5. 生成视频落盘后，回到素材预检
+# 5. paid provider 提交前，检查首帧/style key
+python3 scripts/reference_frame_preflight.py \
+  --prompt-pack work/video_prompt_pack.json \
+  --output work/reference_frame_preflight.json \
+  --markdown work/reference_frame_preflight.md \
+  --require-style-reference \
+  --strict
+
+# 6. 生成视频落盘后，回到素材预检
 python3 scripts/storyboard_assets.py \
   --storyboard-plan work/storyboard_plan.json \
   --asset-root work \
@@ -104,4 +117,5 @@ python3 scripts/storyboard_assets.py \
 - 提示词和审批状态先落盘，provider 执行后置。
 - 默认小批量、逐 shot 审批，避免无意消耗 Dreamina/即梦或其他 provider credits。
 - 先用 Codex `image_gen` 做角色/风格/首帧参考，再进入 image-to-video，减少人物和品牌漂移。
+- 共享 style key 必须在所有生成 shot 中保持同一路径；提交前用 `reference_frame_preflight.py` 检查画幅和背景。
 - 生成视频仍要经过 `storyboard_assets.py`、`asset_provenance.py`、`render_qa.py` 和必要的 `timeline_view.py`。

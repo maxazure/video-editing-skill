@@ -1,6 +1,6 @@
 ---
 name: video-editing
-description: "Xiaohongshu/RED-tuned short-form video workflow for raw voice-over, talking-head, tutorials, interviews, podcasts, long videos, screen recordings, B-roll, captions, and generated assets. Covers edit routing, project bootstrap, transcription, multi-take packs, audio sync, cleanup, highlights/shorts, hook/story rewrite, content/source gates, B-roll/enrich/gpt-image-2/video-generation planning, screen focus, PIP, color grade, preflight/render/QA/audio master, retention-rhythm, subtitle-readability and rendered-speech continuity QA, review proxies, subtitles, CapCut import, multi-platform exports, cover A/B variants, captions, publish packages, dashboards, resume packets, EDL/FCPXML/OTIO, and Remotion animation."
+description: "Xiaohongshu/RED-tuned short-form video workflow for raw voice-over, talking-head, tutorials, interviews, podcasts, long videos, screen recordings, B-roll, captions, and generated assets. Covers edit routing, project bootstrap, transcription, multi-take packs, audio sync, cleanup, highlights/shorts, hook/story rewrite, content/source gates, B-roll/enrich/gpt-image-2/video-generation planning, generation reference-frame/style-lock preflight, screen focus, PIP, color grade, preflight/render/QA/audio master, retention-rhythm, subtitle-readability and rendered-speech continuity QA, review proxies, subtitles, CapCut import, multi-platform exports, cover A/B variants, captions, publish packages, dashboards, resume packets, EDL/FCPXML/OTIO, and Remotion animation."
 metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
 ---
 
@@ -33,6 +33,8 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ audio_cue_sheet.py       BGM / SFX 音频设计清单 / 生成审批 gate
    ├─→ storyboard_plan.py       分镜 shot cards / 生成路由 / 连续性锚点
    ├─→ video_prompt_pack.py     Dreamina/Veo/LTX/Wan/Sora 提示词包 / 审批 gate
+   ├─→ reference_frame_preflight.py
+   │                            首帧/style key 尺寸/方向/透明背景/画幅 gate
    ├─→ generation_task_log.py   异步生成任务台账 / submit_id / 下载 gate
    ├─→ storyboard_assets.py     素材任务清单 / ready 预检 / paid 额度提醒
    │                            可选 media_library.py recommend 排名 B-roll 候选
@@ -100,7 +102,8 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `imagegen_hint.py` | 检测抽象概念 → 产 gpt-image-2 提示词 | `--transcript` `--clean-script` `--codex-md` |
 | `audio_cue_sheet.py` | transcript → BGM/SFX cue、生成审批和音频门禁 | `--transcript` `--asset-root` `--require-local-music` `--require-local-sfx` `--strict` |
 | `storyboard_plan.py` | transcript/clean_script → 分镜 shot cards + 生成路由 | `--transcript` `--clean-script` `--output` `--markdown` |
-| `video_prompt_pack.py` | storyboard_plan → 多 provider 视频生成提示词包 + 角色/品牌一致性 + paid approval gate | `--storyboard-plan` `--provider` `--animate-stills` `--approved` `--strict` |
+| `video_prompt_pack.py` | storyboard_plan → 多 provider 视频生成提示词包 + 角色/品牌/style lock + paid approval gate | `--storyboard-plan` `--style-reference` `--provider` `--animate-stills` `--approved` `--strict` |
+| `reference_frame_preflight.py` | video_prompt_pack → 首帧/style key 存在性、解码、尺寸、方向、画幅、透明背景 gate | `--prompt-pack` `--require-style-reference` `--reference shot_id=...` `--strict` |
 | `generation_task_log.py` | 异步生成任务台账：submit_id/task id、轮询、下载、本地落盘 gate | `add` `update` `import-provider-decision` `report --strict` |
 | `storyboard_assets.py` | storyboard_plan → 素材清单 + ready/paid 预检 | `--storyboard-plan` `--asset-root` `--output` `--strict` |
 | `screen_focus.py` | 录屏点击/热点 → 聚焦 zoom enrich plan | `--events` `--event` `--screen-width` `--output` |
@@ -857,14 +860,18 @@ python3 scripts/render_final.py --config script/render_config.json --output medi
 **Storyboard Plan 分镜与生成路由**（生成素材前推荐）：
 - 运行 `storyboard_plan.py --transcript work/transcript.json --clean-script work/clean_script.md --output work/storyboard_plan.json --markdown work/storyboard_plan.md`
 - 输出每个 shot 的时间码、narration、first/motion/last-frame 描述、`codex_imagegen` / `dreamina_video` / `remotion_hyperframes` / `media_library_broll` 路由、fallback 和 continuity anchors
-- 可选运行 `video_prompt_pack.py --storyboard-plan work/storyboard_plan.json --asset-root work --output work/video_prompt_pack.json --markdown work/video_prompt_pack.md --strict`，把分镜转成 Dreamina/即梦 Seedance、Veo、LTX、Wan、Sora 提示词包和 approval gate
+- 可选运行 `video_prompt_pack.py --storyboard-plan work/storyboard_plan.json --asset-root work --style-reference work/imagegen/style-key.png --output work/video_prompt_pack.json --markdown work/video_prompt_pack.md --strict`，把分镜转成 Dreamina/即梦 Seedance、Veo、LTX、Wan、Sora 提示词包、共享 style lock 和 approval gate
+- image-to-video 提交前运行 `reference_frame_preflight.py --prompt-pack work/video_prompt_pack.json --output work/reference_frame_preflight.json --markdown work/reference_frame_preflight.md --require-style-reference --strict`，拦截缺失/损坏/方向冲突/严重画幅冲突参考帧
 - 再运行 `storyboard_assets.py --storyboard-plan work/storyboard_plan.json --asset-root work --media-library . --output work/storyboard_assets.json --markdown work/storyboard_assets.md --strict`，渲染前确认素材 `ready`
 - `dreamina_video` 只表示适合视频生成，不会自动提交任务；提交 Dreamina/即梦前必须确认，因为可能消耗 credits
 - 生图优先使用 Codex 内置 `image_gen` 工具，即 OpenAI GPT Image 2（`gpt-image-2`）。
 
-**Video Prompt Pack 视频生成提示词包**（生成视频前推荐）：
-- 运行 `video_prompt_pack.py --storyboard-plan work/storyboard_plan.json --asset-root work --character "same host" --brand-anchor "palette=charcoal,white,signal yellow" --output work/video_prompt_pack.json --markdown work/video_prompt_pack.md --strict`
-- 输出 `global.character_sheet_prompt`、`items[].prompt`、`items[].negative_prompt`、`items[].reference.expected_path/resolved_path`、`items[].approval_status` 和 `summary.blocking`
+**Video Prompt Pack + Reference Frame Preflight 视频生成提示词与参考帧门禁**（生成视频前推荐）：
+- 运行 `video_prompt_pack.py --storyboard-plan work/storyboard_plan.json --asset-root work --character "same host" --brand-anchor "palette=charcoal,white,signal yellow" --style-reference work/imagegen/style-key.png --output work/video_prompt_pack.json --markdown work/video_prompt_pack.md --strict`
+- 输出 `global.character_sheet_prompt`、`global.style_reference`、`items[].prompt`、`items[].negative_prompt`、`items[].reference.expected_path/resolved_path`、`items[].approval_status` 和 `summary.blocking`
+- `--style-reference` 会把同一 style key 绑定到所有 shot，并在每条 provider prompt 加同一条 `STYLE LOCK`
+- 参考图落盘后运行 `reference_frame_preflight.py --prompt-pack work/video_prompt_pack.json --output work/reference_frame_preflight.json --markdown work/reference_frame_preflight.md --require-style-reference --strict`
+- `reference_frame_preflight.v1` 检查首帧/style key 是否存在、可解码、方向/画幅是否匹配、分辨率是否过低和透明背景；阻塞项接入 `pipeline_manifest.py`
 - `--provider veo|ltx|wan|sora|dreamina_seedance` 可把同一分镜改写成指定模型提示词；`--animate-stills` 会把 `codex_imagegen` 参考图 route 转为 image-to-video 提示词
 - `--strict` 会在 generated-video provider 还没 `--approved` 时返回 2；脚本不提交 provider 任务、不消耗 credits
 - 生图优先使用 Codex 内置 `image_gen` 工具，即 OpenAI GPT Image 2（`gpt-image-2`）。

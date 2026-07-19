@@ -99,6 +99,16 @@ def _expected_reference(asset_root: Optional[str], shot_id: str) -> Dict[str, st
     return {"expected_path": str(expected), "resolved_path": resolved}
 
 
+def _explicit_reference(path: Optional[str]) -> Dict[str, str]:
+    if not path:
+        return {"expected_path": "", "resolved_path": ""}
+    expected = Path(path).expanduser().resolve()
+    return {
+        "expected_path": str(expected),
+        "resolved_path": str(expected) if expected.exists() else "",
+    }
+
+
 def _provider_for_shot(shot: Mapping[str, Any], provider: str, *, animate_stills: bool) -> str:
     if provider != "auto":
         return provider
@@ -242,6 +252,7 @@ def build_video_prompt_pack(
     brand_anchors: Optional[Sequence[str]] = None,
     approved: bool = False,
     animate_stills: bool = False,
+    style_reference: Optional[str] = None,
     default_duration: float = 4.0,
     max_duration: float = 8.0,
 ) -> Dict[str, Any]:
@@ -249,6 +260,7 @@ def build_video_prompt_pack(
     brand_anchors = list(brand_anchors or [])
     target = plan.get("target") if isinstance(plan.get("target"), Mapping) else {}
     aspect = str(target.get("aspect") or "9:16")
+    shared_style_reference = _explicit_reference(style_reference)
 
     items: List[Dict[str, Any]] = []
     provider_counts: Dict[str, int] = {}
@@ -284,6 +296,14 @@ def build_video_prompt_pack(
             continuity=continuity,
             characters=characters,
         )
+        if (
+            shared_style_reference["expected_path"]
+            and selected_provider in GENERATED_VIDEO_PROVIDERS | {"codex_imagegen", "remotion_hyperframes"}
+        ):
+            prompt = (
+                f"{prompt} STYLE LOCK: Match the shared style reference and the same palette, "
+                "line/fill treatment, texture, lighting, and finish across every generated shot."
+            )
         items.append({
             "shot_id": shot_id,
             "section": shot.get("section"),
@@ -299,6 +319,7 @@ def build_video_prompt_pack(
             "aspect": aspect,
             "duration_seconds": duration,
             "reference": reference,
+            "style_reference": dict(shared_style_reference),
             "prompt": prompt,
             "negative_prompt": DEFAULT_NEGATIVE_PROMPT,
             "continuity_anchors": continuity,
@@ -314,6 +335,7 @@ def build_video_prompt_pack(
                 "No hard-coded subtitles, watermark, or platform UI appear in frame.",
                 "First and last frames are stable enough for editing.",
                 "Subject, palette, and framing stay consistent with adjacent shots.",
+                "Shared style reference is attached unchanged to every generated shot when configured.",
             ],
         })
 
@@ -332,6 +354,7 @@ def build_video_prompt_pack(
             "animate_stills": animate_stills,
             "characters": characters,
             "brand_anchors": brand_anchors,
+            "style_reference": shared_style_reference,
             "character_sheet_prompt": _character_sheet_prompt(characters, brand_anchors, aspect),
             "negative_prompt": DEFAULT_NEGATIVE_PROMPT,
         },
@@ -339,12 +362,14 @@ def build_video_prompt_pack(
             "items": len(items),
             "approval_required": approval_required,
             "blocking": approval_required,
+            "style_reference_ready": int(bool(shared_style_reference["resolved_path"])),
             **{f"provider_{key}": value for key, value in sorted(provider_counts.items())},
         },
         "items": items,
         "next_steps": [
             "Review prompts and reference paths before submitting any generated-video job.",
             "Use Codex image_gen first for still references and character sheets.",
+            "Run reference_frame_preflight.py to verify first-frame and shared style-reference geometry.",
             "Confirm provider credits before running Dreamina/即梦, Veo, LTX, Wan, or Sora jobs.",
             "Save generated clips under work/generated_video/<shot_id>.mp4 and rerun storyboard_assets.py.",
             "Run render_qa.py and timeline_view.py after final render.",
@@ -365,6 +390,12 @@ def _submit_hint(provider: str) -> str:
 
 
 def emit_markdown(pack: Mapping[str, Any]) -> str:
+    style_reference = pack.get("global", {}).get("style_reference") or {}
+    style_reference_path = (
+        style_reference.get("resolved_path")
+        or style_reference.get("expected_path")
+        or "-"
+    )
     lines = [
         "# Video Prompt Pack",
         "",
@@ -373,6 +404,7 @@ def emit_markdown(pack: Mapping[str, Any]) -> str:
         f"- Items: {pack.get('summary', {}).get('items', 0)}",
         f"- Approval required: {pack.get('summary', {}).get('approval_required', 0)}",
         f"- Blocking: {pack.get('summary', {}).get('blocking', 0)}",
+        f"- Shared style reference: `{style_reference_path}`",
         "",
         "## Character / Style Reference",
         "",
@@ -442,6 +474,10 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     parser.add_argument("--asset-root", default="work", help="Root containing imagegen/generated_video assets.")
     parser.add_argument("--character", action="append", default=[], help="Reusable character identity/style note; can repeat.")
     parser.add_argument("--brand-anchor", action="append", default=[], help="Reusable visual-system anchor; can repeat.")
+    parser.add_argument(
+        "--style-reference",
+        help="Shared local style-key image attached unchanged to every generated shot.",
+    )
     parser.add_argument("--animate-stills", action="store_true", help="Turn codex_imagegen still routes into image-to-video prompts.")
     parser.add_argument("--approved", action="store_true", help="Mark generated-video provider credit use as already approved.")
     parser.add_argument("--default-duration", type=float, default=4.0, help="Fallback clip duration when a shot has no duration.")
@@ -459,6 +495,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         brand_anchors=args.brand_anchor,
         approved=args.approved,
         animate_stills=args.animate_stills,
+        style_reference=args.style_reference,
         default_duration=args.default_duration,
         max_duration=args.max_duration,
     )
