@@ -423,7 +423,10 @@ def build_next_actions(
         )
     if int(summary.get("approval_required") or 0):
         actions.append("Review provider credits and asset provenance before submitting generated audio work.")
-    actions.append("After audio assets are chosen, update render_config.json bgm fields and keep this sheet with QA artifacts.")
+    actions.append(
+        "After audio assets are chosen, update render_config.json bgm fields, "
+        "enable bgm_ducking for speech-led renders, and keep this sheet with QA artifacts."
+    )
     return actions
 
 

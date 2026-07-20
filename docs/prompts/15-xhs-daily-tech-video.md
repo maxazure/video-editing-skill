@@ -187,6 +187,7 @@
      --enrich-plan work/enrich_plan.json \
      --profile tech_pro \
      --primary-speed 1.25 \
+     --bgm-ducking \
      --subtitle-style karaoke \
      --output output/day<NN>_master.mp4
 
@@ -332,6 +333,7 @@
 - 永远不要在画面上漏 1.25x / mlx-whisper / loudnorm 这类内部 token
 - 字幕字体走 Source Han Sans SC Heavy 或 STHeiti Medium，不要用 W3
 - 1.25x 之后必须做响度规范化（render_final 默认会做，不要 --no-loudnorm）
+- 有 BGM 的口播成片用 `--bgm-ducking`，并在正常速度试听旁白入口、停顿恢复和片尾；音乐主导视频可不启用
 - 发布前用 audio_master_report 确认 LUFS / true peak / 长静音，不要只凭耳朵判断
 - subtitle_readability_qa 的 CPS / 行长 WARN 是人工复核提示，不要为了清零机械拆句
 - retention_rhythm_qa 只是可观测节奏风险，不是留存率或爆款预测；不要为了消除 WARN 机械加切点

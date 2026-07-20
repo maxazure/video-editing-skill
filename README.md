@@ -171,7 +171,7 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    │                            缺文件、空剪辑、非法时间段、危险参数 gate
    │
    ├─→ render_final.py          单次编码渲染 + enrich_plan 自动接入
-   │     B-roll / 章节卡 / 贴纸 / 生成图 / 点击聚焦 / PIP camera + Heavy 字幕 + 响度规范化
+   │     B-roll / 章节卡 / 贴纸 / 生成图 / 点击聚焦 / PIP camera + Heavy 字幕 + 响度规范化 + BGM ducking
    │     可选 --versioned-output：输出 _V<N>，避免覆盖旧成片
    │
    ├─→ render_qa.py             渲染后黑屏/静帧/静音/尺寸质检 + review packet
@@ -225,7 +225,7 @@ cd ~/projects/video-editing-skill
 python3 scripts/utils.py
 
 # 4. 跑一遍测试套件确认 OK
-pytest tests/           # 553 个测试，约 6 秒
+pytest tests/           # 577 个测试，约 6 秒
 ```
 
 每天做一条视频的完整模板：**[docs/prompts/15-xhs-daily-tech-video.md](docs/prompts/15-xhs-daily-tech-video.md)**
@@ -512,6 +512,19 @@ python3 scripts/audio_cue_sheet.py \
 ```
 
 输出 `audio_cue_sheet.v1`：`voice_track` 记录主口播响度目标，`music[]` 给出全片 BGM mood / BPM / prompt / 本地候选或生成需求，`sfx[]` 根据“但是 / 重点 / 完成 / 风险”等触发词排 whoosh、ping、chime、warning tick。`--strict` 会在要求本地 BGM/SFX 但素材缺失时返回 2；`pipeline_manifest.py` 会自动识别 `audio_cue_sheet.json` 并把 `summary.blocking > 0` 列为 blocking gate。
+
+选好 BGM 后，可让实际渲染兑现 cue sheet 里的 ducking 要求：
+
+```json
+{
+  "bgm": "media/bgm/tech-pulse.mp3",
+  "bgm_volume": 0.15,
+  "bgm_fade_out": 3.0,
+  "bgm_ducking": true
+}
+```
+
+也可给 `render_final.py` 加 `--bgm-ducking` 临时启用。它会用最终旁白轨触发 FFmpeg `sidechaincompress`，在说话时动态压低 BGM，在封面、停顿和片尾无旁白时恢复；默认 threshold `0.03`、ratio `8`、attack `20ms`、release `500ms`。旧配置默认关闭以保持兼容，配置已开启时可用 `--no-bgm-ducking` 覆盖。详细参数与试听检查见 [背景音乐、旁白 Ducking 和片尾](docs/prompts/09-bgm-endcard.md)。
 
 ### 🎞️ Storyboard Plan — 分镜与生成路由
 [`scripts/storyboard_plan.py`](scripts/storyboard_plan.py) · [`scripts/video_prompt_pack.py`](scripts/video_prompt_pack.py) · [`scripts/storyboard_assets.py`](scripts/storyboard_assets.py) · [分镜文档](docs/prompts/24-storyboard-plan.md) · [视频提示词包文档](docs/prompts/45-video-prompt-pack.md) · [素材清单文档](docs/prompts/25-storyboard-assets.md)
@@ -944,6 +957,7 @@ python3 scripts/edit_preflight.py \
 | 自动丰富接入 | `--enrich-plan work/enrich_plan.json`，可重复传入 |
 | 点击聚焦 | `--enrich-plan work/screen_focus_plan.json`，读取 `focus_events[]` |
 | 调色接入 | `--color-grade work/color_grade.json` 或 config `"color_grade": "screen"` |
+| 旁白驱动 BGM ducking | `--bgm-ducking` 或 config `"bgm_ducking": true`；`--no-bgm-ducking` 临时关闭 |
 | 版本化输出 | `--versioned-output` 或 config `"versioned_output": true` |
 
 ### 🧾 Versioned Output — 成片不覆盖旧版本
@@ -2099,6 +2113,7 @@ pytest tests/test_screen_focus.py -v        # 录屏点击聚焦计划 + render 
 pytest tests/test_subtitle_pack.py -v       # SRT/VTT/ASS/JSON 字幕交付包
 pytest tests/test_srt_edit_plan.py -v       # SRT 编辑指令转 render_config/cut list
 pytest tests/test_audio_cue_sheet.py -v     # BGM/SFX 音频设计清单
+pytest tests/test_bgm_ducking.py -v         # 旁白驱动 BGM sidechain + 真实 FFmpeg smoke
 pytest tests/test_color_grade.py -v         # 调色计划 + render_final 接入
 pytest tests/test_edit_preflight.py -v      # 渲染前结构/路径/参数预检 gate
 pytest tests/test_publish_package.py -v     # 最终上传包 + gate 状态汇总
@@ -2106,6 +2121,23 @@ pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 pytest tests/test_review_dashboard.py -v    # 静态人工复核面板 + gate queue
 pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 gate
 ```
+
+### 2026-07-21 自动化升级记录（Narration-driven BGM Ducking）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`aacamara/ai-video-editor` 的 audio mixing reference](https://github.com/aacamara/ai-video-editor/blob/main/references/audio-mixing.md) | 把 speech/music ducking 作为独立混音阶段，并给出 threshold、ratio、attack、release 的 sidechain 思路 | 在 `render_final.py` 单次编码图内实现旁白驱动 ducking；滤镜输入顺序按 FFmpeg 官方语义固定为“BGM 被处理、旁白触发” |
+| [`worldwonderer/video-recap-skills` 的 audio mix](https://github.com/worldwonderer/video-recap-skills/blob/main/skills/video-assemble/scripts/audio_mix.py) | BGM ducking、旁白优先级和最终响度各自有清晰职责，避免把“选了音乐”误当成“混音完成” | 复用本项目已经完成响度处理的最终旁白轨作为 sidechain；封面、停顿、片尾无旁白时让音乐自然恢复 |
+| [`gooseworks-ai/goose-video` 的 audio recipe](https://github.com/gooseworks-ai/goose-video/blob/main/skills/templates/imessage-video-ad/references/audio-recipe.md) | `amix normalize=0` 避免输入数导致整体衰减，混音末尾用 limiter 捕获峰值 | 仅在新 ducking 分支采用 `normalize=0 + alimiter=0.95`，保留旁白响度并控制叠加峰值；旧固定音量路径保持不变 |
+| [FFmpeg `sidechaincompress` 官方文档](https://ffmpeg.org/ffmpeg-filters.html#sidechaincompress) | 明确第一输入是被压缩信号、第二输入是检测信号，并给出各参数合法范围 | 对 threshold / ratio / attack / release 做前置范围校验，非法配置在开始渲染前退出 2 |
+
+新增/调整能力：`scripts/render_final.py` 新增 `--bgm-ducking` / `--no-bgm-ducking`，以及 render config 的 `bgm_ducking`、`bgm_ducking_threshold`、`bgm_ducking_ratio`、`bgm_ducking_attack_ms`、`bgm_ducking_release_ms`。启用后，最终旁白轨会经 `asplit` 同时进入主混音和 sidechain detector；BGM 先循环、裁时长、设基础音量和结尾 fade，再由旁白触发 `sidechaincompress`，最后与原旁白非归一化混合并过 limiter。默认参数为 threshold `0.03`、ratio `8`、attack `20ms`、release `500ms`；旧项目默认关闭，避免改变既有输出。`audio_cue_sheet.py` 的 next action、SKILL、日常工作流、提示词索引和 [背景音乐教程](docs/prompts/09-bgm-endcard.md) 已同步。
+
+使用方式：在已有 BGM 的口播项目里运行 `python3 scripts/render_final.py --config work/render_config.json --output output/final.mp4 --bgm-ducking`；或在 config 写入 `"bgm_ducking": true`。音乐主导内容、MV 或已经手工做好 automation 的音轨可用 `--no-bgm-ducking` 覆盖。渲染后必须正常速度试听旁白入口、句间恢复和片尾，并继续运行 `audio_master_report.py --strict`，不能把滤镜存在当成混音已通过。
+
+验证结果：新增 `tests/test_bgm_ducking.py` 12 项，覆盖默认兼容、官方参数范围、CLI override、sidechain 输入顺序、旁白 `asplit`、`normalize=0 + limiter`、旧混音路径和真实 FFmpeg 渲染；定向 `.venv/bin/python -m pytest tests/test_bgm_ducking.py tests/test_audio_chain.py tests/test_audio_cue_sheet.py -q` 通过 `22 passed in 0.74s`；最终全量 `.venv/bin/python -m pytest tests -q` 通过 `577 passed in 6.35s`。4 秒 160×90 H.264/AAC smoke 中，220 Hz BGM 频段在无旁白窗口为 `-32.1 dB`，旁白窗口为 `-47.5 dB`，实际降低 `15.4 dB`；输出仍为 4.0 秒、48 kHz 双声道。`.venv/bin/python -m compileall -q scripts tests`、CLI `--help`、skill `quick_validate.py` 和 `git diff --check` 全部通过。
 
 ### 2026-07-20 自动化升级记录（Reference Frame Preflight + Style Lock）
 

@@ -45,7 +45,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ color_grade.py           bounded 调色 plan / render_final 单次编码接入
    ├─→ jump_cut.py              自适应去停顿 + 20% 删除预算 + 可审计 cut list + 30ms 防爆音 fade
    ├─→ edit_preflight.py        render_config/enrich_plan/cut list 渲染前预检 gate
-   ├─→ render_final.py          单次编码渲染（enrich_plan/focus_events/pip_overlays + Heavy 字幕 + 响度规范化）
+   ├─→ render_final.py          单次编码渲染（enrich_plan/focus_events/pip_overlays + Heavy 字幕 + 响度规范化 + BGM ducking）
    │                            可选 --versioned-output 防覆盖旧成片
    ├─→ render_qa.py             渲染后黑屏/静帧/静音/尺寸质检 + review packet
    ├─→ retention_rhythm_qa.py   成片 hook 活动 / 长镜头 / 注意力空窗 / 节奏 gate
@@ -111,7 +111,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `color_grade.py` | bounded 调色 plan + FFmpeg filter + 可选现有 master 复版 | `--preset` `--output` `--markdown` `--render-output` `--strict` |
 | `jump_cut.py` | 自适应静音检测 → 去停顿计划 / 删除预算 gate / 成片 + 切点音频 fade | `<input.mp4>` `--dry-run` `--cut-list cuts.json` `--strict` / `--output jumpcut.mp4` `--max-removal-ratio 0.20` `--allow-over-budget` |
 | `edit_preflight.py` | render_config/enrich_plan/cut list 渲染前预检 gate | `--config render_config.json` `--enrich-plan enrich_plan.json` `--output edit_preflight.json` `--strict` |
-| `render_final.py` | 单次编码渲染 + enrich_plan 接入 | `--config render_config.json` `--enrich-plan enrich_plan.json` `--output final.mp4` |
+| `render_final.py` | 单次编码渲染 + enrich_plan + 可选旁白驱动 BGM ducking | `--config render_config.json` `--enrich-plan enrich_plan.json` `--bgm-ducking` `--output final.mp4` |
 | `render_qa.py` | 渲染后 QA：尺寸/音频/黑屏/静帧/静音 + review packet | `<video.mp4>` `--platform douyin` `--json qa.json` `--review-dir verify/qa` |
 | `retention_rhythm_qa.py` | 成片 hook 活动、长镜头、注意力空窗、等距/快切和字幕节奏风险 | `<video.mp4>` `--timed-text subtitles.json` `--output retention_rhythm_qa.json` `--strict` |
 | `speech_continuity_qa.py` | 成片二次 transcript → 复读 / 近重复 take / 句内口吃 gate | `<final_transcript.json>` `--output speech_continuity_qa.json` `--markdown` `--strict` |
@@ -144,6 +144,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `--subtitle-style karaoke` | normal | 逐词卡拉 OK 字幕 |
 | `--enrich-plan work/enrich_plan.json` | 关 | 可重复传入；自动接入 B-roll / 章节卡 / 贴纸 / 生成图 / focus_events / pip_overlays |
 | `--color-grade work/color_grade.json` | 关 | 接入 `color_grade.py` 输出或 preset，放在字幕/HUD 前 |
+| `--bgm-ducking` | 关 | 用最终旁白轨触发 FFmpeg sidechain，动态压低 BGM；`--no-bgm-ducking` 可覆盖 config |
 | `--versioned-output` | 关 | 输出到下一个 `<name>_V<N>.mp4`，避免覆盖上一版成片 |
 
 ## V3 Day58 production 教训（已编码进默认行为）
@@ -804,6 +805,11 @@ mkdir -p script/
   "bgm": "path/to/background_music.mp3",
   "bgm_volume": 0.15,
   "bgm_fade_out": 3.0,
+  "bgm_ducking": true,
+  "bgm_ducking_threshold": 0.03,
+  "bgm_ducking_ratio": 8,
+  "bgm_ducking_attack_ms": 20,
+  "bgm_ducking_release_ms": 500,
   "subtitle_style": "karaoke",
   "subtitle_highlight_color": "#FFFF00",
   "chapters": [
@@ -915,6 +921,9 @@ python3 scripts/render_final.py --config script/render_config.json --output medi
 - 提供背景音乐文件路径（MP3/M4A/WAV 等 FFmpeg 支持的格式）
 - `bgm_volume`：BGM 音量（0.0-1.0），默认 0.15（人声为主，BGM 为辅）
 - `bgm_fade_out`：结尾淡出时长（秒），默认 3.0
+- `bgm_ducking: true` 或 CLI `--bgm-ducking`：用最终旁白轨作为 sidechain，旁白出现时自动压低 BGM；封面、停顿和片尾无旁白时音乐会自然恢复
+- 默认 ducking 参数是 threshold `0.03`、ratio `8`、attack `20ms`、release `500ms`；只有试听或 `audio_master_report.py` 证据表明需要时才调整
+- ducking 分支用 `amix normalize=0` 保留人声响度，并在混音末尾加 `alimiter=0.95` 防止峰值溢出；旧配置默认仍关闭，保持已有输出兼容
 - BGM 自动循环播放直到视频结束，不需要预先剪辑长度
 - 推荐免费可商用音乐源：Pixabay Music、Mixkit、YouTube Audio Library
 - 选曲建议：口播/教程用轻柔纯音乐（无人声），节奏不要太强，避免抢人声

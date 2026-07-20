@@ -157,6 +157,89 @@ def _float_or_default(value, default):
         return default
 
 
+BGM_DUCKING_SPECS = {
+    "bgm_ducking_threshold": (0.03, 0.00097563, 1.0),
+    "bgm_ducking_ratio": (8.0, 1.0, 20.0),
+    "bgm_ducking_attack_ms": (20.0, 0.01, 2000.0),
+    "bgm_ducking_release_ms": (500.0, 0.01, 9000.0),
+}
+
+
+def resolve_bgm_ducking(config, cli_override=None):
+    """Resolve and validate optional narration-driven BGM ducking settings."""
+    enabled = cli_override if cli_override is not None else config.get("bgm_ducking", False)
+    if not isinstance(enabled, bool):
+        raise ValueError("bgm_ducking must be true or false")
+
+    settings = {"enabled": enabled}
+    if not enabled:
+        return settings
+
+    for key, (default, minimum, maximum) in BGM_DUCKING_SPECS.items():
+        raw = config.get(key, default)
+        if isinstance(raw, bool):
+            raise ValueError(f"{key} must be a number between {minimum:g} and {maximum:g}")
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            raise ValueError(
+                f"{key} must be a number between {minimum:g} and {maximum:g}"
+            ) from None
+        if not minimum <= value <= maximum:
+            raise ValueError(f"{key} must be between {minimum:g} and {maximum:g}")
+        settings[key.removeprefix("bgm_ducking_")] = value
+    return settings
+
+
+def build_bgm_mix_filter_lines(
+    *,
+    voice_label,
+    bgm_input_idx,
+    bgm_total,
+    bgm_volume,
+    bgm_fade_out,
+    ducking,
+):
+    """Build BGM preparation and optional sidechain ducking filter lines."""
+    bgm_filters = [
+        "aloop=loop=-1:size=2147483647",
+        f"atrim=duration={bgm_total:.4f}",
+        "asetpts=PTS-STARTPTS",
+        f"volume={bgm_volume:.2f}",
+    ]
+    if bgm_fade_out > 0:
+        fade_start = max(0, bgm_total - bgm_fade_out)
+        bgm_filters.append(f"afade=t=out:st={fade_start:.4f}:d={bgm_fade_out:.4f}")
+
+    if not ducking.get("enabled"):
+        return [
+            f"[{bgm_input_idx}:a]{','.join(bgm_filters)}[bgm_a]",
+            f"{voice_label}[bgm_a]amix=inputs=2:duration=first:dropout_transition=0[final_a]",
+        ]
+
+    audio_format = (
+        "aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo"
+    )
+    bgm_filters.append(audio_format)
+    compressor = (
+        f"sidechaincompress=threshold={ducking['threshold']:g}"
+        f":ratio={ducking['ratio']:g}"
+        f":attack={ducking['attack_ms']:g}"
+        f":release={ducking['release_ms']:g}"
+        ":knee=2.82843:detection=rms:level_sc=1"
+    )
+    return [
+        f"[{bgm_input_idx}:a]{','.join(bgm_filters)}[bgm_a]",
+        f"{voice_label}{audio_format},asplit=2[voice_mix][voice_sc]",
+        f"[bgm_a][voice_sc]{compressor}[bgm_ducked]",
+        (
+            "[voice_mix][bgm_ducked]"
+            "amix=inputs=2:duration=first:dropout_transition=0:normalize=0,"
+            "alimiter=limit=0.95:level=false[final_a]"
+        ),
+    ]
+
+
 def _cue_time_range(cue, *, start_key="start", end_key="end", duration_key="duration", default_duration=1.0):
     start = _float_or_default(cue.get(start_key), 0.0)
     if end_key in cue:
@@ -1092,6 +1175,20 @@ def main():
                         help="Background music file path (overrides config)")
     parser.add_argument("--bgm-volume", type=float, default=None,
                         help="BGM volume 0.0-1.0 (default: from config or 0.15)")
+    bgm_ducking_group = parser.add_mutually_exclusive_group()
+    bgm_ducking_group.add_argument(
+        "--bgm-ducking",
+        dest="bgm_ducking",
+        action="store_true",
+        help="Dynamically duck BGM under narration with FFmpeg sidechain compression",
+    )
+    bgm_ducking_group.add_argument(
+        "--no-bgm-ducking",
+        dest="bgm_ducking",
+        action="store_false",
+        help="Disable config-enabled BGM ducking for this render",
+    )
+    parser.set_defaults(bgm_ducking=None)
     parser.add_argument("--subtitle-style", default=None,
                         choices=["normal", "karaoke", "bold_pop", "neon", "minimal", "yellow_pop"],
                         help="Subtitle style (default: from config or 'normal')")
@@ -1274,8 +1371,21 @@ def main():
         bgm_path = None
     bgm_volume = args.bgm_volume if args.bgm_volume is not None else config.get("bgm_volume", 0.15)
     bgm_fade_out = config.get("bgm_fade_out", 3.0)
+    try:
+        bgm_ducking = (
+            resolve_bgm_ducking(config, args.bgm_ducking)
+            if bgm_path
+            else {"enabled": False}
+        )
+    except ValueError as exc:
+        print(f"Error: invalid BGM ducking config: {exc}", file=sys.stderr)
+        sys.exit(2)
     if bgm_path:
-        print(f"BGM: {os.path.basename(bgm_path)} (volume={bgm_volume}, fade_out={bgm_fade_out}s)")
+        ducking_label = "sidechain" if bgm_ducking["enabled"] else "off"
+        print(
+            f"BGM: {os.path.basename(bgm_path)} "
+            f"(volume={bgm_volume}, fade_out={bgm_fade_out}s, ducking={ducking_label})"
+        )
 
     for idx, speed in enumerate(all_speeds):
         # The first speed in all_speeds is always the primary output (writes to
@@ -1572,19 +1682,15 @@ def main():
 
         # BGM: loop, trim, volume, fade out, then amix with voice
         if bgm_input_idx is not None:
-            bgm_filters = [
-                f"aloop=loop=-1:size=2147483647",
-                f"atrim=duration={bgm_total:.4f}",
-                f"asetpts=PTS-STARTPTS",
-                f"volume={bgm_volume:.2f}",
-            ]
-            if bgm_fade_out > 0:
-                fade_start = max(0, bgm_total - bgm_fade_out)
-                bgm_filters.append(f"afade=t=out:st={fade_start:.4f}:d={bgm_fade_out:.4f}")
-            bgm_chain = ",".join(bgm_filters)
-            filter_lines.append(f"[{bgm_input_idx}:a]{bgm_chain}[bgm_a]")
-            filter_lines.append(
-                f"{voice_label}[bgm_a]amix=inputs=2:duration=first:dropout_transition=0[final_a]"
+            filter_lines.extend(
+                build_bgm_mix_filter_lines(
+                    voice_label=voice_label,
+                    bgm_input_idx=bgm_input_idx,
+                    bgm_total=bgm_total,
+                    bgm_volume=bgm_volume,
+                    bgm_fade_out=bgm_fade_out,
+                    ducking=bgm_ducking,
+                )
             )
             map_a = "[final_a]"
         else:
