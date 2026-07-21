@@ -101,6 +101,8 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    ├─→ edit_brief_plan.py       用户一句话需求 → 本地脚本 runbook / commands / gates
    ├─→ transcribe.py            转写 + 词级时间戳 + 口误标记
    │                            (mlx-whisper / faster-whisper / openai-whisper)
+   ├─→ transcript_review.py     文本 round-trip / 本地同步视频 HTML 校稿
+   │                            行内编辑 / 播放高亮 / 查找替换 / CPS 提示 / review.txt
    ├─→ takes_pack.py            多 take / Scribe transcript → phrase-level 阅读视图
    │                            speaker / audio_event / takes_packed.md / takes_pack.json
    ├─→ audio_sync.py            外录音轨自动对齐 / 替换音轨计划
@@ -283,6 +285,29 @@ NVIDIA GPU 配置详见本文末尾的 [Linux GPU 配置](#linux-gpu-配置) 段
 ---
 
 ## V3 核心能力
+
+### 📝 Interactive Transcript Review — 边看视频边校稿
+[`scripts/transcript_review.py`](scripts/transcript_review.py) · [详细文档](docs/prompts/36-transcript-review.md)
+
+转写后、清稿和渲染前，用一个无依赖的本地 HTML 页面逐段核对 ASR：点击时间码让视频跳到对应位置，播放时自动高亮当前 segment，文字可直接行内修改，并支持浏览器自动保存、全文查找替换、review 文本复制/保存和 CPS 阅读压力提示。页面不上传 transcript 或媒体，也不直接覆盖原 JSON；保存出的 `transcript_review.txt` 继续交给既有 `apply` 命令，保留原 segment 时间和可审计变更记录。
+
+```bash
+python3 scripts/transcript_review.py html \
+  --transcript work/transcript.json \
+  --video origin/talking.mp4 \
+  --corrections work/corrections.json \
+  --output work/transcript_review.html \
+  --max-cps 20
+
+open work/transcript_review.html
+
+python3 scripts/transcript_review.py apply \
+  --transcript work/transcript.json \
+  --review work/transcript_review.txt \
+  --output work/transcript_reviewed.json
+```
+
+浏览器不支持直接写文件时会退回下载 `transcript_review.txt`；把它保存/移动到 `work/` 后再运行 `apply`。CPS 标黄只是预渲染提示，最终输出仍应运行 `subtitle_readability_qa.py --strict`。
 
 ### 🛡️ Content Guard — 平台雷区 lint
 [`scripts/content_guard.py`](scripts/content_guard.py) · [详细文档](docs/prompts/16-content-guard.md)
@@ -1842,17 +1867,27 @@ SKILL=~/projects/video-editing-skill
 python3 $SKILL/scripts/transcribe.py $WORK/origin/voice.mp3 \
   --word-timestamps --detect-fillers
 
-# 1b. 可选：按 ASR 去纯口头禅/重复句，先审查 cut list 再渲染
-python3 $SKILL/scripts/rough_cut.py \
+# 1a. 生成本地同步视频校稿页；保存 review.txt 后回写 reviewed transcript
+python3 $SKILL/scripts/transcript_review.py html \
   --transcript $WORK/work/transcript.json \
+  --video $WORK/origin/voice.mp3 \
+  --output $WORK/work/transcript_review.html
+python3 $SKILL/scripts/transcript_review.py apply \
+  --transcript $WORK/work/transcript.json \
+  --review $WORK/work/transcript_review.txt \
+  --output $WORK/work/transcript_reviewed.json
+
+# 1b. 可选：按 reviewed ASR 去纯口头禅/重复句，先审查 cut list 再渲染
+python3 $SKILL/scripts/rough_cut.py \
+  --transcript $WORK/work/transcript_reviewed.json \
   --cut-list $WORK/work/rough_cut.json
 
 # 2. 重组（手动喂 prompt 给 LLM，落地 JSON 后回放）
 python3 $SKILL/scripts/rewrite_script.py \
-  --transcript $WORK/work/transcript.json --emit-prompt > $WORK/work/prompt.md
+  --transcript $WORK/work/transcript_reviewed.json --emit-prompt > $WORK/work/prompt.md
 # ...LLM 输出 work/llm.json 后...
 python3 $SKILL/scripts/rewrite_script.py \
-  --transcript $WORK/work/transcript.json \
+  --transcript $WORK/work/transcript_reviewed.json \
   --llm-output $WORK/work/llm.json \
   --output $WORK/work/clean_script.md
 
@@ -2093,6 +2128,7 @@ pytest tests/test_render_enrich_plan.py -v  # enrich_plan 自动接入渲染
 pytest tests/test_auto_emphasis.py -v      # 问句/数字/转折/结论 emphasis cues
 pytest tests/test_takes_pack.py -v          # 多 take phrase-level 阅读视图
 pytest tests/test_project_bootstrap.py -v   # 项目启动与 source inventory
+pytest tests/test_transcript_review.py -v  # 文本/HTML 同步视频 transcript 校稿回路
 pytest tests/test_edit_brief_plan.py -v     # 自然语言剪辑需求 → 本地 runbook
 pytest tests/test_hook_variants.py -v       # 前三秒 hook 批量角度 + 风险检查
 pytest tests/test_rough_cut.py -v           # ASR 粗剪：口头禅/重复句 cut list
@@ -2121,6 +2157,22 @@ pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 pytest tests/test_review_dashboard.py -v    # 静态人工复核面板 + gate queue
 pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 gate
 ```
+
+### 2026-07-22 自动化升级记录（Interactive Transcript Review）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`hoodini/ai-agents-skills` 的 HyperFrames Transcript Editor](https://github.com/hoodini/ai-agents-skills/tree/master/skills/video-edit/transcript-editor) | 本地浏览器里加载 transcript + 视频，点击 segment seek、播放高亮、行内编辑、字典修正、查找替换和 review.txt 导出，把“渲染前人工批准”做成明确 checkpoint | 复用本项目已有 `transcript_review.py export/apply` 格式，新加自包含 `html` 入口；不引入 WebLLM、CDN、server 或 1–2GB 浏览器模型下载 |
+| [`literatecomputing/transcribe-with-whisper`](https://github.com/literatecomputing/transcribe-with-whisper) | 生成带媒体播放器的 HTML transcript，点击文本可跳到对应媒体时间，同时强调敏感素材在本机处理 | 页面预载本地 `file://` 媒体并提供文件选择 fallback；所有编辑只在浏览器内处理，不上传 transcript/媒体 |
+| [`pluja/whishper`](https://github.com/pluja/whishper) | 本地 subtitle editor 随媒体位置高亮 transcript，并在编辑阶段给出 CPS 可读性 warning | 每个 segment 即时计算 CPS，超过 `--max-cps` 标黄；只做预渲染提示，最终发布门禁仍交给现有 `subtitle_readability_qa.py` |
+
+新增/调整能力：[`scripts/transcript_review.py`](scripts/transcript_review.py) 新增 `html` 子命令，输出单文件、无外部依赖的同步媒体校稿页。页面支持时间码 seek、播放自动高亮、行内编辑、`localStorage` 自动保存、全文查找替换、重置、复制以及 File System Access API 保存；不支持时回退下载 `transcript_review.txt`。浏览器草稿 key 带 transcript 内容签名，重新转写同一路径时不会误载旧稿。生成阶段可继续应用现有 corrections 字典；JSON payload 做 HTML escaping，避免 transcript 里的 `</script>` 结束页面脚本。页面不直接改原 transcript，保存后的 review 仍由 `apply` 写出 `transcript_reviewed.json` 并重新分配词级时间戳。README 核心能力、流水线、日常命令、SKILL、daily prompt、教程索引和 [`docs/prompts/36-transcript-review.md`](docs/prompts/36-transcript-review.md) 已同步。
+
+使用方式：运行 `python3 scripts/transcript_review.py html --transcript work/transcript.json --video origin/talking.mp4 --corrections work/corrections.json --output work/transcript_review.html --max-cps 20`，本地打开 HTML，校正后保存 `work/transcript_review.txt`；再运行 `python3 scripts/transcript_review.py apply --transcript work/transcript.json --review work/transcript_review.txt --output work/transcript_reviewed.json`。纯 SSH/终端环境继续使用原有 `export`，无需 HTML。
+
+验证结果：`.venv/bin/python -m pytest tests/test_transcript_review.py -q` 通过 `14 passed in 0.19s`，覆盖 corrections、媒体 URI、内容签名草稿隔离、review 文件名收敛、恶意 `</script>` escaping、浏览器控件、CPS 参数、CLI HTML 输出、Node 内联 JavaScript 语法和原 export/apply round-trip；最终全量 `.venv/bin/python -m pytest tests -q` 通过 `583 passed in 6.80s`。`.venv/bin/python -m compileall -q scripts tests`、主 CLI/`html --help`、skill `quick_validate.py` 和 `git diff --check` 全部通过。
 
 ### 2026-07-21 自动化升级记录（Narration-driven BGM Ducking）
 

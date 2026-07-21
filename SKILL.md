@@ -1,6 +1,6 @@
 ---
 name: video-editing
-description: "Xiaohongshu/RED-tuned short-form video workflow for raw voice-over, talking-head, tutorials, interviews, podcasts, long videos, screen recordings, B-roll, captions, and generated assets. Covers edit routing, project bootstrap, transcription, multi-take packs, audio sync, cleanup, highlights/shorts, hook/story rewrite, content/source gates, B-roll/enrich/gpt-image-2/video-generation planning, generation reference-frame/style-lock preflight, screen focus, PIP, color grade, preflight/render/QA/audio master, retention-rhythm, subtitle-readability and rendered-speech continuity QA, review proxies, subtitles, CapCut import, multi-platform exports, cover A/B variants, captions, publish packages, dashboards, resume packets, EDL/FCPXML/OTIO, and Remotion animation."
+description: "Xiaohongshu/RED-tuned short-form video workflow for raw voice-over, talking-head, tutorials, interviews, podcasts, long videos, screen recordings, B-roll, captions, and generated assets. Covers edit routing, project bootstrap, transcription, synchronized local transcript review, multi-take packs, audio sync, cleanup, highlights/shorts, hook/story rewrite, content/source gates, B-roll/enrich/gpt-image-2/video-generation planning, generation reference-frame/style-lock preflight, screen focus, PIP, color grade, preflight/render/QA/audio master, retention-rhythm, subtitle-readability and rendered-speech continuity QA, review proxies, subtitles, CapCut import, multi-platform exports, cover A/B variants, captions, publish packages, dashboards, resume packets, EDL/FCPXML/OTIO, and Remotion animation."
 metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
 ---
 
@@ -16,6 +16,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ project_bootstrap.py     原始素材目录 → source inventory / project.md
    ├─→ edit_brief_plan.py       用户一句话需求 → 本地脚本 runbook / gates
    ├─→ transcribe.py            转写 + 词级时间戳 + 口误标记
+   ├─→ transcript_review.py     本地同步媒体 HTML 校稿 / CPS 提示 / review.txt 回写
    ├─→ takes_pack.py            多 take / Scribe transcript → phrase-level 阅读视图
    │                            speaker / audio_event 编辑节拍
    ├─→ audio_sync.py            外录音轨自动对齐 / 替换音轨计划
@@ -79,6 +80,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 |---|---|---|
 | `project_bootstrap.py` | 原始素材目录 → 项目结构 / source inventory / project.md | `--source raw_dir` `--project-dir work/day61` `--mode copy|hardlink` `--strict` |
 | `edit_brief_plan.py` | 自然语言剪辑需求 → 本地脚本 runbook / 命令 / manifest gate | `--brief` `--brief-file` `--source-media` `--platform` `--markdown` `--strict` |
+| `transcript_review.py` | transcript → 文本或本地同步媒体 HTML 校稿 → reviewed transcript | `export` / `html --video --max-cps` / `apply --review --output` |
 | `_internal_text_guard.py` | 拦截内部 token 进画面 | 内部模块，render_final 自动调 |
 | `content_guard.py` | 平台雷区 lint | `--script` `--title` `--caption` `--strict` |
 | `source_receipts.py` | 事实 claim → URL/截图 proof deck、Markdown/HTML 和发布 gate | `--claims source_claims.json` `--html` `--require-primary-source` `--strict` |
@@ -651,11 +653,27 @@ Whisper 常见的识别错误类型：
 - **乱码片段**：语音模糊导致识别为无意义文字的片段（如连续的单字碎片），标记为可跳过
 
 **校验流程**：
-1. 读取所有 transcript.json 的文字内容
-2. 逐条检查，列出发现的问题（原文 → 修正 或 标记为可跳过）
-3. 将修正列表展示给用户确认
-4. 用户确认后，直接修改 transcript.json 文件中的 text 字段
-5. 对于口误/乱码片段，在展示片段列表时（Phase 3）标注为建议跳过
+1. 用 `transcript_review.py html` 生成一个无外部依赖的本地页面；纯终端环境用 `export` 生成文本。
+2. 页面里点击时间码对着媒体校稿；播放时当前段自动高亮。行内编辑支持本地自动保存、查找替换和 CPS 标黄。
+3. 显式保存 `transcript_review.txt`，不要让页面或 agent 直接覆盖原始 transcript。
+4. 用 `apply` 生成 `transcript_reviewed.json`；后续清稿、粗剪、分镜和字幕统一使用 reviewed 文件。
+5. 对于口误/乱码片段，在展示片段列表时（Phase 3）标注为建议跳过。
+
+```bash
+python3 scripts/transcript_review.py html \
+  --transcript work/transcript.json \
+  --video origin/talking.mp4 \
+  --corrections work/corrections.json \
+  --output work/transcript_review.html \
+  --max-cps 20
+
+python3 scripts/transcript_review.py apply \
+  --transcript work/transcript.json \
+  --review work/transcript_review.txt \
+  --output work/transcript_reviewed.json
+```
+
+HTML 和媒体只在本机打开，不上传、不调用 LLM。浏览器不能直接写文件时会下载 `transcript_review.txt`；把它放回 `work/` 后再 apply。CPS 是预渲染提示，最终还要跑 `subtitle_readability_qa.py --strict`。
 
 **注意**：此步骤必须在 Phase 5（渲染）之前完成，因为字幕文字来源于 transcript.json。修正后再渲染，才能保证最终视频中的字幕文字正确。
 

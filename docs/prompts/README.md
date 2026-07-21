@@ -43,6 +43,7 @@
 | 28 | [Screen Focus 点击聚焦](28-screen-focus.md) | 录屏点击/热点 → 自动放大、标记、标签计划 |
 | 29 | [Subtitle Pack 字幕交付包](29-subtitle-pack.md) | transcript/render_config → SRT/VTT/ASS/JSON，支持加速和片头 offset |
 | 31 | [Highlight Picker 长视频精华候选](31-highlight-picker.md) | 长视频 transcript → 精华候选；可用 `--brief/--query` 定向找片段 |
+| 36 | [Transcript Review 同步视频校稿](36-transcript-review.md) | transcript + 本地媒体 → 行内编辑、播放高亮、CPS 提示、review.txt 回写 |
 | 43 | [Audio Cue Sheet 音频设计清单](43-audio-cue-sheet.md) | transcript → BGM/SFX cue、生成审批和音频门禁 |
 | 44 | [Stock Material Plan 远程素材搜索规划](44-stock-material-plan.md) | 主题/脚本 → stock 搜索词、Pexels/Pixabay/Coverr 查询计划、本地素材登记 |
 | 45 | [Video Prompt Pack 视频生成提示词包](45-video-prompt-pack.md) | storyboard_plan → Dreamina/Veo/LTX/Wan/Sora 提示词、角色一致性和 paid approval gate |

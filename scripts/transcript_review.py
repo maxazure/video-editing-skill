@@ -9,11 +9,15 @@ from __future__ import annotations
 
 import argparse
 import copy
+import hashlib
+import html
 import json
+import math
 import os
 import re
 import sys
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 
@@ -191,6 +195,10 @@ def _default_review_path(transcript_path: str) -> str:
     return os.path.join(os.path.dirname(os.path.abspath(transcript_path)), "transcript_review.txt")
 
 
+def _default_html_path(transcript_path: str) -> str:
+    return os.path.join(os.path.dirname(os.path.abspath(transcript_path)), "transcript_review.html")
+
+
 def build_review_lines(
     transcript_path: str,
     segments: Sequence[Mapping[str, Any]],
@@ -227,8 +235,357 @@ def build_review_lines(
 
 
 def write_review(path: str, lines: Sequence[str]) -> None:
+    os.makedirs(os.path.dirname(os.path.abspath(path)) or ".", exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines).rstrip() + "\n")
+
+
+def build_html_payload(
+    transcript_path: str,
+    segments: Sequence[Mapping[str, Any]],
+    corrections: Mapping[str, str],
+    *,
+    video_path: Optional[str] = None,
+    max_cps: float = 20.0,
+    review_name: str = "transcript_review.txt",
+) -> Dict[str, Any]:
+    """Build the local-only payload used by the interactive review page."""
+    if max_cps <= 0 or not math.isfinite(max_cps):
+        raise TranscriptReviewError("max_cps must be a positive finite number")
+
+    transcript_abs = os.path.abspath(transcript_path)
+    video_abs = os.path.abspath(video_path) if video_path else ""
+    applied_total: Dict[str, int] = {}
+    items: List[Dict[str, Any]] = []
+    for segment in segments:
+        text, applied = apply_text_corrections(_clean_text(segment.get("text", "")), corrections)
+        _merge_counts(applied_total, applied)
+        items.append(
+            {
+                "id": segment.get("id"),
+                "start": round(_as_float(segment.get("start")), 3),
+                "end": round(_as_float(segment.get("end")), 3),
+                "text": text,
+            }
+        )
+
+    safe_review_name = os.path.basename(str(review_name or "").strip().replace("\\", "/")) or "transcript_review.txt"
+    signature = hashlib.sha256(
+        json.dumps(items, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()[:16]
+    return {
+        "version": VERSION,
+        "generated_at": _now_iso(),
+        "transcript": transcript_abs,
+        "title": os.path.basename(transcript_abs),
+        "video": {
+            "path": video_abs,
+            "uri": Path(video_abs).resolve().as_uri() if video_abs else "",
+        },
+        "max_cps": float(max_cps),
+        "review_name": safe_review_name,
+        "transcript_signature": signature,
+        "storage_key": f"video-editing-skill:transcript-review:{transcript_abs}:{signature}",
+        "segments": items,
+        "summary": {
+            "segments": len(items),
+            "corrections_applied": sum(applied_total.values()),
+            "corrections": applied_total,
+        },
+    }
+
+
+def emit_review_html(payload: Mapping[str, Any]) -> str:
+    """Emit a dependency-free transcript editor with synchronized local playback."""
+    payload_json = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    payload_html = html.escape(payload_json, quote=False)
+    title = html.escape(str(payload.get("title") or "Transcript Review"), quote=True)
+    template = r"""<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Transcript Review · __TITLE__</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0b0d12; --panel:#151922; --line:#2a3140; --text:#f6f7fb; --muted:#9ba6ba; --accent:#69d2ff; --warn:#ffbe55; --dirty:#ffe082; }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100vh; background:var(--bg); color:var(--text); font:15px/1.45 ui-sans-serif,system-ui,-apple-system,"PingFang SC","Noto Sans CJK SC",sans-serif; }
+    header { position:sticky; top:0; z-index:20; display:flex; gap:18px; align-items:center; justify-content:space-between; padding:14px 22px; border-bottom:1px solid var(--line); background:rgba(11,13,18,.94); backdrop-filter:blur(14px); }
+    h1 { margin:0; font-size:20px; }
+    #stats { margin:3px 0 0; color:var(--muted); font-size:13px; }
+    button,.file-label,input { font:inherit; }
+    button,.file-label { border:1px solid var(--line); border-radius:9px; background:#202633; color:var(--text); padding:8px 11px; cursor:pointer; }
+    button:hover,.file-label:hover { border-color:var(--accent); }
+    button.primary { background:var(--accent); border-color:var(--accent); color:#061018; font-weight:750; }
+    .actions { display:flex; flex-wrap:wrap; gap:8px; justify-content:flex-end; }
+    main { display:grid; grid-template-columns:minmax(290px,36vw) minmax(0,1fr); min-height:calc(100vh - 69px); }
+    aside { position:sticky; top:69px; align-self:start; max-height:calc(100vh - 69px); overflow:auto; padding:18px; border-right:1px solid var(--line); background:#10141b; }
+    video { width:100%; max-height:42vh; border-radius:12px; background:#000; }
+    .video-tools { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:10px; color:var(--muted); font-size:12px; }
+    .file-label input { display:none; }
+    .toolbox { margin-top:18px; padding:14px; border:1px solid var(--line); border-radius:12px; background:var(--panel); }
+    .toolbox h2 { margin:0 0 10px; font-size:14px; }
+    .replace-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+    input { min-width:0; width:100%; border:1px solid var(--line); border-radius:8px; background:#0d1118; color:var(--text); padding:9px; }
+    #replace-all { width:100%; margin-top:8px; }
+    .legend { margin:14px 2px 0; color:var(--muted); font-size:12px; }
+    .legend strong { color:var(--warn); }
+    #segments { padding:18px; }
+    .segment { display:grid; grid-template-columns:125px minmax(0,1fr) 92px; gap:12px; align-items:start; padding:12px; border:1px solid transparent; border-bottom-color:var(--line); border-radius:10px; }
+    .segment:hover { background:var(--panel); }
+    .segment.active { border-color:var(--accent); background:#14212a; }
+    .segment.dirty .time { color:var(--dirty); }
+    .time { border:0; background:transparent; color:var(--accent); padding:7px 2px; text-align:left; font:600 12px/1.25 ui-monospace,SFMono-Regular,Menlo,monospace; }
+    textarea { width:100%; min-height:52px; resize:vertical; border:1px solid var(--line); border-radius:8px; background:#0d1118; color:var(--text); padding:9px 10px; font:16px/1.55 inherit; }
+    textarea:focus { outline:2px solid color-mix(in srgb,var(--accent) 55%,transparent); border-color:var(--accent); }
+    .meta { padding-top:7px; color:var(--muted); text-align:right; font-size:12px; }
+    .meta.warn { color:var(--warn); font-weight:700; }
+    .empty { padding:60px 20px; color:var(--muted); text-align:center; }
+    @media (max-width:820px) { main { grid-template-columns:1fr; } aside { position:static; max-height:none; border-right:0; border-bottom:1px solid var(--line); } .segment { grid-template-columns:105px minmax(0,1fr); } .meta { grid-column:2; text-align:left; padding-top:0; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div><h1>Transcript Review</h1><p id="stats">载入中…</p></div>
+    <div class="actions">
+      <button id="copy-review">复制 review</button>
+      <button id="reset-review">重置</button>
+      <button id="save-review" class="primary">保存 review.txt</button>
+    </div>
+  </header>
+  <main>
+    <aside>
+      <video id="video" controls preload="metadata"></video>
+      <div class="video-tools">
+        <span id="video-name">未绑定视频</span>
+        <label class="file-label">选择本地视频<input id="video-picker" type="file" accept="video/*,audio/*"></label>
+      </div>
+      <div class="toolbox">
+        <h2>全文查找 / 替换</h2>
+        <div class="replace-grid"><input id="find" placeholder="查找"><input id="replace" placeholder="替换为"></div>
+        <button id="replace-all">全部替换</button>
+      </div>
+      <p class="legend">点击时间码跳到该段；播放时自动高亮。编辑会保存在当前浏览器。<strong>CPS 超过阈值时会标黄</strong>，仅提示阅读压力，不自动改字。</p>
+    </aside>
+    <section id="segments"></section>
+  </main>
+  <script id="review-data" type="application/json">__PAYLOAD__</script>
+  <script>
+  (() => {
+    "use strict";
+    const data = JSON.parse(document.getElementById("review-data").textContent);
+    const original = data.segments.map((segment) => String(segment.text || ""));
+    const segments = data.segments.map((segment) => ({...segment, text:String(segment.text || "")}));
+    const root = document.getElementById("segments");
+    const video = document.getElementById("video");
+    let activeIndex = -1;
+    let pickedVideoUrl = "";
+
+    const clean = (value) => String(value || "").replace(/[\r\n]+/g, " ").replace(/\s+/g, " ").trim();
+    const formatTime = (value) => {
+      const total = Math.max(0, Number(value) || 0);
+      const minutes = Math.floor(total / 60);
+      const seconds = total - minutes * 60;
+      return String(minutes).padStart(2, "0") + ":" + seconds.toFixed(3).padStart(6, "0");
+    };
+    const cps = (segment) => {
+      const duration = Math.max(.001, Number(segment.end) - Number(segment.start));
+      return Array.from(clean(segment.text).replace(/\s/g, "")).length / duration;
+    };
+    const isDirty = (index) => clean(segments[index].text) !== clean(original[index]);
+
+    function restoreDraft() {
+      try {
+        const saved = JSON.parse(localStorage.getItem(data.storage_key) || "null");
+        if (!saved || saved.transcript !== data.transcript || !Array.isArray(saved.texts)) return;
+        saved.texts.forEach((text, index) => { if (index < segments.length) segments[index].text = String(text); });
+      } catch (_) {}
+    }
+
+    function saveDraft() {
+      try {
+        localStorage.setItem(data.storage_key, JSON.stringify({
+          transcript:data.transcript,
+          saved_at:new Date().toISOString(),
+          texts:segments.map((segment) => segment.text)
+        }));
+      } catch (_) {}
+    }
+
+    function updateStats() {
+      const dirty = segments.filter((_, index) => isDirty(index)).length;
+      const warnings = segments.filter((segment) => cps(segment) > Number(data.max_cps)).length;
+      document.getElementById("stats").textContent = `${segments.length} 段 · ${dirty} 处修改 · ${warnings} 个 CPS 提示 · 自动本地保存`;
+    }
+
+    function refreshRow(index, refreshStats = true) {
+      const row = root.querySelector(`[data-index="${index}"]`);
+      if (!row) return;
+      row.classList.toggle("dirty", isDirty(index));
+      const value = cps(segments[index]);
+      const meta = row.querySelector(".meta");
+      meta.textContent = `${value.toFixed(1)} CPS · ${(Number(segments[index].end) - Number(segments[index].start)).toFixed(2)}s`;
+      meta.classList.toggle("warn", value > Number(data.max_cps));
+      if (refreshStats) updateStats();
+    }
+
+    function seek(index, play) {
+      if (!Number.isFinite(Number(segments[index].start))) return;
+      setActive(index, true);
+      if (!video.currentSrc && !video.getAttribute("src")) return;
+      try { video.currentTime = Number(segments[index].start); } catch (_) {}
+      if (play) video.play().catch(() => {});
+    }
+
+    function setActive(index, scroll) {
+      if (activeIndex === index) return;
+      const previous = root.querySelector(".segment.active");
+      if (previous) previous.classList.remove("active");
+      activeIndex = index;
+      const next = root.querySelector(`[data-index="${index}"]`);
+      if (next) {
+        next.classList.add("active");
+        if (scroll) next.scrollIntoView({block:"nearest", behavior:"smooth"});
+      }
+    }
+
+    function render() {
+      root.textContent = "";
+      if (!segments.length) {
+        root.innerHTML = '<div class="empty">没有可复核的 transcript segment。</div>';
+        updateStats();
+        return;
+      }
+      segments.forEach((segment, index) => {
+        const row = document.createElement("article");
+        row.className = "segment";
+        row.dataset.index = String(index);
+
+        const time = document.createElement("button");
+        time.className = "time";
+        time.type = "button";
+        time.textContent = `${formatTime(segment.start)}\n${formatTime(segment.end)}`;
+        time.title = "跳到这一段并播放";
+        time.addEventListener("click", () => seek(index, true));
+
+        const textarea = document.createElement("textarea");
+        textarea.dir = "auto";
+        textarea.value = segment.text;
+        textarea.setAttribute("aria-label", `Segment ${segment.id}`);
+        textarea.addEventListener("focus", () => seek(index, false));
+        textarea.addEventListener("input", () => {
+          segment.text = textarea.value;
+          saveDraft();
+          refreshRow(index);
+        });
+
+        const meta = document.createElement("div");
+        meta.className = "meta";
+        row.append(time, textarea, meta);
+        root.appendChild(row);
+        refreshRow(index, false);
+      });
+      updateStats();
+    }
+
+    function reviewText() {
+      const lines = [
+        "# Transcript Review",
+        "# Exported from the local interactive reviewer. Edit only text after each prefix.",
+        `# Source: ${data.transcript}`,
+        `# Generated: ${new Date().toISOString()}`,
+        `# Version: ${data.version}`,
+        ""
+      ];
+      segments.forEach((segment) => {
+        lines.push(`[seg:${segment.id} start:${formatTime(segment.start)} end:${formatTime(segment.end)}] ${clean(segment.text)}`);
+      });
+      lines.push("");
+      return lines.join("\n");
+    }
+
+    function downloadFallback(content) {
+      const blob = new Blob([content], {type:"text/plain;charset=utf-8"});
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = data.review_name || "transcript_review.txt";
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
+    async function saveReview() {
+      const content = reviewText();
+      if (window.showSaveFilePicker) {
+        try {
+          const handle = await window.showSaveFilePicker({
+            suggestedName:data.review_name || "transcript_review.txt",
+            types:[{description:"Transcript review", accept:{"text/plain":[".txt"]}}]
+          });
+          const writable = await handle.createWritable();
+          await writable.write(content);
+          await writable.close();
+          return;
+        } catch (error) {
+          if (error && error.name === "AbortError") return;
+        }
+      }
+      downloadFallback(content);
+    }
+
+    restoreDraft();
+    render();
+    if (data.video && data.video.uri) {
+      video.src = data.video.uri;
+      document.getElementById("video-name").textContent = data.video.path.split(/[\\/]/).pop();
+    }
+
+    video.addEventListener("timeupdate", () => {
+      const now = Number(video.currentTime);
+      const index = segments.findIndex((segment) => now >= Number(segment.start) && now < Number(segment.end));
+      setActive(index, index >= 0 && !video.paused);
+    });
+    document.getElementById("video-picker").addEventListener("change", (event) => {
+      const file = event.target.files && event.target.files[0];
+      if (!file) return;
+      if (pickedVideoUrl) URL.revokeObjectURL(pickedVideoUrl);
+      pickedVideoUrl = URL.createObjectURL(file);
+      video.src = pickedVideoUrl;
+      document.getElementById("video-name").textContent = file.name;
+    });
+    document.getElementById("replace-all").addEventListener("click", () => {
+      const find = document.getElementById("find").value;
+      const replacement = document.getElementById("replace").value;
+      if (!find) return;
+      segments.forEach((segment) => { segment.text = segment.text.split(find).join(replacement); });
+      saveDraft();
+      render();
+    });
+    document.getElementById("reset-review").addEventListener("click", () => {
+      if (!confirm("重置全部浏览器内修改？")) return;
+      segments.forEach((segment, index) => { segment.text = original[index]; });
+      try { localStorage.removeItem(data.storage_key); } catch (_) {}
+      render();
+    });
+    document.getElementById("copy-review").addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(reviewText()); } catch (_) { downloadFallback(reviewText()); }
+    });
+    document.getElementById("save-review").addEventListener("click", saveReview);
+    document.addEventListener("keydown", (event) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        saveReview();
+      } else if (event.code === "Space" && !/^(INPUT|TEXTAREA|BUTTON)$/.test(document.activeElement.tagName)) {
+        event.preventDefault();
+        video.paused ? video.play().catch(() => {}) : video.pause();
+      }
+    });
+  })();
+  </script>
+</body>
+</html>
+"""
+    return template.replace("__TITLE__", title).replace("__PAYLOAD__", payload_html)
 
 
 def parse_review(path: str) -> List[Dict[str, Any]]:
@@ -395,6 +752,30 @@ def cmd_export(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_html(args: argparse.Namespace) -> int:
+    _transcript, segments = load_transcript(args.transcript)
+    corrections = load_corrections(args.corrections)
+    if args.video and not os.path.isfile(args.video):
+        raise TranscriptReviewError(f"video not found: {args.video}")
+    payload = build_html_payload(
+        args.transcript,
+        segments,
+        corrections,
+        video_path=args.video,
+        max_cps=args.max_cps,
+        review_name=args.review_name,
+    )
+    output = args.output or _default_html_path(args.transcript)
+    os.makedirs(os.path.dirname(os.path.abspath(output)) or ".", exist_ok=True)
+    with open(output, "w", encoding="utf-8") as f:
+        f.write(emit_review_html(payload))
+    print(f"interactive review: {output}")
+    print(f"segments: {len(segments)}")
+    print(f"corrections applied: {payload['summary']['corrections_applied']}")
+    print("Open the HTML locally, review against the video, then save transcript_review.txt.")
+    return 0
+
+
 def cmd_apply(args: argparse.Namespace) -> int:
     transcript, _segments = load_transcript(args.transcript)
     edits = parse_review(args.review)
@@ -425,6 +806,17 @@ def build_parser() -> argparse.ArgumentParser:
     export.add_argument("--review", help="Output review text path. Defaults to transcript_review.txt next to transcript.")
     export.add_argument("--corrections", help="Optional corrections JSON/text file: wrong => right.")
     export.set_defaults(func=cmd_export)
+
+    html_cmd = sub.add_parser("html", help="Write a local interactive transcript review page.")
+    html_cmd.add_argument("--transcript", required=True, help="Whisper transcript JSON with segments.")
+    html_cmd.add_argument("--video", help="Optional local source video/audio to preload in the page.")
+    html_cmd.add_argument("--output", help="Output HTML. Defaults to transcript_review.html next to transcript.")
+    html_cmd.add_argument("--corrections", help="Optional corrections JSON/text file: wrong => right.")
+    html_cmd.add_argument("--max-cps", type=float, default=20.0,
+                          help="Highlight segments above this characters-per-second threshold.")
+    html_cmd.add_argument("--review-name", default="transcript_review.txt",
+                          help="Suggested filename when saving the reviewed text from the browser.")
+    html_cmd.set_defaults(func=cmd_html)
 
     apply = sub.add_parser("apply", help="Apply transcript_review.txt edits back to transcript JSON.")
     apply.add_argument("--transcript", required=True, help="Original transcript JSON.")

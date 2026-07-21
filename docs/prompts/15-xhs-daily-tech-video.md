@@ -42,9 +42,23 @@
      --engine auto --model auto --language zh --word-timestamps --detect-fillers \
      > work/transcript.json
 
+1a. # 生成零上传的同步媒体校稿页；人工保存 review.txt 后回写 reviewed transcript：
+    python3 scripts/transcript_review.py html \
+      --transcript work/transcript.json \
+      --video origin/<voice>.mp3 \
+      --corrections work/corrections.json \
+      --output work/transcript_review.html \
+      --max-cps 20
+    # 打开 work/transcript_review.html，点击时间码试听、修正文字、保存 work/transcript_review.txt。
+    python3 scripts/transcript_review.py apply \
+      --transcript work/transcript.json \
+      --review work/transcript_review.txt \
+      --output work/transcript_reviewed.json
+    # 详见 docs/prompts/36-transcript-review.md
+
 1b. # 可选：先生成多个前三秒 hook 角度，选一个再进入清稿：
     python3 scripts/hook_variants.py \
-      --transcript work/transcript.json \
+      --transcript work/transcript_reviewed.json \
       --topic "<主题描述>" \
       --persona "BestAI Labs 创始人 / Mac mini M1 / AI + 小公司" \
       --platform xhs \
@@ -55,7 +69,7 @@
     # 详见 docs/prompts/62-hook-variants.md
 
 2. python3 scripts/rewrite_script.py \
-     --transcript work/transcript.json \
+     --transcript work/transcript_reviewed.json \
      --structure pain_solve \
      --hook-template auto \
      --max-duration 150 \
@@ -66,12 +80,12 @@
 
 3. （你输出 JSON 后）保存到 work/llm.json，然后：
    python3 scripts/rewrite_script.py \
-     --transcript work/transcript.json \
+     --transcript work/transcript_reviewed.json \
      --llm-output work/llm.json \
      --output work/clean_script.md
 
 4. python3 scripts/auto_enrich.py \
-     --transcript work/transcript.json \
+     --transcript work/transcript_reviewed.json \
      --clean-script work/clean_script.md \
      --bgm origin/<bgm>.mp3 \
      --output work/enrich_plan.json
@@ -84,7 +98,7 @@
 
 4c. # 生成分镜 shot cards，先审查生成路由和连续性，再决定是否消耗视频生成额度：
     python3 scripts/storyboard_plan.py \
-      --transcript work/transcript.json \
+      --transcript work/transcript_reviewed.json \
       --clean-script work/clean_script.md \
       --output work/storyboard_plan.json \
       --markdown work/storyboard_plan.md \
