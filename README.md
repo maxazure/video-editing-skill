@@ -35,7 +35,7 @@
 当前版本已经加入可选的视频理解层：基础流程不依赖机器视觉模型，安装 `ultralytics` 后可以用 YOLO 对抽样帧做物体检测，并把结果整理成统一的 `video_understanding.v1`。
 
 - `extract_keyframes.py` 会抽关键帧和时序图，帮助 agent/用户快速看懂一段视频的视觉内容。
-- `scene_boundaries.py` 用 FFmpeg scene score 做视觉场景边界检测，供长视频拆条和 highlight snap 使用。
+- `scene_boundaries.py` 支持固定阈值和邻域自适应 FFmpeg scene score，输出逐切点证据，供长视频拆条、抽帧和 highlight snap 使用。
 - `video_understanding.py` 会按固定间隔和场景边界抽帧；`--detector yolo` 会运行 Ultralytics YOLO，输出 `frames[]`、`detections[]`、`tracks[]`、`scene_tags[]` 和 review Markdown。
 - `media_library.py` 会读取视频元数据、文件名、标签、素材来源和关联 transcript，用透明分数推荐本地 B-roll。
 - `smart_reframe.py` 可以读取 `video_understanding.json`，按人脸、人物、主体、物体等权重生成竖屏/方屏重构图计划。
@@ -63,6 +63,7 @@
 pip install ultralytics
 
 python3 scripts/scene_boundaries.py origin/talking.mp4 \
+  --method adaptive \
   --output work/scene_boundaries.json \
   --markdown work/scene_boundaries.md
 
@@ -423,6 +424,23 @@ python3 scripts/takes_pack.py \
 ```
 
 `takes_packed.md` 按 source 分组列出 `take1-003` 这类 phrase id、源时间码、speaker、segment ids、audio events 和压缩文本，适合先比较多个 take 的表达质量，也能避免在笑点、掌声或反应声中间误切。`takes_pack.json` 还会给每个事件保留 label/start/end；确认后的 time range 可继续交给 `highlight_picker.py`、`srt_edit_plan.py`、`render_config.json` 或 EDL/FCPXML/OTIO。`pipeline_manifest.py` 会发现 `takes_pack.json`，但默认不把它作为 blocker；需要强制多 take review 时可加 `--require takes_pack`。
+
+### 🎞️ Adaptive Scene Boundaries — 运动镜头自适应切点
+[`scripts/scene_boundaries.py`](scripts/scene_boundaries.py) · [详细文档](docs/prompts/32-scene-boundaries.md)
+
+固定 scene score 阈值对静态访谈很直接，但持续摇镜、游戏画面、手持走拍或高运动 B-roll 可能整段都高于阈值。`--method adaptive` 会读取每帧 FFmpeg scene score，把目标帧与前后邻域均值比较，同时保留绝对 `--min-scene-score` 门槛；真正的局部峰值才进入 `boundaries[]`，每个保留切点还会在 `boundary_evidence[]` 记录 score、adaptive ratio 和邻域均值。
+
+```bash
+python3 scripts/scene_boundaries.py origin/long-talk.mp4 \
+  --method adaptive \
+  --adaptive-threshold 3.0 \
+  --min-scene-score 0.15 \
+  --min-scene-duration 1.0 \
+  --output work/scene_boundaries.json \
+  --markdown work/scene_boundaries.md
+```
+
+先看 Markdown 的 cut evidence，再把 JSON 交给 `highlight_picker.py --scene-boundaries`、`video_understanding.py --scene-boundaries` 或 `retention_rhythm_qa.py --scene-boundaries`。固定机位素材、旧项目复现或已经调好阈值的流程继续用 `--method fixed --threshold 0.35`，默认行为保持兼容。
 
 ### 🔎 Highlight Picker — 长视频精华候选 / brief 定向找片段
 [`scripts/highlight_picker.py`](scripts/highlight_picker.py) · [详细文档](docs/prompts/31-highlight-picker.md)
@@ -2141,6 +2159,7 @@ pytest tests/test_video_prompt_pack.py -v   # 视频生成提示词包 + 审批 
 pytest tests/test_reference_frame_preflight.py -v # 首帧/style key 尺寸/方向/透明背景 gate
 pytest tests/test_generation_task_log.py -v # 异步生成任务台账 + 下载 gate
 pytest tests/test_video_understanding.py -v # 抽样帧 + 可选 YOLO 检测 artifact
+pytest tests/test_scene_boundaries.py -v # fixed/adaptive 场景检测 + cut evidence
 pytest tests/test_storyboard_assets.py -v   # 分镜素材 readiness manifest
 pytest tests/test_export_edl.py -v          # NLE handoff EDL + manifest
 pytest tests/test_export_fcpxml.py -v       # NLE handoff FCPXML + manifest
@@ -2157,6 +2176,22 @@ pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 pytest tests/test_review_dashboard.py -v    # 静态人工复核面板 + gate queue
 pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 gate
 ```
+
+### 2026-07-23 自动化升级记录（Adaptive Scene Boundaries）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`byteplus-sa/polym` 的 reference video analyzer](https://github.com/byteplus-sa/polym/blob/main/skills/polym-explainer-video/scripts/analyze_reference_video.py) | 直接用 FFmpeg `scene` score 统计 cut，依赖轻、可复现，适合作为 agent workflow 的基础视觉信号 | 保留原有 `--method fixed --threshold` 路径，避免已有项目结果漂移；自适应模式仍只依赖 FFmpeg |
+| [`Breakthrough/PySceneDetect` 的 AdaptiveDetector](https://github.com/Breakthrough/PySceneDetect/blob/main/scenedetect/detectors/adaptive_detector.py) | 当前帧变化分数与前后邻域滚动均值比较，同时要求最小绝对 content score 和最短场景长度，可减少快速运镜造成的误检 | 用 FFmpeg `lavfi.scene_score` 实现同类局部峰值判断，新增 ratio、绝对 score、窗口宽度和最短场景参数，不引入 OpenCV/PySceneDetect 运行时 |
+| [`browser-use/video-use`](https://github.com/browser-use/video-use/blob/main/SKILL.md) | 把切点视为必须复核的生产决策，要求对最终时间线逐切点查看 evidence，而不是把检测器输出直接当答案 | `scene_boundaries.v1` 新增 `boundary_evidence[]` 和 Markdown cut evidence 表；视觉边界仍只供 highlight snap、抽样和节奏 QA，不能替代内容/音频复核 |
+
+新增/调整能力：[`scripts/scene_boundaries.py`](scripts/scene_boundaries.py) 新增 `--method adaptive`。脚本用 FFmpeg 为每帧打印 `lavfi.scene_score`，仅当目标帧达到 `--min-scene-score` 且相对前后 `--window-width` 帧均值的 ratio 达到 `--adaptive-threshold` 时保留切点；持续摇镜、游戏画面、手持走拍和高运动 B-roll 因此不容易被固定阈值切成密集碎片。JSON 保持 `scene_boundaries.v1` 兼容，新增逐切点 `score`、`adaptive_ratio`、`local_average` evidence；Markdown 同步展示。原 `--method fixed --threshold 0.35` 行为保留。README 核心能力/测试入口、SKILL 流水线和 [`docs/prompts/32-scene-boundaries.md`](docs/prompts/32-scene-boundaries.md) 已更新。
+
+使用方式：运行 `python3 scripts/scene_boundaries.py origin/long-talk.mp4 --method adaptive --adaptive-threshold 3.0 --min-scene-score 0.15 --min-scene-duration 1.0 --output work/scene_boundaries.json --markdown work/scene_boundaries.md`；先看 Markdown 的 cut evidence，再把 JSON 传给 `highlight_picker.py --scene-boundaries`、`video_understanding.py --scene-boundaries` 或 `retention_rhythm_qa.py --scene-boundaries`。需要复现旧结果时显式用 `--method fixed`。
+
+验证结果：`.venv/bin/python -m pytest tests/test_scene_boundaries.py -q` 通过 `12 passed in 0.08s`，覆盖 FFmpeg metadata 解析、局部 spike、持续运镜拒绝、零邻域均值、evidence 去重、固定/自适应命令和 CLI saved-log round-trip；关联 `.venv/bin/python -m pytest tests/test_scene_boundaries.py tests/test_highlight_picker.py tests/test_video_understanding.py tests/test_retention_rhythm_qa.py -q` 通过 `39 passed in 0.27s`；最终全量 `.venv/bin/python -m pytest tests -q` 通过 `590 passed in 6.74s`。真实 FFmpeg smoke 生成 2 秒红/蓝两场景 H.264 视频，自适应 CLI 只检出 `1.0s` 的唯一硬切并记录 `score=0.4`、`adaptive_ratio=255`、`local_average=0`。CLI `--help`、Python compileall、skill `quick_validate.py` 和 `git diff --check` 通过。
 
 ### 2026-07-22 自动化升级记录（Interactive Transcript Review）
 

@@ -20,6 +20,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ takes_pack.py            多 take / Scribe transcript → phrase-level 阅读视图
    │                            speaker / audio_event 编辑节拍
    ├─→ audio_sync.py            外录音轨自动对齐 / 替换音轨计划
+   ├─→ scene_boundaries.py      fixed/adaptive 视觉切点 + 逐切点 evidence
    ├─→ video_understanding.py   抽样帧 + 可选 YOLO 检测 / tracks / scene_tags
    ├─→ highlight_picker.py      长视频精华候选 / brief-query 定向找片段
    ├─→ audio_boundary_snap.py   已选片段 → 词/句末/静音边界校正
@@ -87,6 +88,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `takes_pack.py` | 多 take / 顶层 Scribe words → phrase-level Markdown/JSON，保留 speaker/audio events | `--transcript take1=...` `--transcripts-dir` `--json` `--break-gap` |
 | `audio_sync.py` | scratch audio + 外录音轨 → offset / 替换音轨命令 / gate | `--reference-media` `--external-audio` `--replace-output` `--apply` `--strict` |
 | `rough_cut.py` | transcript 粗剪：去口头禅/重复句 | `--transcript` `--cut-list` / `--input` `--output` |
+| `scene_boundaries.py` | FFmpeg fixed/adaptive scene score → 场景边界 + cut evidence | `--method adaptive` `--adaptive-threshold` `--min-scene-score` `--min-scene-duration` |
 | `video_understanding.py` | 抽样帧 + 可选 YOLO 物体检测 + 轻量 tracklets | `--detector yolo` `--scene-boundaries` `--external-detections` `--strict` |
 | `highlight_picker.py` | 长视频精华候选 + brief/query 定向找片段 | `--transcript` `--brief`/`--query` `--scene-boundaries` `--render-config` |
 | `audio_boundary_snap.py` | selected highlights → 词级、句末和静音边界校正 + blocker | `--candidates` `--transcript` `--media` `--markdown` `--strict` |
@@ -594,6 +596,22 @@ python3 scripts/extract_keyframes.py video.mp4
 - 找出画面与语音最匹配的高质量片段（如：讲到"这家店"时画面正好对着店铺）
 - 识别画面模糊、遮挡、光线不佳的片段，建议跳过
 - 户外拍摄时，注意画面抖动严重的片段，在选片时降低优先级
+
+### Phase 2a: Adaptive Scene Boundaries（自适应视觉场景边界）
+
+长视频拆条、抽样理解或成片节奏分析前，优先为运动镜头生成自适应场景边界：
+
+```bash
+python3 scripts/scene_boundaries.py video.mp4 \
+  --method adaptive \
+  --adaptive-threshold 3.0 \
+  --min-scene-score 0.15 \
+  --min-scene-duration 1.0 \
+  --output work/scene_boundaries.json \
+  --markdown work/scene_boundaries.md
+```
+
+`adaptive` 把每帧 FFmpeg scene score 与前后邻域均值比较，可减少持续摇镜、运动或闪烁造成的密集误切；`boundary_evidence[]` 保留 score、adaptive ratio 和邻域均值，必须先看 Markdown 再交给 `highlight_picker.py --scene-boundaries`。需要复现旧流程或固定机位素材时，用 `--method fixed --threshold 0.35`。
 
 ### Phase 2b: Video Understanding（抽样帧 + 可选 YOLO）
 

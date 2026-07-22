@@ -10,15 +10,26 @@
 python3 scripts/scene_boundaries.py origin/long-talk.mp4 \
   --output work/scene_boundaries.json \
   --markdown work/scene_boundaries.md \
-  --threshold 0.35 \
+  --method adaptive \
+  --adaptive-threshold 3.0 \
+  --min-scene-score 0.15 \
   --min-scene-duration 1.0
 ```
 
 输出：
-- `scene_boundaries.json`：`scene_boundaries.v1`，包含 `boundaries[]` 和 `scenes[]`
-- `scene_boundaries.md`：人工复核表，按场景列出时间段和持续时间
+- `scene_boundaries.json`：`scene_boundaries.v1`，包含 `boundaries[]`、`boundary_evidence[]` 和 `scenes[]`
+- `scene_boundaries.md`：人工复核表，按场景列出时间段、持续时间、scene score、邻域均值和 adaptive ratio
 
-如果切点太密，调高 `--threshold` 或 `--min-scene-duration`；如果漏掉明显切点，调低 `--threshold`。
+`adaptive` 会先让 FFmpeg 记录每帧 scene score，再把当前帧与前后 `--window-width` 帧的均值比较。只有绝对 score 达到 `--min-scene-score`，且 `score / 邻域均值` 达到 `--adaptive-threshold`，才会保留候选切点；持续摇镜、运动或闪烁造成的一整段高分因此不容易被误判成很多场景。
+
+如果切点太密，调高 `--adaptive-threshold`、`--min-scene-score` 或 `--min-scene-duration`；如果漏掉明显切点，先降低 `--min-scene-score`，再小幅降低 ratio。固定机位或需要与旧结果完全一致时继续用：
+
+```bash
+python3 scripts/scene_boundaries.py origin/long-talk.mp4 \
+  --method fixed \
+  --threshold 0.35 \
+  --output work/scene_boundaries.json
+```
 
 ## 接入 Highlight Picker
 
@@ -63,5 +74,5 @@ python3 scripts/render_final.py \
 ## 何时不用
 
 - 纯口播固定机位：scene boundaries 通常很少，直接用 transcript highlight 就够。
-- 快切素材或游戏录屏：先把 `--threshold` 调高，否则可能产生太多视觉切点。
+- 快切素材或游戏录屏：优先用 `--method adaptive`；仍然太密时提高 ratio、绝对 score 或最短场景时长。
 - 已经手工定好剪点：直接编辑 `render_config.json` 更快。
