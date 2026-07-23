@@ -100,6 +100,13 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         "Run scene_boundaries.py when highlight candidates should snap to visual cuts.",
     ),
     ArtifactDef(
+        "visual_dedupe",
+        "Visual Dedupe",
+        ("**/visual_dedupe.json", "**/*_visual_dedupe.json"),
+        "Run visual_dedupe.py, compare every duplicate group, and exclude repeats only from the downstream edit plan.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "video_understanding",
         "Video Understanding",
         ("**/video_understanding.json", "**/*_video_understanding.json"),
@@ -540,6 +547,7 @@ def evaluate_category(definition: ArtifactDef, artifacts: Sequence[ArtifactRecor
             "edit_brief_plan",
             "audio_boundary_plan",
             "rough_cut",
+            "visual_dedupe",
             "retention_rhythm_qa",
             "speech_continuity_qa",
             "subtitle_readability_qa",

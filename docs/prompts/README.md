@@ -73,6 +73,7 @@
 | 69 | [Retention Rhythm QA 成片留存节奏风险](69-retention-rhythm-qa.md) | master/platform export → hook activity、长镜头、注意力空窗和 cadence gate |
 | 70 | [Subtitle Readability QA 最终字幕可读性门禁](70-subtitle-readability-qa.md) | output-aligned subtitle JSON → CPS、时长、行长、重叠和媒体越界 gate |
 | 71 | [Reference Frame Preflight 生成参考帧预检](71-reference-frame-preflight.md) | video_prompt_pack → 首帧/style key 尺寸、方向、画幅、透明背景 gate |
+| 72 | [Visual Dedupe 跨素材重复镜头复核](72-visual-dedupe.md) | 多来源 scene boundaries → 三点感知哈希、重复组、保留建议和 review gate |
 
 ## 快速上手
 
@@ -144,3 +145,4 @@
 | 成片剪完后想检查前三秒、长镜头和节奏空窗 | [69-Retention Rhythm QA](69-retention-rhythm-qa.md) |
 | 发布前想检查字幕是否重叠、闪现或来不及读 | [70-Subtitle Readability QA](70-subtitle-readability-qa.md) |
 | 视频生成前想检查首帧和 style key 是否适配目标画幅 | [71-Reference Frame Preflight](71-reference-frame-preflight.md) |
+| 多机位、多 take 或 B-roll 里有重复镜头，想先去重候选 | [72-Visual Dedupe](72-visual-dedupe.md) |

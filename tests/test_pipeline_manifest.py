@@ -117,6 +117,35 @@ def test_hook_variants_can_be_required_for_review(tmp_path):
     assert gate["artifact_count"] == 1
 
 
+def test_visual_dedupe_blocks_until_duplicate_groups_are_reviewed(tmp_path):
+    _write(tmp_path / "work" / "visual_dedupe.json", {
+        "version": "visual_dedupe.v1",
+        "status": "blocked",
+        "summary": {"duplicate_groups": 2, "blocking": 2},
+        "duplicate_groups": [
+            {"group_id": "duplicate_group_001"},
+            {"group_id": "duplicate_group_002"},
+        ],
+    })
+
+    manifest = build_manifest(str(tmp_path), target_stage="analysis")
+
+    assert "visual_dedupe" in manifest["blocked_gates"]
+    gate = next(g for g in manifest["gates"] if g["category"] == "visual_dedupe")
+    assert gate["status"] == "blocked"
+    assert "2 blocking item(s)" in gate["notes"][0]
+
+
+def test_visual_dedupe_can_be_required_for_analysis(tmp_path):
+    manifest = build_manifest(
+        str(tmp_path),
+        target_stage="analysis",
+        required=["visual_dedupe"],
+    )
+
+    assert "visual_dedupe" in manifest["missing_required"]
+
+
 def test_cover_variants_can_be_required_when_selected(tmp_path):
     _write(tmp_path / "work" / "transcript.json", {"segments": []})
     _write(tmp_path / "work" / "cover_variants.json", {

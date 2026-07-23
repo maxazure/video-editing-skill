@@ -21,6 +21,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    │                            speaker / audio_event 编辑节拍
    ├─→ audio_sync.py            外录音轨自动对齐 / 替换音轨计划
    ├─→ scene_boundaries.py      fixed/adaptive 视觉切点 + 逐切点 evidence
+   ├─→ visual_dedupe.py         多来源场景 → 感知哈希重复组 / 保留建议 / review gate
    ├─→ video_understanding.py   抽样帧 + 可选 YOLO 检测 / tracks / scene_tags
    ├─→ highlight_picker.py      长视频精华候选 / brief-query 定向找片段
    ├─→ audio_boundary_snap.py   已选片段 → 词/句末/静音边界校正
@@ -89,6 +90,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `audio_sync.py` | scratch audio + 外录音轨 → offset / 替换音轨命令 / gate | `--reference-media` `--external-audio` `--replace-output` `--apply` `--strict` |
 | `rough_cut.py` | transcript 粗剪：去口头禅/重复句 | `--transcript` `--cut-list` / `--input` `--output` |
 | `scene_boundaries.py` | FFmpeg fixed/adaptive scene score → 场景边界 + cut evidence | `--method adaptive` `--adaptive-threshold` `--min-scene-score` `--min-scene-duration` |
+| `visual_dedupe.py` | 多来源场景三点感知哈希 → 重复组 / 保留建议 / review gate | `--manifest` / `<videos...>` `--hamming-threshold` `--include-same-source` `--strict` |
 | `video_understanding.py` | 抽样帧 + 可选 YOLO 物体检测 + 轻量 tracklets | `--detector yolo` `--scene-boundaries` `--external-detections` `--strict` |
 | `highlight_picker.py` | 长视频精华候选 + brief/query 定向找片段 | `--transcript` `--brief`/`--query` `--scene-boundaries` `--render-config` |
 | `audio_boundary_snap.py` | selected highlights → 词级、句末和静音边界校正 + blocker | `--candidates` `--transcript` `--media` `--markdown` `--strict` |
@@ -613,7 +615,21 @@ python3 scripts/scene_boundaries.py video.mp4 \
 
 `adaptive` 把每帧 FFmpeg scene score 与前后邻域均值比较，可减少持续摇镜、运动或闪烁造成的密集误切；`boundary_evidence[]` 保留 score、adaptive ratio 和邻域均值，必须先看 Markdown 再交给 `highlight_picker.py --scene-boundaries`。需要复现旧流程或固定机位素材时，用 `--method fixed --threshold 0.35`。
 
-### Phase 2b: Video Understanding（抽样帧 + 可选 YOLO）
+### Phase 2b: Visual Dedupe（跨素材重复镜头复核）
+
+多机位、多 take、重复转码或 B-roll 候选进入时间线前，用 `visual_dedupe.py` 对多个 source 的场景做三点感知哈希复核：
+
+```bash
+python3 scripts/visual_dedupe.py \
+  --manifest work/visual_dedupe_sources.json \
+  --output work/visual_dedupe.json \
+  --markdown work/visual_dedupe.md \
+  --strict
+```
+
+manifest 的 `sources[]` 为每个来源提供 `id`、`video`、可选 `scene_boundaries` 和 `quality_score`；相对路径以 manifest 目录为基准。脚本默认只比较不同来源，要求 10%/50%/90% 至少两个采样点匹配，并把 `quality_score`、分辨率和文件大小用于保留建议。它只输出 review artifact，绝不删除或移动源素材。发现重复组时，先人工查看 source range，再从下游 edit plan 排除确认重复的候选。
+
+### Phase 2c: Video Understanding（抽样帧 + 可选 YOLO）
 
 当素材里的人、手机、电脑屏幕、产品、车辆或其他动态对象会影响裁切、隐私遮挡或 B-roll 选择时，使用 [video_understanding.py](./scripts/video_understanding.py) 生成结构化视觉理解 artifact。默认不需要安装 detector；如果要运行 YOLO，先安装可选依赖 `ultralytics`。
 

@@ -36,6 +36,7 @@
 
 - `extract_keyframes.py` 会抽关键帧和时序图，帮助 agent/用户快速看懂一段视频的视觉内容。
 - `scene_boundaries.py` 支持固定阈值和邻域自适应 FFmpeg scene score，输出逐切点证据，供长视频拆条、抽帧和 highlight snap 使用。
+- `visual_dedupe.py` 会读取多个来源及其 `scene_boundaries.v1`，对每个场景取 10%/50%/90% 三帧做感知哈希，找出跨素材重复镜头并生成保留建议；只输出复核计划，不删除源素材。
 - `video_understanding.py` 会按固定间隔和场景边界抽帧；`--detector yolo` 会运行 Ultralytics YOLO，输出 `frames[]`、`detections[]`、`tracks[]`、`scene_tags[]` 和 review Markdown。
 - `media_library.py` 会读取视频元数据、文件名、标签、素材来源和关联 transcript，用透明分数推荐本地 B-roll。
 - `smart_reframe.py` 可以读取 `video_understanding.json`，按人脸、人物、主体、物体等权重生成竖屏/方屏重构图计划。
@@ -66,6 +67,14 @@ python3 scripts/scene_boundaries.py origin/talking.mp4 \
   --method adaptive \
   --output work/scene_boundaries.json \
   --markdown work/scene_boundaries.md
+
+# 多机位/多条 B-roll 先分别生成 scene boundaries，再把来源写进 manifest。
+# manifest 内的相对路径以 manifest 所在目录为基准。
+python3 scripts/visual_dedupe.py \
+  --manifest work/visual_dedupe_sources.json \
+  --output work/visual_dedupe.json \
+  --markdown work/visual_dedupe.md \
+  --strict
 
 python3 scripts/video_understanding.py origin/talking.mp4 \
   --output work/video_understanding.json \
@@ -109,6 +118,8 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    ├─→ audio_sync.py            外录音轨自动对齐 / 替换音轨计划
    │                            scratch audio + lav/recorder track → offset + gate
    │
+   ├─→ scene_boundaries.py      fixed/adaptive 视觉切点 + 逐切点 evidence
+   ├─→ visual_dedupe.py         多来源场景 → 感知哈希重复组 / 保留建议 / review gate
    ├─→ video_understanding.py   抽样帧 + 可选 YOLO 物体检测
    │                            frames / detections / tracks / scene_tags
    │
@@ -2160,6 +2171,7 @@ pytest tests/test_reference_frame_preflight.py -v # 首帧/style key 尺寸/方�
 pytest tests/test_generation_task_log.py -v # 异步生成任务台账 + 下载 gate
 pytest tests/test_video_understanding.py -v # 抽样帧 + 可选 YOLO 检测 artifact
 pytest tests/test_scene_boundaries.py -v # fixed/adaptive 场景检测 + cut evidence
+pytest tests/test_visual_dedupe.py -v # 跨来源重复场景检测 + 保留建议
 pytest tests/test_storyboard_assets.py -v   # 分镜素材 readiness manifest
 pytest tests/test_export_edl.py -v          # NLE handoff EDL + manifest
 pytest tests/test_export_fcpxml.py -v       # NLE handoff FCPXML + manifest
@@ -2176,6 +2188,23 @@ pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 pytest tests/test_review_dashboard.py -v    # 静态人工复核面板 + gate queue
 pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 gate
 ```
+
+### 2026-07-24 自动化升级记录（Cross-source Visual Dedupe）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`mazsola2k/ai-video-editor` 的 Resolve exporter](https://github.com/mazsola2k/ai-video-editor/blob/main/export_resolve.py) | 用场景感知哈希在多条视频之间去重；重复时保留 `quality_score` 更高的镜头，直接服务最终时间线 | 新增跨来源 scene candidate 比较和显式质量分优先的保留建议，但不自动改时间线 |
+| [`SysAdminDoc/OpenCut` 的 duplicate detector](https://github.com/SysAdminDoc/OpenCut/blob/main/opencut/core/duplicate_detect.py) | 每条视频在 10%/50%/90% 取三帧、聚类相似内容，并用清晰的 review group 推荐保留更高质量版本 | 对每个场景而非只对整条视频做三点采样；用 union-find 形成重复组，保留逐 pair evidence 和建议排除列表 |
+| [`Parakh20/AI-Video-Editor` 的 duplicate frame detection](https://github.com/Parakh20/AI-Video-Editor/blob/main/src/ai_video_editor/vision/duplicate_frame_detection.py) | 64-bit average hash + Hamming distance 足够轻量，连续帧测试覆盖清楚 | 继续只依赖 FFmpeg + Python 标准库；使用 64-bit dHash，并增加平均 RGB 距离，避免不同纯色/低纹理帧都产生零哈希的误报 |
+| [`browser-use/video-use`](https://github.com/browser-use/video-use/blob/main/SKILL.md) | 检测结果只是编辑决策证据，最终镜头和切点必须在渲染前后人工复核 | 输出 JSON + Markdown review artifact；脚本永不删除/移动源文件，`--strict` 只阻塞到重复组被人工处理 |
+
+新增/调整能力：新增 [`scripts/visual_dedupe.py`](scripts/visual_dedupe.py)，可直接比较整条视频，也可通过 `sources[]` manifest 读取多条视频及各自的 `scene_boundaries.v1`。每个候选场景按 10%/50%/90% 取三帧，生成 64-bit dHash + mean-RGB 签名；默认要求至少 2/3 个采样点、场景时长比不低于 0.5、综合距离不超过 8，且只比较不同来源。重复 pair 用 union-find 合并为 review group；保留建议依次参考 `quality_score`、分辨率和源文件大小。`visual_dedupe.v1` 保存逐样本 Hamming/color distance、重复组、`recommended_keep` 和 `suggested_exclusions`；Markdown 直接链接本地媒体并展开 10%/50%/90% 的时间与距离证据。`pipeline_manifest.py` 会发现该 artifact，并在仍有重复组或无法解码的候选时阻塞。脚本不会删除、移动、覆盖素材，也不会把视觉相似误写成内容等价；strict 退出码 2 表示 review gate 未清，不表示源素材被改动或运行崩溃。
+
+使用方式：先为每条素材生成 scene boundaries，再创建 `work/visual_dedupe_sources.json`，例如 `{"sources":[{"id":"cam-a","video":"../origin/cam-a.mp4","scene_boundaries":"cam-a-scenes.json","quality_score":0.9},{"id":"cam-b","video":"../origin/cam-b.mp4","scene_boundaries":"cam-b-scenes.json","quality_score":0.8}]}`；相对路径以 manifest 所在目录为基准。运行 `python3 scripts/visual_dedupe.py --manifest work/visual_dedupe_sources.json --output work/visual_dedupe.json --markdown work/visual_dedupe.md --strict`，逐组打开报告里的 source range，确认镜头在编辑语义上可互换后，只从下游 edit plan 排除建议项。只想检查整条文件是否重复时，也可直接传 `origin/a.mp4 origin/b.mp4`。
+
+验证结果：定向 `.venv/bin/python -m pytest tests/test_visual_dedupe.py tests/test_pipeline_manifest.py -q` 通过 `59 passed in 0.50s`；最终全量 `.venv/bin/python -m pytest tests -q` 通过 `602 passed in 6.78s`。真实 FFmpeg smoke 用同一动态测试片生成不同分辨率/CRF 的两份视频，并加入一条蓝色非重复视频，CLI 得到 `3 candidates / 1 duplicate pair / 1 group / 0 failed`，只把两份同源画面归为一组。`.venv/bin/python -m compileall -q scripts tests`、CLI `--help`、skill `quick_validate.py` 和 `git diff --check` 全部通过。
 
 ### 2026-07-23 自动化升级记录（Adaptive Scene Boundaries）
 
