@@ -318,6 +318,16 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         blocks_when_present=True,
     ),
     ArtifactDef(
+        "platform_safe_area_qa",
+        "Platform Safe Area QA",
+        (
+            "**/platform_safe_area_qa.json",
+            "**/*_platform_safe_area_qa.json",
+        ),
+        "Run platform_safe_area_qa.py for each platform export and move critical text, PIP, CTA, or focus markers out of UI rails.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "localization_pack",
         "Localization Pack",
         (
@@ -551,6 +561,7 @@ def evaluate_category(definition: ArtifactDef, artifacts: Sequence[ArtifactRecor
             "retention_rhythm_qa",
             "speech_continuity_qa",
             "subtitle_readability_qa",
+            "platform_safe_area_qa",
             "cover_variants",
         }:
             blocking = _int_at(data, "summary", "blocking")

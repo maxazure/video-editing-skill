@@ -248,6 +248,34 @@ def test_subtitle_readability_qa_can_be_required(tmp_path):
     assert "subtitle_readability_qa" in manifest["missing_required"]
 
 
+def test_platform_safe_area_qa_blocks_when_critical_element_hits_ui(tmp_path):
+    _write(tmp_path / "verify" / "platform_safe_area_qa.json", {
+        "version": "platform_safe_area_qa.v1",
+        "status": "blocked",
+        "summary": {"status": "blocked", "blocking": 2, "warnings": 1},
+        "findings": [
+            {"code": "critical_element_outside_safe_area", "severity": "block"},
+        ],
+    })
+
+    manifest = build_manifest(str(tmp_path), target_stage="analysis")
+
+    assert "platform_safe_area_qa" in manifest["blocked_gates"]
+    gate = next(g for g in manifest["gates"] if g["category"] == "platform_safe_area_qa")
+    assert gate["status"] == "blocked"
+    assert "2 blocking item(s)" in gate["notes"][0]
+
+
+def test_platform_safe_area_qa_can_be_required(tmp_path):
+    manifest = build_manifest(
+        str(tmp_path),
+        target_stage="analysis",
+        required=["platform_safe_area_qa"],
+    )
+
+    assert "platform_safe_area_qa" in manifest["missing_required"]
+
+
 def test_optional_provider_decision_blocks_when_unresolved(tmp_path):
     _publish_ready_project(tmp_path)
     _write(tmp_path / "work" / "provider_decision.json", {

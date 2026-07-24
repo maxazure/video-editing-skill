@@ -183,6 +183,8 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    │
    ├─→ edit_preflight.py        render_config/enrich_plan/cut list 渲染前预检
    │                            缺文件、空剪辑、非法时间段、危险参数 gate
+   ├─→ platform_safe_area_qa.py 字幕/PIP/CTA/marker 平台 UI 安全区 gate
+   │                            JSON/Markdown/SVG 证据 + 多平台 profile
    │
    ├─→ render_final.py          单次编码渲染 + enrich_plan 自动接入
    │     B-roll / 章节卡 / 贴纸 / 生成图 / 点击聚焦 / PIP camera + Heavy 字幕 + 响度规范化 + BGM ducking
@@ -239,7 +241,7 @@ cd ~/projects/video-editing-skill
 python3 scripts/utils.py
 
 # 4. 跑一遍测试套件确认 OK
-pytest tests/           # 577 个测试，约 6 秒
+pytest tests/           # 613 个测试，约 8 秒
 ```
 
 每天做一条视频的完整模板：**[docs/prompts/15-xhs-daily-tech-video.md](docs/prompts/15-xhs-daily-tech-video.md)**
@@ -860,6 +862,24 @@ python3 scripts/subtitle_readability_qa.py \
 ```
 
 默认中文 18 字/行、英文 42 字符/行；18 CPS 以上、0.5 秒以下、7 秒以上或超过 2 行只 WARN，必须结合正常速度成片判断。时间无效、cue 重叠、超过媒体结尾、短于 0.15 秒或超过 25 CPS 会写入 `summary.blocking`，`--strict` 返回 2。报告存在且 blocking 非零时 `pipeline_manifest.py` 会阻塞；要强制具备报告可加 `--require subtitle_readability_qa`。本 gate 只读 timed text，不做 OCR，也不声称能判断字体、颜色、描边或画面安全区。
+
+### 📐 Platform Safe Area QA — 平台 UI 遮挡门禁
+[`scripts/platform_safe_area_qa.py`](scripts/platform_safe_area_qa.py) · [详细文档](docs/prompts/73-platform-safe-area-qa.md)
+
+渲染前读取 `render_config.json`、一个或多个 enrich plan 及可选自定义元素 bbox，按 renderer 默认布局估算字幕、badge、PIP、CTA、章节卡和 focus marker 的位置。内置 `xhs`、`douyin`、`wxch`、`tiktok`、`reels`、`shorts`、`universal`、`landscape` profile；输出 `platform_safe_area_qa.v1` JSON、Markdown 和 SVG 安全区图。
+
+```bash
+python3 scripts/platform_safe_area_qa.py \
+  --config work/render_config.json \
+  --enrich-plan work/enrich_plan.json \
+  --platform xhs \
+  --output verify/platform_safe_area_qa.json \
+  --markdown verify/platform_safe_area_qa.md \
+  --guide verify/platform_safe_area_guide.svg \
+  --strict
+```
+
+关键元素越界会进入 `summary.blocking`，`--strict` 返回 2；非关键元素只 WARN。`pipeline_manifest.py` 会发现报告并传播 blocker，也可加 `--require platform_safe_area_qa` 强制发布前必须存在。平台 UI 会变化，内置 profile 是可复现的社区经验保守值，不是永久官方规范；可用 `--safe-left/top/right/bottom` 覆盖当前实测边距。脚本不做 OCR，无法判断生成图或全屏画面内部的人脸/标题位置，SVG 和最终成片人工复核仍是必要步骤。
 
 ### 🔁 CapCut Subtitle Import — 剪映字幕反向导入
 [`scripts/import_capcut_subtitles.py`](scripts/import_capcut_subtitles.py) · [详细文档](docs/prompts/50-import-capcut-subtitles.md)
@@ -2140,7 +2160,7 @@ python3 $SKILL/scripts/review_dashboard.py \
 ## 测试
 
 ```bash
-pytest tests/           # 完整本地测试套件，约 5 秒
+pytest tests/           # 完整本地测试套件，约 8 秒
 ```
 
 按模块跑：
@@ -2152,6 +2172,7 @@ pytest tests/test_multi_export.py -v        # 多平台比例转换
 pytest tests/test_render_qa.py -v           # 渲染后质检
 pytest tests/test_retention_rhythm_qa.py -v # 成片 hook / 长镜头 / 节奏风险门禁
 pytest tests/test_subtitle_readability_qa.py -v # 最终字幕 CPS / 时长 / 重叠 / 越界门禁
+pytest tests/test_platform_safe_area_qa.py -v # 字幕 / PIP / CTA / marker 平台安全区门禁
 pytest tests/test_audio_master_report.py -v # 成片响度 / true peak / LRA 门禁
 pytest tests/test_render_enrich_plan.py -v  # enrich_plan 自动接入渲染
 pytest tests/test_auto_emphasis.py -v      # 问句/数字/转折/结论 emphasis cues
@@ -2188,6 +2209,23 @@ pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 pytest tests/test_review_dashboard.py -v    # 静态人工复核面板 + gate queue
 pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 gate
 ```
+
+### 2026-07-25 自动化升级记录（Platform Safe Area QA）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`dansugc/reelclaw` 的 green-zone 指南](https://github.com/dansugc/reelclaw/blob/main/references/green-zone.md) | 给出 TikTok / Reels / Shorts 的像素级 UI 遮挡边界，并提供一个跨平台保守交集 | 转成可缩放 profile，支持 XHS 3:4 和 9:16 画布；不把社区值表述为永久官方规范 |
+| [`hugobowne/show-us-your-agent-skills` 的 Remotion skill](https://github.com/hugobowne/show-us-your-agent-skills/blob/main/skills/remotion-video/SKILL.md) | 把竖屏 critical content 安全区纳入渲染前 checklist | 新增独立、确定性的发布前 gate，并输出可审查的 JSON / Markdown / SVG evidence |
+| [`cognyai/claude-code-marketing-skills` 的 TikTok launch video skill](https://github.com/cognyai/claude-code-marketing-skills/blob/main/skills/tiktok-launch-video/SKILL.md) | 明确要求顶部和底部为平台 UI 留白，避免 CTA / 字幕被遮挡 | 内置 TikTok / Douyin 保守边距，允许用当前 App 截图的实测像素覆盖 |
+| [`iart-ai/tiktok-video-skills` 的 lower-thirds skill](https://github.com/iart-ai/tiktok-video-skills/blob/main/skills/lower-thirds/SKILL.md) | 同时考虑 top/bottom title-safe 与右侧互动按钮 rail | bbox 检查四边 breach；PIP、focus marker、字幕和自定义 CTA 都纳入同一个报告 |
+
+新增/调整能力：新增 [`scripts/platform_safe_area_qa.py`](scripts/platform_safe_area_qa.py)，可读取 `render_config`、多个 enrich plan 和自定义 `elements[]`，复用 `render_final.py` 的默认字幕、PIP、badge 与 focus marker 布局估算。报告包含每个元素 bbox、四边 breach、来源和可操作修复提示；关键元素越界 BLOCK，`critical: false` 只 WARN，`--strict` 在 blocker 存在时返回 2。新增 SVG guide 方便人工查看绿色 safe rectangle 与元素框。`pipeline_manifest.py` 新增 `platform_safe_area_qa` artifact category，报告存在且 `summary.blocking > 0` 时阻塞，也支持 `--require platform_safe_area_qa`。同步更新 SKILL、每日小红书工作流、提示词索引和 [Platform Safe Area QA 文档](docs/prompts/73-platform-safe-area-qa.md)。本工具不上传、不调用 LLM、不做 OCR，也不会推断图片内部主体位置。
+
+使用方式：渲染前运行 `python3 scripts/platform_safe_area_qa.py --config work/render_config.json --enrich-plan work/enrich_plan.json --platform xhs --output verify/platform_safe_area_qa.json --markdown verify/platform_safe_area_qa.md --guide verify/platform_safe_area_guide.svg --strict`。多平台发布要按目标平台分别运行；当前 UI 与 profile 不一致时传 `--safe-left`、`--safe-top`、`--safe-right`、`--safe-bottom` 实测像素。自定义 CTA / Logo 可通过 `--elements work/platform_elements.json` 声明 pixel 或 normalized bbox。
+
+验证结果：新增 `tests/test_platform_safe_area_qa.py` 9 项，更新 `tests/test_pipeline_manifest.py` 2 项；定向 `.venv/bin/python -m pytest tests/test_platform_safe_area_qa.py tests/test_pipeline_manifest.py -q` 通过 `60 passed in 0.65s`；最终全量 `.venv/bin/python -m pytest tests -q` 通过 `613 passed in 7.45s`。真实 CLI smoke 用一个位于底部 UI 区的 normalized CTA 同时生成 JSON、Markdown 和 SVG，正确得到 `blocked`、`blocking=1`、`breaches=["bottom_ui"]`，strict 退出码为 2。`.venv/bin/python -m compileall -q scripts tests`、CLI `--help`、manifest category smoke、skill `quick_validate.py` 和 `git diff --check` 全部通过。
 
 ### 2026-07-24 自动化升级记录（Cross-source Visual Dedupe）
 
@@ -2450,6 +2488,7 @@ pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 g
 | **67** | **[Speech Continuity QA](docs/prompts/67-speech-continuity-qa.md)** | **成片二次 ASR 检查复读、近重复 take 和句内口吃** |
 | **68** | **[Cover Variants](docs/prompts/68-cover-variants.md)** | **多套封面、feed-size 预览、标题协同和最终选择** |
 | **69** | **[Retention Rhythm QA](docs/prompts/69-retention-rhythm-qa.md)** | **成片前三秒活动、长镜头、注意力空窗和节奏风险门禁** |
+| **73** | **[Platform Safe Area QA](docs/prompts/73-platform-safe-area-qa.md)** | **渲染前检查字幕、PIP、CTA、badge 和 marker 的平台 UI 遮挡风险** |
 
 完整列表见 [docs/prompts/README.md](docs/prompts/README.md)。
 
@@ -2512,6 +2551,7 @@ scripts/
 ├── screen_focus.py             录屏点击/热点聚焦计划              [V3]
 ├── color_grade.py              bounded 调色计划 + FFmpeg filter    [V3]
 ├── edit_preflight.py           渲染前结构/路径/参数预检 gate       [V3]
+├── platform_safe_area_qa.py    字幕/PIP/CTA/marker 平台安全区 gate [V3]
 ├── render_final.py             单次编码渲染 + enrich_plan 接入（V3 强化）
 ├── render_qa.py                渲染后黑屏/静帧/静音/尺寸质检       [V3]
 ├── retention_rhythm_qa.py      成片 hook / 长镜头 / 注意力空窗门禁 [V3]

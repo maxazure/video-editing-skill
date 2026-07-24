@@ -196,6 +196,18 @@
 
    (缺文件、空剪辑、非法时间段、overlay 超出时间线或像素坐标缺尺寸时，先修 artifact 再渲染)
 
+5c. # 每个平台分别检查字幕、PIP、CTA、章节卡和点击 marker 是否会被平台 UI 遮挡：
+     python3 scripts/platform_safe_area_qa.py \
+       --config work/render_config.json \
+       --enrich-plan work/enrich_plan.json \
+       --platform xhs \
+       --output output/verify/day<NN>_xhs_platform_safe_area_qa.json \
+       --markdown output/verify/day<NN>_xhs_platform_safe_area_qa.md \
+       --guide output/verify/day<NN>_xhs_platform_safe_area_guide.svg \
+       --strict
+
+   (抖音/视频号派生版分别改用 --platform douyin / wxch；平台 UI 有变化时传 --safe-left/top/right/bottom 实测像素)
+
 6. python3 scripts/render_final.py \
      --config work/render_config.json \
      --enrich-plan work/enrich_plan.json \

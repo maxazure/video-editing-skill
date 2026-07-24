@@ -1,6 +1,6 @@
 ---
 name: video-editing
-description: "Xiaohongshu/RED-tuned short-form video workflow for raw voice-over, talking-head, tutorials, interviews, podcasts, long videos, screen recordings, B-roll, captions, and generated assets. Covers edit routing, project bootstrap, transcription, synchronized local transcript review, multi-take packs, audio sync, cleanup, highlights/shorts, hook/story rewrite, content/source gates, B-roll/enrich/gpt-image-2/video-generation planning, generation reference-frame/style-lock preflight, screen focus, PIP, color grade, preflight/render/QA/audio master, retention-rhythm, subtitle-readability and rendered-speech continuity QA, review proxies, subtitles, CapCut import, multi-platform exports, cover A/B variants, captions, publish packages, dashboards, resume packets, EDL/FCPXML/OTIO, and Remotion animation."
+description: "Xiaohongshu/RED-tuned short-form video workflow for raw voice-over, talking-head, tutorials, interviews, podcasts, long videos, screen recordings, B-roll, captions, and generated assets. Covers edit routing, project bootstrap, transcription, synchronized local transcript review, multi-take packs, audio sync, cleanup, highlights/shorts, hook/story rewrite, content/source gates, B-roll/enrich/gpt-image-2/video-generation planning, generation reference-frame/style-lock preflight, screen focus, PIP, color grade, preflight/render/QA/audio master, retention-rhythm, subtitle-readability, platform-safe-area and rendered-speech continuity QA, review proxies, subtitles, CapCut import, multi-platform exports, cover A/B variants, captions, publish packages, dashboards, resume packets, EDL/FCPXML/OTIO, and Remotion animation."
 metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
 ---
 
@@ -48,6 +48,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ color_grade.py           bounded 调色 plan / render_final 单次编码接入
    ├─→ jump_cut.py              自适应去停顿 + 20% 删除预算 + 可审计 cut list + 30ms 防爆音 fade
    ├─→ edit_preflight.py        render_config/enrich_plan/cut list 渲染前预检 gate
+   ├─→ platform_safe_area_qa.py 字幕/PIP/CTA/marker → 平台 UI 安全区 gate + SVG guide
    ├─→ render_final.py          单次编码渲染（enrich_plan/focus_events/pip_overlays + Heavy 字幕 + 响度规范化 + BGM ducking）
    │                            可选 --versioned-output 防覆盖旧成片
    ├─→ render_qa.py             渲染后黑屏/静帧/静音/尺寸质检 + review packet
@@ -117,6 +118,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `color_grade.py` | bounded 调色 plan + FFmpeg filter + 可选现有 master 复版 | `--preset` `--output` `--markdown` `--render-output` `--strict` |
 | `jump_cut.py` | 自适应静音检测 → 去停顿计划 / 删除预算 gate / 成片 + 切点音频 fade | `<input.mp4>` `--dry-run` `--cut-list cuts.json` `--strict` / `--output jumpcut.mp4` `--max-removal-ratio 0.20` `--allow-over-budget` |
 | `edit_preflight.py` | render_config/enrich_plan/cut list 渲染前预检 gate | `--config render_config.json` `--enrich-plan enrich_plan.json` `--output edit_preflight.json` `--strict` |
+| `platform_safe_area_qa.py` | 字幕、badge、PIP、CTA、章节卡、marker → 平台 UI 遮挡 gate + SVG guide | `--config` `--enrich-plan` `--elements` `--platform xhs|douyin|wxch` `--guide` `--strict` |
 | `render_final.py` | 单次编码渲染 + enrich_plan + 可选旁白驱动 BGM ducking | `--config render_config.json` `--enrich-plan enrich_plan.json` `--bgm-ducking` `--output final.mp4` |
 | `render_qa.py` | 渲染后 QA：尺寸/音频/黑屏/静帧/静音 + review packet | `<video.mp4>` `--platform douyin` `--json qa.json` `--review-dir verify/qa` |
 | `retention_rhythm_qa.py` | 成片 hook 活动、长镜头、注意力空窗、等距/快切和字幕节奏风险 | `<video.mp4>` `--timed-text subtitles.json` `--output retention_rhythm_qa.json` `--strict` |
@@ -1075,6 +1077,25 @@ python3 scripts/cover_variants.py output/final_xhs.mp4 \
 - 根据视频内容逻辑划分章节，建议 **不超过 4 个章节**
 - 章节名要**简短**（2-4 个字），如：痛点、原因、方案、工具
 - 章节时间需要根据选定片段的累计时长精确计算
+
+### Phase 4.9: Platform Safe Area QA（平台 UI 安全区门禁）
+
+在渲染或多平台导出前，按目标平台分别检查字幕、强调 badge、PIP 人像、CTA、章节卡和点击 marker 是否会进入顶部状态栏、底部文案区或右侧互动按钮栏：
+
+```bash
+python3 scripts/platform_safe_area_qa.py \
+  --config work/render_config.json \
+  --enrich-plan work/enrich_plan.json \
+  --platform xhs \
+  --output verify/xhs_platform_safe_area_qa.json \
+  --markdown verify/xhs_platform_safe_area_qa.md \
+  --guide verify/xhs_platform_safe_area_guide.svg \
+  --strict
+```
+
+抖音和视频号派生版分别改用 `--platform douyin` / `--platform wxch`。脚本按 `render_final.py` 的默认 ASS、PIP 和 focus-marker 几何规则估算 bbox；renderer 之外的 CTA/Logo 可以通过 `--elements custom_elements.json` 提供像素或 normalized bbox。平台 App UI 变化时用 `--safe-left` / `--safe-top` / `--safe-right` / `--safe-bottom` 覆盖实测边距。
+
+这是本地、可审计的 layout gate：不上传、不调用 LLM、不做 OCR，不推断生成图或封面内部的主体/文字位置。已有整图章节卡会标记 `uncheckable`，需要打开 SVG guide 或渲染帧人工复核。`summary.blocking > 0` 会让 `--strict` 返回 2；需要设为生产线必需项时用 `pipeline_manifest.py --require platform_safe_area_qa --strict`。
 
 ### Phase 5: Single-Pass Render（单次渲染）
 
