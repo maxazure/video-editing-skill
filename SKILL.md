@@ -1,6 +1,6 @@
 ---
 name: video-editing
-description: "Xiaohongshu/RED-tuned short-form video workflow for raw voice-over, talking-head, tutorials, interviews, podcasts, long videos, screen recordings, B-roll, captions, and generated assets. Covers edit routing, project bootstrap, transcription, synchronized local transcript review, multi-take packs, audio sync, cleanup, highlights/shorts, hook/story rewrite, content/source gates, B-roll/enrich/gpt-image-2/video-generation planning, generation reference-frame/style-lock preflight, screen focus, PIP, color grade, preflight/render/QA/audio master, retention-rhythm, subtitle-readability, platform-safe-area and rendered-speech continuity QA, review proxies, subtitles, CapCut import, multi-platform exports, cover A/B variants, captions, publish packages, dashboards, resume packets, EDL/FCPXML/OTIO, and Remotion animation."
+description: "Xiaohongshu/RED-tuned short-form video workflow for raw voice-over, talking-head, tutorials, interviews, podcasts, long videos, screen recordings, B-roll, captions, and generated assets. Covers edit routing, project bootstrap, transcription, synchronized local transcript review, multi-take packs, audio sync, cleanup, highlights/shorts, hook/story rewrite, content/source gates, B-roll/enrich/gpt-image-2/video-generation planning, generation reference-frame/style-lock preflight, screen focus, PIP, color grade, preflight/render/QA/audio master, source-time edit comparison, retention-rhythm, subtitle-readability, platform-safe-area and rendered-speech continuity QA, review proxies, subtitles, CapCut import, multi-platform exports, cover A/B variants, captions, publish packages, dashboards, resume packets, EDL/FCPXML/OTIO, and Remotion animation."
 metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
 ---
 
@@ -56,6 +56,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ speech_continuity_qa.py  成片二次 ASR → 切点复读 / 近重复 take / 句内口吃 gate
    ├─→ review_proxy.py          低码率完整审片 MP4 / 可见时间码 / faststart
    ├─→ timeline_view.py         源素材删除段 / 成片输出切点 filmstrip + waveform 复盘图
+   ├─→ edit_compare.py          原片连续时钟 vs 最终像素 / 删段置黑 / 映射验证
    ├─→ subtitle_pack.py         SRT/VTT/ASS/JSON 字幕交付包（speed/offset 对齐）
    ├─→ subtitle_readability_qa.py
    │                            最终字幕 CPS / 时长 / 行长 / 重叠 / 媒体越界 gate
@@ -126,6 +127,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `review_proxy.py` | master/platform MP4 → 低码率 timecoded 审片视频 + JSON/Markdown | `<video.mp4>` `--output verify/review_proxy.mp4` `--dry-run` `--no-timecode` |
 | `audio_master_report.py` | 成片响度报告：LUFS / true peak / LRA / 长静音 gate | `<video.mp4>` `--output audio_master_report.json` `--markdown audio_master_report.md` `--strict` |
 | `timeline_view.py` | 源素材删除段 / 成片输出切点可视化复盘图 | `<video.mp4>` `--at 42.5` `--output view.png` / `--rendered-cut-list cuts.json` `--output-dir verify/` |
+| `edit_compare.py` | 原片连续时钟 vs 最终像素双栏视频；删段置黑并验证映射 | `<source.mp4> <final.mp4>` `--cut-list` `--output-speed` `--output-offset` `--output` |
 | `subtitle_pack.py` | transcript/render_config → SRT/VTT/ASS/JSON 字幕包 | `--transcript work/transcript.json --output-dir output/subtitles` / `--config render_config.json --speed 1.25 --offset 2.0` |
 | `subtitle_readability_qa.py` | output-aligned 字幕 → CPS、时长、行长、重叠和媒体越界 gate | `<subtitle_pack.json>` `--media final.mp4` `--output subtitle_readability_qa.json` `--strict` |
 | `import_capcut_subtitles.py` | 剪映/CapCut 自动字幕或 SRT → transcript + gap cut list | `--draft <draft_dir>` / `--srt captions.srt` `--transcript work/capcut_transcript.json` `--cut-list work/capcut_gap_cut.json` |
@@ -1300,7 +1302,21 @@ python3 scripts/timeline_view.py output/rough_cut.mp4 --rendered-cut-list work/r
 
 `timeline_view.py` 会生成 filmstrip + waveform PNG；上半部分看画面连续性，下半部分看人声/静音边界。`--cut-list` 查看源素材时间轴，`--rendered-cut-list` 则按 `keep_segments` 累计时长映射到成片的实际拼接点；有全局变速或片头封面时同步传 `--output-speed` / `--output-offset`。JSON 会保留输出切点和前后 source range；无音频视频会自动只输出 filmstrip。
 
-**6e. 字幕 sidecar 交付（平台需要 SRT/VTT 时跑）**：
+**6e. 原片/成片 source-time 对照（结构剪辑复核时跑）**：
+```bash
+python3 scripts/edit_compare.py \
+  origin/talking.mp4 final.mp4 \
+  --cut-list work/rough_cut.json \
+  --output-speed 1.25 \
+  --output-offset 2.0 \
+  --output verify/source_vs_final.mp4 \
+  --report verify/edit_compare.json \
+  --markdown verify/edit_compare.md
+```
+
+左栏连续播放原片；右栏把最终交付像素投回同一 source clock，被删除范围显示黑屏。脚本会检查时长、双栏尺寸、source-clock 音轨、删段黑屏和代表性保留段像素。V1 只支持单来源、时间升序、无重叠的 `keep_segments` 加全局 speed/offset；重排、多来源或非线性变速要回到 NLE/OTIO 时间线复核。详细说明见 [docs/prompts/74-edit-compare.md](docs/prompts/74-edit-compare.md)。
+
+**6f. 字幕 sidecar 交付（平台需要 SRT/VTT 时跑）**：
 ```bash
 python3 scripts/subtitle_pack.py \
   --config render_config.json \
@@ -1326,7 +1342,7 @@ python3 scripts/subtitle_readability_qa.py \
 
 `subtitle_readability_qa.py` 检查 output-timeline 的无效时间、乱序、重叠、极短闪现、CPS、持续时间、行数/行长，并可用 FFprobe 验证 cue 没有超过成片结尾。普通 CPS/排版风险只 WARN，必须看正常速度 master；确定性时间事故和极端阅读速度写入 `summary.blocking`。它不做 OCR，不替代字体、描边、位置或遮挡人工审片。`pipeline_manifest.py --require subtitle_readability_qa --strict` 可把报告设为发布必需项。
 
-**6f. 发布上传包（最终上传前跑）**：
+**6g. 发布上传包（最终上传前跑）**：
 ```bash
 python3 scripts/publish_package.py \
   --project-dir work/day58 \
@@ -1338,7 +1354,7 @@ python3 scripts/publish_package.py \
 
 `publish_package.py` 不上传、不调用平台 API；它只把 `multi_export.py` 的平台 MP4、`generate_caption.py` 的标题/正文/tags、封面、SRT/VTT、章节文本和 `pipeline_manifest` gate 状态合成 `publish_package.v1`。如果存在 `cover_variants.json` 且 `selected_cover` 文件有效，会优先使用已复核封面；显式 `--cover` 可覆盖。如果缺少某个平台视频、caption 为空、或 pipeline manifest 已 blocked，`--strict` 返回 2。需要交给外部发布 connector 时，用这份 JSON 作为 handoff；手工上传时看 Markdown checklist。
 
-**6g. 续跑上下文包（跨会话/自动化收尾时跑）**：
+**6h. 续跑上下文包（跨会话/自动化收尾时跑）**：
 ```bash
 python3 scripts/project_resume.py \
   --project-dir work/day58 \
@@ -1351,7 +1367,7 @@ python3 scripts/project_resume.py \
 
 `project_resume.py` 复用 `pipeline_manifest.py` 的本地 gate，不渲染、不上传、不提交生成任务。它输出 `project_resume.v1`，包含 `phase`、`recommended_first_action`、`next_actions[]`、最近 artifacts、关键 gate snapshot 和一句可直接交给下一位 agent 的 `suggested_prompt`。长流程被压缩上下文、自动化结束、或要交给另一位 agent 时，优先把 Markdown/agent note 作为接手入口。
 
-**6h. 人工复核面板（最终确认/交接前跑）**：
+**6i. 人工复核面板（最终确认/交接前跑）**：
 ```bash
 python3 scripts/review_dashboard.py \
   --project-dir work/day58 \
@@ -1363,7 +1379,7 @@ python3 scripts/review_dashboard.py \
 
 `review_dashboard.py` 复用 `pipeline_manifest.py` 的本地 gate，输出 `review_dashboard.v1` 和一个可直接在浏览器打开的 HTML。它把 blocking/missing/warning gate 放进 `review_items[]`，同时列出 `next_actions[]`、最新 artifacts 和完整 gate snapshot。适合用户最终确认，也适合自动化结束时留给下一位 agent。
 
-**6i. 成片复读 / 口吃门禁**：
+**6j. 成片复读 / 口吃门禁**：
 ```bash
 python3 scripts/extract_audio.py output/final.mp4
 python3 scripts/transcribe.py output/final_audio.wav --model auto --language zh --word-timestamps
@@ -1375,7 +1391,7 @@ python3 scripts/speech_continuity_qa.py output/final_transcript.json \
 
 必须对**已渲染 master**重新转录，不能复用源素材 transcript。`speech_continuity_qa.py` 会检查相邻 segment 的结尾/开头精确复读、相邻近重复 take 和句内即时口吃；不同 speaker 默认不互判。命中后先按时间码试听 master，再调整源 `render_config` / cut list，重新渲染并复跑。`pipeline_manifest.py --require speech_continuity_qa --strict` 可把这份报告设为发布必需项。
 
-**6j. 字幕文字最终校验**：
+**6k. 字幕文字最终校验**：
 1. 读取最终视频使用的所有 transcript 片段的文字
 2. 按最终视频的片段顺序，逐条检查以下问题：
    - **语音识别残留错误**：Phase 2.5 可能遗漏的同音字、专有名词错误

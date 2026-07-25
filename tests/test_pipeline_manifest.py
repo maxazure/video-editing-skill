@@ -276,6 +276,42 @@ def test_platform_safe_area_qa_can_be_required(tmp_path):
     assert "platform_safe_area_qa" in manifest["missing_required"]
 
 
+def test_edit_compare_blocks_when_render_or_verification_is_incomplete(tmp_path):
+    _write(tmp_path / "verify" / "day74_edit_compare.json", {
+        "version": "edit_compare.v1",
+        "status": "planned",
+        "summary": {"status": "planned", "blocking": 1, "warnings": 0},
+        "blockers": ["comparison video has not been rendered (--dry-run)"],
+    })
+
+    manifest = build_manifest(str(tmp_path), target_stage="analysis")
+
+    assert "edit_compare" in manifest["blocked_gates"]
+    gate = next(g for g in manifest["gates"] if g["category"] == "edit_compare")
+    assert gate["status"] == "blocked"
+    assert "1 blocking item(s)" in gate["notes"][0]
+
+
+def test_edit_compare_can_be_required_for_publish(tmp_path):
+    _publish_ready_project(tmp_path)
+    _write(tmp_path / "verify" / "day74_edit_compare.json", {
+        "version": "edit_compare.v1",
+        "status": "pass",
+        "summary": {"status": "pass", "blocking": 0, "warnings": 0},
+    })
+
+    manifest = build_manifest(
+        str(tmp_path),
+        target_stage="publish_ready",
+        required=["edit_compare"],
+    )
+
+    assert manifest["status"] == "ready"
+    gate = next(g for g in manifest["gates"] if g["category"] == "edit_compare")
+    assert gate["required"] is True
+    assert gate["status"] == "ready"
+
+
 def test_optional_provider_decision_blocks_when_unresolved(tmp_path):
     _publish_ready_project(tmp_path)
     _write(tmp_path / "work" / "provider_decision.json", {

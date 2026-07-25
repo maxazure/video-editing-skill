@@ -249,6 +249,16 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         blocks_when_present=True,
     ),
     ArtifactDef(
+        "edit_compare",
+        "Source-time Edit Compare",
+        (
+            "**/edit_compare.json",
+            "**/*_edit_compare.json",
+        ),
+        "Run edit_compare.py against the original, final render, and approved cut list; resolve mapping or pixel-check blockers.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "retention_rhythm_qa",
         "Retention Rhythm QA",
         (
@@ -482,7 +492,10 @@ def find_artifacts(
         for path in project_dir.glob(pattern):
             if not path.is_file() or _is_excluded(path, project_dir, excludes):
                 continue
-            if definition.category == "master_video" and "review_proxy" in path.stem.lower():
+            if definition.category == "master_video" and any(
+                token in path.stem.lower()
+                for token in ("review_proxy", "edit_compare", "source_vs_final")
+            ):
                 continue
             abs_path = path.resolve()
             records[str(abs_path)] = ArtifactRecord(
@@ -558,6 +571,7 @@ def evaluate_category(definition: ArtifactDef, artifacts: Sequence[ArtifactRecor
             "audio_boundary_plan",
             "rough_cut",
             "visual_dedupe",
+            "edit_compare",
             "retention_rhythm_qa",
             "speech_continuity_qa",
             "subtitle_readability_qa",

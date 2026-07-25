@@ -75,6 +75,7 @@
 | 71 | [Reference Frame Preflight 生成参考帧预检](71-reference-frame-preflight.md) | video_prompt_pack → 首帧/style key 尺寸、方向、画幅、透明背景 gate |
 | 72 | [Visual Dedupe 跨素材重复镜头复核](72-visual-dedupe.md) | 多来源 scene boundaries → 三点感知哈希、重复组、保留建议和 review gate |
 | 73 | [Platform Safe Area QA 平台 UI 安全区门禁](73-platform-safe-area-qa.md) | render_config/enrich_plan/custom bbox → 字幕、PIP、CTA、marker 平台遮挡 gate + SVG guide |
+| 74 | [Edit Compare 原片/成片 source-time 对照](74-edit-compare.md) | source + final + keep_segments → 双栏可播放审片视频、删段置黑和像素映射验证 |
 
 ## 快速上手
 
@@ -148,3 +149,4 @@
 | 视频生成前想检查首帧和 style key 是否适配目标画幅 | [71-Reference Frame Preflight](71-reference-frame-preflight.md) |
 | 多机位、多 take 或 B-roll 里有重复镜头，想先去重候选 | [72-Visual Dedupe](72-visual-dedupe.md) |
 | 发布前想检查字幕、PIP、CTA 或点击标记会不会被平台 UI 挡住 | [73-Platform Safe Area QA](73-platform-safe-area-qa.md) |
+| 想逐秒对照原片和最终成片到底保留、删除了什么 | [74-Edit Compare](74-edit-compare.md) |

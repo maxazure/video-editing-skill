@@ -988,6 +988,25 @@ python3 scripts/timeline_view.py output/rough_cut.mp4 --rendered-cut-list work/r
 
 `--rendered-cut-list` 读取 `keep_segments` 的既定顺序，按每段 source duration / `--output-speed` 累加，并把 `--output-offset` 作为片头封面或其他前置时长。JSON 会为每张复盘图保存 `boundary.output_time`、前后 source range 与 `source_gap`；如果计算切点超过实际成片时长，脚本会提示校正 speed/offset，而不会输出错位证据。
 
+### 🔀 Edit Compare — 原片 vs 成片 source-time 对照
+[`scripts/edit_compare.py`](scripts/edit_compare.py) · [详细文档](docs/prompts/74-edit-compare.md)
+
+把原片放在左栏连续播放，把**最终交付像素**按既有 `keep_segments` 投回右栏的原片时间轴；被删除范围显示黑屏。这样可以播放复核“删了什么”和“最终字幕/B-roll/调色/裁切变成了什么”，而不只看静态 cut plan。
+
+```bash
+python3 scripts/edit_compare.py \
+  origin/talking.mp4 \
+  output/day74_master.mp4 \
+  --cut-list work/rough_cut.json \
+  --output-speed 1.25 \
+  --output-offset 2.0 \
+  --output output/verify/day74_source_vs_final.mp4 \
+  --report output/verify/day74_edit_compare.json \
+  --markdown output/verify/day74_edit_compare.md
+```
+
+脚本自动验证双栏尺寸、原片时长、source-clock 音轨、删除范围黑屏和代表性保留范围的最终像素映射；`pipeline_manifest.py` 会把 `summary.blocking > 0` 的 `edit_compare` 报告列为阻塞 gate。V1 只接受单来源、按时间升序、无重叠的 `keep_segments`，并支持一个全局 `--output-speed` / `--output-offset`；重排、多来源、逐段不同速度或倒放要用 NLE/OTIO 时间线复核。没有 source-time 位置的 offset 片头和末段之后片尾不会出现在右栏，仍需完整播放 final/review proxy。
+
 ### 🎨 AI 图像生成（gpt-image-2 / Codex imagegen）
 [`scripts/imagegen_hint.py`](scripts/imagegen_hint.py) · [`scripts/prompts/imagegen_templates.yaml`](scripts/prompts/imagegen_templates.yaml) · [详细文档](docs/prompts/19-imagegen.md)
 
@@ -2075,6 +2094,17 @@ python3 $SKILL/scripts/timeline_view.py \
   $WORK/output/day${DAY}_master.mp4 --at 42.5 --radius 1.5 \
   --output $WORK/output/verify/day${DAY}_42_5s.png
 
+# 6g. 有 rough/jump cut 时，可选生成原片连续时钟 vs 最终像素的可播放对照
+python3 $SKILL/scripts/edit_compare.py \
+  $WORK/origin/talking.mp4 \
+  $WORK/output/day${DAY}_master.mp4 \
+  --cut-list $WORK/work/rough_cut.json \
+  --output-speed 1.25 \
+  --output-offset 2.0 \
+  --output $WORK/output/verify/day${DAY}_source_vs_final.mp4 \
+  --report $WORK/output/verify/day${DAY}_edit_compare.json \
+  --markdown $WORK/output/verify/day${DAY}_edit_compare.md
+
 # 7. 多平台
 python3 $SKILL/scripts/multi_export.py \
   $WORK/output/day${DAY}_master.mp4 --output-dir $WORK/output/
@@ -2183,6 +2213,7 @@ pytest tests/test_edit_brief_plan.py -v     # 自然语言剪辑需求 → 本�
 pytest tests/test_hook_variants.py -v       # 前三秒 hook 批量角度 + 风险检查
 pytest tests/test_rough_cut.py -v           # ASR 粗剪：口头禅/重复句 cut list
 pytest tests/test_timeline_view.py -v       # 源素材/成片切点可视化复盘图
+pytest tests/test_edit_compare.py -v        # 原片/成片 source-time 双栏对照 + 像素映射验证
 pytest tests/test_generate_caption.py -v    # 文案合成
 pytest tests/test_cover_variants.py -v      # 多套封面 + 小图预览 + 发布选择
 pytest tests/test_imagegen_hint.py -v       # gpt-image-2 提示词检测
@@ -2209,6 +2240,23 @@ pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 pytest tests/test_review_dashboard.py -v    # 静态人工复核面板 + gate queue
 pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 gate
 ```
+
+### 2026-07-26 自动化升级记录（Source-time Edit Compare）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`WhiteTowerAI/cut-as-code` 的 video-edit-compare skill](https://github.com/WhiteTowerAI/cut-as-code/blob/main/skills/video-edit-compare/SKILL.md) | 左侧连续原片，右侧把最终交付像素投回 source clock；删段置黑，并检查时长、像素和音轨 | 复用本项目既有 `rough_cut.py` / `jump_cut.py` `keep_segments`，支持全局 speed/offset，不引入另一套 timeline schema |
+| [`nopefallacy/vertical-video-editing-skills`](https://github.com/nopefallacy/vertical-video-editing-skills/blob/main/skills/video-editing/SKILL.md) | 要求对最终 render 做 ffprobe + frame spot-check，不能只相信 preview | 渲染后自动检查双栏尺寸/时长/音轨，并抽样验证删段黑屏与保留段 final-frame 像素 |
+| [`znyupup/ai-video-editing-skill`](https://github.com/znyupup/ai-video-editing-skill/blob/main/SKILL.md) | 把成品 QC 抽帧和可视化 review 当成正式交付阶段 | 同时输出可播放 MP4、机器可读 JSON 和人工 Markdown；报告可进入 pipeline manifest gate |
+| [`Jaycheng1103/chatgpt-video-editing-skills` 的八步工作流](https://github.com/Jaycheng1103/chatgpt-video-editing-skills/blob/main/skills/chatgpt-short-video-editor/references/eight-step-workflow.md) | 把完整预览、QA 和正式定稿分成明确阶段 | 将本工具定位为最终 render 之后的结构剪辑复核，不替代 `render_qa.py`、发布 gate 或人工审片 |
+
+新增/调整能力：新增 [`scripts/edit_compare.py`](scripts/edit_compare.py)，读取单一原片、实际最终成片和已有 cut list，生成 `original-vs-final-source-time` 双栏 MP4。左栏保持原片连续时钟；右栏按 `keep_segments` 计算 final program range，统一 `--output-speed` 后恢复到 source duration，删除范围用黑屏补齐。每个 part 的帧数来自绝对 source-time 边界，避免逐段独立取整造成累积漂移。默认复制原片时钟音轨，并在渲染后验证输出时长、尺寸、音轨、代表性删除段黑屏和保留段像素。JSON/Markdown 保存完整 source/program mapping 与抽样证据；`--dry-run` 可先写未完成计划。`pipeline_manifest.py` 新增 `edit_compare` gate，并避免把文件名含 `edit_compare` 的审片视频误识别成 master。
+
+使用方式：运行 `python3 scripts/edit_compare.py origin/talking.mp4 output/master.mp4 --cut-list work/rough_cut.json --output-speed 1.25 --output-offset 2.0 --output output/verify/source_vs_final.mp4 --report output/verify/edit_compare.json --markdown output/verify/edit_compare.md`。左栏看原片，右栏黑屏表示已删范围；映射整体错位时先校正 speed/offset，再重跑。V1 会拒绝被 block、空、重叠、乱序或越界的 cut list，不支持多来源、镜头重排、逐段不同速度、倒放或非线性 time warp。
+
+验证结果：新增 `tests/test_edit_compare.py` 8 项，更新 `tests/test_pipeline_manifest.py` 2 项；定向 `.venv/bin/python -m pytest tests/test_edit_compare.py tests/test_pipeline_manifest.py -q` 通过 `61 passed in 1.05s`，最终全量 `.venv/bin/python -m pytest tests -q` 通过 `623 passed in 6.79s`。真实 FFmpeg smoke 用 2 秒动态测试片删除中间 0.4 秒，并把保留段加速 2×、前置 0.2 秒片头，成功生成 320×90 双栏 MP4；报告得到 `2 kept / 1 dropped / 3 verification samples / blocking=0`，删除段黑屏、保留段 final-frame 像素、speed/offset 映射和 source-clock 音轨均通过；同一素材的 `--no-audio` 分支也通过。另有 rotation metadata、dry-run/strict 返回码和 final-too-short 诊断测试。`.venv/bin/python -m compileall -q scripts tests`、CLI `--help`、skill `quick_validate.py` 和 `git diff --check` 全部通过。
 
 ### 2026-07-25 自动化升级记录（Platform Safe Area QA）
 
@@ -2554,6 +2602,7 @@ scripts/
 ├── platform_safe_area_qa.py    字幕/PIP/CTA/marker 平台安全区 gate [V3]
 ├── render_final.py             单次编码渲染 + enrich_plan 接入（V3 强化）
 ├── render_qa.py                渲染后黑屏/静帧/静音/尺寸质检       [V3]
+├── edit_compare.py             原片连续时钟 vs 最终像素双栏复核     [V3]
 ├── retention_rhythm_qa.py      成片 hook / 长镜头 / 注意力空窗门禁 [V3]
 ├── speech_continuity_qa.py     成片二次 ASR 复读 / 口吃发布 gate  [V3]
 ├── audio_master_report.py      成片响度 / true peak / LRA 发布门禁 [V3]
