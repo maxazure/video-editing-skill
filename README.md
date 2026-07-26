@@ -8,6 +8,7 @@
 
 - **把口播短视频从“素材堆”推进到“发布包”**：项目目录、source inventory、转写、清稿、分镜、素材清单、渲染配置、字幕 sidecar、QA、标题正文和标签都能落成可审计 artifact。
 - **针对中文社媒口播做过生产化调参**：Heavy CJK 字幕、1.25x 主输出、响度规范化、平台违禁词 lint、章节卡、贴纸、BGM/SFX cue、三平台导出都不是通用 demo。
+- **噪声口播可在单次编码内保守清理**：`render_final.py --speech-denoise light|medium|strong` 会在变速、压缩、响度规范化和 BGM ducking 前处理低频震动与稳态底噪；默认关闭，最大降噪限制为 12 dB。
 - **事实型内容有 proof deck**：新闻、数据、产品事实或来源页截图可用 `source_receipts.py` 生成 URL/截图复核包，作为发布前 gate。
 - **生成式素材有明确审批和台账**：Codex `image_gen` / GPT Image 2 提示词、Dreamina/Veo/LTX/Wan/Sora 视频提示词、provider 决策、`submit_id` 轮询下载和本地落盘 gate 都先记录再执行。
 - **适合交给强推理模型做长流程代理执行**：在 [GPT-5.5](https://developers.openai.com/api/docs/models/gpt-5.5) 和 [Claude Opus 4.8](https://docs.anthropic.com/en/docs/about-claude/models) 这类面向复杂专业任务、agent 工作流的模型下，本 skill 对 **口播类短视频** 至少可以替代 **80% 的常规视频剪辑工作**。
@@ -187,7 +188,7 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    │                            JSON/Markdown/SVG 证据 + 多平台 profile
    │
    ├─→ render_final.py          单次编码渲染 + enrich_plan 自动接入
-   │     B-roll / 章节卡 / 贴纸 / 生成图 / 点击聚焦 / PIP camera + Heavy 字幕 + 响度规范化 + BGM ducking
+   │     B-roll / 章节卡 / 贴纸 / 生成图 / 点击聚焦 / PIP camera + 可选口播降噪 + Heavy 字幕 + 响度规范化 + BGM ducking
    │     可选 --versioned-output：输出 _V<N>，避免覆盖旧成片
    │
    ├─→ render_qa.py             渲染后黑屏/静帧/静音/尺寸质检 + review packet
@@ -1042,6 +1043,7 @@ python3 scripts/edit_preflight.py \
 |---|---|
 | Heavy 字幕字体（Source Han Sans Heavy / STHeiti Medium） | `find_chinese_font()` 自动选 |
 | 响度规范化 `dynaudnorm + acompressor + loudnorm` | 默认开启，`--no-loudnorm` 关 |
+| 口播稳态底噪清理 | `--speech-denoise light|medium|strong` 或 config `"speech_denoise": "medium"`；默认 `off` |
 | 速度直接生效（不留 1.0× 副本） | `--primary-speed 1.25` |
 | 受众档位预设（节奏/字幕密度/BGM 增益） | `--profile tech_pro` |
 | 内部 token 拦截 | 自动；任何 `1.25x`/`mlx-whisper`/`loudnorm` 出现在画面文本字段都退出 |
@@ -2232,6 +2234,7 @@ pytest tests/test_screen_focus.py -v        # 录屏点击聚焦计划 + render 
 pytest tests/test_subtitle_pack.py -v       # SRT/VTT/ASS/JSON 字幕交付包
 pytest tests/test_srt_edit_plan.py -v       # SRT 编辑指令转 render_config/cut list
 pytest tests/test_audio_cue_sheet.py -v     # BGM/SFX 音频设计清单
+pytest tests/test_speech_denoise.py -v      # 口播降噪 preset / 顺序 / 真实 FFmpeg SNR smoke
 pytest tests/test_bgm_ducking.py -v         # 旁白驱动 BGM sidechain + 真实 FFmpeg smoke
 pytest tests/test_color_grade.py -v         # 调色计划 + render_final 接入
 pytest tests/test_edit_preflight.py -v      # 渲染前结构/路径/参数预检 gate
@@ -2240,6 +2243,24 @@ pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 pytest tests/test_review_dashboard.py -v    # 静态人工复核面板 + gate queue
 pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 gate
 ```
+
+### 2026-07-27 自动化升级记录（Opt-in Speech Denoise）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`clawic/skills` 的 Video Audio Enhancement](https://github.com/clawic/skills/blob/main/skills/video-edit/audio.md) | 把降噪、EQ、压缩、de-ess、响度规范化拆成有顺序的旁白修复链 | 只吸收本项目当前明确缺失的稳态底噪处理；不照搬会削薄男声的 200 Hz 高通，也不新增云端服务 |
+| [`oktaydbk54/vibeclip` 的 denoise stage](https://github.com/oktaydbk54/vibeclip/blob/main/pipeline/denoise.py) | 用 FFmpeg `afftdn` 做轻/中/强 preset，并明确放在 music ducking、SFX、loudnorm 之前 | 在 `render_final.py` 的单次编码图里加入同类 opt-in preset，让 BGM sidechain 使用清理后的旁白 |
+| [`edhaynes/eds-rules` 的 gentle clean-audio](https://github.com/edhaynes/eds-rules/blob/main/demo/clean-audio.sh) | 85 Hz 高通 → 10 dB FFT 降噪 → loudnorm；删除了会切掉尾音的激进 noise gate，并写清无法修复的噪声边界 | 采用固定 80 Hz、默认关闭、必须 A/B 试听；不加 gate，不把瞬态噪声/混响包装成可自动修复 |
+| [`linuxmatters/jive-vocals` 的音频链说明](https://github.com/linuxmatters/jive-vocals/blob/main/AGENTS.md) | 成熟实录语料把 FFT reduction 约束在 12 dB，并解释压缩前降噪、过强处理和数字静音 warble 风险 | `strong` 上限固定 12 dB；文档明确 VAD/gate 后的数字静音、多麦和噪声突变素材应保持 off 或先试听 |
+| [`puuku0510/chotto-tachiyotte-skill`](https://github.com/puuku0510/chotto-tachiyotte-skill/blob/master/SKILL.md) | 把 SileroVAD、短促咳嗽候选和频谱证据纳入真人口播清理 | 记录为后续独立能力；本轮不引入 ONNX/VAD，也不把稳态 FFT 降噪错误宣传成咳嗽检测 |
+
+新增/调整能力：`scripts/render_final.py` 新增 `--speech-denoise light|medium|strong` / `--no-speech-denoise`，render config 可写 `"speech_denoise": "light|medium|strong|off"`。三个 preset 固定使用 80 Hz、2-pole 高通，FFT reduction 分别为 6/9/12 dB；滤镜顺序是 `highpass → afftdn → atempo → dynaudnorm → acompressor → loudnorm → cover delay → BGM ducking/mix`。默认 `off`，旧项目输出不变；配置只接受明确字符串，非法 bool/强度在 FFmpeg 启动前退出 2。同步更新 SKILL、每日工作流、提示词索引和 [Speech Denoise 文档](docs/prompts/75-speech-denoise.md)。
+
+使用方式：先对同一段 10–20 秒口播 A/B 试听 `off` 与 `--speech-denoise light`，确定只有稳定的空调/风扇/电流底噪时再试 `medium`；`strong` 必须确认没有 watery/metallic/warble artifact。已经经 Adobe Podcast、Descript、RX、VAD/noise gate 或机内强降噪的音轨保持 `off`。渲染后继续跑 `audio_master_report.py --strict` 并正常速度试听；这一步只修最终听感，不会改善上游 ASR/jump cut 使用的源音轨。
+
+验证结果：新增 `tests/test_speech_denoise.py` 15 项，并更新旧 audio-chain 回归；定向 `/Users/maxazure/projects/video-editing-skill/.venv/bin/python -m pytest tests/test_speech_denoise.py tests/test_audio_chain.py tests/test_bgm_ducking.py -q` 通过 `30 passed in 1.18s`，最终全量通过 `638 passed in 17.88s`。真实 3 秒 H.264/AAC smoke 把 50 Hz 震动、持续白噪声和 1 kHz speech tone 混合后走 `strong` + 默认完整响度链：说话窗口的 band-limited SNR 从 `28.3 dB` 提升到 `31.8 dB`（`+3.5 dB`），50 Hz rumble 相对 voice 改善 `7.5 dB`，输出时长仍为 `3.000s`。Python compileall、CLI `--help`、skill `quick_validate.py` 和 `git diff --check` 全部通过；系统 Python 3.9 因仓库既有 `str | None` 语法在收集阶段不兼容，最终测试使用项目 Python 3.12 虚拟环境。
 
 ### 2026-07-26 自动化升级记录（Source-time Edit Compare）
 
@@ -2518,6 +2539,7 @@ pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 g
 | **29** | **[Subtitle Pack](docs/prompts/29-subtitle-pack.md)** | **导出 SRT/VTT/ASS/JSON 字幕包** |
 | **70** | **[Subtitle Readability QA](docs/prompts/70-subtitle-readability-qa.md)** | **检查最终字幕 CPS、时长、行长、重叠和媒体越界** |
 | **71** | **[Reference Frame Preflight](docs/prompts/71-reference-frame-preflight.md)** | **检查视频生成首帧/style key 的尺寸、方向、画幅和透明背景** |
+| **75** | **[Speech Denoise](docs/prompts/75-speech-denoise.md)** | **可选清理口播低频震动与稳态底噪** |
 | **43** | **[Audio Cue Sheet](docs/prompts/43-audio-cue-sheet.md)** | **规划 BGM/SFX 和生成审批** |
 | **45** | **[Video Prompt Pack](docs/prompts/45-video-prompt-pack.md)** | **视频生成提示词包 + paid approval gate** |
 | **46** | **[Generation Task Log](docs/prompts/46-generation-task-log.md)** | **跟踪 submit_id、轮询、下载和本地落盘** |
@@ -2600,7 +2622,7 @@ scripts/
 ├── color_grade.py              bounded 调色计划 + FFmpeg filter    [V3]
 ├── edit_preflight.py           渲染前结构/路径/参数预检 gate       [V3]
 ├── platform_safe_area_qa.py    字幕/PIP/CTA/marker 平台安全区 gate [V3]
-├── render_final.py             单次编码渲染 + enrich_plan 接入（V3 强化）
+├── render_final.py             单次编码渲染 + 可选口播降噪 + enrich_plan 接入（V3 强化）
 ├── render_qa.py                渲染后黑屏/静帧/静音/尺寸质检       [V3]
 ├── edit_compare.py             原片连续时钟 vs 最终像素双栏复核     [V3]
 ├── retention_rhythm_qa.py      成片 hook / 长镜头 / 注意力空窗门禁 [V3]

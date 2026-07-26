@@ -76,6 +76,7 @@
 | 72 | [Visual Dedupe 跨素材重复镜头复核](72-visual-dedupe.md) | 多来源 scene boundaries → 三点感知哈希、重复组、保留建议和 review gate |
 | 73 | [Platform Safe Area QA 平台 UI 安全区门禁](73-platform-safe-area-qa.md) | render_config/enrich_plan/custom bbox → 字幕、PIP、CTA、marker 平台遮挡 gate + SVG guide |
 | 74 | [Edit Compare 原片/成片 source-time 对照](74-edit-compare.md) | source + final + keep_segments → 双栏可播放审片视频、删段置黑和像素映射验证 |
+| 75 | [Speech Denoise 口播稳态底噪清理](75-speech-denoise.md) | `render_final.py` 单次编码内可选 highpass + afftdn，默认关闭 |
 
 ## 快速上手
 

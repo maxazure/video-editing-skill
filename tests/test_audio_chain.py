@@ -31,12 +31,7 @@ def test_source_contains_default_loudness_chain():
 
 
 def test_loudness_chain_is_gated_by_no_loudnorm():
-    """The chain must be inside an `if not args.no_loudnorm:` block."""
+    """The renderer must pass the CLI opt-out into the audio-chain builder."""
     src = open(os.path.join(REPO, "scripts/render_final.py")).read()
-    # crude but effective: the no_loudnorm gate appears before the first loudnorm append
-    no_lnorm_idx = src.find("args.no_loudnorm")
-    loudnorm_append_idx = src.find('"loudnorm=I=-16')
-    assert no_lnorm_idx > 0 and loudnorm_append_idx > 0
-    assert no_lnorm_idx < loudnorm_append_idx, (
-        "loudnorm append should come AFTER the args.no_loudnorm check"
-    )
+    assert "loudness_enabled=not args.no_loudnorm" in src
+    assert "if loudness_enabled:" in src

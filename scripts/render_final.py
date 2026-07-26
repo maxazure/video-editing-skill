@@ -164,6 +164,74 @@ BGM_DUCKING_SPECS = {
     "bgm_ducking_release_ms": (500.0, 0.01, 9000.0),
 }
 
+SPEECH_DENOISE_PRESETS = {
+    "light": {
+        "noise_reduction_db": 6.0,
+        "noise_floor_db": -50.0,
+        "gain_smooth": 5,
+    },
+    "medium": {
+        "noise_reduction_db": 9.0,
+        "noise_floor_db": -45.0,
+        "gain_smooth": 8,
+    },
+    "strong": {
+        "noise_reduction_db": 12.0,
+        "noise_floor_db": -40.0,
+        "gain_smooth": 10,
+    },
+}
+
+
+def resolve_speech_denoise(config, cli_override=None):
+    """Resolve the optional conservative speech-denoise preset."""
+    raw = cli_override if cli_override is not None else config.get("speech_denoise", "off")
+    if raw == "off":
+        return {"enabled": False}
+    if not isinstance(raw, str) or raw not in SPEECH_DENOISE_PRESETS:
+        choices = ", ".join(SPEECH_DENOISE_PRESETS)
+        raise ValueError(f"speech_denoise must be 'off' or one of: {choices}")
+
+    settings = dict(SPEECH_DENOISE_PRESETS[raw])
+    settings.update({"enabled": True, "preset": raw, "highpass_hz": 80})
+    return settings
+
+
+def build_speech_denoise_filters(settings):
+    """Return FFmpeg filters for opt-in rumble and steady-noise cleanup."""
+    if not settings.get("enabled"):
+        return []
+    return [
+        f"highpass=f={settings['highpass_hz']:g}:p=2",
+        (
+            f"afftdn=nr={settings['noise_reduction_db']:g}"
+            f":nf={settings['noise_floor_db']:g}:tn=1"
+            f":gs={settings['gain_smooth']}"
+        ),
+    ]
+
+
+def build_speech_audio_filters(*, denoise, speed, loudness_enabled, cover_duration):
+    """Build speech processing in quality-safe order before BGM mixing."""
+    filters = build_speech_denoise_filters(denoise)
+    if speed != 1.0:
+        remaining = speed
+        while remaining > 2.0:
+            filters.append("atempo=2.0")
+            remaining /= 2.0
+        filters.append(f"atempo={remaining:.4f}")
+
+    if loudness_enabled:
+        filters.append("dynaudnorm=f=250:g=15")
+        filters.append("acompressor=threshold=-18dB:ratio=3:attack=20:release=200")
+        filters.append("loudnorm=I=-16:TP=-1.5:LRA=11")
+
+    # Keep cover silence after cleanup/dynamics so normalization never raises it.
+    if cover_duration > 0:
+        delay_ms = int(cover_duration * 1000)
+        filters.append(f"adelay={delay_ms}:all=1")
+    return filters
+
 
 def resolve_bgm_ducking(config, cli_override=None):
     """Resolve and validate optional narration-driven BGM ducking settings."""
@@ -1156,6 +1224,20 @@ def main():
     parser.add_argument("--no-cover", action="store_true")
     parser.add_argument("--no-loudnorm", action="store_true",
                         help="Disable the default dynaudnorm+compressor+loudnorm chain on the speech track")
+    speech_denoise_group = parser.add_mutually_exclusive_group()
+    speech_denoise_group.add_argument(
+        "--speech-denoise",
+        choices=list(SPEECH_DENOISE_PRESETS),
+        help="Opt-in steady speech-noise cleanup preset before speed/loudness processing",
+    )
+    speech_denoise_group.add_argument(
+        "--no-speech-denoise",
+        dest="speech_denoise",
+        action="store_const",
+        const="off",
+        help="Disable config-enabled speech denoise for this render",
+    )
+    parser.set_defaults(speech_denoise=None)
     parser.add_argument("--no-content-guard", action="store_true",
                         help="Disable the Xiaohongshu/RED platform-rule lint (not recommended)")
     parser.add_argument("--profile", default=None,
@@ -1386,6 +1468,18 @@ def main():
             f"BGM: {os.path.basename(bgm_path)} "
             f"(volume={bgm_volume}, fade_out={bgm_fade_out}s, ducking={ducking_label})"
         )
+    try:
+        speech_denoise = resolve_speech_denoise(config, args.speech_denoise)
+    except ValueError as exc:
+        print(f"Error: invalid speech denoise config: {exc}", file=sys.stderr)
+        sys.exit(2)
+    if speech_denoise["enabled"]:
+        print(
+            "Speech denoise: "
+            f"{speech_denoise['preset']} "
+            f"(highpass={speech_denoise['highpass_hz']}Hz, "
+            f"reduction={speech_denoise['noise_reduction_db']:g}dB)"
+        )
 
     for idx, speed in enumerate(all_speeds):
         # The first speed in all_speeds is always the primary output (writes to
@@ -1459,27 +1553,12 @@ def main():
                 subtitle_filter = f"ass='{escaped_ass}'"
 
         # --- Build audio filter chain on [merged_a] ---
-        af_parts = []
-        if speed != 1.0:
-            remaining = speed
-            while remaining > 2.0:
-                af_parts.append("atempo=2.0")
-                remaining /= 2.0
-            af_parts.append(f"atempo={remaining:.4f}")
-
-        # Speech loudness chain (day58 lesson: after a speed change the mid section
-        # got noticeably quieter; manual fix at the time was the same chain below).
-        # Disable with --no-loudnorm for music-heavy or already-mastered tracks.
-        if not args.no_loudnorm:
-            af_parts.append("dynaudnorm=f=250:g=15")
-            af_parts.append("acompressor=threshold=-18dB:ratio=3:attack=20:release=200")
-            af_parts.append("loudnorm=I=-16:TP=-1.5:LRA=11")
-
-        # Audio: add silence for cover duration (after speed + loudness adjustment,
-        # so the silent cover region stays at -inf dB instead of being normalised up)
-        if cover_duration > 0:
-            delay_ms = int(cover_duration * 1000)
-            af_parts.append(f"adelay={delay_ms}:all=1")
+        af_parts = build_speech_audio_filters(
+            denoise=speech_denoise,
+            speed=speed,
+            loudness_enabled=not args.no_loudnorm,
+            cover_duration=cover_duration,
+        )
 
         # Note: end cards silence is provided by anullsrc in the concat, no apad needed
 

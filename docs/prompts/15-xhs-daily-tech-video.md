@@ -217,6 +217,9 @@
      --subtitle-style karaoke \
      --output output/day<NN>_master.mp4
 
+   （仅当源口播有稳定空调/风扇/电流底噪并已 A/B 试听时，加 `--speech-denoise light`；
+   噪声明显才试 `medium`，已做过云端/机内降噪或 VAD/noise gate 时保持 off。）
+
 7. python3 scripts/render_qa.py \
      output/day<NN>_master.mp4 \
      --platform douyin \
@@ -359,6 +362,7 @@
 - 永远不要在画面上漏 1.25x / mlx-whisper / loudnorm 这类内部 token
 - 字幕字体走 Source Han Sans SC Heavy 或 STHeiti Medium，不要用 W3
 - 1.25x 之后必须做响度规范化（render_final 默认会做，不要 --no-loudnorm）
+- `--speech-denoise` 默认关闭；只处理稳态底噪，先用 10–20 秒样片比较 off/light，不能用它代替咳嗽、敲击、混响或多人多麦修复
 - 有 BGM 的口播成片用 `--bgm-ducking`，并在正常速度试听旁白入口、停顿恢复和片尾；音乐主导视频可不启用
 - 发布前用 audio_master_report 确认 LUFS / true peak / 长静音，不要只凭耳朵判断
 - subtitle_readability_qa 的 CPS / 行长 WARN 是人工复核提示，不要为了清零机械拆句

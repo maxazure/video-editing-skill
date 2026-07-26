@@ -49,7 +49,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ jump_cut.py              自适应去停顿 + 20% 删除预算 + 可审计 cut list + 30ms 防爆音 fade
    ├─→ edit_preflight.py        render_config/enrich_plan/cut list 渲染前预检 gate
    ├─→ platform_safe_area_qa.py 字幕/PIP/CTA/marker → 平台 UI 安全区 gate + SVG guide
-   ├─→ render_final.py          单次编码渲染（enrich_plan/focus_events/pip_overlays + Heavy 字幕 + 响度规范化 + BGM ducking）
+   ├─→ render_final.py          单次编码渲染（可选口播降噪 + enrich_plan/focus_events/pip_overlays + Heavy 字幕 + 响度规范化 + BGM ducking）
    │                            可选 --versioned-output 防覆盖旧成片
    ├─→ render_qa.py             渲染后黑屏/静帧/静音/尺寸质检 + review packet
    ├─→ retention_rhythm_qa.py   成片 hook 活动 / 长镜头 / 注意力空窗 / 节奏 gate
@@ -120,7 +120,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `jump_cut.py` | 自适应静音检测 → 去停顿计划 / 删除预算 gate / 成片 + 切点音频 fade | `<input.mp4>` `--dry-run` `--cut-list cuts.json` `--strict` / `--output jumpcut.mp4` `--max-removal-ratio 0.20` `--allow-over-budget` |
 | `edit_preflight.py` | render_config/enrich_plan/cut list 渲染前预检 gate | `--config render_config.json` `--enrich-plan enrich_plan.json` `--output edit_preflight.json` `--strict` |
 | `platform_safe_area_qa.py` | 字幕、badge、PIP、CTA、章节卡、marker → 平台 UI 遮挡 gate + SVG guide | `--config` `--enrich-plan` `--elements` `--platform xhs|douyin|wxch` `--guide` `--strict` |
-| `render_final.py` | 单次编码渲染 + enrich_plan + 可选旁白驱动 BGM ducking | `--config render_config.json` `--enrich-plan enrich_plan.json` `--bgm-ducking` `--output final.mp4` |
+| `render_final.py` | 单次编码渲染 + 可选口播降噪 + enrich_plan + 旁白驱动 BGM ducking | `--config render_config.json` `--speech-denoise light` `--enrich-plan enrich_plan.json` `--bgm-ducking` `--output final.mp4` |
 | `render_qa.py` | 渲染后 QA：尺寸/音频/黑屏/静帧/静音 + review packet | `<video.mp4>` `--platform douyin` `--json qa.json` `--review-dir verify/qa` |
 | `retention_rhythm_qa.py` | 成片 hook 活动、长镜头、注意力空窗、等距/快切和字幕节奏风险 | `<video.mp4>` `--timed-text subtitles.json` `--output retention_rhythm_qa.json` `--strict` |
 | `speech_continuity_qa.py` | 成片二次 transcript → 复读 / 近重复 take / 句内口吃 gate | `<final_transcript.json>` `--output speech_continuity_qa.json` `--markdown` `--strict` |
@@ -150,6 +150,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `--profile tech_pro` | 关 | 加载 [scripts/profiles/tech_pro.yaml](scripts/profiles/tech_pro.yaml) 的节奏/字幕/BGM 默认值 |
 | `--primary-speed 1.25` | 1.0 | 主输出速度。`--speed` 仍可加额外变种 |
 | `--no-loudnorm` | 不传 = 开启响度规范化 | 关闭 `dynaudnorm + acompressor + loudnorm` |
+| `--speech-denoise light|medium|strong` | off | 80 Hz 高通 + 6/9/12 dB `afftdn`，在变速/响度/BGM ducking 前清理稳态底噪；`--no-speech-denoise` 覆盖 config |
 | `--no-content-guard` | 不传 = 开启 lint | 关闭平台规则检查（不推荐） |
 | `--subtitle-style karaoke` | normal | 逐词卡拉 OK 字幕 |
 | `--enrich-plan work/enrich_plan.json` | 关 | 可重复传入；自动接入 B-roll / 章节卡 / 贴纸 / 生成图 / focus_events / pip_overlays |
@@ -972,6 +973,14 @@ python3 scripts/render_final.py --config script/render_config.json --output medi
 - `text`：卡片文字内容，用 `\n` 换行
 - `duration`：每张卡片显示时长（秒），建议 3.0-4.0
 - 文字居中显示，字号为正文字幕的 1.4 倍
+
+**口播稳态底噪清理**（`speech_denoise`）：
+- 默认 `off`；只有空调、风扇、电流声、轻微房间底噪相对稳定时才启用 `"light"` / `"medium"` / `"strong"`
+- CLI 可用 `--speech-denoise light`；配置已开启时可用 `--no-speech-denoise` 临时关闭
+- 三档固定 80 Hz、2-pole 高通，FFT reduction 为 6/9/12 dB；`strong` 不会超过 12 dB
+- 顺序固定为 `highpass → afftdn → atempo → dynaudnorm → acompressor → loudnorm → cover delay → BGM ducking/mix`
+- 已做 VAD/noise gate、Adobe Podcast、Descript、RX 或机内强降噪的音轨通常保持 off；数字静音、噪声突变、多麦、瞬态敲击/咳嗽和混响必须另行处理
+- 先渲染 10–20 秒 off/light/medium A/B，戴耳机正常速度试听辅音、尾音和停顿；渲染后继续运行 `audio_master_report.py --strict`
 
 **背景音乐**（`bgm`）：
 - 提供背景音乐文件路径（MP3/M4A/WAV 等 FFmpeg 支持的格式）
