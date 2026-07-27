@@ -38,6 +38,20 @@
      --platform xhs
    # 详见 docs/prompts/64-edit-brief-plan.md
 
+0a. # 可选：如果同一访谈/播客/活动由两台以上设备录制，转写和选片前先统一时间线：
+    python3 scripts/multicam_sync.py \
+      --reference-media origin/<cam-a>.mp4 \
+      --angle origin/<cam-b>.mp4 \
+      --angle origin/<cam-c>.mp4 \
+      --output work/multicam_sync_plan.json \
+      --markdown work/multicam_sync_plan.md \
+      --preview-output output/verify/multicam_sync_preview.mp4 \
+      --apply-preview \
+      --strict
+    # 先看 offset/confidence/有效音轨/common overlap/pairwise divergence，再播放拍手、口型或屏幕动作。
+    # 原片不改；30 分钟以上还要复核头/中/尾，因为 V1 不测相机 clock drift。
+    # 详见 docs/prompts/76-multicam-sync.md
+
 1. python3 scripts/transcribe.py origin/<voice>.mp3 \
      --engine auto --model auto --language zh --word-timestamps --detect-fillers \
      > work/transcript.json
@@ -363,6 +377,7 @@
 - 字幕字体走 Source Han Sans SC Heavy 或 STHeiti Medium，不要用 W3
 - 1.25x 之后必须做响度规范化（render_final 默认会做，不要 --no-loudnorm）
 - `--speech-denoise` 默认关闭；只处理稳态底噪，先用 10–20 秒样片比较 off/light，不能用它代替咳嗽、敲击、混响或多人多麦修复
+- 多机位素材先跑 `multicam_sync.py`；不能只看起点 offset，长片还要检查头/中/尾是否逐渐漂移
 - 有 BGM 的口播成片用 `--bgm-ducking`，并在正常速度试听旁白入口、停顿恢复和片尾；音乐主导视频可不启用
 - 发布前用 audio_master_report 确认 LUFS / true peak / 长静音，不要只凭耳朵判断
 - subtitle_readability_qa 的 CPS / 行长 WARN 是人工复核提示，不要为了清零机械拆句

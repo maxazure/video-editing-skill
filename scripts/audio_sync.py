@@ -73,6 +73,7 @@ def decode_audio_envelope(
     sample_rate: int = 8000,
     frame_ms: float = 40.0,
     max_duration: Optional[float] = None,
+    audio_stream_index: Optional[int] = None,
 ) -> List[float]:
     """Decode media audio to a mono amplitude envelope using FFmpeg."""
 
@@ -81,7 +82,12 @@ def decode_audio_envelope(
     if sample_rate <= 0:
         raise AudioSyncError("sample_rate must be greater than 0")
 
-    cmd = ["ffmpeg", "-v", "error", "-i", path, "-vn", "-ac", "1", "-ar", str(sample_rate)]
+    cmd = ["ffmpeg", "-v", "error", "-i", path]
+    if audio_stream_index is not None:
+        if audio_stream_index < 0:
+            raise AudioSyncError("audio_stream_index must be non-negative")
+        cmd.extend(["-map", f"0:a:{audio_stream_index}"])
+    cmd.extend(["-vn", "-ac", "1", "-ar", str(sample_rate)])
     if max_duration and max_duration > 0:
         cmd.extend(["-t", str(float(max_duration))])
     cmd.extend(["-f", "s16le", "-"])

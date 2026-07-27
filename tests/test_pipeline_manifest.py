@@ -765,6 +765,44 @@ def test_optional_audio_sync_blocks_when_low_confidence(tmp_path):
     assert "1 blocking item(s) in summary.blocking" in gate["notes"]
 
 
+def test_optional_multicam_sync_blocks_when_an_angle_needs_review(tmp_path):
+    _publish_ready_project(tmp_path)
+    _write(tmp_path / "work" / "multicam_sync_plan.json", {
+        "version": "multicam_sync_plan.v1",
+        "summary": {
+            "blocking": 1,
+            "review": 1,
+            "common_overlap_seconds": 42.0,
+        },
+    })
+
+    manifest = build_manifest(str(tmp_path), target_stage="publish_ready")
+
+    assert manifest["status"] == "blocked"
+    assert "multicam_sync" in manifest["blocked_gates"]
+    gate = next(g for g in manifest["gates"] if g["category"] == "multicam_sync")
+    assert "1 blocking item(s) in summary.blocking" in gate["notes"]
+
+
+def test_ready_multicam_sync_is_discovered_without_blocking(tmp_path):
+    _publish_ready_project(tmp_path)
+    _write(tmp_path / "work" / "multicam_sync_plan.json", {
+        "version": "multicam_sync_plan.v1",
+        "summary": {
+            "blocking": 0,
+            "ready": 3,
+            "common_overlap_seconds": 42.0,
+        },
+    })
+
+    manifest = build_manifest(str(tmp_path), target_stage="publish_ready")
+
+    assert "multicam_sync" not in manifest["blocked_gates"]
+    gate = next(g for g in manifest["gates"] if g["category"] == "multicam_sync")
+    assert gate["status"] == "ready"
+    assert gate["artifact_count"] == 1
+
+
 def test_optional_audio_master_report_blocks_when_unresolved(tmp_path):
     _publish_ready_project(tmp_path)
     _write(tmp_path / "output" / "day58_audio_master_report.json", {

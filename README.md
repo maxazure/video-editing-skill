@@ -9,6 +9,7 @@
 - **把口播短视频从“素材堆”推进到“发布包”**：项目目录、source inventory、转写、清稿、分镜、素材清单、渲染配置、字幕 sidecar、QA、标题正文和标签都能落成可审计 artifact。
 - **针对中文社媒口播做过生产化调参**：Heavy CJK 字幕、1.25x 主输出、响度规范化、平台违禁词 lint、章节卡、贴纸、BGM/SFX cue、三平台导出都不是通用 demo。
 - **噪声口播可在单次编码内保守清理**：`render_final.py --speech-denoise light|medium|strong` 会在变速、压缩、响度规范化和 BGM ducking 前处理低频震动与稳态底噪；默认关闭，最大降噪限制为 12 dB。
+- **多机位先同步再剪辑**：`multicam_sync.py` 把两台以上相机/手机/录音设备对齐到同一参考时间线，记录每路 offset、置信度、有效音轨、公共重叠区间和短预览命令；原片不改、不重编码。
 - **事实型内容有 proof deck**：新闻、数据、产品事实或来源页截图可用 `source_receipts.py` 生成 URL/截图复核包，作为发布前 gate。
 - **生成式素材有明确审批和台账**：Codex `image_gen` / GPT Image 2 提示词、Dreamina/Veo/LTX/Wan/Sora 视频提示词、provider 决策、`submit_id` 轮询下载和本地落盘 gate 都先记录再执行。
 - **适合交给强推理模型做长流程代理执行**：在 [GPT-5.5](https://developers.openai.com/api/docs/models/gpt-5.5) 和 [Claude Opus 4.8](https://docs.anthropic.com/en/docs/about-claude/models) 这类面向复杂专业任务、agent 工作流的模型下，本 skill 对 **口播类短视频** 至少可以替代 **80% 的常规视频剪辑工作**。
@@ -118,6 +119,8 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    │                            speaker / audio_event / takes_packed.md / takes_pack.json
    ├─→ audio_sync.py            外录音轨自动对齐 / 替换音轨计划
    │                            scratch audio + lav/recorder track → offset + gate
+   ├─→ multicam_sync.py         多机位 → 同一参考时间线 / 公共重叠区间 / 对齐预览
+   │                            最响音轨选择 / pairwise 一致性 / source-safe gate
    │
    ├─→ scene_boundaries.py      fixed/adaptive 视觉切点 + 逐切点 evidence
    ├─→ visual_dedupe.py         多来源场景 → 感知哈希重复组 / 保留建议 / review gate
@@ -824,6 +827,27 @@ python3 scripts/audio_sync.py \
 ```
 
 `alignment.offset_seconds` 为正表示延迟外录音轨；为负表示裁掉外录音轨开头。自动估计低置信度时 status 会变成 `review`，也可以用 `--offset 0.18` 手动指定偏移。`pipeline_manifest.py` 会发现 `audio_sync_plan.json` 并在低置信度或缺文件时阻塞发布 gate。
+
+### 🎥 Multicam Sync — 多机位可逆同步计划
+[`scripts/multicam_sync.py`](scripts/multicam_sync.py) · [详细文档](docs/prompts/76-multicam-sync.md)
+
+两台以上设备录下同一场访谈、播客、活动或演示时，先选一台参考机位，再把其他机位对齐到它的时间线：
+
+```bash
+python3 scripts/multicam_sync.py \
+  --reference-media origin/cam-a.mp4 \
+  --angle origin/cam-b.mp4 \
+  --angle origin/cam-c.mp4 \
+  --output work/multicam_sync_plan.json \
+  --markdown work/multicam_sync_plan.md \
+  --preview-output output/verify/multicam_sync_preview.mp4 \
+  --apply-preview \
+  --strict
+```
+
+输出 `multicam_sync_plan.v1`，每路记录 `alignment.offset_seconds`、置信度、参考/源时间覆盖区间和实际采用的 `0:a:N`。多音轨相机会用中段 `mean_volume` 自动选择最响音轨，也可用 `--audio-stream "origin/cam-b.mp4=2"` 覆盖。三路以上自动对齐会额外直接比较非参考机位，若“参考机位推导 offset”与“机位间直接估计”相差超过阈值，就进入 review gate。`--manual-offset "origin/cam-c.mp4=1.24"` 可接入无音轨机位或已经人工确认的拍板点。
+
+原片始终不修改；只有显式 `--apply-preview` 才会生成短网格预览。正 offset 表示该机位的 `t=0` 位于参考时间线更晚的位置，预览按 `source_local = reference_time - offset` 读取每路画面。V1 只估计一个固定 offset，不测相机时钟漂移；30 分钟以上素材会警告，必须在头/中/尾分别复核。`pipeline_manifest.py` 会发现该计划并拦截缺文件、低置信度、无公共重叠或 pairwise 不一致。
 
 ### 📝 Subtitle Pack — SRT/VTT/ASS 字幕交付
 [`scripts/subtitle_pack.py`](scripts/subtitle_pack.py) · [详细文档](docs/prompts/29-subtitle-pack.md)
@@ -2234,6 +2258,7 @@ pytest tests/test_screen_focus.py -v        # 录屏点击聚焦计划 + render 
 pytest tests/test_subtitle_pack.py -v       # SRT/VTT/ASS/JSON 字幕交付包
 pytest tests/test_srt_edit_plan.py -v       # SRT 编辑指令转 render_config/cut list
 pytest tests/test_audio_cue_sheet.py -v     # BGM/SFX 音频设计清单
+pytest tests/test_multicam_sync.py -v       # 多机位 offset / 最响音轨 / pairwise / 真实预览
 pytest tests/test_speech_denoise.py -v      # 口播降噪 preset / 顺序 / 真实 FFmpeg SNR smoke
 pytest tests/test_bgm_ducking.py -v         # 旁白驱动 BGM sidechain + 真实 FFmpeg smoke
 pytest tests/test_color_grade.py -v         # 调色计划 + render_final 接入
@@ -2243,6 +2268,22 @@ pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 pytest tests/test_review_dashboard.py -v    # 静态人工复核面板 + gate queue
 pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 gate
 ```
+
+### 2026-07-28 自动化升级记录（Source-safe Multicam Sync）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`jianshuo/claude-skills` 的 wjs-syncing-multicam](https://github.com/jianshuo/claude-skills/blob/main/wjs-syncing-multicam/SKILL.md) | 把多机位同步作为独立 skill；只写可逆 offset/coverage 元数据，不生成一批有损“同步副本” | 新增一份项目级 `multicam_sync_plan.v1`，原片不改；只有明确 `--apply-preview` 才生成短审查副本 |
+| [`jianshuo/polysync`](https://github.com/jianshuo/polysync) | 用音频能量包络抵抗设备增益/频响差异；多音轨专业相机先找真正有声的轨道，并明确记录 overlap | 复用现有标准库包络相关算法；新增最响 `0:a:N` 选择、每路 reference/source coverage 和所有机位公共重叠区间 |
+| [`samuelgursky/davinci-resolve-mcp` 的 multicam setup helper](https://github.com/samuelgursky/davinci-resolve-mcp/blob/main/docs/guides/multicam-setup-guide.md) | 先 dry-run/分析，再用 record offset 准备多机位；保留源素材，并要求视觉/听觉复核后才进入 Resolve 原生 multicam | 输出可审计 JSON/Markdown、显式 preview 命令和 manifest gate；本轮不冒充 Resolve 原生 multicam clip，也不自动切镜 |
+
+新增/调整能力：新增 [`scripts/multicam_sync.py`](scripts/multicam_sync.py)，以 `--reference-media` 为公共时钟，重复 `--angle` 对齐任意多路相机/手机/录音素材。自动模式复用 `audio_sync.py` 的 8 kHz 音频包络相关，默认搜索 ±60 秒；多音轨输入用 FFmpeg `volumedetect` 选择中段最响轨，也可逐文件覆盖。报告保存每路 offset、score/confidence、音轨选择证据、reference/source coverage、公共重叠区间、source-safe 声明和短网格预览命令。三路以上自动素材会做非参考机位 pairwise 传递一致性检查；低置信度、无重叠、缺文件或 offset 不一致写入 `summary.blocking`。手工 offset 可接无音轨机位，但保留“未独立验证”警告。`pipeline_manifest.py` 新增 `multicam_sync` 可选阻塞 gate；`audio_sync.decode_audio_envelope()` 只增加可选音轨 index，旧调用保持不变。
+
+使用方式：运行 `python3 scripts/multicam_sync.py --reference-media origin/cam-a.mp4 --angle origin/cam-b.mp4 --angle origin/cam-c.mp4 --output work/multicam_sync_plan.json --markdown work/multicam_sync_plan.md --preview-output output/verify/multicam_sync_preview.mp4 --apply-preview --strict`。先查看 Markdown 的 offset、confidence、audio stream、coverage 和 pairwise divergence，再完整播放预览的拍手、口型或屏幕动作；计划通过后才把 offset 接入 NLE/OTIO/FCPXML 或后续多机位剪辑。有效麦克风不是首轨时用 `--audio-stream "origin/cam-b.mp4=2"`；无音轨或已有拍板点时用 `--manual-offset "origin/cam-c.mp4=1.24"`。V1 不做自动切镜、漂移校正、timecode jam 读取或视频特征同步，长片必须复核头/中/尾。
+
+验证结果：新增 `tests/test_multicam_sync.py` 12 项，并更新 `audio_sync` / `pipeline_manifest` 回归；定向 `.venv/bin/python -m pytest tests/test_multicam_sync.py tests/test_audio_sync.py tests/test_pipeline_manifest.py -q` 通过 `73 passed in 1.40s`，最终项目测试 `.venv/bin/python -m pytest tests -q` 通过 `652 passed in 8.21s`。真实 FFmpeg smoke 把同一组音画整体延后 `0.4s`，脚本得到 `offset=-0.4`、`confidence=1.0`、公共 overlap `2.6s`、`blocking=0`，成功渲染 1 秒 960×270 双栏预览；对齐后左右画面 `SSIM All=0.974652`。另一个真实多音轨 smoke 在两条 AAC 轨中正确选择更响的 `0:a:1`，并覆盖无音轨机位 + 手工 offset；预览失败回归确认报告仍写入，且 `summary.preview_failed=1`、`preview_render_failed` 和 strict 阻断同时生效。`.venv/bin/python -m compileall -q scripts tests`、CLI help、manifest category、skill `quick_validate.py` 和 `git diff --check` 全部通过。
 
 ### 2026-07-27 自动化升级记录（Opt-in Speech Denoise）
 
@@ -2540,6 +2581,7 @@ pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 g
 | **70** | **[Subtitle Readability QA](docs/prompts/70-subtitle-readability-qa.md)** | **检查最终字幕 CPS、时长、行长、重叠和媒体越界** |
 | **71** | **[Reference Frame Preflight](docs/prompts/71-reference-frame-preflight.md)** | **检查视频生成首帧/style key 的尺寸、方向、画幅和透明背景** |
 | **75** | **[Speech Denoise](docs/prompts/75-speech-denoise.md)** | **可选清理口播低频震动与稳态底噪** |
+| **76** | **[Multicam Sync](docs/prompts/76-multicam-sync.md)** | **多机位 offset / coverage / 对齐预览和 gate** |
 | **43** | **[Audio Cue Sheet](docs/prompts/43-audio-cue-sheet.md)** | **规划 BGM/SFX 和生成审批** |
 | **45** | **[Video Prompt Pack](docs/prompts/45-video-prompt-pack.md)** | **视频生成提示词包 + paid approval gate** |
 | **46** | **[Generation Task Log](docs/prompts/46-generation-task-log.md)** | **跟踪 submit_id、轮询、下载和本地落盘** |
@@ -2592,6 +2634,7 @@ scripts/
 ├── transcribe.py               Whisper 转写
 ├── takes_pack.py               多 take / Scribe phrase + audio event 阅读视图 [V3]
 ├── audio_sync.py               外录音轨自动对齐 / 替换音轨计划        [V3]
+├── multicam_sync.py            多机位可逆同步计划 / 对齐预览          [V3]
 ├── video_understanding.py      抽样帧 + 可选 YOLO 检测 artifact       [V3]
 ├── highlight_picker.py         长视频精华候选 / brief 定向找片段      [V3]
 ├── audio_boundary_snap.py      词/句末/静音剪辑边界校正              [V3]

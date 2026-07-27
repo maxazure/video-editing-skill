@@ -390,6 +390,18 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         blocks_when_present=True,
     ),
     ArtifactDef(
+        "multicam_sync",
+        "Multicam Sync",
+        (
+            "**/multicam_sync.json",
+            "**/*_multicam_sync.json",
+            "**/multicam_sync_plan.json",
+            "**/*_multicam_sync_plan.json",
+        ),
+        "Run multicam_sync.py and resolve low-confidence, missing, or pair-inconsistent angles before editing.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "chapter_markers",
         "Chapter Markers",
         ("**/chapters.json", "**/chapters-youtube.txt", "**/chapters.ffmetadata"),
@@ -563,6 +575,7 @@ def evaluate_category(definition: ArtifactDef, artifacts: Sequence[ArtifactRecor
             "source_receipts",
             "audio_cue_sheet",
             "audio_sync",
+            "multicam_sync",
             "audio_master_report",
             "publish_package",
             "edit_preflight",

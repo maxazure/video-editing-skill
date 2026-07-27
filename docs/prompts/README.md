@@ -77,6 +77,7 @@
 | 73 | [Platform Safe Area QA 平台 UI 安全区门禁](73-platform-safe-area-qa.md) | render_config/enrich_plan/custom bbox → 字幕、PIP、CTA、marker 平台遮挡 gate + SVG guide |
 | 74 | [Edit Compare 原片/成片 source-time 对照](74-edit-compare.md) | source + final + keep_segments → 双栏可播放审片视频、删段置黑和像素映射验证 |
 | 75 | [Speech Denoise 口播稳态底噪清理](75-speech-denoise.md) | `render_final.py` 单次编码内可选 highpass + afftdn，默认关闭 |
+| 76 | [Multicam Sync 多机位可逆同步](76-multicam-sync.md) | 2+ 设备 → offset / coverage / 有效音轨 / pairwise / 对齐预览 gate |
 
 ## 快速上手
 
@@ -151,3 +152,4 @@
 | 多机位、多 take 或 B-roll 里有重复镜头，想先去重候选 | [72-Visual Dedupe](72-visual-dedupe.md) |
 | 发布前想检查字幕、PIP、CTA 或点击标记会不会被平台 UI 挡住 | [73-Platform Safe Area QA](73-platform-safe-area-qa.md) |
 | 想逐秒对照原片和最终成片到底保留、删除了什么 | [74-Edit Compare](74-edit-compare.md) |
+| 同一访谈/活动有多个机位，需要先对齐到同一时间线 | [76-Multicam Sync](76-multicam-sync.md) |
