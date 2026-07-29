@@ -149,6 +149,9 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    ├─→ source_receipts.py       事实 claim → URL/截图 source deck
    │                            Markdown/HTML proof deck + publish gate
    │
+   ├─→ beat_sync.py             BGM beat-grid → 可审计 program-time 剪辑骨架
+   │                            或把已有切点吸附到附近 beat
+   │
    ├─→ auto_enrich.py           调度 B-roll / 章节卡 / 贴纸 / 强调点 / BGM 卡点
    │     │ transition / entity match / emphasis cue / silence boundary / beat snap
    │     │
@@ -359,12 +362,28 @@ python3 scripts/transcript_review.py apply \
 |---|---|
 | [`auto_broll.py`](scripts/auto_broll.py) | 转折词（但是/然而/关键是/重点来了）/ 实体匹配素材库 / 长镜头守卫 |
 | [`auto_chapter_cards.py`](scripts/auto_chapter_cards.py) | `## ` 章节标题 / 静音 ≥1.5s 边界 / Pillow PNG 渲染 |
-| [`beat_sync.py`](scripts/beat_sync.py) | librosa beat_track + ±200ms snap（缺时回落固定网格） |
+| [`beat_sync.py`](scripts/beat_sync.py) | BGM → `beat_edit_plan.v1` 时间槽 / Markdown review，或把已有切点做 ±200ms snap；缺 `librosa` 时显式标记固定网格 fallback |
 | [`auto_stickers.py`](scripts/auto_stickers.py) | 情绪关键词→emoji 池（excited 🚀✨🔥 / doubt 🤔 / data 📈 等） |
 | [`auto_emphasis.py`](scripts/auto_emphasis.py) | 问句 / 数字 claim / 转折 / 结论 / 风险提醒 / 停顿恢复 → `emphasis_cues[]` |
 | [`auto_enrich.py`](scripts/auto_enrich.py) | 编排上面模块，输出综合 plan JSON（含 emphasis 和 imagegen cues） |
 
 `render_final.py --enrich-plan work/enrich_plan.json` 会把 plan 里的 B-roll、章节卡、贴纸、强调点和已生成图片 cue 自动接回单次渲染；`emphasis_cues[]` 会转成 timed badge 和 marker-free center push-in。`--enrich-plan` 可重复传入，用来叠加 `screen_focus_plan.json` 这类独立计划。没有实际文件的 imagegen cue 会保留为提示，不会阻塞导出。
+
+音乐视频、产品 montage 或明确要求“按 BGM 卡点”时，可先让 `beat_sync.py` 从音乐直接生成剪辑骨架：
+
+```bash
+python3 scripts/beat_sync.py \
+  --bgm origin/bgm.mp3 \
+  --generate-plan \
+  --duration 30 \
+  --beats-per-cut 4 \
+  --min-segment 0.75 \
+  --max-segment 3 \
+  --output work/beat_edit_plan.json \
+  --markdown work/beat_edit_plan.md
+```
+
+默认每 4 拍提出一个 program-time 切点，最短/最长镜头守卫会改选附近 beat；找不到合适 beat 才写入 `duration_guard`。输出只定义 `cut_times[]`、`segments[]` 和逐切点 evidence，不选择素材、不渲染、不修改源文件。`detection.method=fallback_grid` 时状态为 `review`，必须实际听音乐复核；确认后再把素材映射进 `render_config`、EDL 或 OTIO。已有 cut times 继续使用 `--cuts ... --window 0.2`。
 
 ### 🧱 Project Bootstrap — 项目启动与素材导入
 [`scripts/project_bootstrap.py`](scripts/project_bootstrap.py) · [详细文档](docs/prompts/61-project-bootstrap.md)
@@ -2232,6 +2251,7 @@ pytest tests/test_platform_safe_area_qa.py -v # 字幕 / PIP / CTA / marker 平�
 pytest tests/test_audio_master_report.py -v # 成片响度 / true peak / LRA 门禁
 pytest tests/test_render_enrich_plan.py -v  # enrich_plan 自动接入渲染
 pytest tests/test_auto_emphasis.py -v      # 问句/数字/转折/结论 emphasis cues
+pytest tests/test_beat_sync.py -v          # BGM → beat edit slots / fallback review / cut snap
 pytest tests/test_takes_pack.py -v          # 多 take phrase-level 阅读视图
 pytest tests/test_project_bootstrap.py -v   # 项目启动与 source inventory
 pytest tests/test_transcript_review.py -v  # 文本/HTML 同步视频 transcript 校稿回路
@@ -2268,6 +2288,23 @@ pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 pytest tests/test_review_dashboard.py -v    # 静态人工复核面板 + gate queue
 pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 gate
 ```
+
+### 2026-07-30 自动化升级记录（Beat Edit Plan）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`genchebur90-debug/video-editor-skill` 的 rhythm.py](https://github.com/genchebur90-debug/video-editor-skill/blob/main/video-editor/rhythm.py) | 不只检测 BPM，还按 musical phrase 直接提出 beat-snapped cut plan，并用不同 `beats_per_cut` 控制节奏密度 | 补上本项目原来只有“吸附已有切点”、不能从 BGM 起草剪辑骨架的缺口；默认每 4 拍一刀，同时受最短/最长镜头约束 |
+| [`carrxau/clip-studio` 的 beat grid](https://github.com/carrxau/clip-studio/blob/main/clip-studio/SKILL.md) | 用绝对帧/时间边界表达 beat grid，先展示 EDL 再渲染，避免逐段取整造成累积漂移 | 输出单一 program-time `cut_times[]` / `segments[]`，供人工复核后再映射素材；本轮不直接渲染或改动原片 |
+| [`gitethanwoo/video-editing` 的 video_analyzer.py](https://github.com/gitethanwoo/video-editing/blob/main/skills/analyze-video-editing/scripts/video_analyzer.py) | `librosa` 节拍结果明确定位为导航证据、要求人工复核；兼容新版 `beat_track` 返回的一元素 ndarray tempo | 新增 detector provenance 和 fallback 警告，并修复 `librosa 0.11` tempo ndarray 被旧 `float(...)` 路径误判为失败的问题 |
+| [`WhiteTowerAI/cut-as-code`](https://github.com/WhiteTowerAI/cut-as-code/blob/main/AGENTS.md) | 把 JSON cut plan 当作可读、可 diff、可重跑的“剪辑代码”，由脚本保证时间精度、由人决定内容 | 新增 `beat_edit_plan.v1` JSON + Markdown review；计划只提供节奏时间槽和逐切点 evidence，不冒充已完成内容剪辑 |
+
+新增/调整能力：扩展 [`scripts/beat_sync.py`](scripts/beat_sync.py)，保留原有 `--cuts` ±200 ms 吸附模式，并新增 `--generate-plan`。计划可从 BGM 时长或显式 `--duration` 生成 program-time 时间槽，默认每 4 拍提出切点；`--min-segment` / `--max-segment` 会在附近 beat 中改选，完全没有合适 beat 时才加入 `duration_guard`，并保护结尾最短镜头。JSON 保存 detector method、beat times、1-based beat index、选择原因、warnings 和 summary；Markdown 提供可直接审片的 slot 表。缺少 `librosa`、音频读取失败或 detector 失败时仍可用固定 BPM 网格继续，但显式写成 `detection.method=fallback_grid`、`status=review`，不会伪装成真实测得节拍。新版 `librosa` 的一元素 ndarray tempo 也已兼容。
+
+使用方式：运行 `python3 scripts/beat_sync.py --bgm origin/bgm.mp3 --generate-plan --duration 30 --beats-per-cut 4 --min-segment 0.75 --max-segment 3 --output work/beat_edit_plan.json --markdown work/beat_edit_plan.md`。先听 BGM，并逐项核对 Markdown 的 cut time、beat index、duration guard 和 warning；确认后再把素材映射进这些时间槽或转换到 render config / EDL / OTIO。该命令不选择镜头、不渲染、不修改源文件。已有切点仍运行 `python3 scripts/beat_sync.py --bgm origin/bgm.mp3 --cuts work/cuts.json --window 0.2 --output work/cuts_snapped.json`。
+
+验证结果：新增/扩展 `tests/test_beat_sync.py`，覆盖旧 cut snap、固定网格、每 4 拍选点、镜头时长守卫、最短尾镜头、fallback review、Markdown、CLI 输出、非法约束和 `librosa` ndarray tempo；定向 `.venv/bin/python -m pytest tests/test_beat_sync.py tests/test_auto_enrich.py -q` 通过 `21 passed in 1.77s`，最终 `.venv/bin/python -m pytest tests -q` 通过 `664 passed in 11.29s`。真实 FFmpeg click track + `librosa 0.11.0` smoke 检测到 `119.68 BPM / 15 beats`，输出 `2.016s / 4.011s / 6.016s` 三个切点、4 个时间槽、beat index `4 / 8 / 12`，`status=ready`、`warnings=0`；缺失音频路径 smoke 则正确退回 120 BPM 固定网格并标记 `status=review`。`.venv/bin/python -m compileall -q scripts tests`、CLI help、skill `quick_validate.py` 和 `git diff --check` 全部通过。
 
 ### 2026-07-28 自动化升级记录（Source-safe Multicam Sync）
 
@@ -2649,7 +2686,7 @@ scripts/
 ├── hook_variants.py            前三秒 hook 批量角度 + 风险检查     [V3]
 ├── auto_broll.py               B-roll 调度                      [V3]
 ├── auto_chapter_cards.py       章节卡渲染                       [V3]
-├── beat_sync.py                BGM 卡点                         [V3]
+├── beat_sync.py                BGM beat edit slots / 切点吸附   [V3]
 ├── audio_cue_sheet.py          BGM/SFX 音频设计清单               [V3]
 ├── auto_stickers.py            情绪→贴纸                        [V3]
 ├── auto_emphasis.py            问句/数字/转折/结论强调点          [V3]

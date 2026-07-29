@@ -32,6 +32,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ rewrite_script.py        LLM 重组 5 段式（hook/pain/turn/value/cta）
    ├─→ content_guard.py         80+ 条平台雷区 lint
    ├─→ source_receipts.py       事实 claim → URL/截图 source deck + publish gate
+   ├─→ beat_sync.py             BGM beat-grid → 可审计剪辑骨架，或吸附已有切点
    ├─→ auto_enrich.py           B-roll / 章节卡 / 贴纸 / 强调点 / BGM 卡点 / imagegen 提示词
    │       └─→ Codex imagegen   gpt-image-2 自动生图（抽象概念配图）
    ├─→ audio_cue_sheet.py       BGM / SFX 音频设计清单 / 生成审批 gate
@@ -107,7 +108,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `auto_chapter_cards.py` | 章节卡 PNG | `--script` `--audio` `--style` `--output-dir` |
 | `auto_stickers.py` | 情绪→贴纸 | `--transcript` `--min-interval` |
 | `auto_emphasis.py` | 问句/数字/转折/结论 → badge + subtle push-in cues | `--transcript` `--output` `--markdown` |
-| `beat_sync.py` | BGM 卡点 | `--bgm` `--cuts` `--window` |
+| `beat_sync.py` | BGM → beat edit slots / Markdown review，或吸附已有切点 | `--bgm --generate-plan --beats-per-cut 4 --output ... --markdown ...` / `--cuts --window` |
 | `auto_enrich.py` | 编排 B-roll / 贴纸 / 强调点 / 章节卡 / imagegen cues | `--transcript` `--clean-script` `--bgm` `--output` |
 | `imagegen_hint.py` | 检测抽象概念 → 产 gpt-image-2 提示词 | `--transcript` `--clean-script` `--codex-md` |
 | `audio_cue_sheet.py` | transcript → BGM/SFX cue、生成审批和音频门禁 | `--transcript` `--asset-root` `--require-local-music` `--require-local-sfx` `--strict` |
@@ -908,6 +909,14 @@ python3 scripts/render_final.py --config script/render_config.json --output medi
 - `pip_overlays[]` 会转成定时 facecam / camera 小窗；camera audio 默认忽略，主音频仍来自 render config
 - 没有实际生成文件的 imagegen cue 只作为提示输出，不会阻塞渲染
 - 合并后的可见文字仍会走 `_internal_text_guard` 和 `content_guard.py`
+
+**Beat Edit Plan 节拍剪辑骨架**（音乐视频 / 卡点 montage 可选）：
+- 运行 `beat_sync.py --bgm origin/bgm.mp3 --generate-plan --duration 30 --beats-per-cut 4 --min-segment 0.75 --max-segment 3 --output work/beat_edit_plan.json --markdown work/beat_edit_plan.md`
+- 输出 `beat_edit_plan.v1`：`cut_times[]`、program-time `segments[]`、逐切点 `boundary_evidence[]`、检测方法和 `summary`
+- 默认每 4 拍提出一个切点；最短/最长镜头守卫会优先改选附近 beat，实在没有合适 beat 才插入 `duration_guard`
+- `librosa` 不可用或读取失败时只生成固定 BPM 网格，并把状态标为 `review`；必须听音乐复核，不能把 fallback 当作真实节拍
+- 计划只定义时间槽，不选择素材、不渲染、不改源文件；确认后再把镜头映射进 `render_config` / EDL / OTIO
+- 已有 cut times 仍使用原命令 `beat_sync.py --bgm origin/bgm.mp3 --cuts work/cut_times.json --window 0.2`
 
 **PIP Overlay 录屏摄像头小窗**（录屏教程可选）：
 - 运行 `pip_overlay.py --camera origin/facecam.mp4 --segment "0,18,bottom_right" --segment "18,42,top_right" --sync-offset 0.18 --output work/pip_overlay_plan.json --markdown work/pip_overlay_plan.md`

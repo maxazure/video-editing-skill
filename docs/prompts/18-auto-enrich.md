@@ -8,7 +8,7 @@ V3 加入了一套调度模块，决定**在哪儿**给视频加 B-roll / 章节
 |---|---|---|
 | `auto_broll.py` | B-roll 切片 cue | 转折词 / 实体匹配素材库 / 长镜头守卫 |
 | `auto_chapter_cards.py` | 1080×1920 PNG | `## ` 标题 / 静音 ≥1.5s 边界 |
-| `beat_sync.py` | 节拍时间表 + 对齐函数 | librosa beat_track，缺时回落到固定 BPM 网格 |
+| `beat_sync.py` | beat edit slots + 对齐函数 | 从 BGM 生成可审计剪辑骨架，或吸附已有切点；缺 `librosa` 时显式标记固定网格 fallback |
 | `auto_stickers.py` | emoji 贴纸 cue | 情绪关键词分类（excited/doubt/conclusion/data/warning/joke） |
 | `auto_emphasis.py` | emphasis cue | 问句 / 数字 claim / 转折 / 结论 / 风险提示 / 停顿后恢复 |
 | `auto_enrich.py` | 综合 plan JSON | 调用以上模块，并对 broll/sticker/emphasis 跑 beat snap |
@@ -63,6 +63,17 @@ python3 scripts/auto_chapter_cards.py \
   --audio work/voice_clean.wav \
   --total-duration 90 \
   --output-dir work/cards/
+
+# 从 BGM 直接生成 program-time 剪辑骨架
+python3 scripts/beat_sync.py \
+  --bgm origin/bgm.mp3 \
+  --generate-plan \
+  --duration 30 \
+  --beats-per-cut 4 \
+  --min-segment 0.75 \
+  --max-segment 3 \
+  --output work/beat_edit_plan.json \
+  --markdown work/beat_edit_plan.md
 
 # 对已有 cuts 做卡点对齐
 python3 scripts/beat_sync.py \
@@ -125,8 +136,12 @@ python3 scripts/auto_emphasis.py \
 ### beat_sync
 
 - 用 librosa 提取节拍；没装时回落到 120 bpm 固定网格
+- `--generate-plan` 直接输出 `beat_edit_plan.v1`：program-time `cut_times[]`、`segments[]`、逐切点 `boundary_evidence[]` 和 Markdown review
+- 默认每 `--beats-per-cut 4` 拍提出一个切点；`--min-segment` / `--max-segment` 会优先改选附近 beat，实在没有才插入 `duration_guard`
+- fallback grid 会把 `status` 设为 `review` 并写 warning，不能当成真实音乐检测结果；必须听 BGM 复核每个边界
+- 计划不选择镜头、不渲染、不改源文件；确认时间槽后再把素材映射进 `render_config`、EDL 或 OTIO
 - snap 窗口默认 ±200ms
-- 输出仍是 [{start, ...}] 结构，便于直接喂回 render_final
+- 已有 `--cuts` 模式的输出仍保持 `[{start, ...}]` 结构，兼容原流程
 
 ## 把 enrich plan 接回 render
 

@@ -30,7 +30,7 @@
 | 15 | [小红书每日科技短视频（V3 完整流水线）](15-xhs-daily-tech-video.md) | 一条提示词跑完转写 → 重组 → 丰富 → 渲染 → 多平台 → 文案 |
 | 16 | [Content Guard 平台雷区 lint](16-content-guard.md) | 自动检测违禁词/导流/医美/财富诱导，导出前拦截 |
 | 17 | [一条视频 × 三平台导出](17-multi-platform.md) | 主视频 → 小红书 3:4 / 抖音 / 视频号 三版本 |
-| 18 | [Auto-Enrich 自动丰富](18-auto-enrich.md) | 自动 B-roll / 章节卡 / 贴纸 / 强调点 / BGM 卡点 |
+| 18 | [Auto-Enrich 自动丰富](18-auto-enrich.md) | 自动 B-roll / 章节卡 / 贴纸 / 强调点；BGM 生成 beat edit slots 或吸附已有切点 |
 | 19 | [AI 生图（gpt-image-2 / Codex imagegen）](19-imagegen.md) | 抽象概念自动配图，提示词适配 gpt-image-2 |
 | 20 | [Render QA 渲染后质检](20-render-qa.md) | 检查尺寸/音频/黑屏/静帧/静音，批量留 QA JSON |
 | 21 | [Jump Cut 自动去停顿](21-jump-cut.md) | 自适应静音检测，先出 cut list，再一次渲染去停顿成片，含 20% 删除预算和切点音频 fade |

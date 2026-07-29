@@ -12,7 +12,7 @@
 你要 AI 帮你完成：
 1. 转写口播 + 标记口误/填充词/长停顿
 2. 让 LLM 重组成符合小红书爆款公式的 5 段式结构
-3. 自动选 B-roll、加章节卡、贴贴纸、卡点对齐 BGM
+3. 自动选 B-roll、加章节卡、贴贴纸；音乐主导内容可从 BGM 先生成节拍剪辑骨架
 4. 用 Heavy 字体烧字幕（永远不漏内部 token 到画面）
 5. 跑响度规范化 + atempo 加速
 6. 导出 3 个平台版本（小红书 3:4、抖音 9:16、视频号 ≤60s）
@@ -103,6 +103,18 @@
      --clean-script work/clean_script.md \
      --bgm origin/<bgm>.mp3 \
      --output work/enrich_plan.json
+
+4a. # 仅音乐视频 / 产品 montage / 明确要求卡点时：先生成可审计时间槽，不自动选素材或渲染
+    python3 scripts/beat_sync.py \
+      --bgm origin/<bgm>.mp3 \
+      --generate-plan \
+      --duration <成片秒数> \
+      --beats-per-cut 4 \
+      --min-segment 0.75 \
+      --max-segment 3 \
+      --output work/beat_edit_plan.json \
+      --markdown work/beat_edit_plan.md
+    # detection.method=fallback_grid 时必须听音乐逐切点复核；确认后再把素材映射进 render_config。
 
 4b. # 如果 enrich_plan.json 的 imagegen[] 非空 → 用 Codex 内置 imagegen 生图：
     # 生图优先使用 Codex 内置 `image_gen` 工具，即 OpenAI GPT Image 2（`gpt-image-2`）。
@@ -378,6 +390,7 @@
 - 1.25x 之后必须做响度规范化（render_final 默认会做，不要 --no-loudnorm）
 - `--speech-denoise` 默认关闭；只处理稳态底噪，先用 10–20 秒样片比较 off/light，不能用它代替咳嗽、敲击、混响或多人多麦修复
 - 多机位素材先跑 `multicam_sync.py`；不能只看起点 offset，长片还要检查头/中/尾是否逐渐漂移
+- 音乐主导内容可先跑 `beat_sync.py --generate-plan`；固定 BPM fallback 只能作为复核草稿，不能冒充真实节拍检测
 - 有 BGM 的口播成片用 `--bgm-ducking`，并在正常速度试听旁白入口、停顿恢复和片尾；音乐主导视频可不启用
 - 发布前用 audio_master_report 确认 LUFS / true peak / 长静音，不要只凭耳朵判断
 - subtitle_readability_qa 的 CPS / 行长 WARN 是人工复核提示，不要为了清零机械拆句
