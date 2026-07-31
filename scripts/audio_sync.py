@@ -72,6 +72,7 @@ def decode_audio_envelope(
     *,
     sample_rate: int = 8000,
     frame_ms: float = 40.0,
+    start_seconds: float = 0.0,
     max_duration: Optional[float] = None,
     audio_stream_index: Optional[int] = None,
 ) -> List[float]:
@@ -81,8 +82,13 @@ def decode_audio_envelope(
         raise AudioSyncError("frame_ms must be greater than 0")
     if sample_rate <= 0:
         raise AudioSyncError("sample_rate must be greater than 0")
+    if not math.isfinite(start_seconds) or start_seconds < 0:
+        raise AudioSyncError("start_seconds must be finite and non-negative")
 
-    cmd = ["ffmpeg", "-v", "error", "-i", path]
+    cmd = ["ffmpeg", "-v", "error"]
+    if start_seconds > 0:
+        cmd.extend(["-ss", str(float(start_seconds))])
+    cmd.extend(["-i", path])
     if audio_stream_index is not None:
         if audio_stream_index < 0:
             raise AudioSyncError("audio_stream_index must be non-negative")

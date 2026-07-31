@@ -20,7 +20,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ takes_pack.py            多 take / Scribe transcript → phrase-level 阅读视图
    │                            speaker / audio_event 编辑节拍
    ├─→ audio_sync.py            外录音轨自动对齐 / 替换音轨计划
-   ├─→ multicam_sync.py         多机位 → 参考时间线 / 公共 overlap / 对齐预览 gate
+   ├─→ multicam_sync.py         多机位 → 参考时间线 / 时钟漂移证据 / 对齐预览 gate
    ├─→ scene_boundaries.py      fixed/adaptive 视觉切点 + 逐切点 evidence
    ├─→ visual_dedupe.py         多来源场景 → 感知哈希重复组 / 保留建议 / review gate
    ├─→ video_understanding.py   抽样帧 + 可选 YOLO 检测 / tracks / scene_tags
@@ -92,7 +92,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `source_receipts.py` | 事实 claim → URL/截图 proof deck、Markdown/HTML 和发布 gate | `--claims source_claims.json` `--html` `--require-primary-source` `--strict` |
 | `takes_pack.py` | 多 take / 顶层 Scribe words → phrase-level Markdown/JSON，保留 speaker/audio events | `--transcript take1=...` `--transcripts-dir` `--json` `--break-gap` |
 | `audio_sync.py` | scratch audio + 外录音轨 → offset / 替换音轨命令 / gate | `--reference-media` `--external-audio` `--replace-output` `--apply` `--strict` |
-| `multicam_sync.py` | 多机位 → offset/coverage/音轨选择/pairwise 一致性/对齐预览 gate | `--reference-media` `--angle` `--manual-offset` `--preview-output` `--apply-preview` `--strict` |
+| `multicam_sync.py` | 多机位 → offset/coverage/音轨选择/pairwise/可选时钟漂移/对齐预览 gate | `--reference-media` `--angle` `--manual-offset` `--measure-clock-drift` `--preview-output` `--apply-preview` `--strict` |
 | `rough_cut.py` | transcript 粗剪：去口头禅/重复句 | `--transcript` `--cut-list` / `--input` `--output` |
 | `scene_boundaries.py` | FFmpeg fixed/adaptive scene score → 场景边界 + cut evidence | `--method adaptive` `--adaptive-threshold` `--min-scene-score` `--min-scene-duration` |
 | `visual_dedupe.py` | 多来源场景三点感知哈希 → 重复组 / 保留建议 / review gate | `--manifest` / `<videos...>` `--hamming-threshold` `--include-same-source` `--strict` |
@@ -932,11 +932,13 @@ python3 scripts/render_final.py --config script/render_config.json --output medi
 - 如果自动估计低置信度，可用 `--offset 0.18` 这类手动偏移跳过估计；`pipeline_manifest.py` 会拦截低置信度或缺文件的 audio sync artifact
 
 **Multicam Sync 多机位可逆同步计划**（两台以上设备录制同一事件时推荐）：
-- 运行 `multicam_sync.py --reference-media origin/cam-a.mp4 --angle origin/cam-b.mp4 --angle origin/cam-c.mp4 --output work/multicam_sync_plan.json --markdown work/multicam_sync_plan.md --preview-output output/verify/multicam_sync_preview.mp4 --apply-preview --strict`
-- 输出 `multicam_sync_plan.v1`：每路 offset/confidence、自动最响音轨、reference/source coverage、公共 overlap、pairwise 一致性和 preview command
+- 运行 `multicam_sync.py --reference-media origin/cam-a.mp4 --angle origin/cam-b.mp4 --angle origin/cam-c.mp4 --measure-clock-drift --output work/multicam_sync_plan.json --markdown work/multicam_sync_plan.md --preview-output output/verify/multicam_sync_preview.mp4 --apply-preview --strict`
+- 输出 `multicam_sync_plan.v1`：每路 offset/confidence、自动最响音轨、reference/source coverage、公共 overlap、pairwise 一致性、可选 drift probes/线性 fit 和 preview command
 - 原片不修改、不重编码；只有 `--apply-preview` 会生成短网格预览。正 offset 表示该机位 `t=0` 位于参考时间线更晚的位置
 - 多音轨相机可用 `--audio-stream "origin/cam-b.mp4=2"` 指定有效轨；无音轨/人工拍板用 `--manual-offset "origin/cam-c.mp4=1.24"`
-- V1 不测 clock drift；30 分钟以上必须复核头/中/尾。低置信度、无公共 overlap、缺文件或 pairwise 不一致会进入 `pipeline_manifest.py` gate
+- 漂移测量默认关闭；启用后默认取 5 个 20 秒窗口，至少 4 个共识 inlier 才拟合 `offset(R)=intercept+slope*R`，报告明确符号的 ppm、测量分辨率、累计漂移、残差和未应用的 `atempo/setpts` advisory factors
+- 漂移证据只覆盖选择的参考/源音轨；不能据此自动断言视频 PTS 或其他音轨共享同一时钟
+- 漂移超阈值或拟合不可靠会进入 review gate；脚本不自动校正，音画必须使用同一仿射映射。未启用时，30 分钟以上仍必须复核头/中/尾
 - 详细使用与边界见 [docs/prompts/76-multicam-sync.md](docs/prompts/76-multicam-sync.md)
 
 **Storyboard Plan 分镜与生成路由**（生成素材前推荐）：

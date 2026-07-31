@@ -2,17 +2,53 @@ import json
 import os
 import subprocess
 import sys
+from array import array
+
+import pytest
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(REPO, "scripts"))
 
 from audio_sync import (  # noqa: E402
+    AudioSyncError,
     audio_filter_from_offset,
     build_audio_sync_plan,
     build_replace_audio_command,
+    decode_audio_envelope,
     emit_markdown,
     estimate_offset,
 )
+
+
+def test_decode_audio_envelope_seeks_before_input(monkeypatch):
+    samples = array("h", [100, -200, 300, -400]).tobytes()
+    captured = {}
+
+    def fake_run(command, capture_output):
+        captured["command"] = command
+        return subprocess.CompletedProcess(command, 0, samples, b"")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    envelope = decode_audio_envelope(
+        "camera.mp4",
+        sample_rate=1000,
+        frame_ms=2,
+        start_seconds=12.5,
+        max_duration=3.0,
+        audio_stream_index=1,
+    )
+
+    assert captured["command"][:7] == [
+        "ffmpeg", "-v", "error", "-ss", "12.5", "-i", "camera.mp4",
+    ]
+    assert captured["command"][7:11] == ["-map", "0:a:1", "-vn", "-ac"]
+    assert envelope == [150.0, 350.0]
+
+
+def test_decode_audio_envelope_rejects_invalid_start():
+    with pytest.raises(AudioSyncError, match="start_seconds"):
+        decode_audio_envelope("camera.mp4", start_seconds=-0.1)
 
 
 def _impulse_envelope(length=80, event_at=30):

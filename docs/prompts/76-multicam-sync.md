@@ -15,7 +15,7 @@
 
 - 每路录到的是不同内容，或其中一路是后期重新配音。
 - 素材中间暂停/重启、剪过、拼过，需要多个不连续 offset。
-- 只靠固定 offset 无法解释的长片时钟漂移。
+- 素材中途发生跳时、掉帧、停录后重启等非线性/不连续漂移；当前只拟合单一线性时钟模型。
 - 想直接自动切换说话人机位。V1 只做同步准备，不做 active-speaker 自动剪辑。
 
 ## 自动对齐
@@ -40,6 +40,7 @@ python3 scripts/multicam_sync.py \
 - 每路输出自己的 offset、score/confidence、reference/source coverage。
 - 计算所有机位都实际有画面的 `common_overlap_in_reference`。
 - 三路以上自动素材会直接比较非参考机位，验证 offset 的传递一致性。
+- 默认保持原有固定 offset 行为；长片可显式加 `--measure-clock-drift` 做多窗口线性漂移测量。
 - 不传 `--apply-preview` 时只记录 FFmpeg 命令，不生成视频。
 
 ## offset 方向
@@ -117,11 +118,38 @@ python3 scripts/multicam_sync.py \
 1. 拍手、关门、键盘、屏幕点击等瞬时动作。
 2. 说话人口型和辅音起点。
 3. 预览中段是否仍同步。
-4. 30 分钟以上素材的结尾是否出现漂移。
+4. 未启用漂移测量时，30 分钟以上素材的结尾是否出现漂移。
 
-## 长片与搜索范围
+## 长片时钟漂移
 
-V1 只估计一个固定 offset，不测 sample-clock drift，也不做 `atempo`。任一路时长达到 30 分钟时会写 `clock_drift_not_measured_for_long_form`。
+默认仍只估计固定 offset，以保持旧流程和运行成本不变。任一路达到 30 分钟且未请求漂移测量时，会写 `clock_drift_not_measured_for_long_form`。需要测量时运行：
+
+```bash
+python3 scripts/multicam_sync.py \
+  --reference-media origin/cam-a.mp4 \
+  --angle origin/cam-b.mp4 \
+  --measure-clock-drift \
+  --drift-probes 5 \
+  --drift-probe-seconds 20 \
+  --drift-search-seconds 2 \
+  --drift-threshold-ms 80 \
+  --output work/multicam_sync_plan.json \
+  --markdown work/multicam_sync_plan.md \
+  --strict
+```
+
+脚本会在每个机位自己的可用重叠时长内均匀抽取多个短窗口，仅解码这些窗口，并对每个窗口重新估计 offset。默认 5 个 probe 至少需要 4 个置信度合格且通过残差共识的 inlier，再做最小二乘复核：
+
+```text
+offset(reference_time) = intercept + slope * reference_time
+source_time = (1 - slope) * reference_time - intercept
+```
+
+报告保存每个 probe 的时间、offset、confidence、inlier、接受/拒绝原因，以及 `offset_slope_ppm`、`source_rate_error_ppm`、测量/斜率分辨率、累计漂移、拟合残差和中点锚点。可信拟合的 advisory 因子是 `selected_audio_atempo_factor = 1 - slope`、`advisory_video_setpts_multiplier = 1 / (1 - slope)`；它们只说明所选参考/源音轨之间的相对时钟。脚本不会自动应用，也不会把固定 `alignment.offset_seconds` 偷换成中点值；在把同一映射用于视频 PTS 或其他音轨前，必须独立验证头/中/尾。
+
+累计漂移超过 `--drift-threshold-ms` 时写 `correction_required` 并进入 review gate；少于 4 个可靠 inlier、残差过大、搜索峰贴边或速率超过可信范围时写 `unreliable`。这些情况应检查头/中/尾，必要时换更清晰的音轨、扩大搜索窗口，或使用可靠的 LTC/timecode 元数据；不要把周期音乐或静音片段的直线拟合当成校正依据。
+
+## 固定 offset 搜索范围
 
 如果机位开机相差超过一分钟：
 
@@ -143,11 +171,12 @@ python3 scripts/multicam_sync.py \
 `multicam_sync_plan.v1` 主要字段：
 
 - `angles[]`：每路 media、audio stream、method、alignment、coverage、warnings、status。
+- `angles[].clock_drift`：`selected_audio_drift.v1` / `selected_audio_stream_only` 范围内的 probe evidence、线性 fit、ppm、累计漂移、残差、review status 和未应用的 advisory factors。
 - `common_overlap_in_reference`：所有机位共同覆盖的参考时间范围。
 - `pairwise_consistency`：直接 offset、参考推导 offset、divergence 和 blocker。
 - `preview.command` / `applied` / `output_exists`。
 - `source_safety`：原片是否被修改/重编码。
-- `summary.blocking`：低置信度、缺文件、无公共 overlap 或 pairwise 不一致数量。
+- `summary.blocking`：低置信度、缺文件、无公共 overlap、pairwise 不一致或漂移 review 数量。
 - `summary.preview_failed = 1` 或 `preview_render_failed`：对齐计划可能有效，但预览产物渲染失败；修复渲染问题并重新生成预览后再继续。
 
 项目里存在该 artifact 时，`pipeline_manifest.py` 会自动发现 `multicam_sync` 类别。需要把它设为显式必需项：

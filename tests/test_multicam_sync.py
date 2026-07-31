@@ -19,9 +19,131 @@ from multicam_sync import (  # noqa: E402
     coverage_for_offset,
     emit_markdown,
     evaluate_pairwise_consistency,
+    fit_clock_drift,
+    measure_clock_drift,
     select_audio_stream,
     validate_output_paths,
 )
+
+
+def test_clock_drift_fit_reports_signed_affine_mapping_and_factors():
+    probes = [
+        {
+            "reference_time_seconds": time,
+            "offset_seconds": 0.1 - 0.0002 * time,
+            "confidence": 0.95,
+        }
+        for time in (0.0, 100.0, 200.0, 300.0)
+    ]
+    probes.append({
+        "reference_time_seconds": 150.0,
+        "offset_seconds": 4.0,
+        "confidence": 0.95,
+    })
+
+    fit = fit_clock_drift(
+        probes,
+        min_confidence=0.45,
+        drift_threshold_ms=50.0,
+        residual_threshold_seconds=0.02,
+    )
+
+    assert fit["trusted"] is True
+    assert fit["accepted_probe_count"] == 5
+    assert fit["fit_inlier_count"] == 4
+    assert fit["offset_slope_ppm"] == -200.0
+    assert fit["accumulated_drift_ms"] == -60.0
+    assert fit["requires_correction"] is True
+    assert fit["source_zero_on_reference_seconds"] == pytest.approx(0.09998, abs=1e-4)
+    correction = fit["advisory_correction"]
+    assert correction["selected_audio_atempo_factor"] == pytest.approx(1.0002)
+    assert correction["advisory_video_setpts_multiplier"] == pytest.approx(0.9998)
+    assert correction["applied"] is False
+
+
+def test_clock_drift_fit_rejects_when_residuals_have_no_consensus():
+    fit = fit_clock_drift(
+        [
+            {"reference_time_seconds": 0.0, "offset_seconds": 0.0, "confidence": 0.9},
+            {"reference_time_seconds": 100.0, "offset_seconds": 0.07, "confidence": 0.9},
+            {"reference_time_seconds": 200.0, "offset_seconds": -0.11, "confidence": 0.9},
+            {"reference_time_seconds": 300.0, "offset_seconds": 0.23, "confidence": 0.9},
+            {"reference_time_seconds": 400.0, "offset_seconds": -0.29, "confidence": 0.9},
+        ],
+        min_confidence=0.45,
+        drift_threshold_ms=80.0,
+        residual_threshold_seconds=0.005,
+    )
+
+    assert fit["trusted"] is False
+    assert "too_few_consensus_inliers" in fit["reasons"]
+    assert fit["advisory_correction"] is None
+
+
+def test_clock_drift_fit_does_not_trust_only_three_points():
+    fit = fit_clock_drift(
+        [
+            {
+                "reference_time_seconds": time,
+                "offset_seconds": 0.1 + 0.0003 * time,
+                "confidence": 0.95,
+            }
+            for time in (0.0, 100.0, 200.0)
+        ],
+        min_confidence=0.45,
+        drift_threshold_ms=50.0,
+        residual_threshold_seconds=0.02,
+    )
+
+    assert fit["trusted"] is False
+    assert "too_few_confident_probes" in fit["reasons"]
+
+
+def test_clock_drift_measurement_uses_spaced_bounded_windows(monkeypatch):
+    decode_calls = []
+    local_offsets = iter([-0.02, -0.01, 0.0, 0.01, 0.02])
+
+    def fake_decode(path, **kwargs):
+        decode_calls.append((path, kwargs))
+        return [0.0, 1.0, 0.0]
+
+    def fake_estimate(*args, **kwargs):
+        return {
+            "offset_seconds": next(local_offsets),
+            "confidence": 0.9,
+            "score": 0.9,
+            "score_margin": 0.2,
+        }
+
+    monkeypatch.setattr(multicam_sync, "decode_audio_envelope", fake_decode)
+    monkeypatch.setattr(multicam_sync, "estimate_offset", fake_estimate)
+
+    drift = measure_clock_drift(
+        reference_path="reference.mp4",
+        source_path="source.mp4",
+        reference_stream_index=0,
+        source_stream_index=1,
+        reference_duration=120.0,
+        source_duration=120.0,
+        base_offset_seconds=0.3,
+        sample_rate=8000,
+        frame_ms=40.0,
+        probe_count=5,
+        probe_seconds=10.0,
+        search_seconds=1.0,
+        min_confidence=0.45,
+        drift_threshold_ms=10.0,
+    )
+
+    assert drift["status"] == "correction_required"
+    assert drift["fit"]["accepted_probe_count"] == 5
+    assert drift["fit"]["fit_inlier_count"] == 5
+    assert drift["fit"]["offset_slope_ppm"] > 0
+    assert len(decode_calls) == 10
+    starts = [call[1]["start_seconds"] for call in decode_calls]
+    assert min(starts) >= 0.0
+    assert max(starts) + 12.0 <= 120.0
+    assert all(call[1]["max_duration"] == 12.0 for call in decode_calls)
 
 
 def test_coverage_for_positive_and_negative_offsets():
@@ -393,6 +515,79 @@ def _make_silent_video(path, color):
         ],
         check=True,
     )
+
+
+def _make_drift_audio(reference, source, tempo=0.996):
+    signal = (
+        "aevalsrc='(0.45+0.2*sin(2*PI*0.37*t)+0.12*sin(2*PI*0.113*t))*"
+        "sin(2*PI*(330*t+18*sin(0.19*t)))':s=8000:d=60"
+    )
+    subprocess.run(
+        [
+            "ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", signal,
+            "-c:a", "pcm_s16le", str(reference),
+        ],
+        check=True,
+    )
+    subprocess.run(
+        [
+            "ffmpeg", "-y", "-v", "error", "-i", str(reference),
+            "-af", f"atempo={tempo}", "-c:a", "pcm_s16le", str(source),
+        ],
+        check=True,
+    )
+
+
+@pytest.mark.skipif(not shutil.which("ffmpeg") or not shutil.which("ffprobe"), reason="ffmpeg suite unavailable")
+@pytest.mark.parametrize(("tempo", "expected_ppm"), [(0.996, -4016.0), (1.004, 3984.0)])
+def test_real_cli_measures_clock_drift_and_strict_blocks_unapplied_correction(
+    tmp_path,
+    tempo,
+    expected_ppm,
+):
+    reference = tmp_path / "reference.wav"
+    source = tmp_path / "slow-source.wav"
+    report = tmp_path / "multicam_sync.json"
+    markdown = tmp_path / "multicam_sync.md"
+    _make_drift_audio(reference, source, tempo=tempo)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            os.path.join(REPO, "scripts", "multicam_sync.py"),
+            "--reference-media", str(reference),
+            "--angle", str(source),
+            "--output", str(report),
+            "--markdown", str(markdown),
+            "--measure-clock-drift",
+            "--drift-probes", "7",
+            "--drift-probe-seconds", "6",
+            "--drift-search-seconds", "1",
+            "--drift-threshold-ms", "80",
+            "--frame-ms", "20",
+            "--max-offset", "1",
+            "--max-probe-seconds", "10",
+            "--min-confidence", "0.2",
+            "--strict",
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 2, result.stderr
+    payload = json.loads(report.read_text(encoding="utf-8"))
+    drift = payload["angles"][1]["clock_drift"]
+    assert payload["status"] == "review"
+    assert payload["settings"]["clock_drift_measured"] is True
+    assert payload["summary"]["clock_drift_review"] == 1
+    assert drift["status"] == "correction_required"
+    assert drift["fit"]["trusted"] is True
+    assert drift["fit"]["offset_slope_ppm"] == pytest.approx(expected_ppm, abs=1200.0)
+    assert abs(drift["fit"]["accumulated_drift_ms"]) > 150.0
+    atempo_factor = drift["fit"]["advisory_correction"]["selected_audio_atempo_factor"]
+    assert (atempo_factor > 1.0) is (expected_ppm < 0)
+    assert drift["fit"]["advisory_correction"]["applied"] is False
+    assert "Clock Drift" in markdown.read_text(encoding="utf-8")
 
 
 @pytest.mark.skipif(not shutil.which("ffmpeg") or not shutil.which("ffprobe"), reason="ffmpeg suite unavailable")

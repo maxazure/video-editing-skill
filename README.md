@@ -9,7 +9,7 @@
 - **把口播短视频从“素材堆”推进到“发布包”**：项目目录、source inventory、转写、清稿、分镜、素材清单、渲染配置、字幕 sidecar、QA、标题正文和标签都能落成可审计 artifact。
 - **针对中文社媒口播做过生产化调参**：Heavy CJK 字幕、1.25x 主输出、响度规范化、平台违禁词 lint、章节卡、贴纸、BGM/SFX cue、三平台导出都不是通用 demo。
 - **噪声口播可在单次编码内保守清理**：`render_final.py --speech-denoise light|medium|strong` 会在变速、压缩、响度规范化和 BGM ducking 前处理低频震动与稳态底噪；默认关闭，最大降噪限制为 12 dB。
-- **多机位先同步再剪辑**：`multicam_sync.py` 把两台以上相机/手机/录音设备对齐到同一参考时间线，记录每路 offset、置信度、有效音轨、公共重叠区间和短预览命令；原片不改、不重编码。
+- **多机位先同步再剪辑**：`multicam_sync.py` 把两台以上相机/手机/录音设备对齐到同一参考时间线，记录每路 offset、置信度、有效音轨、公共重叠区间，并可用多窗口 probe 测量长片时钟漂移；原片不改、不重编码。
 - **事实型内容有 proof deck**：新闻、数据、产品事实或来源页截图可用 `source_receipts.py` 生成 URL/截图复核包，作为发布前 gate。
 - **生成式素材有明确审批和台账**：Codex `image_gen` / GPT Image 2 提示词、Dreamina/Veo/LTX/Wan/Sora 视频提示词、provider 决策、`submit_id` 轮询下载和本地落盘 gate 都先记录再执行。
 - **适合交给强推理模型做长流程代理执行**：在 [GPT-5.5](https://developers.openai.com/api/docs/models/gpt-5.5) 和 [Claude Opus 4.8](https://docs.anthropic.com/en/docs/about-claude/models) 这类面向复杂专业任务、agent 工作流的模型下，本 skill 对 **口播类短视频** 至少可以替代 **80% 的常规视频剪辑工作**。
@@ -120,7 +120,7 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    ├─→ audio_sync.py            外录音轨自动对齐 / 替换音轨计划
    │                            scratch audio + lav/recorder track → offset + gate
    ├─→ multicam_sync.py         多机位 → 同一参考时间线 / 公共重叠区间 / 对齐预览
-   │                            最响音轨选择 / pairwise 一致性 / source-safe gate
+   │                            最响音轨 / pairwise / 可选时钟漂移 / source-safe gate
    │
    ├─→ scene_boundaries.py      fixed/adaptive 视觉切点 + 逐切点 evidence
    ├─→ visual_dedupe.py         多来源场景 → 感知哈希重复组 / 保留建议 / review gate
@@ -857,6 +857,7 @@ python3 scripts/multicam_sync.py \
   --reference-media origin/cam-a.mp4 \
   --angle origin/cam-b.mp4 \
   --angle origin/cam-c.mp4 \
+  --measure-clock-drift \
   --output work/multicam_sync_plan.json \
   --markdown work/multicam_sync_plan.md \
   --preview-output output/verify/multicam_sync_preview.mp4 \
@@ -866,7 +867,9 @@ python3 scripts/multicam_sync.py \
 
 输出 `multicam_sync_plan.v1`，每路记录 `alignment.offset_seconds`、置信度、参考/源时间覆盖区间和实际采用的 `0:a:N`。多音轨相机会用中段 `mean_volume` 自动选择最响音轨，也可用 `--audio-stream "origin/cam-b.mp4=2"` 覆盖。三路以上自动对齐会额外直接比较非参考机位，若“参考机位推导 offset”与“机位间直接估计”相差超过阈值，就进入 review gate。`--manual-offset "origin/cam-c.mp4=1.24"` 可接入无音轨机位或已经人工确认的拍板点。
 
-原片始终不修改；只有显式 `--apply-preview` 才会生成短网格预览。正 offset 表示该机位的 `t=0` 位于参考时间线更晚的位置，预览按 `source_local = reference_time - offset` 读取每路画面。V1 只估计一个固定 offset，不测相机时钟漂移；30 分钟以上素材会警告，必须在头/中/尾分别复核。`pipeline_manifest.py` 会发现该计划并拦截缺文件、低置信度、无公共重叠或 pairwise 不一致。
+`--measure-clock-drift` 会在每个机位自己的可用重叠时长中默认抽取 5 个 20 秒窗口，按置信度筛 probe，再用稳健共识模型拟合 `offset(R)=intercept+slope*R`；至少需要 4 个跨越有效时段的 fit inlier。JSON/Markdown 保存每个 probe、`offset_slope_ppm`、测量/斜率分辨率、累计漂移、拟合残差和未应用的 `atempo/setpts` advisory factors；累计漂移超过 80 ms 或拟合不可靠会进入 review gate。可用 `--drift-probes`、`--drift-probe-seconds`、`--drift-search-seconds`、`--drift-threshold-ms` 调整。该能力默认关闭，只测当前选择的参考/源音轨；它不自动证明视频 PTS 或容器内其他音轨使用同一时钟，也不会自动校正。
+
+原片始终不修改；只有显式 `--apply-preview` 才会生成短网格预览。正 offset 表示该机位的 `t=0` 位于参考时间线更晚的位置，预览按 `source_local = reference_time - offset` 读取每路画面。未启用漂移测量时，30 分钟以上素材仍会警告并要求头/中/尾复核。`pipeline_manifest.py` 会发现该计划并拦截缺文件、低置信度、无公共重叠、pairwise 不一致或漂移 review。
 
 ### 📝 Subtitle Pack — SRT/VTT/ASS 字幕交付
 [`scripts/subtitle_pack.py`](scripts/subtitle_pack.py) · [详细文档](docs/prompts/29-subtitle-pack.md)
@@ -2288,6 +2291,23 @@ pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 pytest tests/test_review_dashboard.py -v    # 静态人工复核面板 + gate queue
 pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 gate
 ```
+
+### 2026-08-01 自动化升级记录（Long-form Multicam Clock Drift）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`jianshuo/claude-skills` 的 wjs-syncing-multicam](https://github.com/jianshuo/claude-skills/blob/main/wjs-syncing-multicam/SKILL.md) | 用分布在长片中的多个 probe 拟合漂移，记录 slope、残差和可逆消费方式，而不是把首段固定 offset 当成全片真值 | 新增 opt-in 多窗口测量；保留原 `alignment.offset_seconds` 语义，另存参考时间参数化的 affine fit 和中点锚点，不偷换固定 offset |
+| [`jianshuo/polysync` 的 sync.py](https://github.com/jianshuo/polysync/blob/main/src/polysync/sync.py) / [`verify.py`](https://github.com/jianshuo/polysync/blob/main/src/polysync/verify.py) | 每隔一段时间重做局部相关、线性拟合，并用样本索引验证残差；明确 raw PCM 上不能靠 `-itsoffset` 假装完成验证 | `decode_audio_envelope()` 新增向后兼容的 `start_seconds`，只解码短窗口；每个 probe 保存 offset/confidence/拒绝原因，fit 另有独立残差 gate |
+| [`wingedonezero/Video-Sync-GUI` 的 linear correction](https://github.com/wingedonezero/Video-Sync-GUI/blob/main/vsg_core/correction/linear.py) | 把漂移率转换为 tempo/resample 因子，同时保留原始音轨，强调校正必须可逆 | 报告 `selected_audio_atempo_factor` / `advisory_video_setpts_multiplier`，但明确 `applied=false`；本轮不生成“校正副本”，也不只修音频而留下画面时钟 |
+| [`BCM-Neurosurgery/video-sync-nbu` 的多锚点同步](https://github.com/BCM-Neurosurgery/video-sync-nbu/blob/main/scripts/align/sync.py) | 多锚点和 affine/RANSAC 说明长时间同步不是一个 offset 问题，也揭示中途重启需要分段模型 | 本轮只做单一线性时钟模型；跳时、停录重启、非线性漂移继续明确进入人工/分段处理边界 |
+
+新增/调整能力：[`scripts/multicam_sync.py`](scripts/multicam_sync.py) 新增 `--measure-clock-drift`，在每个机位自己的可用重叠时长中默认均匀抽取 5 个 20 秒窗口，并在每个窗口的预测位置附近搜索 ±2 秒。置信度合格的 probe 会进入 exhaustive pairwise consensus，至少 4 个 inlier 且早晚跨度充足才做最小二乘复核，拟合 `offset(reference_time)=intercept+slope*reference_time`。报告以 `selected_audio_drift.v1` 明确限定所选音轨，保存 `offset_slope_ppm` / `source_rate_error_ppm`、测量和斜率分辨率、累计漂移、拟合残差、参考时间中点锚点、source-zero 映射和未应用的 advisory factors。累计漂移超过默认 80 ms 时写 `correction_required`，inlier 太少、残差超过独立 80 ms/两帧下限、搜索峰贴边或速率超出 ±5000 ppm 可信范围时写 `unreliable`；两者都会进入现有 strict/manifest review gate。默认不启用，旧固定 offset 结果不变。`scripts/audio_sync.py` 仅增加可选 `start_seconds`，旧调用保持兼容。脚本始终不修改原片，也不自动证明视频 PTS/其他音轨共享该时钟。
+
+使用方式：运行 `python3 scripts/multicam_sync.py --reference-media origin/cam-a.mp4 --angle origin/cam-b.mp4 --angle origin/cam-c.mp4 --measure-clock-drift --output work/multicam_sync_plan.json --markdown work/multicam_sync_plan.md --strict`。先检查 Markdown 的 accepted/rejected probes、ppm、累计漂移和最大残差；只有 `stable` 才表示在本次阈值内未检出需要校正的线性漂移。`correction_required` 的 `atempo/setpts` 只是消费建议，必须在 NLE/FFmpeg 下游对同一路音频和视频应用同一时钟映射并再次验证头/中/尾。周期音乐、静音、混响或中途重启导致 `unreliable` 时，不要放宽 gate 取巧；应换清晰音轨、扩大局部搜索、使用可靠 LTC/timecode，或改用分段同步。
+
+验证结果：新增/扩展 `tests/test_multicam_sync.py` 与 `tests/test_audio_sync.py`，覆盖 seek 参数、非法起点、已知正负 slope、高置信度 outlier 共识剔除、残差拒绝、窗口边界、advisory factor 符号和 strict review；定向 `.venv/bin/python -m pytest tests/test_audio_sync.py tests/test_multicam_sync.py -q` 通过 `26 passed in 2.39s`，最终全量测试通过 `672 passed in 11.73s`。真实 FFmpeg smoke 生成 60 秒确定性 PCM，分别用 `atempo=0.996` / `1.004` 制造反向时钟偏差；7 个 6 秒 probe 均得到 `correction_required`、`applied=false`，ppm 符号分别为负/正，`--strict` 均正确退出 2。`compileall`、CLI `--help`、skill `quick_validate.py` 和 `git diff --check` 全部通过。
 
 ### 2026-07-30 自动化升级记录（Beat Edit Plan）
 
