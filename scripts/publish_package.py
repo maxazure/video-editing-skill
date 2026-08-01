@@ -284,31 +284,44 @@ def _parse_video_overrides(values: Optional[Sequence[str]]) -> Dict[str, Path]:
 
 def _load_or_build_pipeline_manifest(root: Path, explicit: Optional[Path]) -> Tuple[Optional[Dict[str, Any]], Optional[Path], List[str]]:
     warnings: List[str] = []
+    snapshot: Optional[Dict[str, Any]] = None
+    snapshot_path: Optional[Path] = None
     if explicit:
-        data = _load_json(explicit)
-        if data is None:
+        snapshot = _load_json(explicit)
+        snapshot_path = explicit
+        if snapshot is None:
             warnings.append(f"pipeline manifest unreadable: {explicit}")
-        return data, explicit if data is not None else None, warnings
-
-    found = _find_latest(root, ("**/pipeline_manifest.json", "**/*_pipeline_manifest.json"))
-    if found:
-        data = _load_json(found)
-        if data is not None:
-            return data, found, warnings
-        warnings.append(f"pipeline manifest unreadable: {found}")
+    else:
+        found = _find_latest(root, ("**/pipeline_manifest.json", "**/*_pipeline_manifest.json"))
+        if found:
+            snapshot = _load_json(found)
+            snapshot_path = found
+            if snapshot is None:
+                warnings.append(f"pipeline manifest unreadable: {found}")
 
     try:
         from pipeline_manifest import build_manifest
 
-        return build_manifest(str(root), target_stage="publish_ready"), None, warnings
+        live = build_manifest(
+            str(root),
+            target_stage="publish_ready",
+            ignored_categories=["publish_package"],
+        )
     except Exception as exc:  # pragma: no cover - defensive for broken local imports
-        warnings.append(f"could not build pipeline manifest snapshot: {exc}")
-        return None, None, warnings
+        warnings.append(f"could not build live pipeline manifest: {exc}")
+        return None, snapshot_path, warnings
+
+    if snapshot is not None and snapshot.get("status") != live.get("status"):
+        warnings.append(
+            "saved pipeline manifest status differs from live state: "
+            f"saved={snapshot.get('status')} live={live.get('status')}"
+        )
+    return live, snapshot_path, warnings
 
 
 def _pipeline_blockers(manifest: Optional[Mapping[str, Any]]) -> Tuple[List[str], List[str]]:
     if not manifest:
-        return [], []
+        return ["live pipeline manifest unavailable"], []
     status = str(manifest.get("status") or "").lower()
     blockers: List[str] = []
     warnings: List[str] = []
@@ -319,6 +332,71 @@ def _pipeline_blockers(manifest: Optional[Mapping[str, Any]]) -> Tuple[List[str]
         warned = ", ".join(str(item) for item in manifest.get("warn_gates") or []) or "warning gate"
         warnings.append(f"pipeline_manifest warning: {warned}")
     return blockers, warnings
+
+
+def _verify_approval_receipt(
+    root: Path,
+    explicit: Optional[Path],
+    *,
+    required: bool,
+) -> Tuple[Optional[Dict[str, Any]], Optional[Path], List[str]]:
+    receipt_path = explicit
+    if receipt_path is not None and not receipt_path.is_absolute():
+        receipt_path = root / receipt_path
+    if receipt_path is None:
+        matches = _find_all(root, ("**/approval_receipt.json", "**/*_approval_receipt.json"))
+        if len(matches) > 1:
+            return None, None, [f"multiple approval receipts are ambiguous: {len(matches)} found"]
+        receipt_path = matches[0] if matches else None
+    if receipt_path is None:
+        return None, None, ["approval receipt missing"] if required else []
+    try:
+        receipt_path = receipt_path.expanduser().resolve(strict=True)
+        receipt_path.relative_to(root)
+    except (OSError, ValueError):
+        return None, receipt_path, [f"approval receipt must be a readable file inside the project: {receipt_path}"]
+    receipt = _load_json(receipt_path)
+    if receipt is None:
+        return None, receipt_path, [f"approval receipt unreadable: {receipt_path}"]
+
+    from approval_receipt import verify_receipt
+
+    try:
+        verification = verify_receipt(receipt, str(root), receipt_path=str(receipt_path))
+    except Exception as exc:
+        return None, receipt_path, [f"approval receipt verification failed: {exc}"]
+    if verification.get("status") != "current":
+        blocking = (verification.get("summary") or {}).get("blocking", 0)
+        return verification, receipt_path, [
+            f"approval receipt {verification.get('status', 'stale')}: {blocking} blocking item(s)"
+        ]
+    return verification, receipt_path, []
+
+
+def _approval_coverage(
+    root: Path,
+    verification: Mapping[str, Any],
+    selected_paths: Sequence[Path],
+) -> Tuple[List[str], List[str], List[str]]:
+    approved = {
+        str(item.get("path") or "")
+        for item in verification.get("artifacts") or []
+        if isinstance(item, Mapping) and item.get("status") == "current"
+    }
+    selected: List[str] = []
+    errors: List[str] = []
+    for path in selected_paths:
+        try:
+            resolved = path.expanduser().resolve(strict=True)
+            relative = resolved.relative_to(root).as_posix()
+        except (OSError, ValueError):
+            errors.append(f"selected publish artifact is outside the project or unreadable: {path}")
+            continue
+        selected.append(relative)
+    selected = list(dict.fromkeys(selected))
+    uncovered = [path for path in selected if path not in approved]
+    covered = [path for path in selected if path in approved]
+    return covered, uncovered, errors
 
 
 def _platform_checklist(platform: PlatformPreset, *, has_cover: bool, has_subtitles: bool, has_chapters: bool) -> List[str]:
@@ -346,6 +424,8 @@ def build_publish_package(
     cover_path: Optional[str] = None,
     chapters_path: Optional[str] = None,
     pipeline_manifest_path: Optional[str] = None,
+    approval_receipt_path: Optional[str] = None,
+    require_approval_receipt: bool = False,
 ) -> Dict[str, Any]:
     root = Path(project_dir).expanduser().resolve()
     selected_platforms = list(platforms)
@@ -369,6 +449,7 @@ def build_publish_package(
     )
     pipeline_file = Path(pipeline_manifest_path).expanduser().resolve() if pipeline_manifest_path else None
     pipeline_manifest, pipeline_source, pipeline_warnings = _load_or_build_pipeline_manifest(root, pipeline_file)
+    receipt_file = Path(approval_receipt_path).expanduser() if approval_receipt_path else None
 
     blockers: List[str] = []
     warnings: List[str] = [*cover_warnings, *pipeline_warnings]
@@ -392,6 +473,12 @@ def build_publish_package(
     chapter_text = _read_text(chapter_file)
 
     platform_items: List[Dict[str, Any]] = []
+    selected_publish_paths: List[Path] = []
+    if caption_file and caption_file.is_file():
+        selected_publish_paths.append(caption_file)
+    if cover_file and cover_file.is_file():
+        selected_publish_paths.append(cover_file)
+
     for platform_name in selected_platforms:
         preset = PLATFORMS[platform_name]
         video_file = overrides.get(platform_name)
@@ -403,11 +490,16 @@ def build_publish_package(
             status = "blocked"
             notes.append(f"missing video: {preset.video_requirement}")
             blockers.append(f"{platform_name}: missing video export")
+        else:
+            selected_publish_paths.append(video_file)
 
         preferred_subtitles = {
             ext: path for ext, path in subtitles.items()
             if ext in set(preset.preferred_subtitles)
         }
+        selected_publish_paths.extend(Path(path) for path in preferred_subtitles.values())
+        if platform_name == "youtube_shorts" and chapter_text and chapter_file and chapter_file.is_file():
+            selected_publish_paths.append(chapter_file)
         platform_items.append({
             "platform": platform_name,
             "label": preset.label,
@@ -426,6 +518,45 @@ def build_publish_package(
             ),
             "notes": notes,
         })
+
+    approval_verification, approval_source, approval_blockers = _verify_approval_receipt(
+        root,
+        receipt_file,
+        required=require_approval_receipt,
+    )
+    blockers.extend(approval_blockers)
+    approval_active = bool(
+        require_approval_receipt
+        or approval_source is not None
+        or approval_blockers
+        or approval_verification is not None
+    )
+    approval_status = "not_configured"
+    approval_covered: List[str] = []
+    approval_uncovered: List[str] = []
+    approval_errors = list(approval_blockers)
+    if isinstance(approval_verification, Mapping):
+        approval_status = str(approval_verification.get("status") or "invalid")
+        if approval_status == "current":
+            approval_covered, approval_uncovered, coverage_errors = _approval_coverage(
+                root,
+                approval_verification,
+                selected_publish_paths,
+            )
+            approval_errors.extend(coverage_errors)
+            blockers.extend(coverage_errors)
+            for relative_path in approval_uncovered:
+                blocker = f"approval receipt does not cover selected artifact: {relative_path}"
+                approval_errors.append(blocker)
+                blockers.append(blocker)
+            if coverage_errors or approval_uncovered:
+                approval_status = "incomplete"
+    elif approval_active:
+        approval_status = (
+            "missing"
+            if approval_source is None and approval_blockers == ["approval receipt missing"]
+            else "invalid"
+        )
 
     blocker_count = len(list(dict.fromkeys(blockers)))
     warning_count = len(list(dict.fromkeys(warnings)))
@@ -446,6 +577,17 @@ def build_publish_package(
         "chapters_path": _display_path(chapter_file if chapter_file and chapter_file.is_file() else None),
         "pipeline_manifest_path": _display_path(pipeline_source),
         "pipeline_status": pipeline_manifest.get("status") if isinstance(pipeline_manifest, Mapping) else None,
+        "approval_receipt_path": _display_path(approval_source),
+        "approval_receipt_status": approval_status,
+        "approval": {
+            "required": require_approval_receipt,
+            "active": approval_active,
+            "status": approval_status,
+            "receipt_path": _display_path(approval_source),
+            "covered_artifacts": approval_covered,
+            "uncovered_artifacts": approval_uncovered,
+            "verification_errors": list(dict.fromkeys(approval_errors)),
+        },
         "platforms": platform_items,
         "blockers": list(dict.fromkeys(blockers)),
         "warnings": list(dict.fromkeys(warnings)),
@@ -466,6 +608,7 @@ def emit_markdown(package: Mapping[str, Any]) -> str:
         f"- Ready platforms: {summary.get('ready_platforms', 0)}/{summary.get('platforms', 0)}",
         f"- Blockers: {summary.get('blocking', 0)}",
         f"- Warnings: {summary.get('warnings', 0)}",
+        f"- Approval receipt: {package.get('approval_receipt_status') or 'not required'}",
         "",
         "## Platform Files",
         "",
@@ -559,6 +702,12 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--cover", help="Optional cover image path.")
     parser.add_argument("--chapters", help="Optional chapters-youtube.txt or chapters.json path.")
     parser.add_argument("--pipeline-manifest", help="Optional pipeline_manifest.json path.")
+    parser.add_argument("--approval-receipt", help="Optional approval_receipt.json path; verified when present.")
+    parser.add_argument(
+        "--require-approval-receipt",
+        action="store_true",
+        help="Block when no current hash-bound approval receipt exists.",
+    )
     parser.add_argument("--output", default="publish_package.json", help="Output JSON path.")
     parser.add_argument("--markdown", help="Optional Markdown review path.")
     parser.add_argument("--strict", action="store_true", help="Exit 2 when package status is blocked.")
@@ -576,6 +725,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             cover_path=args.cover,
             chapters_path=args.chapters,
             pipeline_manifest_path=args.pipeline_manifest,
+            approval_receipt_path=args.approval_receipt,
+            require_approval_receipt=args.require_approval_receipt,
         )
     except ValueError as exc:
         print(f"publish package error: {exc}", file=sys.stderr)

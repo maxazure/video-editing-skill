@@ -11,10 +11,13 @@
 - **噪声口播可在单次编码内保守清理**：`render_final.py --speech-denoise light|medium|strong` 会在变速、压缩、响度规范化和 BGM ducking 前处理低频震动与稳态底噪；默认关闭，最大降噪限制为 12 dB。
 - **多机位先同步再剪辑**：`multicam_sync.py` 把两台以上相机/手机/录音设备对齐到同一参考时间线，记录每路 offset、置信度、有效音轨、公共重叠区间，并可用多窗口 probe 测量长片时钟漂移；原片不改、不重编码。
 - **事实型内容有 proof deck**：新闻、数据、产品事实或来源页截图可用 `source_receipts.py` 生成 URL/截图复核包，作为发布前 gate。
+- **最终审批绑定到具体文件字节**：`approval_receipt.py` 为人工看过的视频、封面、文案、字幕和 QA 报告记录 SHA-256；任何重渲染、替换、删除或 symlink 漂移都会让旧审批过期并阻塞发布。
 - **生成式素材有明确审批和台账**：Codex `image_gen` / GPT Image 2 提示词、Dreamina/Veo/LTX/Wan/Sora 视频提示词、provider 决策、`submit_id` 轮询下载和本地落盘 gate 都先记录再执行。
-- **适合交给强推理模型做长流程代理执行**：在 [GPT-5.5](https://developers.openai.com/api/docs/models/gpt-5.5) 和 [Claude Opus 4.8](https://docs.anthropic.com/en/docs/about-claude/models) 这类面向复杂专业任务、agent 工作流的模型下，本 skill 对 **口播类短视频** 至少可以替代 **80% 的常规视频剪辑工作**。
+- **适合交给强推理模型做长流程代理执行**：在 [GPT-5.6 Sol](https://developers.openai.com/api/docs/models/gpt-5.6-sol)（OpenAI 当前旗舰；API 别名 `gpt-5.6` 指向 Sol）和 [Claude Opus 4.8](https://docs.anthropic.com/en/docs/about-claude/models) 这类面向复杂专业任务、agent 工作流的模型下，本 skill 对 **口播类短视频** 至少可以替代 **80% 的常规视频剪辑工作**。
 
 这里的“80%”是按口播短视频生产来评估的：它已经覆盖素材整理、ASR、清稿、粗剪、字幕、B-roll/图像/生成视频规划、声音 cue、渲染前预检、渲染、质检、多平台导出和发布文案。剩下通常需要人工负责的是选题判断、最终审美取舍、品牌口吻、客户确认、复杂手工精修、调色混音和需要逐帧 keyframe 的高级特效。
+
+模型说明：本仓库不会在脚本中硬编码 LLM 型号；这里推荐的是负责理解需求、编排脚本、调用工具和复核产物的 Agent 模型。OpenAI 官方将 `gpt-5.6-sol` 定位为 GPT-5.6 家族的旗舰型号；追求更低成本或更高吞吐时，可按运行环境选用 GPT-5.6 Terra 或 Luna。
 
 ## 项目现状与边界
 
@@ -225,6 +228,7 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    ├─→ multi_export.py          小红书 3:4 / 抖音 9:16 / 视频号 ≤60s
    ├─→ generate_caption.py      标题 + 200-500 字正文 + 3-6 tags + 发布时段建议
    ├─→ cover_variants.py        2-4 套封面 A/B 方案 / 小尺寸预览 / 最终选择 gate
+   ├─→ approval_receipt.py      已复核交付件 → SHA-256 收据 / stale approval gate
    └─→ publish_package.py       平台视频 / 已选封面 / 字幕 / 文案上传包
 ```
 
@@ -353,7 +357,7 @@ python3 scripts/transcript_review.py apply \
 - **3 种故事结构**：`pain_solve`（干货）/ `story_reversal`（故事）/ `listicle`（盘点）
 - **Hook Variants**：`hook_variants.py` 可先生成 8 个前三秒开头角度、风险检查、推荐排序和 visual cue，再把选中的 hook 放进清稿提示或 `clean_script.md`
 
-不绑定任何 LLM 提供商——脚本输出 prompt，你喂给 Claude / ChatGPT，把返回 JSON 喂回脚本验证 + 物化为 `clean_script.md`。
+不绑定任何 LLM 提供商——脚本输出 prompt，你可以交给 GPT-5.6 / Claude 等支持结构化 JSON 的模型，再把返回 JSON 喂回脚本验证 + 物化为 `clean_script.md`。
 
 ### 🎬 Auto-Enrich — 自动加 B-roll / 章节卡 / 贴纸 / 强调点 / 卡点
 [详细文档](docs/prompts/18-auto-enrich.md)
@@ -1904,6 +1908,34 @@ python3 scripts/cover_variants.py \
 
 默认生成 `cover-a` 主方案、`cover-b` 对比色 / 层级方案和 `cover-c` 真实画面证据方案，并为每张图生成 feed-size `*_preview.png`。看完后用 `--select cover-c --require-selection --strict` 记录最终选择；`publish_package.py` 会优先读取 `selected_cover`，`pipeline_manifest.py --require cover_variants` 可把封面选择设为发布 gate。需要自定义 AI 底图时，生图优先使用 Codex 内置 `image_gen` 工具，即 OpenAI GPT Image 2（`gpt-image-2`）。
 
+### 🔏 Approval Receipt — 最终审批收据
+[`scripts/approval_receipt.py`](scripts/approval_receipt.py) · [详细文档](docs/prompts/77-approval-receipt.md)
+
+人工完整审片并核对封面、文案、字幕和 QA 后，把稳定交付件显式列入 SHA-256 收据：
+
+```bash
+python3 scripts/approval_receipt.py create \
+  --project-dir . \
+  --artifact output/day77_xhs.mp4 \
+  --artifact output/day77_douyin.mp4 \
+  --artifact output/day77_wxch.mp4 \
+  --artifact output/cover.png \
+  --artifact output/day77_caption.json \
+  --artifact verify/render_qa.json \
+  --approved-by "Jay" \
+  --note "三平台视频、封面、文案和字幕已人工复核。" \
+  --output verify/approval_receipt.json \
+  --markdown verify/approval_receipt.md
+
+python3 scripts/approval_receipt.py verify \
+  --project-dir . \
+  --receipt verify/approval_receipt.json \
+  --output verify/approval_receipt_verification.json \
+  --strict
+```
+
+收据只保存项目相对路径、大小、修改时间和 SHA-256，不复制或锁定视频。任何文件后来被重渲染、替换、删除、改成 symlink 或在哈希期间变化，验证会输出 `changed` / `missing` / `unsafe` 并在 strict 模式返回 2。项目里存在收据时，`pipeline_manifest.py` 会实时重算最新一份并自动阻塞过期审批；`--require approval_receipt` 可强制必须有收据。`publish_package.py --require-approval-receipt` 即使拿到旧 pipeline manifest 也会独立验证当前文件。`approved_by` 只是本地自报标签，不是身份认证或数字签名；不要把会反复重写的 pipeline manifest、publish package 或 dashboard 放进收据。
+
 ### 📤 Publish Package — 最终上传包
 [`scripts/publish_package.py`](scripts/publish_package.py) · [详细文档](docs/prompts/49-publish-package.md)
 
@@ -1914,12 +1946,13 @@ python3 scripts/cover_variants.py \
 python3 scripts/publish_package.py \
   --project-dir work/day58 \
   --platforms xhs douyin wxch \
+  --require-approval-receipt \
   --output work/day58/publish_package.json \
   --markdown work/day58/publish_package.md \
   --strict
 ```
 
-输出 `publish_package.v1`，包含每个平台的 MP4、封面图、SRT/VTT、标题、正文、tags、发布时间建议、上传 checklist、章节文本和 `pipeline_manifest` 阻塞状态。若项目有 `cover_variants.json` 且 `selected_cover` 文件存在，会优先采用已复核封面；显式 `--cover` 仍可覆盖。`--strict` 会在缺少平台视频、caption 不完整、或已有 gate blocked 时返回 2；`pipeline_manifest.py` 也会识别 `publish_package.json` 并把 `summary.blocking > 0` 列为 blocking gate。
+输出 `publish_package.v1`，包含每个平台的 MP4、封面图、SRT/VTT、标题、正文、tags、发布时间建议、上传 checklist、章节文本、`pipeline_manifest` 阻塞状态和 approval receipt 实时验证状态。若项目有 `cover_variants.json` 且 `selected_cover` 文件存在，会优先采用已复核封面；显式 `--cover` 仍可覆盖。`--strict` 会在缺少平台视频、caption 不完整、已有 gate blocked 或收据过期时返回 2；`--require-approval-receipt` 还会在没有收据时阻塞。`pipeline_manifest.py` 也会识别 `publish_package.json` 并把 `summary.blocking > 0` 列为 blocking gate。
 
 ### 🧭 Project Resume — 续跑上下文包
 [`scripts/project_resume.py`](scripts/project_resume.py) · [详细文档](docs/prompts/52-project-resume.md)
@@ -2286,6 +2319,7 @@ pytest tests/test_speech_denoise.py -v      # 口播降噪 preset / 顺序 / 真
 pytest tests/test_bgm_ducking.py -v         # 旁白驱动 BGM sidechain + 真实 FFmpeg smoke
 pytest tests/test_color_grade.py -v         # 调色计划 + render_final 接入
 pytest tests/test_edit_preflight.py -v      # 渲染前结构/路径/参数预检 gate
+pytest tests/test_approval_receipt.py -v    # 最终交付件 SHA-256 审批收据 + stale gate
 pytest tests/test_publish_package.py -v     # 最终上传包 + gate 状态汇总
 pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 pytest tests/test_review_dashboard.py -v    # 静态人工复核面板 + gate queue
@@ -2308,6 +2342,23 @@ pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 g
 使用方式：运行 `python3 scripts/multicam_sync.py --reference-media origin/cam-a.mp4 --angle origin/cam-b.mp4 --angle origin/cam-c.mp4 --measure-clock-drift --output work/multicam_sync_plan.json --markdown work/multicam_sync_plan.md --strict`。先检查 Markdown 的 accepted/rejected probes、ppm、累计漂移和最大残差；只有 `stable` 才表示在本次阈值内未检出需要校正的线性漂移。`correction_required` 的 `atempo/setpts` 只是消费建议，必须在 NLE/FFmpeg 下游对同一路音频和视频应用同一时钟映射并再次验证头/中/尾。周期音乐、静音、混响或中途重启导致 `unreliable` 时，不要放宽 gate 取巧；应换清晰音轨、扩大局部搜索、使用可靠 LTC/timecode，或改用分段同步。
 
 验证结果：新增/扩展 `tests/test_multicam_sync.py` 与 `tests/test_audio_sync.py`，覆盖 seek 参数、非法起点、已知正负 slope、高置信度 outlier 共识剔除、残差拒绝、窗口边界、advisory factor 符号和 strict review；定向 `.venv/bin/python -m pytest tests/test_audio_sync.py tests/test_multicam_sync.py -q` 通过 `26 passed in 2.39s`，最终全量测试通过 `672 passed in 11.73s`。真实 FFmpeg smoke 生成 60 秒确定性 PCM，分别用 `atempo=0.996` / `1.004` 制造反向时钟偏差；7 个 6 秒 probe 均得到 `correction_required`、`applied=false`，ppm 符号分别为负/正，`--strict` 均正确退出 2。`compileall`、CLI `--help`、skill `quick_validate.py` 和 `git diff --check` 全部通过。
+
+### 2026-08-02 自动化升级记录（Hash-bound Approval Receipt）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`natyang1234/auto-edit-video-skill`](https://github.com/natyang1234/auto-edit-video-skill/blob/main/skills/auto-edit-video/SKILL.md) | 最终渲染冻结 state/source/asset/clip/approval hashes，版本化写出 MP4，并在 delivery receipt 与 contact sheet 都通过人工审批后才开放下载 | 新增标准库实现的 `approval_receipt.py`，把人工审过的视频、封面、文案、字幕和 QA 文件绑定到具体 SHA-256；本轮不引入 GUI、ZIP 或服务端状态 |
+| [`WhiteTowerAI/cut-as-code` project schema](https://github.com/WhiteTowerAI/cut-as-code/blob/main/skills/video-understand/reference/project-schema.md) | 每个 operation 保存 `revision` / `based_on`，preview/render 前检查是否仍基于当前依赖，防止旧决策静默进入新渲染 | 最终交付层直接重算文件哈希，比只依赖人工维护 revision 更能证明当前待上传字节未漂移；上游通用 revision graph 留待后续独立设计 |
+| [`calesthio/OpenMontage`](https://github.com/calesthio/OpenMontage/blob/main/AGENT_GUIDE.md) | pipeline stage 明确声明 success criteria、review focus 和默认人工审批，并禁止绕过 checkpoint/review | `pipeline_manifest.py` 新增可选但“存在即校验”的 approval gate；`publish_package.py` 强制现场重建 live manifest 并独立复核收据，不信任旧 snapshot |
+| [`AKMessi/vex`](https://github.com/AKMessi/vex) | 安全工作副本、可重建 manifest、QA 后 transactional promotion，避免失败产物替换已验证输出 | 收据不改、不锁、不复制成片，只对显式稳定交付件做原子记录；改变、删除、symlink 漂移或哈希期间变化都会 fail closed |
+
+新增/调整能力：新增 [`scripts/approval_receipt.py`](scripts/approval_receipt.py) 和 [`docs/prompts/77-approval-receipt.md`](docs/prompts/77-approval-receipt.md)。`create` 只接受项目内普通文件和显式重复 `--artifact`，保存项目相对路径、大小、修改时间与 SHA-256；拒绝重复路径、项目外路径、symlink、收据自身和会循环重写的 manifest/package/dashboard。`verify` 重新读取当前文件并输出 `current` / `changed` / `missing` / `unsafe` / `invalid`，`--strict` 在任何过期项上返回 2。`pipeline_manifest.py` 可用 `--require approval_receipt` 强制收据；只要发现收据，即使未显式 require 也会现场重算并阻塞 stale。`publish_package.py --require-approval-receipt` 还会确认当前选择的平台 MP4、封面、caption、字幕和章节都在收据覆盖范围内，并忽略旧 publish package 的循环 gate。`approved_by` 明确只是本地自报标签，不是身份认证、数字签名或发布授权。
+
+使用方式：完整审片后运行 `python3 scripts/approval_receipt.py create --project-dir . --artifact output/day77_xhs.mp4 --artifact output/day77_douyin.mp4 --artifact output/cover.png --artifact output/day77_caption.json --artifact verify/render_qa.json --approved-by "Jay" --output verify/approval_receipt.json --markdown verify/approval_receipt.md`；上传前运行 `python3 scripts/approval_receipt.py verify --project-dir . --receipt verify/approval_receipt.json --output verify/approval_receipt_verification.json --strict`，再运行 `python3 scripts/publish_package.py --project-dir . --platforms xhs douyin wxch --require-approval-receipt --strict`。重新渲染、换封面或改文案/字幕后必须重新审查并用 `create --replace` 生成新收据，不能手改旧 hash。
+
+验证结果：定向 `.venv/bin/python -m pytest tests/test_approval_receipt.py tests/test_pipeline_manifest.py tests/test_publish_package.py -q` 通过 `82 passed in 1.20s`；重放到最新主分支后，最终 `.venv/bin/python -m pytest tests -q` 通过 `690 passed in 12.25s`。CLI create/strict verify/stale exit-code、路径穿越、symlink、重复/self/volatile artifact、缺失/变更、旧 manifest、收据覆盖范围和 publish-package 循环 gate 均有回归测试；`.venv/bin/python -m compileall -q scripts tests`、三个 CLI help/category smoke 和 `git diff --check` 全部通过。
 
 ### 2026-07-30 自动化升级记录（Beat Edit Plan）
 
@@ -2639,6 +2690,7 @@ pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 g
 | **71** | **[Reference Frame Preflight](docs/prompts/71-reference-frame-preflight.md)** | **检查视频生成首帧/style key 的尺寸、方向、画幅和透明背景** |
 | **75** | **[Speech Denoise](docs/prompts/75-speech-denoise.md)** | **可选清理口播低频震动与稳态底噪** |
 | **76** | **[Multicam Sync](docs/prompts/76-multicam-sync.md)** | **多机位 offset / coverage / 对齐预览和 gate** |
+| **77** | **[Approval Receipt](docs/prompts/77-approval-receipt.md)** | **把人工已复核交付件绑定到 SHA-256，并阻塞过期审批** |
 | **43** | **[Audio Cue Sheet](docs/prompts/43-audio-cue-sheet.md)** | **规划 BGM/SFX 和生成审批** |
 | **45** | **[Video Prompt Pack](docs/prompts/45-video-prompt-pack.md)** | **视频生成提示词包 + paid approval gate** |
 | **46** | **[Generation Task Log](docs/prompts/46-generation-task-log.md)** | **跟踪 submit_id、轮询、下载和本地落盘** |
@@ -2747,6 +2799,7 @@ scripts/
 ├── generate_standup_timeline.py Remotion timeline
 ├── multi_export.py             三平台导出                       [V3]
 ├── generate_caption.py         标题/正文/标签                   [V3]
+├── approval_receipt.py         SHA-256 审批收据 + stale gate       [V3]
 ├── publish_package.py          最终上传包 + gate 状态汇总           [V3]
 ├── prompts/
 │   ├── hook_templates.yaml     8 钩子模板                       [V3]

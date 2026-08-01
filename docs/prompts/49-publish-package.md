@@ -21,12 +21,15 @@ python3 scripts/pipeline_manifest.py \
 python3 scripts/publish_package.py \
   --project-dir work/day58 \
   --platforms xhs douyin wxch \
+  --require-approval-receipt \
   --output work/day58/publish_package.json \
   --markdown work/day58/publish_package.md \
   --strict
 ```
 
 如果项目里有 `cover_variants.json`，并且其中的 `selected_cover` 指向已存在图片，`publish_package.py` 会优先使用这张已复核封面。没有记录选择时，先按 [68 — Cover Variants](68-cover-variants.md) 运行 `--select cover-x --require-selection`；仍可用显式 `--cover` 覆盖自动发现。
+
+`--require-approval-receipt` 会要求最新 `approval_receipt.json` 存在且全部 SHA-256 仍为 `current`。即使显式传入旧 pipeline manifest，发布包也会独立读取当前文件并重算哈希。创建和验证收据见 [77 — Approval Receipt](77-approval-receipt.md)。
 
 ## 指定平台文件
 
@@ -42,6 +45,7 @@ python3 scripts/publish_package.py \
   --cover work/day58/output/cover.png \
   --chapters work/day58/output/chapters-youtube.txt \
   --pipeline-manifest work/day58/pipeline_manifest.json \
+  --approval-receipt work/day58/verify/approval_receipt.json \
   --output work/day58/publish_package.json \
   --markdown work/day58/publish_package.md \
   --strict
@@ -56,6 +60,7 @@ python3 scripts/publish_package.py \
 - `platforms[]`：每个平台的 `video`、`cover_image`、`subtitles`、`caption`、`upload_checklist`、`notes`。
 - `caption`：从 `generate_caption.py` 输出中提取 `title`、`caption_body`、`tags`、`publish_time_hint`，并生成可直接粘贴的 `upload_copy`。
 - `pipeline_status`：读取或现场构建 `pipeline_manifest` 的状态。
+- `approval_receipt_path` / `approval_receipt_status`：发现收据时实时验证；过期收据即使未显式要求也会阻塞。
 - `blockers[]`：缺少平台视频、caption 为空、pipeline blocked 等上传前必须解决的问题。
 - `warnings[]`：非阻塞但应该关注的问题。
 
@@ -65,5 +70,6 @@ python3 scripts/publish_package.py \
 
 - `publish_package.py` 不上传、不登录平台、不调用外部 API。
 - `--strict` 在 `status=blocked` 时返回 2，适合自动化任务或发布前门禁。
+- `--require-approval-receipt` 在缺少收据时阻塞；只传 `--approval-receipt` 也会验证指定收据。
 - 如果要交给外部发布 connector，优先传 `publish_package.json`，不要让 connector 自己重新猜文件。
-- 如果重新渲染或重导出平台视频，重新跑一次 `pipeline_manifest.py` 和 `publish_package.py`，避免旧路径被误用。
+- 如果重新渲染、换封面或修改文案/字幕，重新审查并创建一份新 approval receipt，再跑 `pipeline_manifest.py` 和 `publish_package.py`。

@@ -9,6 +9,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(REPO, "scripts"))
 
 from publish_package import build_publish_package, emit_markdown  # noqa: E402
+from approval_receipt import create_receipt  # noqa: E402
 
 
 def _write(path, value):
@@ -83,9 +84,112 @@ def test_pipeline_manifest_blocker_is_propagated(tmp_path):
         pipeline_manifest_path=str(tmp_path / "work" / "pipeline_manifest.json"),
     )
 
+    assert package["status"] == "warn"
+    assert "pipeline_manifest blocked: asset_provenance" not in package["blockers"]
+    assert package["pipeline_status"] == "ready"
+    assert any("saved pipeline manifest status differs" in item for item in package["warnings"])
+
+
+def test_current_approval_receipt_is_verified_for_publish_package(tmp_path):
+    _ready_project(tmp_path)
+    receipt_path = tmp_path / "verify" / "approval_receipt.json"
+    receipt = create_receipt(
+        str(tmp_path),
+        [
+            str(tmp_path / "output" / "day58_xhs.mp4"),
+            str(tmp_path / "output" / "day58_douyin.mp4"),
+            str(tmp_path / "output" / "day58_wxch.mp4"),
+            str(tmp_path / "output" / "day58_caption.json"),
+            str(tmp_path / "output" / "cover.png"),
+            str(tmp_path / "output" / "subtitles" / "day58.srt"),
+        ],
+        approved_by="Jay",
+        receipt_path=str(receipt_path),
+    )
+    _write(receipt_path, receipt)
+
+    package = build_publish_package(str(tmp_path), require_approval_receipt=True)
+
+    assert package["status"] == "ready"
+    assert package["approval_receipt_status"] == "current"
+    assert package["approval_receipt_path"] == str(receipt_path.resolve())
+    assert package["approval"]["uncovered_artifacts"] == []
+    assert len(package["approval"]["covered_artifacts"]) == 6
+
+
+def test_stale_approval_receipt_blocks_publish_package_when_present(tmp_path):
+    _ready_project(tmp_path)
+    receipt_path = tmp_path / "verify" / "approval_receipt.json"
+    video = tmp_path / "output" / "day58_xhs.mp4"
+    receipt = create_receipt(
+        str(tmp_path),
+        [str(video)],
+        approved_by="Jay",
+        receipt_path=str(receipt_path),
+    )
+    _write(receipt_path, receipt)
+    video.write_text("changed after approval", encoding="utf-8")
+
+    package = build_publish_package(str(tmp_path))
+
     assert package["status"] == "blocked"
-    assert "pipeline_manifest blocked: asset_provenance" in package["blockers"]
-    assert package["pipeline_status"] == "blocked"
+    assert package["approval_receipt_status"] == "stale"
+    assert any("approval receipt stale" in blocker for blocker in package["blockers"])
+
+
+def test_required_approval_receipt_blocks_when_missing(tmp_path):
+    _ready_project(tmp_path)
+
+    package = build_publish_package(str(tmp_path), require_approval_receipt=True)
+
+    assert package["status"] == "blocked"
+    assert package["approval_receipt_status"] == "missing"
+    assert "approval receipt missing" in package["blockers"]
+
+
+def test_current_old_receipt_blocks_newer_selected_export(tmp_path):
+    _ready_project(tmp_path)
+    receipt_path = tmp_path / "verify" / "approval_receipt.json"
+    approved = [
+        tmp_path / "output" / "day58_xhs.mp4",
+        tmp_path / "output" / "day58_douyin.mp4",
+        tmp_path / "output" / "day58_wxch.mp4",
+        tmp_path / "output" / "day58_caption.json",
+        tmp_path / "output" / "cover.png",
+        tmp_path / "output" / "subtitles" / "day58.srt",
+    ]
+    receipt = create_receipt(
+        str(tmp_path),
+        [str(path) for path in approved],
+        approved_by="Jay",
+        receipt_path=str(receipt_path),
+    )
+    _write(receipt_path, receipt)
+    newer = tmp_path / "output" / "day59_xhs.mp4"
+    _write(newer, "new latest xhs")
+    future = max(path.stat().st_mtime for path in approved) + 10
+    os.utime(newer, (future, future))
+
+    package = build_publish_package(str(tmp_path))
+
+    assert package["status"] == "blocked"
+    assert package["approval_receipt_status"] == "incomplete"
+    assert package["approval"]["uncovered_artifacts"] == ["output/day59_xhs.mp4"]
+    assert any("does not cover selected artifact" in item for item in package["blockers"])
+
+
+def test_existing_publish_package_does_not_block_live_package_build(tmp_path):
+    _ready_project(tmp_path)
+    _write(tmp_path / "work" / "publish_package.json", {
+        "version": "publish_package.v1",
+        "status": "blocked",
+        "summary": {"blocking": 1},
+    })
+
+    package = build_publish_package(str(tmp_path))
+
+    assert package["status"] == "ready"
+    assert not any("publish_package" in item for item in package["blockers"])
 
 
 def test_video_override_supports_extra_platform(tmp_path):

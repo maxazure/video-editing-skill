@@ -420,6 +420,13 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         "Run multi_export.py when separate platform deliverables are required.",
     ),
     ArtifactDef(
+        "approval_receipt",
+        "Approval Receipt",
+        ("**/approval_receipt.json", "**/*_approval_receipt.json"),
+        "Create a new approval_receipt.py receipt after final review, then re-run verification before publishing.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "publish_package",
         "Publish Package",
         ("**/publish_package.json", "**/*_publish_package.json"),
@@ -541,7 +548,12 @@ def _int_at(data: Mapping[str, Any], *keys: str) -> int:
         return 0
 
 
-def evaluate_category(definition: ArtifactDef, artifacts: Sequence[ArtifactRecord]) -> Dict[str, Any]:
+def evaluate_category(
+    definition: ArtifactDef,
+    artifacts: Sequence[ArtifactRecord],
+    *,
+    project_dir: Optional[Path] = None,
+) -> Dict[str, Any]:
     if not artifacts:
         return {
             "category": definition.category,
@@ -555,6 +567,49 @@ def evaluate_category(definition: ArtifactDef, artifacts: Sequence[ArtifactRecor
 
     status = "ready"
     notes: List[str] = []
+
+    if definition.category == "approval_receipt":
+        latest = artifacts[0]
+        if len(artifacts) > 1:
+            status = "blocked"
+            notes.append(f"multiple approval receipts are ambiguous: {len(artifacts)} found")
+        else:
+            data = _load_json(latest.path)
+            if data is None:
+                status = "blocked"
+                notes.append("approval receipt is unreadable")
+        if status != "blocked" and project_dir is None:
+            status = "blocked"
+            notes.append("project root unavailable for live receipt verification")
+        elif status != "blocked":
+            from approval_receipt import verify_receipt
+
+            try:
+                verification = verify_receipt(
+                    data,
+                    str(project_dir),
+                    receipt_path=latest.path,
+                )
+            except Exception as exc:
+                status = "blocked"
+                notes.append(f"approval receipt verification failed: {exc}")
+            else:
+                blocking = _int_at(verification, "summary", "blocking")
+                if blocking:
+                    status = "blocked"
+                    notes.append(
+                        f"approval receipt is {verification.get('status', 'stale')}: "
+                        f"{blocking} blocking item(s)"
+                    )
+        return {
+            "category": definition.category,
+            "label": definition.label,
+            "status": status,
+            "artifact_count": len(artifacts),
+            "latest_path": latest.path,
+            "notes": sorted(set(notes)),
+            "next_action": definition.next_action if status in {"missing", "blocked", "warn"} else "",
+        }
 
     for artifact in artifacts:
         data = _load_json(artifact.path)
@@ -640,12 +695,17 @@ def build_manifest(
     required: Optional[Sequence[str]] = None,
     include_hash: bool = False,
     excludes: Iterable[str] = DEFAULT_EXCLUDES,
+    ignored_categories: Optional[Sequence[str]] = None,
 ) -> Dict[str, Any]:
     root = Path(project_dir).expanduser().resolve()
     if target_stage not in STAGE_REQUIREMENTS:
         raise ValueError(f"unknown target stage: {target_stage}")
 
     required_categories = list(STAGE_REQUIREMENTS[target_stage])
+    ignored = set(ignored_categories or [])
+    unknown_ignored = sorted(ignored.difference(ARTIFACT_BY_CATEGORY))
+    if unknown_ignored:
+        raise ValueError(f"unknown ignored artifact category: {unknown_ignored[0]}")
     for category in required or []:
         if category not in ARTIFACT_BY_CATEGORY:
             raise ValueError(f"unknown artifact category: {category}")
@@ -657,13 +717,18 @@ def build_manifest(
     all_artifacts: List[ArtifactRecord] = []
 
     for definition in ARTIFACTS:
-        records = find_artifacts(root, definition, excludes=excludes, include_hash=include_hash)
+        records = (
+            []
+            if definition.category in ignored
+            else find_artifacts(root, definition, excludes=excludes, include_hash=include_hash)
+        )
         artifacts_by_category[definition.category] = records
         all_artifacts.extend(records)
 
-        gate = evaluate_category(definition, records)
+        gate = evaluate_category(definition, records, project_dir=root)
         gate["required"] = definition.category in required_categories
         gate["blocks_when_present"] = definition.blocks_when_present
+        gate["ignored"] = definition.category in ignored
         gates.append(gate)
 
     missing_required = [g["category"] for g in gates if g["required"] and g["status"] == "missing"]
@@ -690,6 +755,13 @@ def build_manifest(
             for note in gate.get("notes") or []:
                 next_actions.append(f"{gate['label']}: {note}")
 
+    manifest_notes = [
+        "This manifest is a local run-state summary, not a render queue.",
+        "Optional storyboard/provider/transition/audio artifacts block when present and unresolved.",
+    ]
+    if ignored:
+        manifest_notes.append(f"Ignored categories: {', '.join(sorted(ignored))}")
+
     return {
         "version": "pipeline_manifest.v1",
         "generated_at": utc_now(),
@@ -713,10 +785,7 @@ def build_manifest(
         "gates": gates,
         "artifacts": [asdict(item) for item in sorted(all_artifacts, key=lambda a: (a.category, a.path))],
         "next_actions": list(dict.fromkeys(next_actions)),
-        "notes": [
-            "This manifest is a local run-state summary, not a render queue.",
-            "Optional storyboard/provider/transition/audio artifacts block when present and unresolved.",
-        ],
+        "notes": manifest_notes,
     }
 
 

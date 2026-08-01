@@ -6,6 +6,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts"))
 
 from pipeline_manifest import build_manifest, emit_markdown  # noqa: E402
+from approval_receipt import create_receipt  # noqa: E402
 
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -46,6 +47,76 @@ def test_missing_required_artifacts_block_publish_ready(tmp_path):
     assert manifest["status"] == "blocked"
     assert "master_video" in manifest["missing_required"]
     assert any("render_final.py" in action for action in manifest["next_actions"])
+
+
+def test_current_approval_receipt_can_be_required_for_publish(tmp_path):
+    _publish_ready_project(tmp_path)
+    receipt_path = tmp_path / "verify" / "approval_receipt.json"
+    receipt = create_receipt(
+        str(tmp_path),
+        [
+            str(tmp_path / "output" / "day58_master.mp4"),
+            str(tmp_path / "output" / "day58_qa.json"),
+            str(tmp_path / "output" / "day58_caption.json"),
+        ],
+        approved_by="Jay",
+        receipt_path=str(receipt_path),
+    )
+    _write(receipt_path, receipt)
+
+    manifest = build_manifest(
+        str(tmp_path),
+        target_stage="publish_ready",
+        required=["approval_receipt"],
+    )
+
+    assert manifest["status"] == "ready"
+    gate = next(g for g in manifest["gates"] if g["category"] == "approval_receipt")
+    assert gate["status"] == "ready"
+    assert gate["required"] is True
+
+
+def test_stale_approval_receipt_blocks_when_present(tmp_path):
+    _publish_ready_project(tmp_path)
+    receipt_path = tmp_path / "verify" / "approval_receipt.json"
+    master = tmp_path / "output" / "day58_master.mp4"
+    receipt = create_receipt(
+        str(tmp_path),
+        [str(master)],
+        approved_by="Jay",
+        receipt_path=str(receipt_path),
+    )
+    _write(receipt_path, receipt)
+    master.write_text("changed after review", encoding="utf-8")
+
+    manifest = build_manifest(str(tmp_path), target_stage="publish_ready")
+
+    assert manifest["status"] == "blocked"
+    assert "approval_receipt" in manifest["blocked_gates"]
+    gate = next(g for g in manifest["gates"] if g["category"] == "approval_receipt")
+    assert "approval receipt is stale" in gate["notes"][0]
+
+
+def test_multiple_approval_receipts_block_as_ambiguous(tmp_path):
+    _publish_ready_project(tmp_path)
+    master = tmp_path / "output" / "day58_master.mp4"
+    for name in ("first_approval_receipt.json", "second_approval_receipt.json"):
+        receipt_path = tmp_path / "verify" / name
+        receipt = create_receipt(
+            str(tmp_path),
+            [str(master)],
+            approved_by="Jay",
+            receipt_path=str(receipt_path),
+        )
+        _write(receipt_path, receipt)
+
+    manifest = build_manifest(str(tmp_path), target_stage="publish_ready")
+
+    assert manifest["status"] == "blocked"
+    gate = next(g for g in manifest["gates"] if g["category"] == "approval_receipt")
+    assert gate["status"] == "blocked"
+    assert gate["artifact_count"] == 2
+    assert "multiple approval receipts are ambiguous" in gate["notes"][0]
 
 
 def test_source_inventory_can_be_required_for_analysis(tmp_path):

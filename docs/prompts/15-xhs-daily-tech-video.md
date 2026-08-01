@@ -20,7 +20,7 @@
 
 ## 提示词模板
 
-把下面这段贴给 Claude / ChatGPT，替换 `<...>` 占位：
+把下面这段交给 GPT-5.6 / Claude 等支持长流程工具调用的 Agent，替换 `<...>` 占位：
 
 ```
 我是 BestAI Labs 的 Jay，正在做 day<NN> 小红书短视频，主题是 <主题描述>。
@@ -341,27 +341,43 @@
      --markdown work/pipeline_manifest.md \
      --strict
 
-14. python3 scripts/publish_package.py \
+14. # 完整审片并确认封面/文案/字幕后，把最终交付件绑定到具体 SHA-256：
+    python3 scripts/approval_receipt.py create \
+      --project-dir . \
+      --artifact output/day<NN>_master_xhs.mp4 \
+      --artifact output/day<NN>_master_douyin.mp4 \
+      --artifact output/day<NN>_master_wxch.mp4 \
+      --artifact output/day<NN>_caption.json \
+      --artifact output/day<NN>_master_qa.json \
+      --approved-by "<reviewer label>" \
+      --note "<正常速度完整审片和文案/封面/字幕复核说明>" \
+      --output work/approval_receipt.json \
+      --markdown work/approval_receipt.md
+    # 如果选了独立封面/字幕 sidecar，也分别加 --artifact；不要把会重写的 manifest/package 放进收据。
+    # 详见 docs/prompts/77-approval-receipt.md
+
+15. python3 scripts/publish_package.py \
      --project-dir . \
      --platforms xhs douyin wxch \
+     --require-approval-receipt \
      --output work/publish_package.json \
      --markdown work/publish_package.md \
      --strict
 
-15. python3 scripts/project_resume.py \
+16. python3 scripts/project_resume.py \
      --project-dir . \
      --target-stage publish_ready \
      --output work/project_resume.json \
      --markdown work/project_resume.md \
      --agent-note CLAUDE.md
 
-16. python3 scripts/review_proxy.py \
+17. python3 scripts/review_proxy.py \
      output/day<NN>_master.mp4 \
      --output output/verify/day<NN>_review_proxy.mp4 \
      --manifest output/verify/day<NN>_review_proxy.json \
      --markdown output/verify/day<NN>_review_proxy.md
 
-17. python3 scripts/review_dashboard.py \
+18. python3 scripts/review_dashboard.py \
      --project-dir . \
      --target-stage publish_ready \
      --output work/review_dashboard.json \
@@ -372,6 +388,7 @@
 - 三个平台的 mp4 路径
 - caption.json 里的 title + caption_body + tags + publish_time_hint
 - publish_package.md 里的每个平台上传 checklist 和 blockers
+- approval_receipt.md 和最新 verify 状态（必须 `current`；它不是数字签名）
 - project_resume.md 里的 status / phase / recommended_first_action（方便下次续跑）
 - review_proxy.mp4 路径；审片反馈要引用画面可见时间码，不能把它当发布成片
 - review_dashboard.html 路径，以及 review_dashboard.json 的 review_state / review_items 数量
@@ -437,6 +454,8 @@ day<NN>/
 │   ├── pipeline_manifest.md
 │   ├── cover_variants.json # 封面 A/B 方案 + selected_cover
 │   ├── cover_variants.md
+│   ├── approval_receipt.json # 人工已复核交付件的 SHA-256 收据
+│   ├── approval_receipt.md
 │   ├── publish_package.json # 最终上传包
 │   ├── publish_package.md
 │   ├── project_resume.json # 续跑上下文包

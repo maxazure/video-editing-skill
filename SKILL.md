@@ -73,6 +73,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ multi_export.py          小红书 3:4 / 抖音 9:16 / 视频号 ≤60s
    ├─→ generate_caption.py      标题 + 200-500 字正文 + 3-6 tags + 发布时段
    ├─→ cover_variants.py        2-4 套封面 / feed-size 预览 / 最终选择 gate
+   ├─→ approval_receipt.py      已复核交付件 → SHA-256 收据 / stale approval gate
    └─→ publish_package.py       平台视频/封面/字幕/章节/文案上传包 + gate 状态
 ```
 
@@ -143,6 +144,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `multi_export.py` | 三平台导出 | `<input.mp4>` `--platforms xhs douyin wxch` |
 | `generate_caption.py` | 标题/正文/tag | `--script` `--profile` `--output` |
 | `cover_variants.py` | 多套封面 A/B 方案、feed-size 预览、标题协同和最终选择 | `<video>` `--title` `--caption` `--platform` `--render` `--select cover-c` `--strict` |
+| `approval_receipt.py` | 已复核视频/封面/文案/字幕/QA → SHA-256 收据和过期审批门禁 | `create --artifact ... --approved-by` / `verify --strict` |
 | `publish_package.py` | 发布上传包：平台视频、封面、字幕、章节、文案和 gate 状态 | `--project-dir` `--platforms` `--video xhs=...` `--strict` |
 | `profiles/__init__.py` | 受众档位加载 | `load_profile("tech_pro")` |
 
@@ -1384,7 +1386,29 @@ python3 scripts/publish_package.py \
 
 `publish_package.py` 不上传、不调用平台 API；它只把 `multi_export.py` 的平台 MP4、`generate_caption.py` 的标题/正文/tags、封面、SRT/VTT、章节文本和 `pipeline_manifest` gate 状态合成 `publish_package.v1`。如果存在 `cover_variants.json` 且 `selected_cover` 文件有效，会优先使用已复核封面；显式 `--cover` 可覆盖。如果缺少某个平台视频、caption 为空、或 pipeline manifest 已 blocked，`--strict` 返回 2。需要交给外部发布 connector 时，用这份 JSON 作为 handoff；手工上传时看 Markdown checklist。
 
-**6h. 续跑上下文包（跨会话/自动化收尾时跑）**：
+**6h. 最终审批收据（客户/人工确认后跑）**：
+```bash
+python3 scripts/approval_receipt.py create \
+  --project-dir work/day58 \
+  --artifact output/day58_xhs.mp4 \
+  --artifact output/day58_douyin.mp4 \
+  --artifact output/day58_wxch.mp4 \
+  --artifact output/cover.png \
+  --artifact output/day58_caption.json \
+  --artifact verify/render_qa.json \
+  --approved-by "reviewer label" \
+  --output verify/approval_receipt.json \
+  --markdown verify/approval_receipt.md
+
+python3 scripts/publish_package.py \
+  --project-dir work/day58 \
+  --require-approval-receipt \
+  --strict
+```
+
+`approval_receipt.py` 只绑定显式列出的稳定交付件；不要把每次都会重写的 pipeline manifest、publish package 或 dashboard 放进收据。`verify --strict` 和 `pipeline_manifest.py --require approval_receipt --strict` 会重新读取当前文件并比较 SHA-256；任何重渲染、换封面、改文案、删字幕或路径变成 symlink 都让旧审批过期。`approved_by` 只是本地标签，不是身份认证或数字签名。详细说明见 [docs/prompts/77-approval-receipt.md](docs/prompts/77-approval-receipt.md)。
+
+**6i. 续跑上下文包（跨会话/自动化收尾时跑）**：
 ```bash
 python3 scripts/project_resume.py \
   --project-dir work/day58 \
@@ -1397,7 +1421,7 @@ python3 scripts/project_resume.py \
 
 `project_resume.py` 复用 `pipeline_manifest.py` 的本地 gate，不渲染、不上传、不提交生成任务。它输出 `project_resume.v1`，包含 `phase`、`recommended_first_action`、`next_actions[]`、最近 artifacts、关键 gate snapshot 和一句可直接交给下一位 agent 的 `suggested_prompt`。长流程被压缩上下文、自动化结束、或要交给另一位 agent 时，优先把 Markdown/agent note 作为接手入口。
 
-**6i. 人工复核面板（最终确认/交接前跑）**：
+**6j. 人工复核面板（最终确认/交接前跑）**：
 ```bash
 python3 scripts/review_dashboard.py \
   --project-dir work/day58 \
@@ -1409,7 +1433,7 @@ python3 scripts/review_dashboard.py \
 
 `review_dashboard.py` 复用 `pipeline_manifest.py` 的本地 gate，输出 `review_dashboard.v1` 和一个可直接在浏览器打开的 HTML。它把 blocking/missing/warning gate 放进 `review_items[]`，同时列出 `next_actions[]`、最新 artifacts 和完整 gate snapshot。适合用户最终确认，也适合自动化结束时留给下一位 agent。
 
-**6j. 成片复读 / 口吃门禁**：
+**6k. 成片复读 / 口吃门禁**：
 ```bash
 python3 scripts/extract_audio.py output/final.mp4
 python3 scripts/transcribe.py output/final_audio.wav --model auto --language zh --word-timestamps
@@ -1421,7 +1445,7 @@ python3 scripts/speech_continuity_qa.py output/final_transcript.json \
 
 必须对**已渲染 master**重新转录，不能复用源素材 transcript。`speech_continuity_qa.py` 会检查相邻 segment 的结尾/开头精确复读、相邻近重复 take 和句内即时口吃；不同 speaker 默认不互判。命中后先按时间码试听 master，再调整源 `render_config` / cut list，重新渲染并复跑。`pipeline_manifest.py --require speech_continuity_qa --strict` 可把这份报告设为发布必需项。
 
-**6k. 字幕文字最终校验**：
+**6l. 字幕文字最终校验**：
 1. 读取最终视频使用的所有 transcript 片段的文字
 2. 按最终视频的片段顺序，逐条检查以下问题：
    - **语音识别残留错误**：Phase 2.5 可能遗漏的同音字、专有名词错误
