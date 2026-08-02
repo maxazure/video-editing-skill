@@ -468,6 +468,38 @@ def test_takes_pack_artifact_is_discovered_without_blocking(tmp_path):
     assert gate["blocks_when_present"] is False
 
 
+def test_script_alignment_blocks_until_ambiguous_matches_are_reviewed(tmp_path):
+    _publish_ready_project(tmp_path)
+    _write(tmp_path / "work" / "script_alignment.json", {
+        "version": "script_alignment.v1",
+        "status": "blocked",
+        "summary": {"targets": 2, "matched": 1, "review": 1, "blocking": 1},
+    })
+
+    manifest = build_manifest(str(tmp_path), target_stage="publish_ready")
+
+    assert manifest["status"] == "blocked"
+    gate = next(g for g in manifest["gates"] if g["category"] == "script_alignment")
+    assert gate["status"] == "blocked"
+    assert gate["blocks_when_present"] is True
+
+
+def test_reviewed_script_alignment_is_ready(tmp_path):
+    _publish_ready_project(tmp_path)
+    _write(tmp_path / "work" / "script_alignment.json", {
+        "version": "script_alignment.v1",
+        "status": "ready",
+        "summary": {"targets": 2, "matched": 2, "review": 0, "blocking": 0},
+    })
+
+    manifest = build_manifest(str(tmp_path), target_stage="publish_ready", required=["script_alignment"])
+
+    assert manifest["status"] == "ready"
+    gate = next(g for g in manifest["gates"] if g["category"] == "script_alignment")
+    assert gate["required"] is True
+    assert gate["status"] == "ready"
+
+
 def test_shorts_batch_artifact_is_discovered_without_blocking_when_ready(tmp_path):
     _publish_ready_project(tmp_path)
     _write(tmp_path / "work" / "shorts_batch.json", {

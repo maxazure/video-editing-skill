@@ -82,6 +82,19 @@
     # 打开 work/hook_variants.md，选中的 hook 文本放进下一步 LLM prompt。
     # 详见 docs/prompts/62-hook-variants.md
 
+1c. # 可选：如果已经有确认的成片稿，且同一句录了多个 take，就按稿装配原话：
+    python3 scripts/script_alignment.py \
+      --target-script work/target_script.md \
+      --transcripts-dir work/takes \
+      --output work/script_alignment.json \
+      --markdown work/script_alignment.md \
+      --render-config work/render_config.json \
+      --clean-script work/clean_script.md \
+      --strict
+    # 低分/同分候选先看听素材，把 candidate id 写进 choices JSON，再加 --choices 重跑。
+    # summary.blocking=0 后可跳过下面 2-3 的自由重写，直接进入 enrich / preflight / render。
+    # 详见 docs/prompts/78-script-alignment.md
+
 2. python3 scripts/rewrite_script.py \
      --transcript work/transcript_reviewed.json \
      --structure pain_solve \

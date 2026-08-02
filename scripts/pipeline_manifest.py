@@ -68,6 +68,13 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         "Run takes_pack.py when multiple transcripts need a compact phrase-level review view.",
     ),
     ArtifactDef(
+        "script_alignment",
+        "Target Script Alignment",
+        ("**/script_alignment.json", "**/*_script_alignment.json"),
+        "Run script_alignment.py, review low-score or ambiguous matches, and record candidate choices before rendering.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "clean_script",
         "Clean Script",
         ("**/clean_script.md", "**/*_clean_script.md"),
@@ -645,6 +652,7 @@ def evaluate_category(
             "subtitle_readability_qa",
             "platform_safe_area_qa",
             "cover_variants",
+            "script_alignment",
         }:
             blocking = _int_at(data, "summary", "blocking")
             if blocking:

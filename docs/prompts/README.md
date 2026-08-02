@@ -80,6 +80,7 @@
 | 75 | [Speech Denoise 口播稳态底噪清理](75-speech-denoise.md) | `render_final.py` 单次编码内可选 highpass + afftdn，默认关闭 |
 | 76 | [Multicam Sync 多机位可逆同步](76-multicam-sync.md) | 2+ 设备 → offset / coverage / 有效音轨 / pairwise / 对齐预览 gate |
 | 77 | [Approval Receipt 最终审批收据](77-approval-receipt.md) | 已复核视频/封面/文案/字幕/QA → SHA-256 收据、过期检测和发布 gate |
+| 78 | [Target Script Alignment 目标脚本对齐剪辑](78-script-alignment.md) | 已审目标稿 + 多 take transcript → 原话候选、人工 choices、render_config 和 gate |
 
 ## 快速上手
 
@@ -155,4 +156,5 @@
 | 发布前想检查字幕、PIP、CTA 或点击标记会不会被平台 UI 挡住 | [73-Platform Safe Area QA](73-platform-safe-area-qa.md) |
 | 想逐秒对照原片和最终成片到底保留、删除了什么 | [74-Edit Compare](74-edit-compare.md) |
 | 同一访谈/活动有多个机位，需要先对齐到同一时间线 | [76-Multicam Sync](76-multicam-sync.md) |
+| 已有确认文案，需要从多个 take 按目标顺序找回原话 | [78-Target Script Alignment](78-script-alignment.md) |
 | 想确保准备上传的文件仍是人工看过的那一版 | [77-Approval Receipt](77-approval-receipt.md) |

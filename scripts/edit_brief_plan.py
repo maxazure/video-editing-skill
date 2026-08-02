@@ -45,6 +45,19 @@ SIGNAL_KEYWORDS: Mapping[str, Sequence[str]] = {
     ),
     "transcript": ("transcript", "whisper", "转写", "转录", "字幕", "caption", "subtitles", "口播", "voiceover"),
     "multi_take": ("multi take", "takes", "多 take", "多条素材", "多个 take", "选 take", "挑 take"),
+    "target_script": (
+        "target script",
+        "script alignment",
+        "script-based edit",
+        "按脚本剪",
+        "按稿剪",
+        "目标脚本",
+        "确认稿",
+        "成片稿",
+        "对稿剪辑",
+        "文案对齐",
+        "照这个稿子",
+    ),
     "long_to_short": (
         "long to short",
         "long video",
@@ -101,6 +114,7 @@ SIGNAL_LABELS: Mapping[str, str] = {
     "source_ingest": "素材导入 / 项目启动",
     "transcript": "转写 / 字幕时间码",
     "multi_take": "多 take 阅读视图",
+    "target_script": "目标脚本对齐剪辑",
     "long_to_short": "长视频拆短视频",
     "batch_shorts": "多条短视频批量规划",
     "hook": "前三秒 hook",
@@ -276,7 +290,7 @@ def build_plan(
 
     if source_media and not Path(source_media).expanduser().exists():
         blockers.append(f"source media not found: {source_media}")
-    elif not source_media and ids.intersection({"source_ingest", "transcript", "long_to_short", "render", "publish", "review_proxy"}):
+    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy"}):
         warnings.append("source media was not provided; commands use <source_media> placeholders")
 
     if transcript and not Path(transcript).expanduser().exists():
@@ -290,6 +304,7 @@ def build_plan(
             {
                 "transcript",
                 "multi_take",
+                "target_script",
                 "long_to_short",
                 "hook",
                 "cleanup_words",
@@ -304,8 +319,11 @@ def build_plan(
             }
         )
     )
-    wants_render = bool(ids.intersection({"render", "publish", "long_to_short", "batch_shorts", "cleanup_silence", "cleanup_words", "broll", "screen_focus", "pip", "color_grade"}))
-    wants_clean_script = bool(ids.intersection({"story_rewrite", "hook", "content_guard", "source_receipts", "broll", "generated_assets", "publish"}))
+    wants_render = bool(ids.intersection({"render", "publish", "target_script", "long_to_short", "batch_shorts", "cleanup_silence", "cleanup_words", "broll", "screen_focus", "pip", "color_grade"}))
+    wants_clean_script = bool(
+        ids.intersection({"story_rewrite", "hook", "content_guard", "source_receipts", "broll", "generated_assets", "publish"})
+        and "target_script" not in ids
+    )
 
     if ids.intersection({"source_ingest"}) or not source_media:
         _add_step(
@@ -364,6 +382,49 @@ def build_plan(
                 outputs=["work/takes_pack.json", "work/takes_packed.md"],
                 gate_category="takes_pack",
                 required=False,
+            ),
+        )
+
+    if "target_script" in ids:
+        alignment_inputs = (
+            ["--transcripts-dir", "work/takes"]
+            if "multi_take" in ids
+            else ["--transcript", f"main={transcript_path}", "--media", f"main={source}"]
+        )
+        _add_step(
+            steps,
+            seen,
+            _step(
+                "script_alignment",
+                phase="edit",
+                script="script_alignment.py",
+                label="Align the reviewed target script to source speech",
+                reason="The brief asks to assemble original spoken ranges in target-script order.",
+                command=shell(
+                    [
+                        python_bin,
+                        "scripts/script_alignment.py",
+                        "--target-script",
+                        "<target_script.md>",
+                        *alignment_inputs,
+                        "--output",
+                        "work/script_alignment.json",
+                        "--markdown",
+                        "work/script_alignment.md",
+                        "--render-config",
+                        "work/render_config.json",
+                        "--clean-script",
+                        "work/clean_script.md",
+                        "--strict",
+                    ]
+                ),
+                outputs=[
+                    "work/script_alignment.json",
+                    "work/script_alignment.md",
+                    "work/render_config.json",
+                    "work/clean_script.md",
+                ],
+                gate_category="script_alignment",
             ),
         )
 

@@ -83,6 +83,28 @@ def test_review_proxy_only_uses_supplied_render_without_rerendering(tmp_path):
     assert str(source) in proxy["command"]
 
 
+def test_target_script_brief_routes_alignment_before_render(tmp_path):
+    source = tmp_path / "talk.mp4"
+    source.write_text("fake video", encoding="utf-8")
+
+    plan = build_plan(
+        f"把 {source} 按目标脚本剪成成片并生成发布包",
+        project_dir=str(tmp_path),
+    )
+
+    ids = [step["id"] for step in plan["steps"]]
+    assert "script_alignment" in ids
+    assert "edit_preflight" in ids
+    assert "master_video" in ids
+    assert "publish_package" in ids
+    assert "clean_script" not in ids
+    assert ids.index("script_alignment") < ids.index("edit_preflight") < ids.index("master_video")
+    step = next(step for step in plan["steps"] if step["id"] == "script_alignment")
+    assert "scripts/script_alignment.py" in step["command"]
+    assert "work/render_config.json" in step["outputs"]
+    assert "work/clean_script.md" in step["outputs"]
+
+
 def test_empty_brief_is_blocked():
     plan = build_plan("")
 

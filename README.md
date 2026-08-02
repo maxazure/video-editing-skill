@@ -120,6 +120,8 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    │                            行内编辑 / 播放高亮 / 查找替换 / CPS 提示 / review.txt
    ├─→ takes_pack.py            多 take / Scribe transcript → phrase-level 阅读视图
    │                            speaker / audio_event / takes_packed.md / takes_pack.json
+   ├─→ script_alignment.py      已审目标稿 → 多 take 原话候选 / choices / render_config
+   │                            词/段边界 / 透明分数 / 歧义与缺素材 gate
    ├─→ audio_sync.py            外录音轨自动对齐 / 替换音轨计划
    │                            scratch audio + lav/recorder track → offset + gate
    ├─→ multicam_sync.py         多机位 → 同一参考时间线 / 公共重叠区间 / 对齐预览
@@ -252,7 +254,7 @@ cd ~/projects/video-editing-skill
 python3 scripts/utils.py
 
 # 4. 跑一遍测试套件确认 OK
-pytest tests/           # 613 个测试，约 8 秒
+pytest tests/           # 700 个测试，约 13 秒
 ```
 
 每天做一条视频的完整模板：**[docs/prompts/15-xhs-daily-tech-video.md](docs/prompts/15-xhs-daily-tech-video.md)**
@@ -423,7 +425,7 @@ python3 scripts/edit_brief_plan.py \
   --strict
 ```
 
-它会识别 `origin/interview.mp4` 这类源素材路径、目标平台、长视频拆条、批量短视频、字幕、B-roll、BGM、去停顿、生成素材、PIP、调色、QA、发布包等信号，并把它们映射到已有脚本，例如 `highlight_picker.py`、`shorts_batch.py`、`jump_cut.py`、`auto_enrich.py`、`render_final.py`、`render_qa.py` 和 `publish_package.py`。`pipeline_manifest.py` 会发现 `edit_brief_plan.json`；当 `summary.blocking > 0`（例如 brief 为空或显式 source 缺失）时会作为 blocker，也可以用 `--require edit_brief_plan` 把需求路由作为 analysis gate。
+它会识别 `origin/interview.mp4` 这类源素材路径、目标平台、目标脚本对齐、多 take、长视频拆条、批量短视频、字幕、B-roll、BGM、去停顿、生成素材、PIP、调色、QA、发布包等信号，并把它们映射到已有脚本，例如 `script_alignment.py`、`highlight_picker.py`、`shorts_batch.py`、`jump_cut.py`、`auto_enrich.py`、`render_final.py`、`render_qa.py` 和 `publish_package.py`。`pipeline_manifest.py` 会发现 `edit_brief_plan.json`；当 `summary.blocking > 0`（例如 brief 为空或显式 source 缺失）时会作为 blocker，也可以用 `--require edit_brief_plan` 把需求路由作为 analysis gate。
 
 ### 👁️ Video Understanding — 抽样帧 + 可选 YOLO 检测
 [`scripts/video_understanding.py`](scripts/video_understanding.py) · [详细文档](docs/prompts/47-video-understanding.md)
@@ -464,6 +466,29 @@ python3 scripts/takes_pack.py \
 ```
 
 `takes_packed.md` 按 source 分组列出 `take1-003` 这类 phrase id、源时间码、speaker、segment ids、audio events 和压缩文本，适合先比较多个 take 的表达质量，也能避免在笑点、掌声或反应声中间误切。`takes_pack.json` 还会给每个事件保留 label/start/end；确认后的 time range 可继续交给 `highlight_picker.py`、`srt_edit_plan.py`、`render_config.json` 或 EDL/FCPXML/OTIO。`pipeline_manifest.py` 会发现 `takes_pack.json`，但默认不把它作为 blocker；需要强制多 take review 时可加 `--require takes_pack`。
+
+### 🧭 Target Script Alignment — 按确认稿从多 take 装配原话
+[`scripts/script_alignment.py`](scripts/script_alignment.py) · [详细文档](docs/prompts/78-script-alignment.md)
+
+客户、编导或 Agent 已经确认成片稿时，不必再靠人工逐条找时间码。`script_alignment.py` 把目标稿按行/句拆成 spoken units，在一份或多份 reviewed transcript 中搜索词级/segment 边界候选，输出稳定 candidate id、原话、source time、透明 score breakdown 和前三名备选；最终 `render_config.json` 按目标稿顺序排列，即使素材原始录制顺序不同也能重组。
+
+第一次运行：
+
+```bash
+python3 scripts/script_alignment.py \
+  --target-script work/target_script.md \
+  --transcript take-a=work/takes/take-a_transcript_reviewed.json \
+  --transcript take-b=work/takes/take-b_transcript_reviewed.json \
+  --media take-a=origin/take-a.mp4 \
+  --media take-b=origin/take-b.mp4 \
+  --output work/script_alignment.json \
+  --markdown work/script_alignment.md \
+  --render-config work/render_config.json \
+  --clean-script work/clean_script.md \
+  --strict
+```
+
+默认 65 分以下不采用、65-82 分要求 review；即使分数更高，只要前两名相差不超过 3 分，也会以 `ambiguous_match` 阻塞，避免同文案多个 take 被静默选错。人工看/听候选后，把 `target-001 -> candidate id` 写进 `--choices work/script_alignment_choices.json` 再跑一次。显式 choice 能解决低分/同分歧义，但不会绕过源素材缺失或时间段重复占用。该脚本不调用 LLM、不改源文件、不判断表演和画面质量；大幅同义改写仍需要人工语义判断或补录。`pipeline_manifest.py` 会发现此报告，只要 `summary.blocking > 0` 就阻塞，也支持 `--require script_alignment`。
 
 ### 🎞️ Adaptive Scene Boundaries — 运动镜头自适应切点
 [`scripts/scene_boundaries.py`](scripts/scene_boundaries.py) · [详细文档](docs/prompts/32-scene-boundaries.md)
@@ -2313,6 +2338,7 @@ pytest tests/test_export_otio.py -v         # NLE handoff OTIO + manifest
 pytest tests/test_screen_focus.py -v        # 录屏点击聚焦计划 + render 接入
 pytest tests/test_subtitle_pack.py -v       # SRT/VTT/ASS/JSON 字幕交付包
 pytest tests/test_srt_edit_plan.py -v       # SRT 编辑指令转 render_config/cut list
+pytest tests/test_script_alignment.py -v    # 目标稿 → 多 take 原话匹配 / choices / render_config
 pytest tests/test_audio_cue_sheet.py -v     # BGM/SFX 音频设计清单
 pytest tests/test_multicam_sync.py -v       # 多机位 offset / 最响音轨 / pairwise / 真实预览
 pytest tests/test_speech_denoise.py -v      # 口播降噪 preset / 顺序 / 真实 FFmpeg SNR smoke
@@ -2359,6 +2385,23 @@ pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 g
 使用方式：完整审片后运行 `python3 scripts/approval_receipt.py create --project-dir . --artifact output/day77_xhs.mp4 --artifact output/day77_douyin.mp4 --artifact output/cover.png --artifact output/day77_caption.json --artifact verify/render_qa.json --approved-by "Jay" --output verify/approval_receipt.json --markdown verify/approval_receipt.md`；上传前运行 `python3 scripts/approval_receipt.py verify --project-dir . --receipt verify/approval_receipt.json --output verify/approval_receipt_verification.json --strict`，再运行 `python3 scripts/publish_package.py --project-dir . --platforms xhs douyin wxch --require-approval-receipt --strict`。重新渲染、换封面或改文案/字幕后必须重新审查并用 `create --replace` 生成新收据，不能手改旧 hash。
 
 验证结果：定向 `.venv/bin/python -m pytest tests/test_approval_receipt.py tests/test_pipeline_manifest.py tests/test_publish_package.py -q` 通过 `82 passed in 1.20s`；重放到最新主分支后，最终 `.venv/bin/python -m pytest tests -q` 通过 `690 passed in 12.25s`。CLI create/strict verify/stale exit-code、路径穿越、symlink、重复/self/volatile artifact、缺失/变更、旧 manifest、收据覆盖范围和 publish-package 循环 gate 均有回归测试；`.venv/bin/python -m compileall -q scripts tests`、三个 CLI help/category smoke 和 `git diff --check` 全部通过。
+
+### 2026-08-03 自动化升级记录（Target Script Alignment）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`0xsline/OpenChatCut` 的 talking-head guide](https://github.com/0xsline/OpenChatCut/blob/main/src/agent/skills/talking-head-guide/SKILL.md) | 把 target-script alignment 视为独立 A-roll 任务：按目标含义和目标顺序选原话，并要求只保留指定词句范围，不把整段无关上下文一起带入 | 新增词级优先的本地匹配器；exact 文本只在 timed-unit 边界安全时收紧，只有 segment 时间戳时明确标记精度边界 |
+| [`browser-use/video-use`](https://github.com/browser-use/video-use/blob/main/SKILL.md) | 用 phrase-level 多 take 阅读视图挑最佳表达，强调 cut 必须落在词边界，并为选择保留 source range / reason | 复用本项目 `takes_pack.py` 的 transcript 兼容层，但新增稳定 candidate id、透明 score breakdown、目标顺序重排和 choices 复核闭环 |
+| [`Ronvaknins/FirstCut`](https://github.com/Ronvaknins/FirstCut) | 新闻制作中按记者提供的脚本/CSV 自动搭建 Premiere base sequence，先把选定原话装配好，再覆盖 visuals | 输出 `render_final.py` 可直接消费的 `render_config.json` 和规范化 `clean_script.md`；不依赖 Premiere 扩展或显式人工 timecode CSV |
+| [`ayushozha/AdobePremiereProMCP`](https://github.com/ayushozha/AdobePremiereProMCP) | 从脚本与素材库生成 rough cut / edit decision，再在真实 NLE 里继续精修 | 保持本项目本地 artifact-first：只生成可审计计划、候选和 gate，后续可渲染或再导出 EDL/FCPXML/OTIO |
+
+新增/调整能力：新增 [`scripts/script_alignment.py`](scripts/script_alignment.py) 和 [`docs/prompts/78-script-alignment.md`](docs/prompts/78-script-alignment.md)。脚本接受重复 `--transcript label=path`、`--transcripts-dir` 和可选 `--media label=path`，把 Markdown/文本目标稿按行或句拆分，对每个 unit 在多来源 word/segment 时间轴上搜索候选，并记录 sequence、target/source coverage、字符 n-gram overlap、length fit 与 exact evidence。默认禁止复用同一源时间段；低分、次优分差过小、无候选、素材未登记/缺失和显式 choice 冲突都写入 `summary.blocking`。第一次 review 后可用稳定 candidate id 写 `--choices`；人工 choice 只解决词面低分/多解，不绕过物理素材和时间重叠。脚本按目标稿顺序输出 `render_config.json`，并可另存 `clean_script.md` 供内容风控、分镜和发布文案使用。`edit_brief_plan.py` 新增“目标脚本/按稿剪”路由；`pipeline_manifest.py` 新增存在即阻塞未清 review 的 `script_alignment` gate。
+
+使用方式：先运行 `python3 scripts/script_alignment.py --target-script work/target_script.md --transcript take-a=work/take-a_transcript_reviewed.json --transcript take-b=work/take-b_transcript_reviewed.json --media take-a=origin/take-a.mp4 --media take-b=origin/take-b.mp4 --output work/script_alignment.json --markdown work/script_alignment.md --render-config work/render_config.json --clean-script work/clean_script.md --strict`。如果返回 2，打开 Markdown 比较原话和时间码，把确认候选写入 `work/script_alignment_choices.json`，再加 `--choices` 重跑；只有 `summary.blocking=0` 后才进入 `edit_preflight.py` 和最终渲染。
+
+验证结果：新增 `tests/test_script_alignment.py` 7 项，并扩展 edit-brief / pipeline-manifest 回归；定向 `.venv/bin/python -m pytest tests/test_script_alignment.py tests/test_pipeline_manifest.py tests/test_edit_brief_plan.py -q` 通过 `76 passed in 0.78s`，最终 `.venv/bin/python -m pytest tests -q` 通过 `700 passed in 11.02s`。覆盖 Markdown 标题/逐句拆分、GPT-5.6 小数点保护、透明分数、目标顺序重排、多 take 同分阻塞、choices 复核、源时间防复用、缺素材 gate、CLI strict 两阶段和 clean-script/render-config 输出；`.venv/bin/python -m compileall -q scripts tests`、CLI `--help`、manifest category、skill `quick_validate.py` 和 `git diff --check` 全部通过。
 
 ### 2026-07-30 自动化升级记录（Beat Edit Plan）
 
@@ -2691,6 +2734,7 @@ pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 g
 | **75** | **[Speech Denoise](docs/prompts/75-speech-denoise.md)** | **可选清理口播低频震动与稳态底噪** |
 | **76** | **[Multicam Sync](docs/prompts/76-multicam-sync.md)** | **多机位 offset / coverage / 对齐预览和 gate** |
 | **77** | **[Approval Receipt](docs/prompts/77-approval-receipt.md)** | **把人工已复核交付件绑定到 SHA-256，并阻塞过期审批** |
+| **78** | **[Target Script Alignment](docs/prompts/78-script-alignment.md)** | **按确认稿从多 take 找原话、人工选候选并生成 render_config** |
 | **43** | **[Audio Cue Sheet](docs/prompts/43-audio-cue-sheet.md)** | **规划 BGM/SFX 和生成审批** |
 | **45** | **[Video Prompt Pack](docs/prompts/45-video-prompt-pack.md)** | **视频生成提示词包 + paid approval gate** |
 | **46** | **[Generation Task Log](docs/prompts/46-generation-task-log.md)** | **跟踪 submit_id、轮询、下载和本地落盘** |
@@ -2742,6 +2786,7 @@ scripts/
 ├── _internal_text_guard.py     内部 token 拦截器
 ├── transcribe.py               Whisper 转写
 ├── takes_pack.py               多 take / Scribe phrase + audio event 阅读视图 [V3]
+├── script_alignment.py         目标稿 → 多 take 原话候选 / choices / render_config [V3]
 ├── audio_sync.py               外录音轨自动对齐 / 替换音轨计划        [V3]
 ├── multicam_sync.py            多机位可逆同步计划 / 对齐预览          [V3]
 ├── video_understanding.py      抽样帧 + 可选 YOLO 检测 artifact       [V3]

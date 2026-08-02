@@ -19,6 +19,8 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ transcript_review.py     本地同步媒体 HTML 校稿 / CPS 提示 / review.txt 回写
    ├─→ takes_pack.py            多 take / Scribe transcript → phrase-level 阅读视图
    │                            speaker / audio_event 编辑节拍
+   ├─→ script_alignment.py      已审目标稿 → 多 take 原话候选 / choices / render_config
+   │                            词/段边界 / 透明分数 / 歧义与缺素材 gate
    ├─→ audio_sync.py            外录音轨自动对齐 / 替换音轨计划
    ├─→ multicam_sync.py         多机位 → 参考时间线 / 时钟漂移证据 / 对齐预览 gate
    ├─→ scene_boundaries.py      fixed/adaptive 视觉切点 + 逐切点 evidence
@@ -92,6 +94,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `content_guard.py` | 平台雷区 lint | `--script` `--title` `--caption` `--strict` |
 | `source_receipts.py` | 事实 claim → URL/截图 proof deck、Markdown/HTML 和发布 gate | `--claims source_claims.json` `--html` `--require-primary-source` `--strict` |
 | `takes_pack.py` | 多 take / 顶层 Scribe words → phrase-level Markdown/JSON，保留 speaker/audio events | `--transcript take1=...` `--transcripts-dir` `--json` `--break-gap` |
+| `script_alignment.py` | 已审目标稿 → 多 take 词/段边界候选、人工 choices、render_config 和 gate | `--target-script` `--transcript label=...` `--media label=...` `--choices` `--render-config` `--strict` |
 | `audio_sync.py` | scratch audio + 外录音轨 → offset / 替换音轨命令 / gate | `--reference-media` `--external-audio` `--replace-output` `--apply` `--strict` |
 | `multicam_sync.py` | 多机位 → offset/coverage/音轨选择/pairwise/可选时钟漂移/对齐预览 gate | `--reference-media` `--angle` `--manual-offset` `--measure-clock-drift` `--preview-output` `--apply-preview` `--strict` |
 | `rough_cut.py` | transcript 粗剪：去口头禅/重复句 | `--transcript` `--cut-list` / `--input` `--output` |
@@ -720,6 +723,28 @@ python3 scripts/transcript_review.py apply \
 HTML 和媒体只在本机打开，不上传、不调用 LLM。浏览器不能直接写文件时会下载 `transcript_review.txt`；把它放回 `work/` 后再 apply。CPS 是预渲染提示，最终还要跑 `subtitle_readability_qa.py --strict`。
 
 **注意**：此步骤必须在 Phase 5（渲染）之前完成，因为字幕文字来源于 transcript.json。修正后再渲染，才能保证最终视频中的字幕文字正确。
+
+### Phase 2.5a: Target Script Alignment（按确认稿装配原话，可选）
+
+如果客户、编导或用户已经确认成片稿，而同一句话录了多个 take 或分散在不同素材里，先把目标稿按“一行一个完整 spoken unit”整理，再匹配 reviewed transcript：
+
+```bash
+python3 scripts/script_alignment.py \
+  --target-script work/target_script.md \
+  --transcript take-a=work/take-a_transcript_reviewed.json \
+  --transcript take-b=work/take-b_transcript_reviewed.json \
+  --media take-a=origin/take-a.mp4 \
+  --media take-b=origin/take-b.mp4 \
+  --output work/script_alignment.json \
+  --markdown work/script_alignment.md \
+  --render-config work/render_config.json \
+  --clean-script work/clean_script.md \
+  --strict
+```
+
+脚本只做本地词面匹配，不调用 LLM、不改源文件、不判断表情/镜头/表演质量。它输出每句的稳定 candidate id、source time、原话和 sequence/coverage/ngram/length evidence；word timestamps 存在时优先收紧到词边界，只有 segment 时间戳时保守保留整段。低分、前两名过近、无候选、素材缺失或源时间重复占用会写 `summary.blocking` 并让 `--strict` 返回 2。
+
+同文案多个 take 出现 `ambiguous_match` 时，必须看/听 Markdown 里的候选，把确认结果写成 `{"choices":{"target-001":"<candidate-id>"}}`，再用 `--choices work/script_alignment_choices.json` 重跑。人工 choice 只能解决词面低分/多解，不能绕过缺文件或时间重叠。`summary.blocking=0` 后再进入 `edit_preflight.py` / `render_final.py`；详细用法见 [docs/prompts/78-script-alignment.md](docs/prompts/78-script-alignment.md)。
 
 ### Phase 2.6: ASR Rough Cut（口头禅/重复句粗剪，可选）
 
