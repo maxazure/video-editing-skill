@@ -56,21 +56,43 @@
      --engine auto --model auto --language zh --word-timestamps --detect-fillers \
      > work/transcript.json
 
-1a. # 生成零上传的同步媒体校稿页；人工保存 review.txt 后回写 reviewed transcript：
-    python3 scripts/transcript_review.py html \
+1a. # 可选：专业术语/中英混说较多时，先做全篇上下文语义审校；模型建议不会直接应用：
+    python3 scripts/semantic_transcript_review.py prepare \
       --transcript work/transcript.json \
+      --output work/semantic_review_request.json \
+      --markdown work/semantic_review_request.md
+    # 让当前 Agent/模型按 request 的 response_template 写 work/semantic_review_response.json。
+    python3 scripts/semantic_transcript_review.py audit \
+      --transcript work/transcript.json \
+      --response work/semantic_review_response.json \
+      --output work/transcript_semantic_review.json \
+      --markdown work/transcript_semantic_review.md \
+      --strict
+    # 首次 strict 返回 2 代表仍需人工 choices；逐项 approve/reject 后应用：
+    python3 scripts/semantic_transcript_review.py apply \
+      --transcript work/transcript.json \
+      --audit work/transcript_semantic_review.json \
+      --choices work/semantic_review_choices.json \
+      --output work/transcript_semantic_reviewed.json \
+      --markdown work/transcript_semantic_review.md
+    # 详见 docs/prompts/79-semantic-transcript-review.md
+
+1b. # 生成零上传的同步媒体校稿页；人工保存 review.txt 后回写 reviewed transcript：
+    python3 scripts/transcript_review.py html \
+      --transcript work/transcript_semantic_reviewed.json \
       --video origin/<voice>.mp3 \
       --corrections work/corrections.json \
       --output work/transcript_review.html \
       --max-cps 20
+    # 如果跳过了 1a，把上面和下面的 transcript_semantic_reviewed.json 改回 transcript.json。
     # 打开 work/transcript_review.html，点击时间码试听、修正文字、保存 work/transcript_review.txt。
     python3 scripts/transcript_review.py apply \
-      --transcript work/transcript.json \
+      --transcript work/transcript_semantic_reviewed.json \
       --review work/transcript_review.txt \
       --output work/transcript_reviewed.json
     # 详见 docs/prompts/36-transcript-review.md
 
-1b. # 可选：先生成多个前三秒 hook 角度，选一个再进入清稿：
+1c. # 可选：先生成多个前三秒 hook 角度，选一个再进入清稿：
     python3 scripts/hook_variants.py \
       --transcript work/transcript_reviewed.json \
       --topic "<主题描述>" \
@@ -82,7 +104,7 @@
     # 打开 work/hook_variants.md，选中的 hook 文本放进下一步 LLM prompt。
     # 详见 docs/prompts/62-hook-variants.md
 
-1c. # 可选：如果已经有确认的成片稿，且同一句录了多个 take，就按稿装配原话：
+1d. # 可选：如果已经有确认的成片稿，且同一句录了多个 take，就按稿装配原话：
     python3 scripts/script_alignment.py \
       --target-script work/target_script.md \
       --transcripts-dir work/takes \

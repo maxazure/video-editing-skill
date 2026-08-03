@@ -1,6 +1,6 @@
 ---
 name: video-editing
-description: "Xiaohongshu/RED-tuned short-form video workflow for raw voice-over, talking-head, tutorials, interviews, podcasts, long videos, screen recordings, B-roll, captions, and generated assets. Covers edit routing, project bootstrap, transcription, synchronized local transcript review, multi-take packs, audio sync, cleanup, highlights/shorts, hook/story rewrite, content/source gates, B-roll/enrich/gpt-image-2/video-generation planning, generation reference-frame/style-lock preflight, screen focus, PIP, color grade, preflight/render/QA/audio master, source-time edit comparison, retention-rhythm, subtitle-readability, platform-safe-area and rendered-speech continuity QA, review proxies, subtitles, CapCut import, multi-platform exports, cover A/B variants, captions, publish packages, dashboards, resume packets, EDL/FCPXML/OTIO, and Remotion animation."
+description: "Xiaohongshu/RED-tuned short-form video workflow for raw voice-over, talking-head, tutorials, interviews, podcasts, long videos, screen recordings, B-roll, captions, and generated assets. Covers edit routing, project bootstrap, transcription, source-bound context-aware semantic transcript review, synchronized local transcript review, multi-take packs, audio sync, cleanup, highlights/shorts, hook/story rewrite, content/source gates, B-roll/enrich/gpt-image-2/video-generation planning, generation reference-frame/style-lock preflight, screen focus, PIP, color grade, preflight/render/QA/audio master, source-time edit comparison, retention-rhythm, subtitle-readability, platform-safe-area and rendered-speech continuity QA, review proxies, subtitles, CapCut import, multi-platform exports, cover A/B variants, captions, publish packages, dashboards, resume packets, EDL/FCPXML/OTIO, and Remotion animation."
 metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
 ---
 
@@ -16,6 +16,8 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ project_bootstrap.py     原始素材目录 → source inventory / project.md
    ├─→ edit_brief_plan.py       用户一句话需求 → 本地脚本 runbook / gates
    ├─→ transcribe.py            转写 + 词级时间戳 + 口误标记
+   ├─→ semantic_transcript_review.py
+   │                            全篇前后文审校包 / 最小补丁验证 / 人工 choices gate
    ├─→ transcript_review.py     本地同步媒体 HTML 校稿 / CPS 提示 / review.txt 回写
    ├─→ takes_pack.py            多 take / Scribe transcript → phrase-level 阅读视图
    │                            speaker / audio_event 编辑节拍
@@ -90,6 +92,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `project_bootstrap.py` | 原始素材目录 → 项目结构 / source inventory / project.md | `--source raw_dir` `--project-dir work/day61` `--mode copy|hardlink` `--strict` |
 | `edit_brief_plan.py` | 自然语言剪辑需求 → 本地脚本 runbook / 命令 / manifest gate | `--brief` `--brief-file` `--source-media` `--platform` `--markdown` `--strict` |
 | `transcript_review.py` | transcript → 文本或本地同步媒体 HTML 校稿 → reviewed transcript | `export` / `html --video --max-cps` / `apply --review --output` |
+| `semantic_transcript_review.py` | transcript → 前后文审校包 / 最小补丁审计 / 人工 choices / reviewed transcript | `prepare` / `audit --strict` / `apply --choices` |
 | `_internal_text_guard.py` | 拦截内部 token 进画面 | 内部模块，render_final 自动调 |
 | `content_guard.py` | 平台雷区 lint | `--script` `--title` `--caption` `--strict` |
 | `source_receipts.py` | 事实 claim → URL/截图 proof deck、Markdown/HTML 和发布 gate | `--claims source_claims.json` `--html` `--require-primary-source` `--strict` |
@@ -698,6 +701,28 @@ Whisper 常见的识别错误类型：
 **2. 口误标记（Speaker errors）**：
 - **重复/卡壳**：说话人重复说同一句话或卡住后重新说，标记为可跳过
 - **乱码片段**：语音模糊导致识别为无意义文字的片段（如连续的单字碎片），标记为可跳过
+
+专业术语、人名、同音字或中英混说较多时，先运行 `semantic_transcript_review.py prepare`，让当前 Agent/模型填写 provider-neutral response；再运行 `audit`。不要把模型 confidence 当批准：从 audit Markdown 复制绑定 `source_sha256 + review_id` 的 choices 模板，逐项 `approve` / `reject` 后才运行 `apply`。`audit` 会从源 transcript 推导完整覆盖率，并拒绝整句润色、非最小字符补丁、数字/标点变化、越界/重叠补丁和旧 transcript hash。成功 apply 后，把 `transcript_semantic_reviewed.json` 交给下面的同步媒体 HTML 继续听审；详见 [docs/prompts/79-semantic-transcript-review.md](docs/prompts/79-semantic-transcript-review.md)。
+
+```bash
+python3 scripts/semantic_transcript_review.py prepare \
+  --transcript work/transcript.json \
+  --output work/semantic_review_request.json \
+  --markdown work/semantic_review_request.md
+
+python3 scripts/semantic_transcript_review.py audit \
+  --transcript work/transcript.json \
+  --response work/semantic_review_response.json \
+  --output work/transcript_semantic_review.json \
+  --markdown work/transcript_semantic_review.md \
+  --strict
+
+python3 scripts/semantic_transcript_review.py apply \
+  --transcript work/transcript.json \
+  --audit work/transcript_semantic_review.json \
+  --choices work/semantic_review_choices.json \
+  --output work/transcript_semantic_reviewed.json
+```
 
 **校验流程**：
 1. 用 `transcript_review.py html` 生成一个无外部依赖的本地页面；纯终端环境用 `export` 生成文本。

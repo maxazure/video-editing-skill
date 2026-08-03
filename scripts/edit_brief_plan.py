@@ -44,6 +44,17 @@ SIGNAL_KEYWORDS: Mapping[str, Sequence[str]] = {
         "directory",
     ),
     "transcript": ("transcript", "whisper", "转写", "转录", "字幕", "caption", "subtitles", "口播", "voiceover"),
+    "semantic_review": (
+        "semantic transcript review",
+        "context-aware transcript",
+        "semantic subtitle review",
+        "语义校稿",
+        "语义审校",
+        "上下文校稿",
+        "全篇校稿",
+        "专业术语校稿",
+        "字幕错词",
+    ),
     "multi_take": ("multi take", "takes", "多 take", "多条素材", "多个 take", "选 take", "挑 take"),
     "target_script": (
         "target script",
@@ -113,6 +124,7 @@ SIGNAL_KEYWORDS: Mapping[str, Sequence[str]] = {
 SIGNAL_LABELS: Mapping[str, str] = {
     "source_ingest": "素材导入 / 项目启动",
     "transcript": "转写 / 字幕时间码",
+    "semantic_review": "全篇上下文语义校稿",
     "multi_take": "多 take 阅读视图",
     "target_script": "目标脚本对齐剪辑",
     "long_to_short": "长视频拆短视频",
@@ -303,6 +315,7 @@ def build_plan(
         ids.intersection(
             {
                 "transcript",
+                "semantic_review",
                 "multi_take",
                 "target_script",
                 "long_to_short",
@@ -365,6 +378,34 @@ def build_plan(
                 command=shell([python_bin, "scripts/transcribe.py", source, "--word-timestamps", "--detect-fillers"]),
                 outputs=[transcript_path],
                 gate_category="transcript",
+            ),
+        )
+
+    if "semantic_review" in ids:
+        _add_step(
+            steps,
+            seen,
+            _step(
+                "semantic_transcript_review",
+                phase="review",
+                script="semantic_transcript_review.py",
+                label="Prepare a source-bound context review packet",
+                reason="The brief asks to check ASR wording or terminology with whole-transcript context.",
+                command=shell(
+                    [
+                        python_bin,
+                        "scripts/semantic_transcript_review.py",
+                        "prepare",
+                        "--transcript",
+                        transcript_path,
+                        "--output",
+                        "work/semantic_review_request.json",
+                        "--markdown",
+                        "work/semantic_review_request.md",
+                    ]
+                ),
+                outputs=["work/semantic_review_request.json", "work/semantic_review_request.md"],
+                gate_category="semantic_transcript_review",
             ),
         )
 

@@ -12,6 +12,7 @@
 - **多机位先同步再剪辑**：`multicam_sync.py` 把两台以上相机/手机/录音设备对齐到同一参考时间线，记录每路 offset、置信度、有效音轨、公共重叠区间，并可用多窗口 probe 测量长片时钟漂移；原片不改、不重编码。
 - **事实型内容有 proof deck**：新闻、数据、产品事实或来源页截图可用 `source_receipts.py` 生成 URL/截图复核包，作为发布前 gate。
 - **最终审批绑定到具体文件字节**：`approval_receipt.py` 为人工看过的视频、封面、文案、字幕和 QA 报告记录 SHA-256；任何重渲染、替换、删除或 symlink 漂移都会让旧审批过期并阻塞发布。
+- **ASR 语义校稿不再只看单句**：`semantic_transcript_review.py` 为每条字幕附带全篇前后文，验证完整覆盖、源 transcript hash 和最小字符补丁；模型只能提建议，独立人工 choices 才能写 reviewed transcript。
 - **生成式素材有明确审批和台账**：Codex `image_gen` / GPT Image 2 提示词、Dreamina/Veo/LTX/Wan/Sora 视频提示词、provider 决策、`submit_id` 轮询下载和本地落盘 gate 都先记录再执行。
 - **适合交给强推理模型做长流程代理执行**：在 [GPT-5.6 Sol](https://developers.openai.com/api/docs/models/gpt-5.6-sol)（OpenAI 当前旗舰；API 别名 `gpt-5.6` 指向 Sol）和 [Claude Opus 4.8](https://docs.anthropic.com/en/docs/about-claude/models) 这类面向复杂专业任务、agent 工作流的模型下，本 skill 对 **口播类短视频** 至少可以替代 **80% 的常规视频剪辑工作**。
 
@@ -116,6 +117,8 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    ├─→ edit_brief_plan.py       用户一句话需求 → 本地脚本 runbook / commands / gates
    ├─→ transcribe.py            转写 + 词级时间戳 + 口误标记
    │                            (mlx-whisper / faster-whisper / openai-whisper)
+   ├─→ semantic_transcript_review.py
+   │                            全篇前后文审校包 / 最小补丁验证 / 人工 choices gate
    ├─→ transcript_review.py     文本 round-trip / 本地同步视频 HTML 校稿
    │                            行内编辑 / 播放高亮 / 查找替换 / CPS 提示 / review.txt
    ├─→ takes_pack.py            多 take / Scribe transcript → phrase-level 阅读视图
@@ -254,7 +257,7 @@ cd ~/projects/video-editing-skill
 python3 scripts/utils.py
 
 # 4. 跑一遍测试套件确认 OK
-pytest tests/           # 700 个测试，约 13 秒
+pytest tests/           # 715 个测试，约 14 秒
 ```
 
 每天做一条视频的完整模板：**[docs/prompts/15-xhs-daily-tech-video.md](docs/prompts/15-xhs-daily-tech-video.md)**
@@ -312,6 +315,33 @@ NVIDIA GPU 配置详见本文末尾的 [Linux GPU 配置](#linux-gpu-配置) 段
 ---
 
 ## V3 核心能力
+
+### 🧠 Semantic Transcript Review — 全篇上下文校稿
+[`scripts/semantic_transcript_review.py`](scripts/semantic_transcript_review.py) · [详细文档](docs/prompts/79-semantic-transcript-review.md)
+
+专业术语、人名、同音字或中英混说较多时，先把 transcript 变成带 previous/next context 的 provider-neutral review packet。任何模型都只能填写 response；`audit` 从源 transcript 推导覆盖率，校验 SHA-256、精确字符范围、最小补丁、数字/标点不变、无重叠/越界，并给每条合法建议生成稳定 proposal id。只有独立 choices 文件绑定相同 `source_sha256 + review_id`，逐项 `approve` / `reject` 后，`apply` 才写 reviewed transcript。
+
+```bash
+python3 scripts/semantic_transcript_review.py prepare \
+  --transcript work/transcript.json \
+  --output work/semantic_review_request.json \
+  --markdown work/semantic_review_request.md
+
+python3 scripts/semantic_transcript_review.py audit \
+  --transcript work/transcript.json \
+  --response work/semantic_review_response.json \
+  --output work/transcript_semantic_review.json \
+  --markdown work/transcript_semantic_review.md \
+  --strict
+
+python3 scripts/semantic_transcript_review.py apply \
+  --transcript work/transcript.json \
+  --audit work/transcript_semantic_review.json \
+  --choices work/semantic_review_choices.json \
+  --output work/transcript_semantic_reviewed.json
+```
+
+第一次 `audit --strict` 在存在合法建议时返回 2 是预期 gate：还缺人工 choices。成功 apply 会把同一 audit 更新为 `artifact_type=result`、`summary.blocking=0`，并重新分配改动 segment 的词级时间戳。模型 confidence 和 `reviewer` 都不是身份认证或音频事实证明；仍要把输出交给下一节的同步媒体 HTML 听审。
 
 ### 📝 Interactive Transcript Review — 边看视频边校稿
 [`scripts/transcript_review.py`](scripts/transcript_review.py) · [详细文档](docs/prompts/36-transcript-review.md)
@@ -2296,7 +2326,7 @@ python3 $SKILL/scripts/review_dashboard.py \
 ## 测试
 
 ```bash
-pytest tests/           # 完整本地测试套件，约 8 秒
+pytest tests/           # 完整本地测试套件，约 14 秒
 ```
 
 按模块跑：
@@ -2316,6 +2346,7 @@ pytest tests/test_beat_sync.py -v          # BGM → beat edit slots / fallback 
 pytest tests/test_takes_pack.py -v          # 多 take phrase-level 阅读视图
 pytest tests/test_project_bootstrap.py -v   # 项目启动与 source inventory
 pytest tests/test_transcript_review.py -v  # 文本/HTML 同步视频 transcript 校稿回路
+pytest tests/test_semantic_transcript_review.py -v # 全篇上下文审校 / 最小补丁 / choices gate
 pytest tests/test_edit_brief_plan.py -v     # 自然语言剪辑需求 → 本地 runbook
 pytest tests/test_hook_variants.py -v       # 前三秒 hook 批量角度 + 风险检查
 pytest tests/test_rough_cut.py -v           # ASR 粗剪：口头禅/重复句 cut list
@@ -2368,6 +2399,23 @@ pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 g
 使用方式：运行 `python3 scripts/multicam_sync.py --reference-media origin/cam-a.mp4 --angle origin/cam-b.mp4 --angle origin/cam-c.mp4 --measure-clock-drift --output work/multicam_sync_plan.json --markdown work/multicam_sync_plan.md --strict`。先检查 Markdown 的 accepted/rejected probes、ppm、累计漂移和最大残差；只有 `stable` 才表示在本次阈值内未检出需要校正的线性漂移。`correction_required` 的 `atempo/setpts` 只是消费建议，必须在 NLE/FFmpeg 下游对同一路音频和视频应用同一时钟映射并再次验证头/中/尾。周期音乐、静音、混响或中途重启导致 `unreliable` 时，不要放宽 gate 取巧；应换清晰音轨、扩大局部搜索、使用可靠 LTC/timecode，或改用分段同步。
 
 验证结果：新增/扩展 `tests/test_multicam_sync.py` 与 `tests/test_audio_sync.py`，覆盖 seek 参数、非法起点、已知正负 slope、高置信度 outlier 共识剔除、残差拒绝、窗口边界、advisory factor 符号和 strict review；定向 `.venv/bin/python -m pytest tests/test_audio_sync.py tests/test_multicam_sync.py -q` 通过 `26 passed in 2.39s`，最终全量测试通过 `672 passed in 11.73s`。真实 FFmpeg smoke 生成 60 秒确定性 PCM，分别用 `atempo=0.996` / `1.004` 制造反向时钟偏差；7 个 6 秒 probe 均得到 `correction_required`、`applied=false`，ppm 符号分别为负/正，`--strict` 均正确退出 2。`compileall`、CLI `--help`、skill `quick_validate.py` 和 `git diff --check` 全部通过。
+
+### 2026-08-04 自动化升级记录（Semantic Transcript Review）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`natyang1234/auto-edit-video-skill` 1.7.0 contextual semantic calibration](https://github.com/natyang1234/auto-edit-video-skill/blob/main/CHANGELOG.md) | 逐条读取全篇编号 transcript + 有界前后文，建议与复核分两层；覆盖率从源 transcript 推导，只应用精确、局部、高置信且通过确定性 guard 的补丁，不把模型 confidence 当人工批准 | 新增 provider-neutral 三阶段 CLI；不绑定 Ollama/云模型，由 `prepare` 给任何 Agent/模型统一 schema，`audit` 负责源哈希、覆盖、字符范围和最小补丁验证，`apply` 另需人工 choices |
+| [`openakita/openakita` ClipSense skill](https://github.com/openakita/openakita/blob/main/plugins/clip-sense/SKILL.md) | 把视频任务拆成明确 pipeline step/status，并对 dependency/format/timeout 等失败提供可行动原因，而不是只返回一段生成文本 | semantic audit 写 `status`、coverage、proposal validation、`summary.blocking` 和 Markdown 操作表；本轮保持同步本地文件流程，不引入远端任务服务 |
+| [`pockebot/openpocket` CapCut Edit skill](https://github.com/pockebot/openpocket/blob/main/skills/capcut-edit/SKILL.md) | 自动字幕之后仍要求快速 proofread，并在 major edit block 后验证真实结果，不把 AutoCut/自动字幕直接视为完成 | semantic choices 后仍明确要求进入 `transcript_review.py html` 对着真实媒体听审；建议、文字批准与音频事实三者分开 |
+| [`thesongzhu/Friday` Video Editing Planner](https://github.com/thesongzhu/Friday/blob/main/skills/video-editing-planner/SKILL.md) | 优化节奏/结构时强调 preserve story clarity，避免编辑建议破坏原意 | 新工具只允许 ASR 类最小 patch；整句润色、数字/标点变化、超长/越界/重叠和跨段重复全部 fail closed，叙事改写继续交给独立 `rewrite_script.py` |
+
+新增/调整能力：新增 [`scripts/semantic_transcript_review.py`](scripts/semantic_transcript_review.py)、[`tests/test_semantic_transcript_review.py`](tests/test_semantic_transcript_review.py) 和 [`docs/prompts/79-semantic-transcript-review.md`](docs/prompts/79-semantic-transcript-review.md)。`prepare` 把每个 segment 与前后 1–4 段上下文、规范化 segment SHA-256、硬规则和 response template 写成 JSON/Markdown；脚本不调用模型、不上传内容。`audit` 从原 transcript 自己推导完整 coverage，拒绝旧 source hash、未知/重复 segment、字符 span 不匹配、未裁掉相同前后缀的非最小 patch、数字/标点变化、空理由、越界/超长/重叠/重复提案和跨 segment 边界重复字，并生成稳定 `patch-*` / `review-*` id。合法 proposal 仍以 `pending_choices` 阻塞；`apply` 要求另一份 choices 绑定相同 canonical source hash 与 review id，逐条 `approve|reject`，成功后写 `semantic_review` metadata、重分配改动 segment 的词时间，并把 audit 更新为 ready。`pipeline_manifest.py` 新增存在即检查的 `semantic_transcript_review` gate；`edit_brief_plan.py` 可从“语义校稿/上下文校稿/专业术语错词”等 brief 自动路由到 prepare。README、SKILL、daily workflow、Transcript Review 文档和提示词索引已同步。
+
+使用方式：运行 `python3 scripts/semantic_transcript_review.py prepare --transcript work/transcript.json --output work/semantic_review_request.json --markdown work/semantic_review_request.md`，让当前 Agent/模型按 request schema 生成 `work/semantic_review_response.json`；再运行 `python3 scripts/semantic_transcript_review.py audit --transcript work/transcript.json --response work/semantic_review_response.json --output work/transcript_semantic_review.json --markdown work/transcript_semantic_review.md --strict`。首次 strict 在有合法建议时退出 2 是预期人工 gate；从 Markdown 复制 choices template，逐项确认后运行 `python3 scripts/semantic_transcript_review.py apply --transcript work/transcript.json --audit work/transcript_semantic_review.json --choices work/semantic_review_choices.json --output work/transcript_semantic_reviewed.json --markdown work/transcript_semantic_review.md`，最后仍用同步媒体 HTML 听审。
+
+验证结果：新增 12 项 semantic-review 测试，并扩展 pipeline-manifest / edit-brief 回归；定向 `.venv/bin/python -m pytest tests/test_semantic_transcript_review.py tests/test_transcript_review.py tests/test_pipeline_manifest.py tests/test_edit_brief_plan.py -q` 通过 `98 passed in 0.98s`，全量 `.venv/bin/python -m pytest tests -q` 通过 `715 passed in 11.90s`。覆盖上下文 packet、canonical source hash、完整/部分 coverage、最小补丁、数字/标点、精确 span、重叠提案、稳定 review id、旧 choices、approve/reject、词时间重分配、CLI 三阶段和 manifest/edit-brief gate；`.venv/bin/python -m compileall -q scripts tests`、四个 CLI help、manifest category、skill `quick_validate.py` 和 `git diff --check` 全部通过。
 
 ### 2026-08-02 自动化升级记录（Hash-bound Approval Receipt）
 
@@ -2785,6 +2833,7 @@ scripts/
 ├── edit_brief_plan.py          自然语言剪辑需求 → 本地 runbook          [V3]
 ├── _internal_text_guard.py     内部 token 拦截器
 ├── transcribe.py               Whisper 转写
+├── semantic_transcript_review.py 全篇上下文语义审校 / 人工 choices gate [V3]
 ├── takes_pack.py               多 take / Scribe phrase + audio event 阅读视图 [V3]
 ├── script_alignment.py         目标稿 → 多 take 原话候选 / choices / render_config [V3]
 ├── audio_sync.py               外录音轨自动对齐 / 替换音轨计划        [V3]

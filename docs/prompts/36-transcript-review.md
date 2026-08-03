@@ -2,6 +2,8 @@
 
 Whisper 生成的 `transcript.json` 进入字幕、分镜、粗剪、render_config 和文案之前，先跑一轮可编辑 review。这个步骤用来修正产品名、英文专有名词、中文同音字和尾部幻觉，避免错误字幕被烤进最终 MP4。
 
+专业术语或同音错词必须借助全篇前后文判断时，先运行 [79-Semantic Transcript Review](79-semantic-transcript-review.md)，再把 `transcript_semantic_reviewed.json` 作为本页的 `--transcript` 输入。语义 proposal/choices 不替代这里的同步媒体听审。
+
 ## 什么时候用
 
 - 口播里有 Claude / Codex / OpenClaw / 剪映 / 小红书这类容易被 ASR 听错的词。

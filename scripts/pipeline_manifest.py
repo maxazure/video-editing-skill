@@ -62,6 +62,13 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         "Run transcribe.py and save work/transcript.json.",
     ),
     ArtifactDef(
+        "semantic_transcript_review",
+        "Semantic Transcript Review",
+        ("**/transcript_semantic_review.json", "**/*_transcript_semantic_review.json"),
+        "Run semantic_transcript_review.py audit, resolve every proposal with a source-bound human choices file, then apply it.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "takes_pack",
         "Takes Pack",
         ("**/takes_pack.json", "**/*_takes_pack.json", "**/takes_packed.md", "**/*_takes_packed.md"),
@@ -653,6 +660,7 @@ def evaluate_category(
             "platform_safe_area_qa",
             "cover_variants",
             "script_alignment",
+            "semantic_transcript_review",
         }:
             blocking = _int_at(data, "summary", "blocking")
             if blocking:

@@ -105,6 +105,22 @@ def test_target_script_brief_routes_alignment_before_render(tmp_path):
     assert "work/clean_script.md" in step["outputs"]
 
 
+def test_semantic_review_brief_routes_context_packet_after_transcription(tmp_path):
+    source = tmp_path / "talk.mp4"
+    source.write_text("fake video", encoding="utf-8")
+
+    plan = build_plan(
+        f"给 {source} 的字幕做全篇上下文语义校稿，检查专业术语错词",
+        project_dir=str(tmp_path),
+    )
+
+    ids = [step["id"] for step in plan["steps"]]
+    assert ids.index("transcript") < ids.index("semantic_transcript_review")
+    step = next(step for step in plan["steps"] if step["id"] == "semantic_transcript_review")
+    assert "semantic_transcript_review.py prepare" in step["command"]
+    assert step["gate_category"] == "semantic_transcript_review"
+
+
 def test_empty_brief_is_blocked():
     plan = build_plan("")
 

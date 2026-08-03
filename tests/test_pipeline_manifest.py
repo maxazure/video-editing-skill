@@ -1015,6 +1015,36 @@ def test_privacy_redaction_can_be_required(tmp_path):
     assert "privacy_redaction" in manifest["missing_required"]
 
 
+def test_semantic_transcript_review_blocks_while_choices_are_pending(tmp_path):
+    _publish_ready_project(tmp_path)
+    _write(tmp_path / "work" / "transcript_semantic_review.json", {
+        "version": "semantic_transcript_review.v1",
+        "artifact_type": "audit",
+        "summary": {"valid": 2, "pending_choices": 2, "blocking": 2},
+    })
+
+    manifest = build_manifest(str(tmp_path), target_stage="publish_ready")
+
+    assert "semantic_transcript_review" in manifest["blocked_gates"]
+    gate = next(g for g in manifest["gates"] if g["category"] == "semantic_transcript_review")
+    assert "2 blocking item(s) in summary.blocking" in gate["notes"]
+
+
+def test_applied_semantic_transcript_review_is_ready(tmp_path):
+    _publish_ready_project(tmp_path)
+    _write(tmp_path / "work" / "transcript_semantic_review.json", {
+        "version": "semantic_transcript_review.v1",
+        "artifact_type": "result",
+        "summary": {"approved": 1, "rejected": 1, "blocking": 0},
+    })
+
+    manifest = build_manifest(str(tmp_path), target_stage="publish_ready")
+
+    assert "semantic_transcript_review" not in manifest["blocked_gates"]
+    gate = next(g for g in manifest["gates"] if g["category"] == "semantic_transcript_review")
+    assert gate["status"] == "ready"
+
+
 def test_markdown_contains_gate_table_and_next_actions(tmp_path):
     manifest = build_manifest(str(tmp_path), target_stage="render_ready")
 
