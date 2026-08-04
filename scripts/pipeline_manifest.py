@@ -228,6 +228,13 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         "Create render_config.json or export one from highlight_picker.py.",
     ),
     ArtifactDef(
+        "edit_revision_history",
+        "Edit Revision History",
+        ("**/edit_revision_history.json", "**/*_edit_revision_history.json"),
+        "Run edit_revision.py status; restore external changes, redo/undo safely, or create a fresh source-bound revision.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "edit_preflight",
         "Edit Preflight",
         ("**/edit_preflight.json", "**/*_edit_preflight.json"),
@@ -582,37 +589,43 @@ def evaluate_category(
     status = "ready"
     notes: List[str] = []
 
-    if definition.category == "approval_receipt":
+    if definition.category in {"approval_receipt", "edit_revision_history"}:
         latest = artifacts[0]
         if len(artifacts) > 1:
             status = "blocked"
-            notes.append(f"multiple approval receipts are ambiguous: {len(artifacts)} found")
+            noun = "approval receipts" if definition.category == "approval_receipt" else f"{definition.label.lower()} artifacts"
+            notes.append(f"multiple {noun} are ambiguous: {len(artifacts)} found")
         else:
             data = _load_json(latest.path)
             if data is None:
                 status = "blocked"
-                notes.append("approval receipt is unreadable")
+                notes.append(f"{definition.label.lower()} is unreadable")
         if status != "blocked" and project_dir is None:
             status = "blocked"
-            notes.append("project root unavailable for live receipt verification")
+            notes.append(f"project root unavailable for live {definition.label.lower()} verification")
         elif status != "blocked":
-            from approval_receipt import verify_receipt
-
             try:
-                verification = verify_receipt(
-                    data,
-                    str(project_dir),
-                    receipt_path=latest.path,
-                )
+                if definition.category == "approval_receipt":
+                    from approval_receipt import verify_receipt
+
+                    verification = verify_receipt(
+                        data,
+                        str(project_dir),
+                        receipt_path=latest.path,
+                    )
+                else:
+                    from edit_revision import verify_history
+
+                    verification = verify_history(data, str(project_dir))
             except Exception as exc:
                 status = "blocked"
-                notes.append(f"approval receipt verification failed: {exc}")
+                notes.append(f"{definition.label.lower()} verification failed: {exc}")
             else:
                 blocking = _int_at(verification, "summary", "blocking")
                 if blocking:
                     status = "blocked"
                     notes.append(
-                        f"approval receipt is {verification.get('status', 'stale')}: "
+                        f"{definition.label.lower()} is {verification.get('status', 'stale')}: "
                         f"{blocking} blocking item(s)"
                     )
         return {

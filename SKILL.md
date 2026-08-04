@@ -1,6 +1,6 @@
 ---
 name: video-editing
-description: "Xiaohongshu/RED-tuned short-form video workflow for raw voice-over, talking-head, tutorials, interviews, podcasts, long videos, screen recordings, B-roll, captions, and generated assets. Covers edit routing, project bootstrap, transcription, source-bound context-aware semantic transcript review, synchronized local transcript review, multi-take packs, audio sync, cleanup, highlights/shorts, hook/story rewrite, content/source gates, B-roll/enrich/gpt-image-2/video-generation planning, generation reference-frame/style-lock preflight, screen focus, PIP, color grade, preflight/render/QA/audio master, source-time edit comparison, retention-rhythm, subtitle-readability, platform-safe-area and rendered-speech continuity QA, review proxies, subtitles, CapCut import, multi-platform exports, cover A/B variants, captions, publish packages, dashboards, resume packets, EDL/FCPXML/OTIO, and Remotion animation."
+description: "Xiaohongshu/RED-tuned short-form video workflow for raw voice-over, talking-head, tutorials, interviews, podcasts, long videos, screen recordings, B-roll, captions, and generated assets. Covers edit routing, project bootstrap, transcription, source-bound context-aware semantic transcript review, synchronized local transcript review, multi-take packs, audio sync, cleanup, highlights/shorts, hook/story rewrite, content/source gates, B-roll/enrich/gpt-image-2/video-generation planning, generation reference-frame/style-lock preflight, screen focus, PIP, color grade, source-bound reversible edit revisions, preflight/render/QA/audio master, source-time edit comparison, retention-rhythm, subtitle-readability, platform-safe-area and rendered-speech continuity QA, review proxies, subtitles, CapCut import, multi-platform exports, cover A/B variants, captions, publish packages, dashboards, resume packets, EDL/FCPXML/OTIO, and Remotion animation."
 metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
 ---
 
@@ -53,6 +53,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ pip_overlay.py           录屏 + facecam → PIP 小窗计划
    ├─→ color_grade.py           bounded 调色 plan / render_final 单次编码接入
    ├─→ jump_cut.py              自适应去停顿 + 20% 删除预算 + 可审计 cut list + 30ms 防爆音 fade
+   ├─→ edit_revision.py         文本剪辑 artifact → source-bound 审批 / 成组 apply / undo / redo
    ├─→ edit_preflight.py        render_config/enrich_plan/cut list 渲染前预检 gate
    ├─→ platform_safe_area_qa.py 字幕/PIP/CTA/marker → 平台 UI 安全区 gate + SVG guide
    ├─→ render_final.py          单次编码渲染（可选口播降噪 + enrich_plan/focus_events/pip_overlays + Heavy 字幕 + 响度规范化 + BGM ducking）
@@ -128,6 +129,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `pip_overlay.py` | 录屏 + facecam → PIP 摄像头小窗 enrich plan | `--camera` `--segment` `--sync-offset` `--output` |
 | `color_grade.py` | bounded 调色 plan + FFmpeg filter + 可选现有 master 复版 | `--preset` `--output` `--markdown` `--render-output` `--strict` |
 | `jump_cut.py` | 自适应静音检测 → 去停顿计划 / 删除预算 gate / 成片 + 切点音频 fade | `<input.mp4>` `--dry-run` `--cut-list cuts.json` `--strict` / `--output jumpcut.mp4` `--max-removal-ratio 0.20` `--allow-over-budget` |
+| `edit_revision.py` | render_config/enrich_plan 等文本 artifact → source-bound proposal / 独立审批 / 成组 apply / undo / redo | `prepare --artifact --depends-on` / `audit --strict` / `apply --approval` / `status|undo|redo` |
 | `edit_preflight.py` | render_config/enrich_plan/cut list 渲染前预检 gate | `--config render_config.json` `--enrich-plan enrich_plan.json` `--output edit_preflight.json` `--strict` |
 | `platform_safe_area_qa.py` | 字幕、badge、PIP、CTA、章节卡、marker → 平台 UI 遮挡 gate + SVG guide | `--config` `--enrich-plan` `--elements` `--platform xhs|douyin|wxch` `--guide` `--strict` |
 | `render_final.py` | 单次编码渲染 + 可选口播降噪 + enrich_plan + 旁白驱动 BGM ducking | `--config render_config.json` `--speech-denoise light` `--enrich-plan enrich_plan.json` `--bgm-ducking` `--output final.mp4` |
@@ -1161,6 +1163,23 @@ python3 scripts/cover_variants.py output/final_xhs.mp4 \
 - 根据视频内容逻辑划分章节，建议 **不超过 4 个章节**
 - 章节名要**简短**（2-4 个字），如：痛点、原因、方案、工具
 - 章节时间需要根据选定片段的累计时长精确计算
+
+### Phase 4.8: Edit Revision（剪辑 artifact 可逆修订，可选）
+
+当用户要求修改 `render_config.json`、`enrich_plan.json`、caption 或字幕 sidecar，同时需要完整审稿、依赖防漂移和 undo/redo 时，先准备 proposal：
+
+```bash
+python3 scripts/edit_revision.py prepare \
+  --project-dir . \
+  --artifact work/render_config.json \
+  --artifact work/enrich_plan.json \
+  --depends-on work/transcript_reviewed.json \
+  --title "收紧开头并调整 B-roll" \
+  --reason "已完成时间码审片，采用第二版开头。" \
+  --output work/edit_revision_proposal.json
+```
+
+只改 proposal 的 `artifacts[].proposed_content`，再运行 `audit`。合法 audit 的 `pending_approval` 在 `--strict` 下返回 2 是预期人工 gate；必须另存绑定相同 `review_id`、`decision: approve` 和非空 `approved_by_label` 的 approval JSON，`apply` 才会把多个文件作为一个 revision 成组写入并创建 `work/edit_revision_history.json`。运行期写入错误会尝试恢复旧 bytes，但跨文件不承诺操作系统级原子提交；进程异常后先跑 `status --strict`。status 会实时检查 artifact、已应用 dependency 和 content-addressed before/after blobs；外部手改、依赖漂移、symlink 或 blob 损坏时拒绝 undo/redo。原始媒体、代码、输出成片和 `verify/` 不在管理范围。详细流程见 [docs/prompts/80-edit-revision.md](docs/prompts/80-edit-revision.md)。
 
 ### Phase 4.9: Platform Safe Area QA（平台 UI 安全区门禁）
 

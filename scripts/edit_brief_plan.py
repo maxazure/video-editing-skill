@@ -119,6 +119,19 @@ SIGNAL_KEYWORDS: Mapping[str, Sequence[str]] = {
     "subtitle_sidecar": ("srt", "vtt", "ass", "字幕文件", "sidecar"),
     "nle_handoff": ("premiere", "final cut", "fcpxml", "resolve", "达芬奇", "edl", "otio", "剪辑软件"),
     "review_dashboard": ("dashboard", "review dashboard", "复核面板", "人工复核", "看板"),
+    "edit_revision": (
+        "edit revision",
+        "revision history",
+        "undo edit",
+        "redo edit",
+        "reversible edit",
+        "剪辑修订",
+        "修订历史",
+        "撤销剪辑",
+        "重做剪辑",
+        "回退剪辑",
+        "可逆修改",
+    ),
 }
 
 SIGNAL_LABELS: Mapping[str, str] = {
@@ -150,6 +163,7 @@ SIGNAL_LABELS: Mapping[str, str] = {
     "subtitle_sidecar": "字幕 sidecar",
     "nle_handoff": "NLE 交接",
     "review_dashboard": "人工复核面板",
+    "edit_revision": "剪辑 artifact 可逆修订",
 }
 
 
@@ -800,6 +814,50 @@ def build_plan(
                 outputs=["work/enrich_plan.json"],
                 gate_category="enrich_plan",
             ),
+        )
+
+    if "edit_revision" in ids:
+        _add_step(
+            steps,
+            seen,
+            _step(
+                "edit_revision_history",
+                phase="edit",
+                script="edit_revision.py",
+                label="Prepare a source-bound reversible edit revision",
+                reason="The brief asks for inspectable configuration changes with undo/redo instead of untracked overwrites.",
+                command=shell(
+                    [
+                        python_bin,
+                        "scripts/edit_revision.py",
+                        "prepare",
+                        "--project-dir",
+                        project_dir,
+                        "--artifact",
+                        "work/render_config.json",
+                        "--depends-on",
+                        transcript_path,
+                        "--title",
+                        "<revision_title>",
+                        "--reason",
+                        "<review_reason>",
+                        "--output",
+                        "work/edit_revision_proposal.json",
+                        "--markdown",
+                        "work/edit_revision_proposal.md",
+                    ]
+                ),
+                outputs=[
+                    "work/edit_revision_proposal.json",
+                    "work/edit_revision_audit.json",
+                    "work/edit_revision_history.json",
+                ],
+                gate_category="edit_revision_history",
+            ),
+        )
+        notes.append(
+            "Edit proposed_content, then run edit_revision.py audit; apply requires a separate review-bound approval JSON. "
+            "Use undo/redo only while status reports current."
         )
 
     if "color_grade" in ids:

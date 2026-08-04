@@ -7,6 +7,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(
 
 from pipeline_manifest import build_manifest, emit_markdown  # noqa: E402
 from approval_receipt import create_receipt  # noqa: E402
+from edit_revision import APPROVAL_VERSION, apply_revision, audit_proposal, prepare_proposal  # noqa: E402
 
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -117,6 +118,44 @@ def test_multiple_approval_receipts_block_as_ambiguous(tmp_path):
     assert gate["status"] == "blocked"
     assert gate["artifact_count"] == 2
     assert "multiple approval receipts are ambiguous" in gate["notes"][0]
+
+
+def test_edit_revision_history_is_live_verified_when_present(tmp_path):
+    _publish_ready_project(tmp_path)
+    config = tmp_path / "work" / "render_config.json"
+    proposal = prepare_proposal(
+        str(tmp_path),
+        [str(config)],
+        title="Select the reviewed clip",
+        reason="Record the approved render plan as a reversible revision.",
+    )
+    proposal["artifacts"][0]["proposed_content"] = json.dumps(
+        {"clips": [{"video": "origin/take.mp4", "start": 0, "end": 3}]},
+        ensure_ascii=False,
+    )
+    audit = audit_proposal(str(tmp_path), proposal)
+    apply_revision(
+        str(tmp_path),
+        proposal,
+        audit,
+        {
+            "version": APPROVAL_VERSION,
+            "review_id": audit["review_id"],
+            "decision": "approve",
+            "approved_by_label": "Jay",
+        },
+    )
+
+    current = build_manifest(str(tmp_path), target_stage="publish_ready")
+    gate = next(g for g in current["gates"] if g["category"] == "edit_revision_history")
+    assert gate["status"] == "ready"
+
+    _write(config, {"clips": [{"start": 99, "end": 100}]})
+    stale = build_manifest(str(tmp_path), target_stage="publish_ready")
+    gate = next(g for g in stale["gates"] if g["category"] == "edit_revision_history")
+    assert stale["status"] == "blocked"
+    assert gate["status"] == "blocked"
+    assert "edit_revision_history" in stale["blocked_gates"]
 
 
 def test_source_inventory_can_be_required_for_analysis(tmp_path):

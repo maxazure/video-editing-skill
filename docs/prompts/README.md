@@ -82,6 +82,7 @@
 | 77 | [Approval Receipt 最终审批收据](77-approval-receipt.md) | 已复核视频/封面/文案/字幕/QA → SHA-256 收据、过期检测和发布 gate |
 | 78 | [Target Script Alignment 目标脚本对齐剪辑](78-script-alignment.md) | 已审目标稿 + 多 take transcript → 原话候选、人工 choices、render_config 和 gate |
 | 79 | [Semantic Transcript Review 全篇上下文语义校稿](79-semantic-transcript-review.md) | transcript → 前后文审校包、最小补丁验证、人工 choices 和 reviewed transcript |
+| 80 | [Edit Revision 剪辑 artifact 可逆修订](80-edit-revision.md) | render_config/enrich_plan 等文本 artifact → source-bound proposal、独立审批、成组 apply、undo/redo 和 live gate |
 
 ## 快速上手
 
@@ -160,3 +161,4 @@
 | 已有确认文案，需要从多个 take 按目标顺序找回原话 | [78-Target Script Alignment](78-script-alignment.md) |
 | 想确保准备上传的文件仍是人工看过的那一版 | [77-Approval Receipt](77-approval-receipt.md) |
 | Whisper 字幕要用全篇上下文检查专业术语和同音错词 | [79-Semantic Transcript Review](79-semantic-transcript-review.md) |
+| 想让 render_config/enrich_plan 的修改可审、可撤销、可重做 | [80-Edit Revision](80-edit-revision.md) |

@@ -121,6 +121,22 @@ def test_semantic_review_brief_routes_context_packet_after_transcription(tmp_pat
     assert step["gate_category"] == "semantic_transcript_review"
 
 
+def test_reversible_edit_brief_routes_revision_history(tmp_path):
+    source = tmp_path / "talk.mp4"
+    source.write_text("fake video", encoding="utf-8")
+
+    plan = build_plan(
+        f"给 {source} 的剪辑配置建立可逆修改和修订历史，之后可以撤销剪辑或重做剪辑",
+        project_dir=str(tmp_path),
+    )
+
+    step = next(step for step in plan["steps"] if step["id"] == "edit_revision_history")
+    assert "edit_revision.py prepare" in step["command"]
+    assert "work/render_config.json" in step["command"]
+    assert step["gate_category"] == "edit_revision_history"
+    assert any("approval JSON" in note for note in plan["notes"])
+
+
 def test_empty_brief_is_blocked():
     plan = build_plan("")
 

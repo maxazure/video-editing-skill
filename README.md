@@ -2,7 +2,7 @@
 
 这是一个面向 **口播、教程、访谈、播客切片、录屏演示 / facecam demo** 的 AI 视频剪辑生产线：给它原始口播音频/视频、transcript、B-roll、摄像头小窗或素材目录，它可以把“还没整理的素材”推进到 **可发布的小红书 / 抖音 / 视频号短视频**。
 
-它不是一个单点 FFmpeg 脚本，而是一条完整工作流：**项目启动/素材导入 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 字幕与声音设计 → 渲染前预检 → 单次编码渲染 → 质检 → 多平台导出 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
+它不是一个单点 FFmpeg 脚本，而是一条完整工作流：**项目启动/素材导入 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 字幕与声音设计 → 可逆剪辑修订 → 渲染前预检 → 单次编码渲染 → 质检 → 多平台导出 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
 
 ## 适合做什么
 
@@ -13,6 +13,7 @@
 - **事实型内容有 proof deck**：新闻、数据、产品事实或来源页截图可用 `source_receipts.py` 生成 URL/截图复核包，作为发布前 gate。
 - **最终审批绑定到具体文件字节**：`approval_receipt.py` 为人工看过的视频、封面、文案、字幕和 QA 报告记录 SHA-256；任何重渲染、替换、删除或 symlink 漂移都会让旧审批过期并阻塞发布。
 - **ASR 语义校稿不再只看单句**：`semantic_transcript_review.py` 为每条字幕附带全篇前后文，验证完整覆盖、源 transcript hash 和最小字符补丁；模型只能提建议，独立人工 choices 才能写 reviewed transcript。
+- **上游剪辑配置可以安全撤销/重做**：`edit_revision.py` 把 `render_config` / `enrich_plan` 等文本 artifact 的完整改动绑定到基础和依赖 SHA-256；独立审批后成组写入，外部漂移时拒绝 undo/redo 并阻塞 manifest。
 - **生成式素材有明确审批和台账**：Codex `image_gen` / GPT Image 2 提示词、Dreamina/Veo/LTX/Wan/Sora 视频提示词、provider 决策、`submit_id` 轮询下载和本地落盘 gate 都先记录再执行。
 - **适合交给强推理模型做长流程代理执行**：在 [GPT-5.6 Sol](https://developers.openai.com/api/docs/models/gpt-5.6-sol)（OpenAI 当前旗舰；API 别名 `gpt-5.6` 指向 Sol）和 [Claude Opus 4.8](https://docs.anthropic.com/en/docs/about-claude/models) 这类面向复杂专业任务、agent 工作流的模型下，本 skill 对 **口播类短视频** 至少可以替代 **80% 的常规视频剪辑工作**。
 
@@ -195,6 +196,9 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    │
    ├─→ jump_cut.py              自适应静音检测 → 20% 删除预算 → cut list → 去停顿成片 + 切点音频 fade
    │     └─→ timeline_view.py   源素材删除段 / 成片输出切点 filmstrip + waveform 人工复核图
+   │
+   ├─→ edit_revision.py         render_config/enrich_plan 等文本 artifact 可逆修订
+   │                            source/dependency hash / 独立审批 / 成组 apply / undo / redo
    │
    ├─→ edit_preflight.py        render_config/enrich_plan/cut list 渲染前预检
    │                            缺文件、空剪辑、非法时间段、危险参数 gate
@@ -2376,6 +2380,7 @@ pytest tests/test_speech_denoise.py -v      # 口播降噪 preset / 顺序 / 真
 pytest tests/test_bgm_ducking.py -v         # 旁白驱动 BGM sidechain + 真实 FFmpeg smoke
 pytest tests/test_color_grade.py -v         # 调色计划 + render_final 接入
 pytest tests/test_edit_preflight.py -v      # 渲染前结构/路径/参数预检 gate
+pytest tests/test_edit_revision.py -v       # 文本剪辑 artifact source-bound revision / undo / redo
 pytest tests/test_approval_receipt.py -v    # 最终交付件 SHA-256 审批收据 + stale gate
 pytest tests/test_publish_package.py -v     # 最终上传包 + gate 状态汇总
 pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
@@ -2450,6 +2455,23 @@ pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 g
 使用方式：先运行 `python3 scripts/script_alignment.py --target-script work/target_script.md --transcript take-a=work/take-a_transcript_reviewed.json --transcript take-b=work/take-b_transcript_reviewed.json --media take-a=origin/take-a.mp4 --media take-b=origin/take-b.mp4 --output work/script_alignment.json --markdown work/script_alignment.md --render-config work/render_config.json --clean-script work/clean_script.md --strict`。如果返回 2，打开 Markdown 比较原话和时间码，把确认候选写入 `work/script_alignment_choices.json`，再加 `--choices` 重跑；只有 `summary.blocking=0` 后才进入 `edit_preflight.py` 和最终渲染。
 
 验证结果：新增 `tests/test_script_alignment.py` 7 项，并扩展 edit-brief / pipeline-manifest 回归；定向 `.venv/bin/python -m pytest tests/test_script_alignment.py tests/test_pipeline_manifest.py tests/test_edit_brief_plan.py -q` 通过 `76 passed in 0.78s`，最终 `.venv/bin/python -m pytest tests -q` 通过 `700 passed in 11.02s`。覆盖 Markdown 标题/逐句拆分、GPT-5.6 小数点保护、透明分数、目标顺序重排、多 take 同分阻塞、choices 复核、源时间防复用、缺素材 gate、CLI strict 两阶段和 clean-script/render-config 输出；`.venv/bin/python -m compileall -q scripts tests`、CLI `--help`、manifest category、skill `quick_validate.py` 和 `git diff --check` 全部通过。
+
+### 2026-08-05 自动化升级记录（Source-bound Edit Revisions）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`AKMessi/vex`](https://github.com/AKMessi/vex) | 项目保存 timeline history 和可重建 operation，支持 undo/redo，避免撤销时重新猜测分析结果 | 新增本地 content-addressed before/after blobs 和线性 revision cursor；只管理文本剪辑 artifact，不复制其实现，也不引入非商用依赖 |
+| [`0xsline/OpenChatCut`](https://github.com/0xsline/OpenChatCut) | agent 先在不改变 live timeline 的 session 中准备 proposal；一批通过审批的操作原子提交为一个 undo step，stale auto session 直接失败 | 新增 `prepare → audit → 独立 approval → apply`；多文件作为一个可回退 operation 写入，audit 后任何 proposal/base 漂移都会 fail closed |
+| [`WhiteTowerAI/cut-as-code` project schema](https://github.com/WhiteTowerAI/cut-as-code/blob/main/skills/video-understand/reference/project-schema.md) | operation 明确保存 `revision` / `depends_on` / `based_on`，预览和渲染前要求依赖 revision 仍然匹配 | 本项目直接记录并实时重算 SHA-256，而不是信任手填 revision；redo 和 manifest 会拒绝已改变的 based-on dependency |
+| [`calesthio/OpenMontage`](https://github.com/calesthio/OpenMontage/blob/main/AGENT_GUIDE.md) | 每个 pipeline stage 都有 checkpoint、canonical artifact、success criteria 和 human approval 状态 | revision journal、audit Markdown、approval artifact 和 `pipeline_manifest.py` live gate 都落在项目目录；本轮不引入服务端状态机 |
+
+新增/调整能力：新增 [`scripts/edit_revision.py`](scripts/edit_revision.py)、[`tests/test_edit_revision.py`](tests/test_edit_revision.py) 和 [`docs/prompts/80-edit-revision.md`](docs/prompts/80-edit-revision.md)。`prepare` 只接受项目根或 `work/` 中已经存在的 UTF-8 JSON/Markdown/text/subtitle artifact，记录完整内容、基础 SHA-256 和可选 dependency SHA-256；拒绝源素材、代码、输出/验证目录、symlink、隐藏/volatile/self artifact 和超大文件。`audit` 检查 title/reason、真实变化、JSON 可解析性、重复路径、基础/依赖漂移并生成稳定 `review_id`；合法 proposal 仍以 `pending_approval` 阻塞。`apply` 要求另一份 approval JSON 绑定同一 review id，live 重审后把多个文件作为一个 operation 成组写入，并把 before/after bytes 存进 `work/.edit-revisions/blobs/`。`status`、`undo`、`redo` 会验证 journal、当前 artifact、已应用 dependency 和 blob；redo 分支默认保留，新路线必须显式 `--fork-history`，旧操作存入 `archived_branches[]`。`pipeline_manifest.py` 新增存在即实时验证的 `edit_revision_history` gate，`edit_brief_plan.py` 新增“修订历史/撤销剪辑/重做剪辑”路由；README、SKILL、daily workflow 和提示词索引同步。
+
+使用方式：运行 `python3 scripts/edit_revision.py prepare --project-dir . --artifact work/render_config.json --artifact work/enrich_plan.json --depends-on work/transcript_reviewed.json --title "收紧开头" --reason "时间码审片后采用第二版" --output work/edit_revision_proposal.json`，只改 proposal 的 `artifacts[].proposed_content`；再运行 `audit --proposal work/edit_revision_proposal.json --output work/edit_revision_audit.json --markdown work/edit_revision_audit.md --strict`。合法 audit 因等待人工审批返回 2 是预期；从 Markdown 复制 approval template，填写 `decision: approve` 和 reviewer label 后运行 `apply --proposal ... --audit ... --approval ... --strict`。日常用 `status --strict`，需要时运行 `undo` / `redo`；依赖或文件被手工改过时先处理 stale，不得绕过 hash gate。最终待上传字节仍用 `approval_receipt.py`，不要用 edit revision 代替成片审批。
+
+验证结果：新增 21 项 edit-revision 测试，并扩展 pipeline-manifest / edit-brief 回归；定向 `.venv/bin/python -m pytest tests/test_edit_revision.py tests/test_pipeline_manifest.py tests/test_edit_brief_plan.py -q` 通过 `95 passed in 1.06s`，全量 `.venv/bin/python -m pytest tests -q` 通过 `738 passed in 11.84s`。覆盖 prepare/audit hash、依赖漂移、非法 JSON、路径与 symlink 限制、独立审批、多文件单 operation、写入前二次校验、运行期写入失败回滚路径、exact-byte undo/redo、外部修改、旧 artifact 漂移、redo dependency、显式 history fork、blob/journal 损坏、CLI round-trip 和 manifest live gate；`compileall`、CLI help、manifest category、skill `quick_validate.py` 和 `git diff --check` 全部通过。
 
 ### 2026-07-30 自动化升级记录（Beat Edit Plan）
 
@@ -2783,6 +2805,7 @@ pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 g
 | **76** | **[Multicam Sync](docs/prompts/76-multicam-sync.md)** | **多机位 offset / coverage / 对齐预览和 gate** |
 | **77** | **[Approval Receipt](docs/prompts/77-approval-receipt.md)** | **把人工已复核交付件绑定到 SHA-256，并阻塞过期审批** |
 | **78** | **[Target Script Alignment](docs/prompts/78-script-alignment.md)** | **按确认稿从多 take 找原话、人工选候选并生成 render_config** |
+| **80** | **[Edit Revision](docs/prompts/80-edit-revision.md)** | **剪辑文本 artifact 的 source-bound 审批、成组 apply 与 undo/redo** |
 | **43** | **[Audio Cue Sheet](docs/prompts/43-audio-cue-sheet.md)** | **规划 BGM/SFX 和生成审批** |
 | **45** | **[Video Prompt Pack](docs/prompts/45-video-prompt-pack.md)** | **视频生成提示词包 + paid approval gate** |
 | **46** | **[Generation Task Log](docs/prompts/46-generation-task-log.md)** | **跟踪 submit_id、轮询、下载和本地落盘** |
@@ -2866,6 +2889,7 @@ scripts/
 ├── stock_material_plan.py      远程 stock 搜索规划                 [V3]
 ├── screen_focus.py             录屏点击/热点聚焦计划              [V3]
 ├── color_grade.py              bounded 调色计划 + FFmpeg filter    [V3]
+├── edit_revision.py            文本剪辑 artifact 可逆修订 + stale gate [V3]
 ├── edit_preflight.py           渲染前结构/路径/参数预检 gate       [V3]
 ├── platform_safe_area_qa.py    字幕/PIP/CTA/marker 平台安全区 gate [V3]
 ├── render_final.py             单次编码渲染 + 可选口播降噪 + enrich_plan 接入（V3 强化）

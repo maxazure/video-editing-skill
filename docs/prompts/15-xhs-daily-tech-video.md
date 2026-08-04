@@ -248,6 +248,19 @@
    # 纯观点类视频可跳过，事实型视频发布前建议在 pipeline_manifest 里 --require source_receipts。
    # 详见 docs/prompts/58-source-receipts.md
 
+5aa. # 可选：如果 render_config / enrich_plan 已经过审，后续调整需要可撤销、可重做：
+     python3 scripts/edit_revision.py prepare \
+       --project-dir . \
+       --artifact work/render_config.json \
+       --artifact work/enrich_plan.json \
+       --depends-on work/transcript_reviewed.json \
+       --title "<本次剪辑修订>" \
+       --reason "<审片依据>" \
+       --output work/edit_revision_proposal.json
+     # 只改 proposal 的 proposed_content；再依次 audit、独立 approval、apply。
+     # audit --strict 在 pending_approval 时退出 2 是预期；apply 后可用 status/undo/redo。
+     # 详见 docs/prompts/80-edit-revision.md
+
 5b. python3 scripts/edit_preflight.py \
       --config work/render_config.json \
       --enrich-plan work/enrich_plan.json \
