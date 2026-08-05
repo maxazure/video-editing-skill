@@ -210,6 +210,7 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    │     可选 --versioned-output：输出 _V<N>，避免覆盖旧成片
    │
    ├─→ render_qa.py             渲染后黑屏/静帧/静音/尺寸质检 + review packet
+   ├─→ shot_color_qa.py         成片镜头亮度/对比/色度/饱和度/broadcast-range + 切点跳变门禁
    ├─→ retention_rhythm_qa.py   成片 hook 活动 / 长镜头 / 注意力空窗 / 节奏门禁
    ├─→ speech_continuity_qa.py  成片二次 ASR → 切点复读 / 近重复 take / 句内口吃 gate
    ├─→ review_proxy.py          低码率完整审片 MP4 / 可见时间码 / faststart
@@ -628,6 +629,27 @@ python3 scripts/render_final.py \
 ```
 
 内置 `natural`、`warm`、`cool`、`punchy`、`soft`、`cinematic`、`screen` 七个 preset；自定义 `brightness`、`contrast`、`saturation`、`gamma`、`temperature`、`tint`、`sharpness` 会被限制在保守范围内，`--strict` 在参数被 clamp 时返回 2。若主片已经渲染完，也可以用 `color_grade.py --input output/master.mp4 --render-output output/master_grade.mp4` 做单独复版；日常推荐仍是在 `render_final.py` 里一次编码完成。
+
+### 🔬 Shot Color QA — 成片镜头色彩 / 曝光门禁
+[`scripts/shot_color_qa.py`](scripts/shot_color_qa.py) · [详细文档](docs/prompts/81-shot-color-qa.md)
+
+`color_grade.py` 负责渲染前的 bounded look，`shot_color_qa.py` 则在**最终编码文件**上按镜头复查实际结果。它用 FFmpeg `signalstats` 每秒默认抽 2 帧，对每个镜头聚合 `YLOW/YAVG/YHIGH`、U/V、`SATAVG` 和 `BRNG` 中位数，列出持续过暗/过亮、低对比、高饱和、broadcast-range 越界，以及相邻镜头的亮度/色度跳变。
+
+```bash
+python3 scripts/shot_color_qa.py output/day81_master.mp4 \
+  --output output/verify/day81_shot_color_qa.json \
+  --markdown output/verify/day81_shot_color_qa.md \
+  --strict
+
+# 已有 scene_boundaries.v1 时可复用同一场景时间轴
+python3 scripts/shot_color_qa.py output/day81_master.mp4 \
+  --scene-boundaries work/scene_boundaries.json \
+  --output output/verify/day81_shot_color_qa.json \
+  --markdown output/verify/day81_shot_color_qa.md \
+  --strict
+```
+
+视觉跳变默认只 WARN，因为地点、日夜、图形/实拍或刻意 look 的变化可能完全合理；非 full-range 输出的持续 `BRNG` 越界和未覆盖镜头默认 BLOCK。需要把极暗/极亮或跳变作为当前项目的强人工门禁，可加 `--fail-on-extremes` / `--fail-on-jumps`。Markdown 会为可疑切点生成 `timeline_view.py` 命令；确认后应回到源 timeline / 调色计划重渲染，避免对 master 反复压缩。`pipeline_manifest.py --require shot_color_qa --strict` 可强制发布前存在报告；这是 SDR 社媒输出的轻量统计，不是校准 scopes、HDR proof、白平衡/肤色判断或审美评分。
 
 ### 🎧 Audio Cue Sheet — BGM / SFX 音频设计清单
 [`scripts/audio_cue_sheet.py`](scripts/audio_cue_sheet.py) · [详细文档](docs/prompts/43-audio-cue-sheet.md)
@@ -2198,7 +2220,14 @@ python3 $SKILL/scripts/render_qa.py \
   --review-dir $WORK/output/verify/day${DAY}_qa \
   --review-clips
 
-# 6b. 导出与 1.25x + 片头 offset 对齐的字幕 sidecar / timed-text JSON
+# 6b. 主片镜头色彩 / 曝光 / broadcast-range 门禁
+python3 $SKILL/scripts/shot_color_qa.py \
+  $WORK/output/day${DAY}_master.mp4 \
+  --output $WORK/output/verify/day${DAY}_shot_color_qa.json \
+  --markdown $WORK/output/verify/day${DAY}_shot_color_qa.md \
+  --strict
+
+# 6c. 导出与 1.25x + 片头 offset 对齐的字幕 sidecar / timed-text JSON
 python3 $SKILL/scripts/subtitle_pack.py \
   --config $WORK/work/render_config.json \
   --output-dir $WORK/output/subtitles \
@@ -2206,7 +2235,7 @@ python3 $SKILL/scripts/subtitle_pack.py \
   --speed 1.25 \
   --offset 2.0
 
-# 6c. 最终字幕可读性门禁
+# 6d. 最终字幕可读性门禁
 python3 $SKILL/scripts/subtitle_readability_qa.py \
   $WORK/output/subtitles/day${DAY}_master.json \
   --media $WORK/output/day${DAY}_master.mp4 \
@@ -2214,7 +2243,7 @@ python3 $SKILL/scripts/subtitle_readability_qa.py \
   --markdown $WORK/output/verify/day${DAY}_subtitle_readability_qa.md \
   --strict
 
-# 6d. 主片留存节奏风险门禁
+# 6e. 主片留存节奏风险门禁
 python3 $SKILL/scripts/retention_rhythm_qa.py \
   $WORK/output/day${DAY}_master.mp4 \
   --timed-text $WORK/output/subtitles/day${DAY}_master.json \
@@ -2222,19 +2251,19 @@ python3 $SKILL/scripts/retention_rhythm_qa.py \
   --markdown $WORK/output/verify/day${DAY}_retention_rhythm_qa.md \
   --strict
 
-# 6e. 主片响度/爆峰/长静音门禁
+# 6f. 主片响度/爆峰/长静音门禁
 python3 $SKILL/scripts/audio_master_report.py \
   $WORK/output/day${DAY}_master.mp4 \
   --output $WORK/output/day${DAY}_audio_master_report.json \
   --markdown $WORK/output/day${DAY}_audio_master_report.md \
   --strict
 
-# 6f. 如果 QA 有 WARN/FAIL，先看 review packet；想抽查关键切点再生成可视化复盘图
+# 6g. 如果 QA 有 WARN/FAIL，先看 review packet；想抽查关键切点再生成可视化复盘图
 python3 $SKILL/scripts/timeline_view.py \
   $WORK/output/day${DAY}_master.mp4 --at 42.5 --radius 1.5 \
   --output $WORK/output/verify/day${DAY}_42_5s.png
 
-# 6g. 有 rough/jump cut 时，可选生成原片连续时钟 vs 最终像素的可播放对照
+# 6h. 有 rough/jump cut 时，可选生成原片连续时钟 vs 最终像素的可播放对照
 python3 $SKILL/scripts/edit_compare.py \
   $WORK/origin/talking.mp4 \
   $WORK/output/day${DAY}_master.mp4 \
@@ -2296,6 +2325,7 @@ python3 $SKILL/scripts/cover_variants.py \
 python3 $SKILL/scripts/pipeline_manifest.py \
   --project-dir $WORK \
   --target-stage publish_ready \
+  --require shot_color_qa \
   --output $WORK/work/pipeline_manifest.json \
   --markdown $WORK/work/pipeline_manifest.md \
   --strict
@@ -2340,6 +2370,7 @@ pytest tests/test_rewrite_script.py -v      # Story Engine
 pytest tests/test_auto_broll.py -v          # B-roll 调度
 pytest tests/test_multi_export.py -v        # 多平台比例转换
 pytest tests/test_render_qa.py -v           # 渲染后质检
+pytest tests/test_shot_color_qa.py -v       # 成片镜头色彩 / 曝光 / broadcast-range 门禁
 pytest tests/test_retention_rhythm_qa.py -v # 成片 hook / 长镜头 / 节奏风险门禁
 pytest tests/test_subtitle_readability_qa.py -v # 最终字幕 CPS / 时长 / 重叠 / 越界门禁
 pytest tests/test_platform_safe_area_qa.py -v # 字幕 / PIP / CTA / marker 平台安全区门禁
@@ -2472,6 +2503,22 @@ pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 g
 使用方式：运行 `python3 scripts/edit_revision.py prepare --project-dir . --artifact work/render_config.json --artifact work/enrich_plan.json --depends-on work/transcript_reviewed.json --title "收紧开头" --reason "时间码审片后采用第二版" --output work/edit_revision_proposal.json`，只改 proposal 的 `artifacts[].proposed_content`；再运行 `audit --proposal work/edit_revision_proposal.json --output work/edit_revision_audit.json --markdown work/edit_revision_audit.md --strict`。合法 audit 因等待人工审批返回 2 是预期；从 Markdown 复制 approval template，填写 `decision: approve` 和 reviewer label 后运行 `apply --proposal ... --audit ... --approval ... --strict`。日常用 `status --strict`，需要时运行 `undo` / `redo`；依赖或文件被手工改过时先处理 stale，不得绕过 hash gate。最终待上传字节仍用 `approval_receipt.py`，不要用 edit revision 代替成片审批。
 
 验证结果：新增 21 项 edit-revision 测试，并扩展 pipeline-manifest / edit-brief 回归；定向 `.venv/bin/python -m pytest tests/test_edit_revision.py tests/test_pipeline_manifest.py tests/test_edit_brief_plan.py -q` 通过 `95 passed in 1.06s`，全量 `.venv/bin/python -m pytest tests -q` 通过 `738 passed in 11.84s`。覆盖 prepare/audit hash、依赖漂移、非法 JSON、路径与 symlink 限制、独立审批、多文件单 operation、写入前二次校验、运行期写入失败回滚路径、exact-byte undo/redo、外部修改、旧 artifact 漂移、redo dependency、显式 history fork、blob/journal 损坏、CLI round-trip 和 manifest live gate；`compileall`、CLI help、manifest category、skill `quick_validate.py` 和 `git diff --check` 全部通过。
+
+### 2026-08-06 自动化升级记录（Shot Color QA）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`AKMessi/vex` 的 Auto Color Grading](https://github.com/AKMessi/vex#auto-color-grading) | 按 shot 采样曝光/对比/饱和度/白平衡候选，跳过转场帧；渲染后再次检查 clipping、极端亮度和高饱和，并把 shot/output validation 纳入 creative QA | 新增独立 post-render QA，不复制其非商用实现、不自动调色；用标准 FFmpeg `signalstats`、镜头内中位数和 cut margin 做可复现本地测量 |
+| [`browser-use/video-use` 的 SKILL](https://github.com/browser-use/video-use/blob/main/SKILL.md) | 要求在 rendered output 的每个切点复核 timeline view；调色采用“看一帧、只改一个问题、再看一次”的闭环 | Markdown 为每个可疑切点生成 `timeline_view.py` 命令；视觉跳变默认只 WARN，必须看 master 后再回源修复 |
+| [`walterlow/freecut`](https://github.com/walterlow/freecut) | 把 waveform、vectorscope、histogram 作为一等 color scopes，并同时提供曝光、饱和度、temperature/tint 等可调属性 | 本项目补轻量 headless 数值报告和 manifest gate，不引入 WebGPU/编辑器运行时；文档明确它不是校准 scopes、HDR proof、白平衡或肤色判断 |
+
+新增/调整能力：新增 [`scripts/shot_color_qa.py`](scripts/shot_color_qa.py)、[`tests/test_shot_color_qa.py`](tests/test_shot_color_qa.py) 和 [`docs/prompts/81-shot-color-qa.md`](docs/prompts/81-shot-color-qa.md)。脚本读取最终 master / platform export，可复用连续覆盖全片的 `scene_boundaries.v1`，否则自动运行 FFmpeg scene detection；再默认每秒抽 2 帧、缩到 320px 宽，用每镜头中位数汇总 `YLOW/YAVG/YHIGH`、U/V、`SATAVG`、`BRNG`。持续极暗/极亮、低对比、高饱和和相邻镜头亮度/色度跳变写 review warning；非 full-range 输出的 median `BRNG > 1%`、场景无 sample、外部 scene plan 重叠/缺口/越界会 fail closed。`--fail-on-extremes` / `--fail-on-jumps` 可把当前项目的人工策略升级为 blocker，`--ignore-broadcast-range` 会显式留在 params/flags。`pipeline_manifest.py` 新增存在即检查且可 `--require shot_color_qa` 的 gate；README、SKILL、daily workflow 和提示词索引已同步。
+
+使用方式：运行 `python3 scripts/shot_color_qa.py output/day81_master.mp4 --output output/verify/day81_shot_color_qa.json --markdown output/verify/day81_shot_color_qa.md --strict`。已有场景计划时加 `--scene-boundaries work/scene_boundaries.json`；先看 Markdown 的 shot metrics / flagged cuts，再复制其中 `timeline_view.py` 命令看正常速度 master。确认问题后回到源 timeline、逐镜头 grade 或 `color_grade.py` 重渲染，不要对已压缩 master 反复套滤镜。发布前可用 `pipeline_manifest.py --require shot_color_qa --strict` 强制报告存在且无 blocker。
+
+验证结果：新增 11 项 shot-color 单元/CLI/真实 FFmpeg 测试，并扩展 pipeline-manifest 回归；定向 `.venv/bin/python -m pytest tests/test_shot_color_qa.py tests/test_pipeline_manifest.py -q` 通过 `75 passed in 0.88s`，全量 `.venv/bin/python -m pytest tests -q` 通过 `750 passed in 13.99s`。真实双路径 smoke：合法 2 秒渐变 H.264 得到 `ready / shots=1 / sampled_frames=4 / blocking=0 / warnings=0`；故意把白色视频推到 Y=255 后得到 `blocked / broadcast_range_exceeded=1 / 100% BRNG`，`--strict` 正确退出 2。`.venv/bin/python -m compileall -q scripts tests`、CLI help、manifest category smoke、skill `quick_validate.py` 和 `git diff --check` 全部通过。
 
 ### 2026-07-30 自动化升级记录（Beat Edit Plan）
 
@@ -2894,6 +2941,7 @@ scripts/
 ├── platform_safe_area_qa.py    字幕/PIP/CTA/marker 平台安全区 gate [V3]
 ├── render_final.py             单次编码渲染 + 可选口播降噪 + enrich_plan 接入（V3 强化）
 ├── render_qa.py                渲染后黑屏/静帧/静音/尺寸质检       [V3]
+├── shot_color_qa.py            成片镜头色彩/曝光/broadcast-range gate [V3]
 ├── edit_compare.py             原片连续时钟 vs 最终像素双栏复核     [V3]
 ├── retention_rhythm_qa.py      成片 hook / 长镜头 / 注意力空窗门禁 [V3]
 ├── speech_continuity_qa.py     成片二次 ASR 复读 / 口吃发布 gate  [V3]

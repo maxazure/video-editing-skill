@@ -270,6 +270,16 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         blocks_when_present=True,
     ),
     ArtifactDef(
+        "shot_color_qa",
+        "Shot Color QA",
+        (
+            "**/shot_color_qa.json",
+            "**/*_shot_color_qa.json",
+        ),
+        "Run shot_color_qa.py on the rendered master and resolve broadcast-range blockers or review flagged shot changes.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "edit_compare",
         "Source-time Edit Compare",
         (
@@ -667,6 +677,7 @@ def evaluate_category(
             "rough_cut",
             "visual_dedupe",
             "edit_compare",
+            "shot_color_qa",
             "retention_rhythm_qa",
             "speech_continuity_qa",
             "subtitle_readability_qa",

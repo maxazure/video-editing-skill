@@ -1084,6 +1084,29 @@ def test_applied_semantic_transcript_review_is_ready(tmp_path):
     assert gate["status"] == "ready"
 
 
+def test_shot_color_qa_blocks_when_present_and_can_be_required(tmp_path):
+    _publish_ready_project(tmp_path)
+    _write(tmp_path / "output" / "day58_shot_color_qa.json", {
+        "version": "shot_color_qa.v1",
+        "status": "blocked",
+        "summary": {"shots": 3, "blocking": 1, "warnings": 2},
+    })
+
+    blocked = build_manifest(str(tmp_path), target_stage="publish_ready")
+
+    assert "shot_color_qa" in blocked["blocked_gates"]
+    gate = next(g for g in blocked["gates"] if g["category"] == "shot_color_qa")
+    assert "1 blocking item(s) in summary.blocking" in gate["notes"]
+
+    (tmp_path / "output" / "day58_shot_color_qa.json").unlink()
+    missing = build_manifest(
+        str(tmp_path),
+        target_stage="publish_ready",
+        required=["shot_color_qa"],
+    )
+    assert "shot_color_qa" in missing["missing_required"]
+
+
 def test_markdown_contains_gate_table_and_next_actions(tmp_path):
     manifest = build_manifest(str(tmp_path), target_stage="render_ready")
 

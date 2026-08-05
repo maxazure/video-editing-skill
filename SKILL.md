@@ -59,6 +59,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ render_final.py          单次编码渲染（可选口播降噪 + enrich_plan/focus_events/pip_overlays + Heavy 字幕 + 响度规范化 + BGM ducking）
    │                            可选 --versioned-output 防覆盖旧成片
    ├─→ render_qa.py             渲染后黑屏/静帧/静音/尺寸质检 + review packet
+   ├─→ shot_color_qa.py         成片镜头亮度/对比/色度/饱和度/broadcast-range + 切点跳变 gate
    ├─→ retention_rhythm_qa.py   成片 hook 活动 / 长镜头 / 注意力空窗 / 节奏 gate
    ├─→ speech_continuity_qa.py  成片二次 ASR → 切点复读 / 近重复 take / 句内口吃 gate
    ├─→ review_proxy.py          低码率完整审片 MP4 / 可见时间码 / faststart
@@ -134,6 +135,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `platform_safe_area_qa.py` | 字幕、badge、PIP、CTA、章节卡、marker → 平台 UI 遮挡 gate + SVG guide | `--config` `--enrich-plan` `--elements` `--platform xhs|douyin|wxch` `--guide` `--strict` |
 | `render_final.py` | 单次编码渲染 + 可选口播降噪 + enrich_plan + 旁白驱动 BGM ducking | `--config render_config.json` `--speech-denoise light` `--enrich-plan enrich_plan.json` `--bgm-ducking` `--output final.mp4` |
 | `render_qa.py` | 渲染后 QA：尺寸/音频/黑屏/静帧/静音 + review packet | `<video.mp4>` `--platform douyin` `--json qa.json` `--review-dir verify/qa` |
+| `shot_color_qa.py` | rendered master → 镜头亮度/对比/色度/饱和度/broadcast-range 与切点跳变 gate | `<video.mp4>` `--scene-boundaries` `--output shot_color_qa.json` `--markdown` `--strict` |
 | `retention_rhythm_qa.py` | 成片 hook 活动、长镜头、注意力空窗、等距/快切和字幕节奏风险 | `<video.mp4>` `--timed-text subtitles.json` `--output retention_rhythm_qa.json` `--strict` |
 | `speech_continuity_qa.py` | 成片二次 transcript → 复读 / 近重复 take / 句内口吃 gate | `<final_transcript.json>` `--output speech_continuity_qa.json` `--markdown` `--strict` |
 | `review_proxy.py` | master/platform MP4 → 低码率 timecoded 审片视频 + JSON/Markdown | `<video.mp4>` `--output verify/review_proxy.mp4` `--dry-run` `--no-timecode` |
@@ -1366,7 +1368,17 @@ python3 scripts/render_qa.py final.mp4 \
 
 `render_qa.py` 会检查容器元数据、平台尺寸、视频/音频流、黑屏、长静帧和长静音。对小红书派生文件使用 `--platform xhs`，对抖音/视频号使用 `--platform douyin` 或 `--platform wxch`。`--review-dir` 会写 `render_qa_review.json` / `.md`，`--review-clips` 会为可疑区间抽取短 MP4；如果只想快速查元数据，可加 `--no-filters`。
 
-**6b. 留存节奏风险审计（短视频 master / platform export 推荐）**：
+**6b. 镜头色彩 / 曝光 QA（多机位、B-roll、生成素材或调色后推荐）**：
+```bash
+python3 scripts/shot_color_qa.py final.mp4 \
+  --output verify/shot_color_qa.json \
+  --markdown verify/shot_color_qa.md \
+  --strict
+```
+
+`shot_color_qa.py` 在最终编码文件上用 FFmpeg `signalstats` 按镜头聚合亮度、对比、U/V、饱和度和 broadcast-range 指标，并比较相邻镜头的亮度/色度差。视觉跳变默认只 WARN，必须结合 Markdown 时间码和 `timeline_view.py` 看 master；非 full-range 输出的持续越界或镜头无 sample 默认阻塞。可用 `--scene-boundaries work/scene_boundaries.json` 复用已审场景，或由脚本自动检测。它不是校准 scopes、HDR proof、白平衡/肤色判断或审美评分。`pipeline_manifest.py --require shot_color_qa --strict` 可把报告设为发布必需项。
+
+**6c. 留存节奏风险审计（短视频 master / platform export 推荐）**：
 ```bash
 python3 scripts/subtitle_pack.py \
   --config render_config.json \
@@ -1384,7 +1396,7 @@ python3 scripts/retention_rhythm_qa.py final.mp4 \
 
 `retention_rhythm_qa.py` 在**已渲染成片**上复用 FFmpeg scene score，并可合并 output-aligned subtitle JSON，检查前三秒 scene/subtitle activity、长视觉 hold、scene + subtitle attention gap、机械等距节奏、过密快切和字幕长时间不刷新。没有 timed text 时，inactive hook 只警告，避免把持续运镜或轻微动效误判成硬失败；高置信严重长 hold / attention gap 会写入 `summary.blocking`。这是可观测节奏风险，不是平台留存率或爆款预测。命中后先看 Markdown 时间范围和 master，再回到源 timeline 重渲染。`pipeline_manifest.py --require retention_rhythm_qa --strict` 可把报告设为发布必需项。
 
-**6c. 完整审片代理（需要分享整条视频或精确时间码反馈时跑）**：
+**6d. 完整审片代理（需要分享整条视频或精确时间码反馈时跑）**：
 ```bash
 python3 scripts/review_proxy.py final.mp4 \
   --output verify/final_review_proxy.mp4 \
@@ -1394,7 +1406,7 @@ python3 scripts/review_proxy.py final.mp4 \
 
 `review_proxy.py` 不修改 master；它输出最大 720p、24fps、H.264/AAC、`+faststart` 的轻量 MP4，并在左上角烧入 `REVIEW PROXY` 和 elapsed timecode。审片意见应引用可见时间码，最终 QA 和发布仍使用 master / platform export。`--dry-run` 只写可复现命令和 artifact，`--no-timecode` 可关闭时间码。
 
-**6d. 可视化复盘（QA 有 WARN/FAIL 或抽查切点时跑）**：
+**6e. 可视化复盘（QA 有 WARN/FAIL 或抽查切点时跑）**：
 ```bash
 python3 scripts/timeline_view.py final.mp4 --at 42.5 --radius 1.5 --output verify/42_5s.png
 python3 scripts/timeline_view.py origin/talking.mp4 --cut-list work/jumpcut.json --output-dir verify/cuts --limit 12
@@ -1403,7 +1415,7 @@ python3 scripts/timeline_view.py output/rough_cut.mp4 --rendered-cut-list work/r
 
 `timeline_view.py` 会生成 filmstrip + waveform PNG；上半部分看画面连续性，下半部分看人声/静音边界。`--cut-list` 查看源素材时间轴，`--rendered-cut-list` 则按 `keep_segments` 累计时长映射到成片的实际拼接点；有全局变速或片头封面时同步传 `--output-speed` / `--output-offset`。JSON 会保留输出切点和前后 source range；无音频视频会自动只输出 filmstrip。
 
-**6e. 原片/成片 source-time 对照（结构剪辑复核时跑）**：
+**6f. 原片/成片 source-time 对照（结构剪辑复核时跑）**：
 ```bash
 python3 scripts/edit_compare.py \
   origin/talking.mp4 final.mp4 \
@@ -1417,7 +1429,7 @@ python3 scripts/edit_compare.py \
 
 左栏连续播放原片；右栏把最终交付像素投回同一 source clock，被删除范围显示黑屏。脚本会检查时长、双栏尺寸、source-clock 音轨、删段黑屏和代表性保留段像素。V1 只支持单来源、时间升序、无重叠的 `keep_segments` 加全局 speed/offset；重排、多来源或非线性变速要回到 NLE/OTIO 时间线复核。详细说明见 [docs/prompts/74-edit-compare.md](docs/prompts/74-edit-compare.md)。
 
-**6f. 字幕 sidecar 交付（平台需要 SRT/VTT 时跑）**：
+**6g. 字幕 sidecar 交付（平台需要 SRT/VTT 时跑）**：
 ```bash
 python3 scripts/subtitle_pack.py \
   --config render_config.json \
@@ -1443,7 +1455,7 @@ python3 scripts/subtitle_readability_qa.py \
 
 `subtitle_readability_qa.py` 检查 output-timeline 的无效时间、乱序、重叠、极短闪现、CPS、持续时间、行数/行长，并可用 FFprobe 验证 cue 没有超过成片结尾。普通 CPS/排版风险只 WARN，必须看正常速度 master；确定性时间事故和极端阅读速度写入 `summary.blocking`。它不做 OCR，不替代字体、描边、位置或遮挡人工审片。`pipeline_manifest.py --require subtitle_readability_qa --strict` 可把报告设为发布必需项。
 
-**6g. 发布上传包（最终上传前跑）**：
+**6h. 发布上传包（最终上传前跑）**：
 ```bash
 python3 scripts/publish_package.py \
   --project-dir work/day58 \
@@ -1455,7 +1467,7 @@ python3 scripts/publish_package.py \
 
 `publish_package.py` 不上传、不调用平台 API；它只把 `multi_export.py` 的平台 MP4、`generate_caption.py` 的标题/正文/tags、封面、SRT/VTT、章节文本和 `pipeline_manifest` gate 状态合成 `publish_package.v1`。如果存在 `cover_variants.json` 且 `selected_cover` 文件有效，会优先使用已复核封面；显式 `--cover` 可覆盖。如果缺少某个平台视频、caption 为空、或 pipeline manifest 已 blocked，`--strict` 返回 2。需要交给外部发布 connector 时，用这份 JSON 作为 handoff；手工上传时看 Markdown checklist。
 
-**6h. 最终审批收据（客户/人工确认后跑）**：
+**6i. 最终审批收据（客户/人工确认后跑）**：
 ```bash
 python3 scripts/approval_receipt.py create \
   --project-dir work/day58 \
@@ -1477,7 +1489,7 @@ python3 scripts/publish_package.py \
 
 `approval_receipt.py` 只绑定显式列出的稳定交付件；不要把每次都会重写的 pipeline manifest、publish package 或 dashboard 放进收据。`verify --strict` 和 `pipeline_manifest.py --require approval_receipt --strict` 会重新读取当前文件并比较 SHA-256；任何重渲染、换封面、改文案、删字幕或路径变成 symlink 都让旧审批过期。`approved_by` 只是本地标签，不是身份认证或数字签名。详细说明见 [docs/prompts/77-approval-receipt.md](docs/prompts/77-approval-receipt.md)。
 
-**6i. 续跑上下文包（跨会话/自动化收尾时跑）**：
+**6j. 续跑上下文包（跨会话/自动化收尾时跑）**：
 ```bash
 python3 scripts/project_resume.py \
   --project-dir work/day58 \
@@ -1490,7 +1502,7 @@ python3 scripts/project_resume.py \
 
 `project_resume.py` 复用 `pipeline_manifest.py` 的本地 gate，不渲染、不上传、不提交生成任务。它输出 `project_resume.v1`，包含 `phase`、`recommended_first_action`、`next_actions[]`、最近 artifacts、关键 gate snapshot 和一句可直接交给下一位 agent 的 `suggested_prompt`。长流程被压缩上下文、自动化结束、或要交给另一位 agent 时，优先把 Markdown/agent note 作为接手入口。
 
-**6j. 人工复核面板（最终确认/交接前跑）**：
+**6k. 人工复核面板（最终确认/交接前跑）**：
 ```bash
 python3 scripts/review_dashboard.py \
   --project-dir work/day58 \
@@ -1502,7 +1514,7 @@ python3 scripts/review_dashboard.py \
 
 `review_dashboard.py` 复用 `pipeline_manifest.py` 的本地 gate，输出 `review_dashboard.v1` 和一个可直接在浏览器打开的 HTML。它把 blocking/missing/warning gate 放进 `review_items[]`，同时列出 `next_actions[]`、最新 artifacts 和完整 gate snapshot。适合用户最终确认，也适合自动化结束时留给下一位 agent。
 
-**6k. 成片复读 / 口吃门禁**：
+**6l. 成片复读 / 口吃门禁**：
 ```bash
 python3 scripts/extract_audio.py output/final.mp4
 python3 scripts/transcribe.py output/final_audio.wav --model auto --language zh --word-timestamps
@@ -1514,7 +1526,7 @@ python3 scripts/speech_continuity_qa.py output/final_transcript.json \
 
 必须对**已渲染 master**重新转录，不能复用源素材 transcript。`speech_continuity_qa.py` 会检查相邻 segment 的结尾/开头精确复读、相邻近重复 take 和句内即时口吃；不同 speaker 默认不互判。命中后先按时间码试听 master，再调整源 `render_config` / cut list，重新渲染并复跑。`pipeline_manifest.py --require speech_continuity_qa --strict` 可把这份报告设为发布必需项。
 
-**6l. 字幕文字最终校验**：
+**6m. 字幕文字最终校验**：
 1. 读取最终视频使用的所有 transcript 片段的文字
 2. 按最终视频的片段顺序，逐条检查以下问题：
    - **语音识别残留错误**：Phase 2.5 可能遗漏的同音字、专有名词错误
