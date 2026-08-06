@@ -8,6 +8,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(
 from pipeline_manifest import build_manifest, emit_markdown  # noqa: E402
 from approval_receipt import create_receipt  # noqa: E402
 from edit_revision import APPROVAL_VERSION, apply_revision, audit_proposal, prepare_proposal  # noqa: E402
+from edit_recipe import export_recipe  # noqa: E402
 
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -96,6 +97,44 @@ def test_stale_approval_receipt_blocks_when_present(tmp_path):
     assert "approval_receipt" in manifest["blocked_gates"]
     gate = next(g for g in manifest["gates"] if g["category"] == "approval_receipt")
     assert "approval receipt is stale" in gate["notes"][0]
+
+
+def test_edit_recipe_is_live_verified_when_present(tmp_path):
+    _publish_ready_project(tmp_path)
+    video = tmp_path / "origin" / "take.mp4"
+    transcript = tmp_path / "work" / "source_transcript.json"
+    _write(video, "video")
+    _write(transcript, {"segments": [{"id": 1, "start": 0, "end": 2, "text": "hello"}]})
+    config = tmp_path / "work" / "recipe_source_config.json"
+    _write(config, {"clips": [{"video": str(video), "transcript": str(transcript), "segment_id": 1}]})
+    recipe = export_recipe(str(config), name="talking-head")
+    _write(tmp_path / "work" / "talking-head_edit_recipe.json", recipe)
+
+    manifest = build_manifest(str(tmp_path), target_stage="publish_ready")
+
+    gate = next(g for g in manifest["gates"] if g["category"] == "edit_recipe")
+    assert gate["status"] == "ready"
+
+
+def test_tampered_edit_recipe_blocks_manifest_even_if_summary_is_ready(tmp_path):
+    _publish_ready_project(tmp_path)
+    video = tmp_path / "origin" / "take.mp4"
+    transcript = tmp_path / "work" / "source_transcript.json"
+    _write(video, "video")
+    _write(transcript, {"segments": [{"id": 1, "start": 0, "end": 2, "text": "hello"}]})
+    config = tmp_path / "work" / "recipe_source_config.json"
+    _write(config, {"clips": [{"video": str(video), "transcript": str(transcript), "segment_id": 1}]})
+    recipe = export_recipe(str(config), name="talking-head")
+    recipe["template"]["subtitle_style"] = "neon"
+    recipe["summary"]["blocking"] = 0
+    _write(tmp_path / "work" / "talking-head_edit_recipe.json", recipe)
+
+    manifest = build_manifest(str(tmp_path), target_stage="publish_ready")
+
+    assert manifest["status"] == "blocked"
+    assert "edit_recipe" in manifest["blocked_gates"]
+    gate = next(g for g in manifest["gates"] if g["category"] == "edit_recipe")
+    assert "1 blocking item" in gate["notes"][0]
 
 
 def test_multiple_approval_receipts_block_as_ambiguous(tmp_path):

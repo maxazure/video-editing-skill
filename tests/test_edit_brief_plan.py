@@ -137,6 +137,29 @@ def test_reversible_edit_brief_routes_revision_history(tmp_path):
     assert any("approval JSON" in note for note in plan["notes"])
 
 
+def test_portable_recipe_briefs_route_export_and_replay(tmp_path):
+    source = tmp_path / "talk.mp4"
+    source.write_text("fake video", encoding="utf-8")
+
+    export_plan = build_plan(
+        f"把 {source} 当前 render config 保存为剪辑配方，归档剪辑风格",
+        project_dir=str(tmp_path),
+    )
+    export_step = next(step for step in export_plan["steps"] if step["id"] == "edit_recipe_export")
+    assert "edit_recipe.py export" in export_step["command"]
+    assert export_step["gate_category"] == "edit_recipe"
+
+    replay_plan = build_plan(
+        "套用剪辑模板，绑定新素材后回放剪辑配方并渲染",
+        project_dir=str(tmp_path),
+    )
+    ids = [step["id"] for step in replay_plan["steps"]]
+    assert ids.index("edit_recipe_replay") < ids.index("edit_preflight") < ids.index("master_video")
+    replay_step = next(step for step in replay_plan["steps"] if step["id"] == "edit_recipe_replay")
+    assert "--bind '<slot=local_path>'" in replay_step["command"]
+    assert any("human preview" in note for note in replay_plan["notes"])
+
+
 def test_empty_brief_is_blocked():
     plan = build_plan("")
 

@@ -132,6 +132,26 @@ SIGNAL_KEYWORDS: Mapping[str, Sequence[str]] = {
         "回退剪辑",
         "可逆修改",
     ),
+    "edit_recipe_export": (
+        "export edit recipe",
+        "save edit as template",
+        "archive editing style",
+        "portable edit recipe",
+        "保存剪辑模板",
+        "归档剪辑风格",
+        "导出剪辑配方",
+        "保存为剪辑配方",
+    ),
+    "edit_recipe_replay": (
+        "replay edit recipe",
+        "apply edit recipe",
+        "reuse edit template",
+        "swap media and reuse",
+        "套用剪辑模板",
+        "回放剪辑配方",
+        "复用剪辑配方",
+        "换素材复刻",
+    ),
 }
 
 SIGNAL_LABELS: Mapping[str, str] = {
@@ -164,6 +184,8 @@ SIGNAL_LABELS: Mapping[str, str] = {
     "nle_handoff": "NLE 交接",
     "review_dashboard": "人工复核面板",
     "edit_revision": "剪辑 artifact 可逆修订",
+    "edit_recipe_export": "导出可移植剪辑配方",
+    "edit_recipe_replay": "绑定新素材并回放剪辑配方",
 }
 
 
@@ -346,7 +368,7 @@ def build_plan(
             }
         )
     )
-    wants_render = bool(ids.intersection({"render", "publish", "target_script", "long_to_short", "batch_shorts", "cleanup_silence", "cleanup_words", "broll", "screen_focus", "pip", "color_grade"}))
+    wants_render = bool(ids.intersection({"render", "publish", "target_script", "long_to_short", "batch_shorts", "cleanup_silence", "cleanup_words", "broll", "screen_focus", "pip", "color_grade", "edit_recipe_replay"}))
     wants_clean_script = bool(
         ids.intersection({"story_rewrite", "hook", "content_guard", "source_receipts", "broll", "generated_assets", "publish"})
         and "target_script" not in ids
@@ -860,6 +882,78 @@ def build_plan(
             "Use undo/redo only while status reports current."
         )
 
+    if "edit_recipe_export" in ids:
+        _add_step(
+            steps,
+            seen,
+            _step(
+                "edit_recipe_export",
+                phase="edit",
+                script="edit_recipe.py",
+                label="Export the reviewed render config as a portable recipe",
+                reason="The brief asks to archive a repeatable edit while removing project-specific file paths.",
+                command=shell(
+                    [
+                        python_bin,
+                        "scripts/edit_recipe.py",
+                        "export",
+                        "--config",
+                        "work/render_config.json",
+                        "--name",
+                        "<recipe-name>",
+                        "--description",
+                        "<recipe-purpose>",
+                        "--output",
+                        "work/recipes/<recipe-name>_edit_recipe.json",
+                        "--markdown",
+                        "work/recipes/<recipe-name>_edit_recipe.md",
+                    ]
+                ),
+                outputs=[
+                    "work/recipes/<recipe-name>_edit_recipe.json",
+                    "work/recipes/<recipe-name>_edit_recipe.md",
+                ],
+                gate_category="edit_recipe",
+            ),
+        )
+
+    if "edit_recipe_replay" in ids:
+        _add_step(
+            steps,
+            seen,
+            _step(
+                "edit_recipe_replay",
+                phase="edit",
+                script="edit_recipe.py",
+                label="Bind new local files and replay the portable recipe",
+                reason="The brief asks to reuse a reviewed edit template with replacement media.",
+                command=shell(
+                    [
+                        python_bin,
+                        "scripts/edit_recipe.py",
+                        "replay",
+                        "--recipe",
+                        "work/recipes/<recipe-name>_edit_recipe.json",
+                        "--bind",
+                        "<slot=local_path>",
+                        "--output",
+                        "work/render_config.json",
+                        "--receipt",
+                        "work/edit_recipe_replay.json",
+                        "--markdown",
+                        "work/edit_recipe_replay.md",
+                        "--strict",
+                    ]
+                ),
+                outputs=["work/render_config.json", "work/edit_recipe_replay.json", "work/edit_recipe_replay.md"],
+                gate_category="edit_recipe",
+            ),
+        )
+        notes.append(
+            "Replace every <slot=local_path> placeholder with one --bind per recipe slot. "
+            "A ready preflight still requires a rendered human preview before publish."
+        )
+
     if "color_grade" in ids:
         _add_step(
             steps,
@@ -878,6 +972,15 @@ def build_plan(
         )
 
     if wants_render:
+        preflight_command = [
+            python_bin,
+            "scripts/edit_preflight.py",
+            "--config",
+            "work/render_config.json",
+        ]
+        if "broll" in ids or "generated_assets" in ids or "audio_design" in ids or "screen_focus" in ids or "pip" in ids:
+            preflight_command.extend(["--enrich-plan", "work/enrich_plan.json"])
+        preflight_command.extend(["--output", "work/edit_preflight.json", "--strict"])
         _add_step(
             steps,
             seen,
@@ -887,7 +990,7 @@ def build_plan(
                 script="edit_preflight.py",
                 label="Check render inputs before encoding",
                 reason="Render-time failures should be caught before running FFmpeg.",
-                command=shell([python_bin, "scripts/edit_preflight.py", "--config", "work/render_config.json", "--enrich-plan", "work/enrich_plan.json", "--output", "work/edit_preflight.json", "--strict"]),
+                command=shell(preflight_command),
                 outputs=["work/edit_preflight.json"],
                 gate_category="edit_preflight",
             ),

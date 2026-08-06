@@ -228,6 +228,13 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         "Create render_config.json or export one from highlight_picker.py.",
     ),
     ArtifactDef(
+        "edit_recipe",
+        "Portable Edit Recipe",
+        ("**/edit_recipe.json", "**/*_edit_recipe.json"),
+        "Run edit_recipe.py verify; re-export any recipe whose schema, slots, or portable digest no longer match.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "edit_revision_history",
         "Edit Revision History",
         ("**/edit_revision_history.json", "**/*_edit_revision_history.json"),
@@ -644,6 +651,33 @@ def evaluate_category(
             "status": status,
             "artifact_count": len(artifacts),
             "latest_path": latest.path,
+            "notes": sorted(set(notes)),
+            "next_action": definition.next_action if status in {"missing", "blocked", "warn"} else "",
+        }
+
+    if definition.category == "edit_recipe":
+        from edit_recipe import verify_recipe
+
+        for artifact in artifacts:
+            data = _load_json(artifact.path)
+            if data is None:
+                status = "blocked"
+                notes.append(f"unreadable edit recipe: {artifact.path}")
+                continue
+            verification = verify_recipe(data)
+            blocking = _int_at(verification, "summary", "blocking")
+            if blocking:
+                status = "blocked"
+                notes.append(f"invalid edit recipe {artifact.path}: {blocking} blocking item(s)")
+            elif _int_at(verification, "summary", "warnings"):
+                status = "warn" if status != "blocked" else status
+                notes.append(f"edit recipe source preflight had warnings: {artifact.path}")
+        return {
+            "category": definition.category,
+            "label": definition.label,
+            "status": status,
+            "artifact_count": len(artifacts),
+            "latest_path": artifacts[0].path,
             "notes": sorted(set(notes)),
             "next_action": definition.next_action if status in {"missing", "blocked", "warn"} else "",
         }

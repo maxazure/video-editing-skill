@@ -2,7 +2,7 @@
 
 这是一个面向 **口播、教程、访谈、播客切片、录屏演示 / facecam demo** 的 AI 视频剪辑生产线：给它原始口播音频/视频、transcript、B-roll、摄像头小窗或素材目录，它可以把“还没整理的素材”推进到 **可发布的小红书 / 抖音 / 视频号短视频**。
 
-它不是一个单点 FFmpeg 脚本，而是一条完整工作流：**项目启动/素材导入 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 字幕与声音设计 → 可逆剪辑修订 → 渲染前预检 → 单次编码渲染 → 质检 → 多平台导出 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
+它不是一个单点 FFmpeg 脚本，而是一条完整工作流：**项目启动/素材导入 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 字幕与声音设计 → 可逆剪辑修订 / 可移植剪辑配方 → 渲染前预检 → 单次编码渲染 → 质检 → 多平台导出 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
 
 ## 适合做什么
 
@@ -14,6 +14,7 @@
 - **最终审批绑定到具体文件字节**：`approval_receipt.py` 为人工看过的视频、封面、文案、字幕和 QA 报告记录 SHA-256；任何重渲染、替换、删除或 symlink 漂移都会让旧审批过期并阻塞发布。
 - **ASR 语义校稿不再只看单句**：`semantic_transcript_review.py` 为每条字幕附带全篇前后文，验证完整覆盖、源 transcript hash 和最小字符补丁；模型只能提建议，独立人工 choices 才能写 reviewed transcript。
 - **上游剪辑配置可以安全撤销/重做**：`edit_revision.py` 把 `render_config` / `enrich_plan` 等文本 artifact 的完整改动绑定到基础和依赖 SHA-256；独立审批后成组写入，外部漂移时拒绝 undo/redo 并阻塞 manifest。
+- **已审时间线可以换素材复用**：`edit_recipe.py` 把 `render_config.json` 的全部本地文件路径替换成类型化槽位，生成 content-addressed 可移植配方；回放必须完整绑定新素材、记录 SHA-256 并重新通过 `edit_preflight.py`。
 - **生成式素材有明确审批和台账**：Codex `image_gen` / GPT Image 2 提示词、Dreamina/Veo/LTX/Wan/Sora 视频提示词、provider 决策、`submit_id` 轮询下载和本地落盘 gate 都先记录再执行。
 - **适合交给强推理模型做长流程代理执行**：在 [GPT-5.6 Sol](https://developers.openai.com/api/docs/models/gpt-5.6-sol)（OpenAI 当前旗舰；API 别名 `gpt-5.6` 指向 Sol）和 [Claude Opus 4.8](https://docs.anthropic.com/en/docs/about-claude/models) 这类面向复杂专业任务、agent 工作流的模型下，本 skill 对 **口播类短视频** 至少可以替代 **80% 的常规视频剪辑工作**。
 
@@ -199,6 +200,9 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    │
    ├─→ edit_revision.py         render_config/enrich_plan 等文本 artifact 可逆修订
    │                            source/dependency hash / 独立审批 / 成组 apply / undo / redo
+   │
+   ├─→ edit_recipe.py           已审 render_config → 无路径可移植配方 / 精确绑定回放
+   │                            typed slots / portable SHA-256 / replay receipt / preflight
    │
    ├─→ edit_preflight.py        render_config/enrich_plan/cut list 渲染前预检
    │                            缺文件、空剪辑、非法时间段、危险参数 gate
@@ -1166,6 +1170,41 @@ python3 scripts/edit_preflight.py \
 ```
 
 输出 `edit_preflight.v1`，会检查空剪辑、缺视频/图片/音频文件、`transcript + segment_id` 不匹配、非法时间段、overlay 超出输出时间线、PIP/focus 参数风险。`pipeline_manifest.py` 会识别 `edit_preflight.json`，如果 `summary.blocking > 0` 就把它列为 blocking gate。它不解码、不渲染、不上传；渲染后仍然要跑 `render_qa.py`。
+
+### ♻️ Portable Edit Recipe — 换素材复用已审时间线
+
+[`scripts/edit_recipe.py`](scripts/edit_recipe.py) · [详细文档](docs/prompts/82-edit-recipe.md)
+
+`export` 先对现有 `render_config.json` 跑 `edit_preflight.py`，再递归把视频、transcript、BGM、图片、字幕、LUT 等本地文件引用替换成 `${video_1}` / `${transcript_1}` 这类类型化槽位。配方只保留模板、槽位位置、原始文件 SHA-256/大小/后缀、源 config SHA-256 和无路径 preflight 摘要；`portable_sha256` 绑定整个模板与复用契约。
+
+```bash
+python3 scripts/edit_recipe.py export \
+  --config work/render_config.json \
+  --name fast-tech-explainer \
+  --description "快节奏科技口播，双段原话 + 卡片 + ducking" \
+  --output work/recipes/fast-tech-explainer_edit_recipe.json \
+  --markdown work/recipes/fast-tech-explainer_edit_recipe.md
+
+python3 scripts/edit_recipe.py verify \
+  --recipe work/recipes/fast-tech-explainer_edit_recipe.json
+```
+
+在新项目回放时，必须为 Markdown 表中的每个槽位各传一次 `--bind`；缺失、重复、未知、扩展名类型不符、文件不存在、recipe digest/occurrence 被改或模板残留本地路径都会退出 2。回放输出新的绝对路径 `render_config.json`、绑定文件哈希 receipt 和 Markdown，并自动运行 preflight：
+
+```bash
+python3 scripts/edit_recipe.py replay \
+  --recipe work/recipes/fast-tech-explainer_edit_recipe.json \
+  --bind video_1=origin/episode-02.mp4 \
+  --bind transcript_1=work/episode-02_transcript_reviewed.json \
+  --bind image_1=work/cards/episode-02.png \
+  --bind audio_1=origin/music/episode-02.wav \
+  --output work/render_config.json \
+  --receipt work/edit_recipe_replay.json \
+  --markdown work/edit_recipe_replay.md \
+  --strict
+```
+
+默认拒绝覆盖已有输出，确实要替换时显式加 `--force`。配方哈希只证明内容身份，不是作者签名、人工审批或“新素材与旧时间码语义等价”的证明；`ready` 以后仍必须实际渲染并人工审片。`pipeline_manifest.py` 对任何已发现的 `*_edit_recipe.json` 都会现场重算 schema、槽位 occurrence、路径泄漏和 digest，不能靠手改 `summary.blocking` 绕过。
 
 ### 🎚️ 渲染层（V3 强化）
 [`scripts/render_final.py`](scripts/render_final.py)
@@ -2190,6 +2229,14 @@ python3 $SKILL/scripts/color_grade.py \
   --output $WORK/work/color_grade.json \
   --markdown $WORK/work/color_grade.md
 
+# 3i. 可选：把已审 render_config 导出成无路径配方，供同栏目换素材复用
+python3 $SKILL/scripts/edit_recipe.py export \
+  --config $WORK/work/render_config.json \
+  --name fast-tech-explainer \
+  --description "快节奏科技口播" \
+  --output $WORK/work/recipes/fast-tech-explainer_edit_recipe.json \
+  --markdown $WORK/work/recipes/fast-tech-explainer_edit_recipe.md
+
 # 4. 渲染前预检：先挡住缺文件、空剪辑、坏时间段和危险 overlay 参数
 python3 $SKILL/scripts/edit_preflight.py \
   --config $WORK/work/render_config.json \
@@ -2412,6 +2459,7 @@ pytest tests/test_bgm_ducking.py -v         # 旁白驱动 BGM sidechain + 真�
 pytest tests/test_color_grade.py -v         # 调色计划 + render_final 接入
 pytest tests/test_edit_preflight.py -v      # 渲染前结构/路径/参数预检 gate
 pytest tests/test_edit_revision.py -v       # 文本剪辑 artifact source-bound revision / undo / redo
+pytest tests/test_edit_recipe.py -v         # 可移植 render-config recipe / typed binding / replay preflight
 pytest tests/test_approval_receipt.py -v    # 最终交付件 SHA-256 审批收据 + stale gate
 pytest tests/test_publish_package.py -v     # 最终上传包 + gate 状态汇总
 pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
@@ -2519,6 +2567,22 @@ pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 g
 使用方式：运行 `python3 scripts/shot_color_qa.py output/day81_master.mp4 --output output/verify/day81_shot_color_qa.json --markdown output/verify/day81_shot_color_qa.md --strict`。已有场景计划时加 `--scene-boundaries work/scene_boundaries.json`；先看 Markdown 的 shot metrics / flagged cuts，再复制其中 `timeline_view.py` 命令看正常速度 master。确认问题后回到源 timeline、逐镜头 grade 或 `color_grade.py` 重渲染，不要对已压缩 master 反复套滤镜。发布前可用 `pipeline_manifest.py --require shot_color_qa --strict` 强制报告存在且无 blocker。
 
 验证结果：新增 11 项 shot-color 单元/CLI/真实 FFmpeg 测试，并扩展 pipeline-manifest 回归；定向 `.venv/bin/python -m pytest tests/test_shot_color_qa.py tests/test_pipeline_manifest.py -q` 通过 `75 passed in 0.88s`，全量 `.venv/bin/python -m pytest tests -q` 通过 `750 passed in 13.99s`。真实双路径 smoke：合法 2 秒渐变 H.264 得到 `ready / shots=1 / sampled_frames=4 / blocking=0 / warnings=0`；故意把白色视频推到 Y=255 后得到 `blocked / broadcast_range_exceeded=1 / 100% BRNG`，`--strict` 正确退出 2。`.venv/bin/python -m compileall -q scripts tests`、CLI help、manifest category smoke、skill `quick_validate.py` 和 `git diff --check` 全部通过。
+
+### 2026-08-07 自动化升级记录（Portable Edit Recipe）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`FireRedTeam/FireRed-OpenStoryline` 的 create_profile_style_skill](https://github.com/FireRedTeam/FireRed-OpenStoryline/blob/main/.storyline/skills/create_profile_style_skill/SKILL.md) | 能从当前 timeline 的节奏、叙事、音频、字幕、调色和工具参数提炼并归档可复用 Editing Skill，换素材后复刻风格 | 补上本项目“已有很多单次 artifact，但不能把已审 config 封装成复用单元”的缺口；本轮只处理确定性的 render config，不让模型自由生成可执行 Skill |
+| [`KyaniteLabs/kinocut` 的 project recipes](https://github.com/KyaniteLabs/kinocut/blob/master/kinocut/aivideo/learning/project_recipes.py) | 从已验证 revision 导出无路径 recipe，把源 digest 换成参数槽；portable digest 防止模板漂移，replay 要求完整 binding 并产生新 revision | 采用 typed slot + canonical SHA-256 + exact binding；本项目直接复用 `edit_preflight.py` 和 JSON artifact，不引入 projectstore/CAS/通用 operation DSL |
+| [`gooseworks-ai/goose-video` 的视频模板](https://github.com/gooseworks-ai/goose-video/tree/main/skills/templates) | 每种视频形式是自包含 recipe，明确素材输入、阶段顺序、确定性脚本和付费前人工 gate，适合批量替换品牌/产品素材 | recipe Markdown 明确 slot 表、回放 contract 和 human preview gate；保留现有脚本组合，不复制 provider SDK、资产或特定广告模板 |
+
+新增/调整能力：新增 [`scripts/edit_recipe.py`](scripts/edit_recipe.py)、[`tests/test_edit_recipe.py`](tests/test_edit_recipe.py) 和 [`docs/prompts/82-edit-recipe.md`](docs/prompts/82-edit-recipe.md)。`export` 拒绝空 timeline、缺文件、远程输入和 source preflight blocker，递归参数化全部本地文件引用，同一路径只生成一个 typed slot；recipe 不保存源路径，只保存 occurrence、原文件 hash/size/suffix、源 config hash 和无路径 preflight 摘要。`verify` 现场检查 schema、非空 clips、slot 唯一性/类型/occurrence、未参数化路径、remote input、必需 preflight/human-preview 契约和 canonical `portable_sha256`。`replay` 要求 slot 集合精确相等，校验绑定文件存在且类型匹配，输出新 config、每个 binding 的 SHA-256 receipt 和 Markdown，再运行现有 `edit_preflight.py`；默认拒绝覆盖，`--strict` 在 warning/blocker 时返回 2。`pipeline_manifest.py` 新增存在即 live verify 的 `edit_recipe` gate；`edit_brief_plan.py` 新增导出/套用剪辑配方路由。配方 digest 不是签名或人工审批，也不证明新素材内容适合旧时间线。
+
+使用方式：先运行 `python3 scripts/edit_recipe.py export --config work/render_config.json --name fast-tech-explainer --description "快节奏科技口播" --output work/recipes/fast-tech-explainer_edit_recipe.json --markdown work/recipes/fast-tech-explainer_edit_recipe.md`，再用 `verify --recipe ...` 复核。新项目运行 `replay --recipe ... --bind video_1=origin/new.mp4 --bind transcript_1=work/new_transcript_reviewed.json --output work/render_config.json --receipt work/edit_recipe_replay.json --markdown work/edit_recipe_replay.md --strict`；实际 slot 名以 recipe Markdown 为准，每个都必须绑定一次。成功后仍要渲染并人工审片，最后审批继续使用 `approval_receipt.py`。
+
+验证结果：新增 11 项 edit-recipe 测试，并扩展 pipeline-manifest / edit-brief 回归；定向 `.venv/bin/python -m pytest tests/test_edit_recipe.py tests/test_pipeline_manifest.py tests/test_edit_brief_plan.py -q` 通过 `89 passed in 1.03s`，全量 `.venv/bin/python -m pytest tests -q` 通过 `764 passed in 12.36s`。覆盖路径去除与同源槽位去重、source preflight、canonical digest 篡改、重算 digest 后的路径泄漏、slot occurrence、精确 binding、类型错配、新 binding hash、CLI export/verify/replay round-trip、existing-output/input collision、replay preflight 和 manifest live gate；`.venv/bin/python -m compileall -q scripts tests`、全部新 CLI help、manifest category、Skill `quick_validate.py` 和 `git diff --check` 均通过。
 
 ### 2026-07-30 自动化升级记录（Beat Edit Plan）
 
@@ -2853,6 +2917,7 @@ pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 g
 | **77** | **[Approval Receipt](docs/prompts/77-approval-receipt.md)** | **把人工已复核交付件绑定到 SHA-256，并阻塞过期审批** |
 | **78** | **[Target Script Alignment](docs/prompts/78-script-alignment.md)** | **按确认稿从多 take 找原话、人工选候选并生成 render_config** |
 | **80** | **[Edit Revision](docs/prompts/80-edit-revision.md)** | **剪辑文本 artifact 的 source-bound 审批、成组 apply 与 undo/redo** |
+| **82** | **[Portable Edit Recipe](docs/prompts/82-edit-recipe.md)** | **把已审 render_config 导出为 typed-slot 配方，并绑定新素材回放** |
 | **43** | **[Audio Cue Sheet](docs/prompts/43-audio-cue-sheet.md)** | **规划 BGM/SFX 和生成审批** |
 | **45** | **[Video Prompt Pack](docs/prompts/45-video-prompt-pack.md)** | **视频生成提示词包 + paid approval gate** |
 | **46** | **[Generation Task Log](docs/prompts/46-generation-task-log.md)** | **跟踪 submit_id、轮询、下载和本地落盘** |
@@ -2937,6 +3002,7 @@ scripts/
 ├── screen_focus.py             录屏点击/热点聚焦计划              [V3]
 ├── color_grade.py              bounded 调色计划 + FFmpeg filter    [V3]
 ├── edit_revision.py            文本剪辑 artifact 可逆修订 + stale gate [V3]
+├── edit_recipe.py              可移植 render-config recipe + replay preflight [V3]
 ├── edit_preflight.py           渲染前结构/路径/参数预检 gate       [V3]
 ├── platform_safe_area_qa.py    字幕/PIP/CTA/marker 平台安全区 gate [V3]
 ├── render_final.py             单次编码渲染 + 可选口播降噪 + enrich_plan 接入（V3 强化）

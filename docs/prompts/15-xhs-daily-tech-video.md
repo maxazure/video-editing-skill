@@ -261,6 +261,17 @@
      # audit --strict 在 pending_approval 时退出 2 是预期；apply 后可用 status/undo/redo。
      # 详见 docs/prompts/80-edit-revision.md
 
+5aaa. # 可选：把已经通过预检的 render_config 存成无路径配方，供同栏目换素材复用：
+      python3 scripts/edit_recipe.py export \
+        --config work/render_config.json \
+        --name "<series-name>" \
+        --description "<固定节奏/字幕/BGM/overlay 结构>" \
+        --output "work/recipes/<series-name>_edit_recipe.json" \
+        --markdown "work/recipes/<series-name>_edit_recipe.md"
+      # 新项目先看 Markdown slot 表，再用 replay --bind SLOT=PATH（每槽一次）生成新 render_config。
+      # replay 会记录 binding hash 并再次 preflight；成功后仍必须渲染并人工审片。
+      # 详见 docs/prompts/82-edit-recipe.md
+
 5b. python3 scripts/edit_preflight.py \
       --config work/render_config.json \
       --enrich-plan work/enrich_plan.json \

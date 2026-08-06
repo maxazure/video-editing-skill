@@ -84,6 +84,7 @@
 | 79 | [Semantic Transcript Review 全篇上下文语义校稿](79-semantic-transcript-review.md) | transcript → 前后文审校包、最小补丁验证、人工 choices 和 reviewed transcript |
 | 80 | [Edit Revision 剪辑 artifact 可逆修订](80-edit-revision.md) | render_config/enrich_plan 等文本 artifact → source-bound proposal、独立审批、成组 apply、undo/redo 和 live gate |
 | 81 | [Shot Color QA 镜头色彩 / 曝光门禁](81-shot-color-qa.md) | rendered master → 镜头亮度/对比/色度/饱和度/broadcast-range 与切点跳变复核 |
+| 82 | [Portable Edit Recipe 可移植剪辑配方](82-edit-recipe.md) | 已审 render_config → typed slots / content digest / 新素材绑定回放 / preflight receipt |
 
 ## 快速上手
 
@@ -164,3 +165,4 @@
 | Whisper 字幕要用全篇上下文检查专业术语和同音错词 | [79-Semantic Transcript Review](79-semantic-transcript-review.md) |
 | 想让 render_config/enrich_plan 的修改可审、可撤销、可重做 | [80-Edit Revision](80-edit-revision.md) |
 | 成片混了多机位/B-roll，想查曝光、偏色或切点色彩跳变 | [81-Shot Color QA](81-shot-color-qa.md) |
+| 想把已审 render_config 存成模板，换一批素材继续复用 | [82-Portable Edit Recipe](82-edit-recipe.md) |
