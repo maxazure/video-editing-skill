@@ -2,7 +2,7 @@
 
 这是一个面向 **口播、教程、访谈、播客切片、录屏演示 / facecam demo** 的 AI 视频剪辑生产线：给它原始口播音频/视频、transcript、B-roll、摄像头小窗或素材目录，它可以把“还没整理的素材”推进到 **可发布的小红书 / 抖音 / 视频号短视频**。
 
-它不是一个单点 FFmpeg 脚本，而是一条完整工作流：**项目启动/素材导入 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 字幕与声音设计 → 可逆剪辑修订 / 可移植剪辑配方 → 渲染前预检 → 单次编码渲染 → 质检 → 多平台导出 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
+它不是一个单点 FFmpeg 脚本，而是一条完整工作流：**项目启动/素材导入 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp → 可逆剪辑修订 / 可移植剪辑配方 → 渲染前预检 → 单次编码渲染 → 质检 → 多平台导出 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
 
 ## 适合做什么
 
@@ -10,6 +10,7 @@
 - **针对中文社媒口播做过生产化调参**：Heavy CJK 字幕、1.25x 主输出、响度规范化、平台违禁词 lint、章节卡、贴纸、BGM/SFX cue、三平台导出都不是通用 demo。
 - **噪声口播可在单次编码内保守清理**：`render_final.py --speech-denoise light|medium|strong` 会在变速、压缩、响度规范化和 BGM ducking 前处理低频震动与稳态底噪；默认关闭，最大降噪限制为 12 dB。
 - **多机位先同步再剪辑**：`multicam_sync.py` 把两台以上相机/手机/录音设备对齐到同一参考时间线，记录每路 offset、置信度、有效音轨、公共重叠区间，并可用多窗口 probe 测量长片时钟漂移；原片不改、不重编码。
+- **局部慢动作先计划再渲染**：`speed_ramp.py` 把显式 impact frame 周围的 `snap/ease/s_curve`、hold 和可选 FFmpeg 插帧编译成 source-bound 计划；源 hash 或 piece 时间映射漂移会阻塞，apply 采用同目录临时文件事务式落盘。
 - **事实型内容有 proof deck**：新闻、数据、产品事实或来源页截图可用 `source_receipts.py` 生成 URL/截图复核包，作为发布前 gate。
 - **最终审批绑定到具体文件字节**：`approval_receipt.py` 为人工看过的视频、封面、文案、字幕和 QA 报告记录 SHA-256；任何重渲染、替换、删除或 symlink 漂移都会让旧审批过期并阻塞发布。
 - **ASR 语义校稿不再只看单句**：`semantic_transcript_review.py` 为每条字幕附带全篇前后文，验证完整覆盖、源 transcript hash 和最小字符补丁；模型只能提建议，独立人工 choices 才能写 reviewed transcript。
@@ -161,6 +162,8 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    │
    ├─→ beat_sync.py             BGM beat-grid → 可审计 program-time 剪辑骨架
    │                            或把已有切点吸附到附近 beat
+   ├─→ speed_ramp.py            局部慢动作 / velocity edit → source-bound 计划
+   │                            snap/ease/s-curve / 可选插帧 / 音频同步 / 事务式 apply
    │
    ├─→ auto_enrich.py           调度 B-roll / 章节卡 / 贴纸 / 强调点 / BGM 卡点
    │     │ transition / entity match / emphasis cue / silence boundary / beat snap
@@ -408,6 +411,7 @@ python3 scripts/transcript_review.py apply \
 | [`auto_broll.py`](scripts/auto_broll.py) | 转折词（但是/然而/关键是/重点来了）/ 实体匹配素材库 / 长镜头守卫 |
 | [`auto_chapter_cards.py`](scripts/auto_chapter_cards.py) | `## ` 章节标题 / 静音 ≥1.5s 边界 / Pillow PNG 渲染 |
 | [`beat_sync.py`](scripts/beat_sync.py) | BGM → `beat_edit_plan.v1` 时间槽 / Markdown review，或把已有切点做 ±200ms snap；缺 `librosa` 时显式标记固定网格 fallback |
+| [`speed_ramp.py`](scripts/speed_ramp.py) | 显式 impact ranges → `speed_ramp_plan.v1` / digest 验证 / 可选插帧 / 音频同步 / 事务式 FFmpeg apply |
 | [`auto_stickers.py`](scripts/auto_stickers.py) | 情绪关键词→emoji 池（excited 🚀✨🔥 / doubt 🤔 / data 📈 等） |
 | [`auto_emphasis.py`](scripts/auto_emphasis.py) | 问句 / 数字 claim / 转折 / 结论 / 风险提醒 / 停顿恢复 → `emphasis_cues[]` |
 | [`auto_enrich.py`](scripts/auto_enrich.py) | 编排上面模块，输出综合 plan JSON（含 emphasis 和 imagegen cues） |
@@ -429,6 +433,30 @@ python3 scripts/beat_sync.py \
 ```
 
 默认每 4 拍提出一个 program-time 切点，最短/最长镜头守卫会改选附近 beat；找不到合适 beat 才写入 `duration_guard`。输出只定义 `cut_times[]`、`segments[]` 和逐切点 evidence，不选择素材、不渲染、不修改源文件。`detection.method=fallback_grid` 时状态为 `review`，必须实际听音乐复核；确认后再把素材映射进 `render_config`、EDL 或 OTIO。已有 cut times 继续使用 `--cuts ... --window 0.2`。
+
+### ⚡ Speed Ramp — source-bound 局部慢动作 / velocity edit
+[`scripts/speed_ramp.py`](scripts/speed_ramp.py) · [详细文档](docs/prompts/83-speed-ramp.md)
+
+动作、产品 reveal、游戏或 montage 需要突出少量 impact moment 时，先用逐帧播放器 / `timeline_view.py` 找 source-time 锚点，再创建计划：
+
+```bash
+python3 scripts/speed_ramp.py plan origin/action.mp4 \
+  --ramp 4.6,5.0,1,0.25,s_curve \
+  --hold 5.0,5.8,0.25 \
+  --ramp 5.8,6.2,0.25,1,ease \
+  --interpolate-fps 120 \
+  --output work/speed_ramp_plan.json \
+  --markdown work/speed_ramp_plan.md
+
+python3 scripts/speed_ramp.py verify work/speed_ramp_plan.json --strict
+python3 scripts/speed_ramp.py apply work/speed_ramp_plan.json \
+  --output work/action-speed-ramped.mp4 \
+  --receipt work/speed_ramp_apply.json
+```
+
+计划把 `linear/ease/s_curve/snap` ramp 与 constant hold 编译成连续 source/output pieces，绑定源文件 SHA-256、fps、duration 和 canonical plan id；完整 coverage、速度范围、`source_duration / speed` 和 review contract 都会现场验证。低帧率极慢段会给出 native unique-fps warning；`--interpolate-fps` 使用 FFmpeg motion interpolation，不冒充 AI 生成补帧，也可能产生肢体 / 边缘伪影。apply 先写同目录临时 MP4，成功后才替换目标；默认拒绝覆盖、symlink 和原片自覆盖。
+
+必须用 1×、带声音播放最终文件，检查 impact frame、曲线手感、插值伪影和极慢音频。局部变速会改变下游时间线：如果已有字幕、章节、cue 或 approval receipt，必须重新生成 / 审批；`pipeline_manifest.py --require speed_ramp_plan --strict` 可把 plan 设为显式 gate。
 
 ### 🧱 Project Bootstrap — 项目启动与素材导入
 [`scripts/project_bootstrap.py`](scripts/project_bootstrap.py) · [详细文档](docs/prompts/61-project-bootstrap.md)
@@ -2584,6 +2612,22 @@ pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 g
 
 验证结果：新增 11 项 edit-recipe 测试，并扩展 pipeline-manifest / edit-brief 回归；定向 `.venv/bin/python -m pytest tests/test_edit_recipe.py tests/test_pipeline_manifest.py tests/test_edit_brief_plan.py -q` 通过 `89 passed in 1.03s`，全量 `.venv/bin/python -m pytest tests -q` 通过 `764 passed in 12.36s`。覆盖路径去除与同源槽位去重、source preflight、canonical digest 篡改、重算 digest 后的路径泄漏、slot occurrence、精确 binding、类型错配、新 binding hash、CLI export/verify/replay round-trip、existing-output/input collision、replay preflight 和 manifest live gate；`.venv/bin/python -m compileall -q scripts tests`、全部新 CLI help、manifest category、Skill `quick_validate.py` 和 `git diff --check` 均通过。
 
+### 2026-08-08 自动化升级记录（Source-bound Speed Ramp）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`mory128/ai-skills` 的 speed-ramp-video](https://github.com/mory128/ai-skills/blob/main/speed-ramp-video/SKILL.md) | 强调慢动作必须精确落在 impact frame，区分 snap / ease / S-curve，并明确低帧率源片在极慢速度下需要补帧和全速预览 | 新增显式 source-time ramp / hold、四种曲线、native unique-fps evidence 和 opt-in FFmpeg interpolation；不复制其付费 API，也不声称本地插值等同生成式补帧 |
+| [`browser-use/video-use`](https://github.com/browser-use/video-use/blob/main/SKILL.md) | creative 技法可以自由扩展，但最终必须在 rendered output、正常速度、带声音自检，尤其关注切点 flash / audio pop / overlay 错位 | Markdown 和 review contract 强制 1× + audio 复核 impact / snap / interpolation，并要求变速后重跑 render QA 和时间码产物 |
+| [`Rajbharti06/Ultimate-Video-Editing-Skills`](https://github.com/Rajbharti06/Ultimate-Video-Editing-Skills/blob/main/skills/ultimate-video-editor/SKILL.md) | 把平滑 speed ramp、避免突兀速度跳变写进交付 checklist，并建议对速度变化使用 easing | 实现 `linear/ease/s_curve/snap`，把非连续边界写成 review warning；保持确定性 piecewise 近似，不引入通用 motion-graphics runtime |
+
+新增/调整能力：新增 [`scripts/speed_ramp.py`](scripts/speed_ramp.py)、[`tests/test_speed_ramp.py`](tests/test_speed_ramp.py) 和 [`docs/prompts/83-speed-ramp.md`](docs/prompts/83-speed-ramp.md)。`plan` 把显式 ramp / hold 编译成连续 source/output pieces，绑定源 MP4 的 SHA-256、大小、duration、fps、audio 状态和 canonical plan id；支持 `0.1x–4x`、`linear/ease/s_curve/snap`、可调 steps、`--mute-audio` 和 opt-in `--interpolate-fps`。`verify` 不只比 digest，还重新规范化 events、重编 pieces、重算 warning / summary / status，并检查完整 coverage、逐段 `source_duration / speed`、输出 fps/audio 契约和 review contract；即使篡改者重写 plan id 也不能掩盖结构漂移。`apply` 用 `setpts + atempo` 同步音画，插值时使用 FFmpeg `minterpolate`，concat 后强制源 fps CFR；先写同目录临时 MP4，成功后才替换目标，默认拒绝覆盖、symlink 和源片自覆盖，可选输出 apply receipt。`pipeline_manifest.py` 新增存在即 live verify、可 `--require speed_ramp_plan` 的 gate；`edit_brief_plan.py` 新增局部变速 / velocity-edit 路由，README、SKILL、daily workflow 和提示词索引已同步。
+
+使用方式：先逐帧确定 impact，再运行 `python3 scripts/speed_ramp.py plan origin/action.mp4 --ramp 4.6,5.0,1,0.25,s_curve --hold 5.0,5.8,0.25 --ramp 5.8,6.2,0.25,1,ease --interpolate-fps 120 --output work/speed_ramp_plan.json --markdown work/speed_ramp_plan.md`；随后 `verify work/speed_ramp_plan.json --strict`，看完 Markdown 后执行 `apply work/speed_ramp_plan.json --output work/action-speed-ramped.mp4 --receipt work/speed_ramp_apply.json`。最终必须 1× 带音频播放，检查 impact frame、插值伪影和极慢音频；把新 MP4 作为新的 source 进入 render config，旧字幕 / cue / timecoded artifact / approval receipt 不可复用。
+
+验证结果：新增 15 项 speed-ramp 单元、篡改、CLI 和真实 FFmpeg 测试，并扩展 pipeline-manifest / edit-brief 回归；定向 `.venv/bin/python -m pytest tests/test_speed_ramp.py tests/test_edit_brief_plan.py tests/test_pipeline_manifest.py -q` 通过 `96 passed in 1.32s`，最终全量 `.venv/bin/python -m pytest tests -q` 通过 `782 passed in 12.67s`。独立真实 smoke 用 4 秒 320×180、30fps、H.264/AAC 样片执行 `plan → verify → apply`：3 个 events 编译为 19 个 pieces，`blocking=0 / warnings=0`，输出 `5.133333s / 30fps / audio=true`；烟测还定位并修复了 concat 后 average fps 漂移，最终强制 CFR。一次全量复跑中既有 speech-denoise 真实音频测试因浮点表示把恰好 `3.0 dB` 误判为低于阈值，隔离复跑及随后完整全量均通过，本轮未改该音频链或测试。`.venv/bin/python -m compileall -q scripts tests`、四个 speed-ramp CLI help、edit-brief help、manifest category、Skill `quick_validate.py` 和 `git diff --check` 全部通过。
+
 ### 2026-07-30 自动化升级记录（Beat Edit Plan）
 
 本次联网研究的 GitHub 参考：
@@ -2918,6 +2962,7 @@ pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 g
 | **78** | **[Target Script Alignment](docs/prompts/78-script-alignment.md)** | **按确认稿从多 take 找原话、人工选候选并生成 render_config** |
 | **80** | **[Edit Revision](docs/prompts/80-edit-revision.md)** | **剪辑文本 artifact 的 source-bound 审批、成组 apply 与 undo/redo** |
 | **82** | **[Portable Edit Recipe](docs/prompts/82-edit-recipe.md)** | **把已审 render_config 导出为 typed-slot 配方，并绑定新素材回放** |
+| **83** | **[Speed Ramp](docs/prompts/83-speed-ramp.md)** | **给 impact moment 做 source-bound 局部慢动作 / velocity edit** |
 | **43** | **[Audio Cue Sheet](docs/prompts/43-audio-cue-sheet.md)** | **规划 BGM/SFX 和生成审批** |
 | **45** | **[Video Prompt Pack](docs/prompts/45-video-prompt-pack.md)** | **视频生成提示词包 + paid approval gate** |
 | **46** | **[Generation Task Log](docs/prompts/46-generation-task-log.md)** | **跟踪 submit_id、轮询、下载和本地落盘** |
@@ -2988,6 +3033,7 @@ scripts/
 ├── auto_broll.py               B-roll 调度                      [V3]
 ├── auto_chapter_cards.py       章节卡渲染                       [V3]
 ├── beat_sync.py                BGM beat edit slots / 切点吸附   [V3]
+├── speed_ramp.py               source-bound 局部变速计划 / 验证 / apply [V3]
 ├── audio_cue_sheet.py          BGM/SFX 音频设计清单               [V3]
 ├── auto_stickers.py            情绪→贴纸                        [V3]
 ├── auto_emphasis.py            问句/数字/转折/结论强调点          [V3]

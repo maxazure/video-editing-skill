@@ -215,6 +215,13 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         blocks_when_present=True,
     ),
     ArtifactDef(
+        "speed_ramp_plan",
+        "Speed Ramp Plan",
+        ("**/speed_ramp_plan.json", "**/*_speed_ramp_plan.json"),
+        "Run speed_ramp.py verify, fix stale source/digest errors, then apply and review the render at 1x with audio.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "motion_guard",
         "Motion Guard",
         ("**/motion_guard.json", "**/*_motion_guard.json"),
@@ -672,6 +679,33 @@ def evaluate_category(
             elif _int_at(verification, "summary", "warnings"):
                 status = "warn" if status != "blocked" else status
                 notes.append(f"edit recipe source preflight had warnings: {artifact.path}")
+        return {
+            "category": definition.category,
+            "label": definition.label,
+            "status": status,
+            "artifact_count": len(artifacts),
+            "latest_path": artifacts[0].path,
+            "notes": sorted(set(notes)),
+            "next_action": definition.next_action if status in {"missing", "blocked", "warn"} else "",
+        }
+
+    if definition.category == "speed_ramp_plan":
+        from speed_ramp import verify_plan
+
+        for artifact in artifacts:
+            data = _load_json(artifact.path)
+            if data is None:
+                status = "blocked"
+                notes.append(f"unreadable speed-ramp plan: {artifact.path}")
+                continue
+            verification = verify_plan(data)
+            blocking = _int_at(verification, "summary", "blocking")
+            if blocking:
+                status = "blocked"
+                notes.append(f"invalid speed-ramp plan {artifact.path}: {blocking} blocking item(s)")
+            elif _int_at(verification, "summary", "warnings"):
+                status = "warn" if status != "blocked" else status
+                notes.append(f"speed-ramp plan requires full-speed audio review: {artifact.path}")
         return {
             "category": definition.category,
             "label": definition.label,

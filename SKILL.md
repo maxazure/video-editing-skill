@@ -1,6 +1,6 @@
 ---
 name: video-editing
-description: "Xiaohongshu/RED-tuned short-form video workflow for raw voice-over, talking-head, tutorials, interviews, podcasts, long videos, screen recordings, B-roll, captions, and generated assets. Covers edit routing, project bootstrap, transcription, source-bound context-aware semantic transcript review, synchronized local transcript review, multi-take packs, audio sync, cleanup, highlights/shorts, hook/story rewrite, content/source gates, B-roll/enrich/gpt-image-2/video-generation planning, generation reference-frame/style-lock preflight, screen focus, PIP, color grade, source-bound reversible edit revisions, portable edit-recipe export/replay, preflight/render/QA/audio master, source-time edit comparison, retention-rhythm, subtitle-readability, platform-safe-area and rendered-speech continuity QA, review proxies, subtitles, CapCut import, multi-platform exports, cover A/B variants, captions, publish packages, dashboards, resume packets, EDL/FCPXML/OTIO, and Remotion animation."
+description: "Xiaohongshu/RED-tuned short-form video workflow for raw voice-over, talking-head, tutorials, interviews, podcasts, long videos, screen recordings, B-roll, captions, and generated assets. Covers edit routing, project bootstrap, transcription, source-bound context-aware semantic transcript review, synchronized local transcript review, multi-take packs, audio sync, cleanup, highlights/shorts, hook/story rewrite, content/source gates, B-roll/enrich/gpt-image-2/video-generation planning, generation reference-frame/style-lock preflight, screen focus, PIP, color grade, source-bound local speed ramps/velocity edits, reversible edit revisions, portable edit-recipe export/replay, preflight/render/QA/audio master, source-time edit comparison, retention-rhythm, subtitle-readability, platform-safe-area and rendered-speech continuity QA, review proxies, subtitles, CapCut import, multi-platform exports, cover A/B variants, captions, publish packages, dashboards, resume packets, EDL/FCPXML/OTIO, and Remotion animation."
 metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
 ---
 
@@ -37,6 +37,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ content_guard.py         80+ 条平台雷区 lint
    ├─→ source_receipts.py       事实 claim → URL/截图 source deck + publish gate
    ├─→ beat_sync.py             BGM beat-grid → 可审计剪辑骨架，或吸附已有切点
+   ├─→ speed_ramp.py            impact ranges → source-bound 局部变速计划 / 验证 / apply
    ├─→ auto_enrich.py           B-roll / 章节卡 / 贴纸 / 强调点 / BGM 卡点 / imagegen 提示词
    │       └─→ Codex imagegen   gpt-image-2 自动生图（抽象概念配图）
    ├─→ audio_cue_sheet.py       BGM / SFX 音频设计清单 / 生成审批 gate
@@ -119,6 +120,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `auto_stickers.py` | 情绪→贴纸 | `--transcript` `--min-interval` |
 | `auto_emphasis.py` | 问句/数字/转折/结论 → badge + subtle push-in cues | `--transcript` `--output` `--markdown` |
 | `beat_sync.py` | BGM → beat edit slots / Markdown review，或吸附已有切点 | `--bgm --generate-plan --beats-per-cut 4 --output ... --markdown ...` / `--cuts --window` |
+| `speed_ramp.py` | impact ranges → snap/ease/s-curve/hold 计划、digest 验证和本地事务式 apply | `plan <video> --ramp --hold --interpolate-fps` / `verify --strict` / `apply --output --receipt` |
 | `auto_enrich.py` | 编排 B-roll / 贴纸 / 强调点 / 章节卡 / imagegen cues | `--transcript` `--clean-script` `--bgm` `--output` |
 | `imagegen_hint.py` | 检测抽象概念 → 产 gpt-image-2 提示词 | `--transcript` `--clean-script` `--codex-md` |
 | `audio_cue_sheet.py` | transcript → BGM/SFX cue、生成审批和音频门禁 | `--transcript` `--asset-root` `--require-local-music` `--require-local-sfx` `--strict` |
@@ -975,6 +977,13 @@ python3 scripts/render_final.py --config script/render_config.json --output medi
 - `librosa` 不可用或读取失败时只生成固定 BPM 网格，并把状态标为 `review`；必须听音乐复核，不能把 fallback 当作真实节拍
 - 计划只定义时间槽，不选择素材、不渲染、不改源文件；确认后再把镜头映射进 `render_config` / EDL / OTIO
 - 已有 cut times 仍使用原命令 `beat_sync.py --bgm origin/bgm.mp3 --cuts work/cut_times.json --window 0.2`
+
+**Speed Ramp 局部慢动作 / velocity edit**（动作、产品 reveal、游戏、montage 可选）：
+- 先逐帧找到 impact frame，再运行 `speed_ramp.py plan origin/action.mp4 --ramp 4.6,5.0,1,0.25,s_curve --hold 5.0,5.8,0.25 --ramp 5.8,6.2,0.25,1,ease --interpolate-fps 120 --output work/speed_ramp_plan.json --markdown work/speed_ramp_plan.md`
+- `verify` 会重算 plan id、源文件 SHA-256、source/output coverage 和逐段 `duration / speed`；源片或 pieces 漂移立即阻塞
+- `apply` 用同目录临时文件渲染，成功后才替换目标；默认不覆盖、不跟随 output symlink，也不能覆盖 source
+- `--interpolate-fps` 是 FFmpeg motion interpolation，可能产生肢体 / 边缘伪影；极慢音频必须试听，必要时 plan 阶段加 `--mute-audio`
+- 最终必须用 1×、带声音完整播放；变速后重新生成字幕 / timecoded artifacts、跑 render QA，并重新做最终审批。详见 `docs/prompts/83-speed-ramp.md`
 
 **PIP Overlay 录屏摄像头小窗**（录屏教程可选）：
 - 运行 `pip_overlay.py --camera origin/facecam.mp4 --segment "0,18,bottom_right" --segment "18,42,top_right" --sync-offset 0.18 --output work/pip_overlay_plan.json --markdown work/pip_overlay_plan.md`

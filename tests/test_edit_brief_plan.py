@@ -160,6 +160,22 @@ def test_portable_recipe_briefs_route_export_and_replay(tmp_path):
     assert any("human preview" in note for note in replay_plan["notes"])
 
 
+def test_speed_ramp_brief_routes_source_bound_plan(tmp_path):
+    source = tmp_path / "action.mp4"
+    source.write_text("fake video", encoding="utf-8")
+
+    plan = build_plan(
+        f"给 {source} 的落地瞬间做 speed ramp 和慢动作",
+        project_dir=str(tmp_path),
+    )
+
+    step = next(step for step in plan["steps"] if step["id"] == "speed_ramp_plan")
+    assert step["script"] == "speed_ramp.py"
+    assert "speed_ramp.py plan" in step["command"]
+    assert "work/speed_ramp_plan.json" in step["outputs"]
+    assert step["gate_category"] == "speed_ramp_plan"
+
+
 def test_empty_brief_is_blocked():
     plan = build_plan("")
 

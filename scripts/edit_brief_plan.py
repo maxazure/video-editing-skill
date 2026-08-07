@@ -107,6 +107,18 @@ SIGNAL_KEYWORDS: Mapping[str, Sequence[str]] = {
         "generated video",
     ),
     "audio_design": ("bgm", "music", "配乐", "音效", "sfx", "sound design", "声音设计"),
+    "speed_ramp": (
+        "speed ramp",
+        "speed-ramp",
+        "velocity edit",
+        "变速坡度",
+        "速度坡度",
+        "速度渐变",
+        "局部变速",
+        "快慢变速",
+        "慢动作",
+        "慢镜头",
+    ),
     "audio_sync": ("外录", "领夹麦", "lav", "recorder", "scratch audio", "audio sync", "对齐音频", "同步音频"),
     "screen_focus": ("录屏", "screen recording", "demo", "cursor", "点击", "热点", "focus"),
     "pip": ("facecam", "webcam", "小窗", "pip", "camera overlay", "摄像头"),
@@ -171,6 +183,7 @@ SIGNAL_LABELS: Mapping[str, str] = {
     "broll": "B-roll / stock 素材规划",
     "generated_assets": "生成式图片 / 视频素材",
     "audio_design": "BGM / SFX 声音设计",
+    "speed_ramp": "局部 speed ramp / velocity edit",
     "audio_sync": "外录音频对齐",
     "screen_focus": "录屏聚焦",
     "pip": "摄像头小窗",
@@ -338,7 +351,7 @@ def build_plan(
 
     if source_media and not Path(source_media).expanduser().exists():
         blockers.append(f"source media not found: {source_media}")
-    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy"}):
+    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy", "speed_ramp"}):
         warnings.append("source media was not provided; commands use <source_media> placeholders")
 
     if transcript and not Path(transcript).expanduser().exists():
@@ -785,6 +798,39 @@ def build_plan(
                 command=shell([python_bin, "scripts/audio_cue_sheet.py", "--transcript", transcript_path, "--asset-root", "assets/audio", "--output", "work/audio_cue_sheet.json", "--markdown", "work/audio_cue_sheet.md", "--strict"]),
                 outputs=["work/audio_cue_sheet.json", "work/audio_cue_sheet.md"],
                 gate_category="audio_cue_sheet",
+            ),
+        )
+
+    if "speed_ramp" in ids:
+        _add_step(
+            steps,
+            seen,
+            _step(
+                "speed_ramp_plan",
+                phase="edit",
+                script="speed_ramp.py",
+                label="Plan source-bound local speed ramps",
+                reason="The brief asks for local slow-motion, velocity edits, or smooth speed changes around impact frames.",
+                command=shell(
+                    [
+                        python_bin,
+                        "scripts/speed_ramp.py",
+                        "plan",
+                        source,
+                        "--ramp",
+                        "<ramp_start>,<impact>,1,0.35,s_curve",
+                        "--hold",
+                        "<impact>,<hold_end>,0.35",
+                        "--ramp",
+                        "<hold_end>,<ramp_end>,0.35,1,ease",
+                        "--output",
+                        "work/speed_ramp_plan.json",
+                        "--markdown",
+                        "work/speed_ramp_plan.md",
+                    ]
+                ),
+                outputs=["work/speed_ramp_plan.json", "work/speed_ramp_plan.md"],
+                gate_category="speed_ramp_plan",
             ),
         )
 

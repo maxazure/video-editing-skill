@@ -9,6 +9,7 @@ from pipeline_manifest import build_manifest, emit_markdown  # noqa: E402
 from approval_receipt import create_receipt  # noqa: E402
 from edit_revision import APPROVAL_VERSION, apply_revision, audit_proposal, prepare_proposal  # noqa: E402
 from edit_recipe import export_recipe  # noqa: E402
+from speed_ramp import build_speed_ramp_plan, parse_hold  # noqa: E402
 
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -1144,6 +1145,41 @@ def test_shot_color_qa_blocks_when_present_and_can_be_required(tmp_path):
         required=["shot_color_qa"],
     )
     assert "shot_color_qa" in missing["missing_required"]
+
+
+def test_speed_ramp_plan_is_live_verified_and_detects_stale_source(tmp_path):
+    _publish_ready_project(tmp_path)
+    source = tmp_path / "origin" / "action.mp4"
+    _write(source, "source bytes")
+    plan = build_speed_ramp_plan(
+        str(source),
+        duration=4.0,
+        fps=30.0,
+        has_audio=False,
+        events=[parse_hold("1,2,2")],
+    )
+    _write(tmp_path / "work" / "speed_ramp_plan.json", plan)
+
+    current = build_manifest(str(tmp_path), target_stage="publish_ready")
+    gate = next(g for g in current["gates"] if g["category"] == "speed_ramp_plan")
+    assert gate["status"] == "warn"
+    assert "speed_ramp_plan" not in current["blocked_gates"]
+
+    _write(source, "changed source bytes")
+    stale = build_manifest(str(tmp_path), target_stage="publish_ready")
+    gate = next(g for g in stale["gates"] if g["category"] == "speed_ramp_plan")
+    assert gate["status"] == "blocked"
+    assert "speed_ramp_plan" in stale["blocked_gates"]
+
+
+def test_speed_ramp_plan_can_be_required(tmp_path):
+    manifest = build_manifest(
+        str(tmp_path),
+        target_stage="analysis",
+        required=["speed_ramp_plan"],
+    )
+
+    assert "speed_ramp_plan" in manifest["missing_required"]
 
 
 def test_markdown_contains_gate_table_and_next_actions(tmp_path):

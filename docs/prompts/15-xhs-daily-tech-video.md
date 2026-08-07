@@ -151,6 +151,21 @@
       --markdown work/beat_edit_plan.md
     # detection.method=fallback_grid 时必须听音乐逐切点复核；确认后再把素材映射进 render_config。
 
+4aa. # 可选：动作 / 产品 reveal 有明确 impact frame 时，先把局部慢动作做成新的 source：
+     python3 scripts/speed_ramp.py plan origin/<action>.mp4 \
+       --ramp <ramp_start>,<impact>,1,0.25,s_curve \
+       --hold <impact>,<hold_end>,0.25 \
+       --ramp <hold_end>,<ramp_end>,0.25,1,ease \
+       --interpolate-fps 120 \
+       --output work/speed_ramp_plan.json \
+       --markdown work/speed_ramp_plan.md
+     python3 scripts/speed_ramp.py verify work/speed_ramp_plan.json --strict
+     python3 scripts/speed_ramp.py apply work/speed_ramp_plan.json \
+       --output work/action-speed-ramped.mp4 \
+       --receipt work/speed_ramp_apply.json
+     # 用新 MP4 进入 render_config；1×带音频复核 impact / 插值伪影后再继续，旧字幕时间码不可复用。
+     # 详见 docs/prompts/83-speed-ramp.md
+
 4b. # 如果 enrich_plan.json 的 imagegen[] 非空 → 用 Codex 内置 imagegen 生图：
     # 生图优先使用 Codex 内置 `image_gen` 工具，即 OpenAI GPT Image 2（`gpt-image-2`）。
     # 把每条 prompt_en 喂给 imagegen，1024x1536 high quality，存到 work/imagegen/

@@ -166,3 +166,4 @@
 | 想让 render_config/enrich_plan 的修改可审、可撤销、可重做 | [80-Edit Revision](80-edit-revision.md) |
 | 成片混了多机位/B-roll，想查曝光、偏色或切点色彩跳变 | [81-Shot Color QA](81-shot-color-qa.md) |
 | 想把已审 render_config 存成模板，换一批素材继续复用 | [82-Portable Edit Recipe](82-edit-recipe.md) |
+| 想给动作 / 产品 reveal 的 impact moment 做局部慢动作或 velocity edit | [83-Speed Ramp](83-speed-ramp.md) |
