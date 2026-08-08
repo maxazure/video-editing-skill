@@ -2,7 +2,7 @@
 
 这是一个面向 **口播、教程、访谈、播客切片、录屏演示 / facecam demo** 的 AI 视频剪辑生产线：给它原始口播音频/视频、transcript、B-roll、摄像头小窗或素材目录，它可以把“还没整理的素材”推进到 **可发布的小红书 / 抖音 / 视频号短视频**。
 
-它不是一个单点 FFmpeg 脚本，而是一条完整工作流：**项目启动/素材导入 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp → 可逆剪辑修订 / 可移植剪辑配方 → 渲染前预检 → 单次编码渲染 → 质检 → 多平台导出 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
+它不是一个单点 FFmpeg 脚本，而是一条完整工作流：**项目启动/素材导入 → 手持防抖 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp → 可逆剪辑修订 / 可移植剪辑配方 → 渲染前预检 → 单次编码渲染 → 质检 → 多平台导出 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
 
 ## 适合做什么
 
@@ -10,6 +10,7 @@
 - **针对中文社媒口播做过生产化调参**：Heavy CJK 字幕、1.25x 主输出、响度规范化、平台违禁词 lint、章节卡、贴纸、BGM/SFX cue、三平台导出都不是通用 demo。
 - **噪声口播可在单次编码内保守清理**：`render_final.py --speech-denoise light|medium|strong` 会在变速、压缩、响度规范化和 BGM ducking 前处理低频震动与稳态底噪；默认关闭，最大降噪限制为 12 dB。
 - **多机位先同步再剪辑**：`multicam_sync.py` 把两台以上相机/手机/录音设备对齐到同一参考时间线，记录每路 offset、置信度、有效音轨、公共重叠区间，并可用多窗口 probe 测量长片时钟漂移；原片不改、不重编码。
+- **手持防抖保留原片和 A/B 证据**：`video_stabilization.py` 把源 SHA-256、确切 FFmpeg 后端和人工决定写进计划；apply 只生成新工作副本与全长左右对照，完整 1× 复核并 confirm 后 manifest 才放行。
 - **局部慢动作先计划再渲染**：`speed_ramp.py` 把显式 impact frame 周围的 `snap/ease/s_curve`、hold 和可选 FFmpeg 插帧编译成 source-bound 计划；源 hash 或 piece 时间映射漂移会阻塞，apply 采用同目录临时文件事务式落盘。
 - **事实型内容有 proof deck**：新闻、数据、产品事实或来源页截图可用 `source_receipts.py` 生成 URL/截图复核包，作为发布前 gate。
 - **最终审批绑定到具体文件字节**：`approval_receipt.py` 为人工看过的视频、封面、文案、字幕和 QA 报告记录 SHA-256；任何重渲染、替换、删除或 symlink 漂移都会让旧审批过期并阻塞发布。
@@ -137,6 +138,8 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    ├─→ visual_dedupe.py         多来源场景 → 感知哈希重复组 / 保留建议 / review gate
    ├─→ video_understanding.py   抽样帧 + 可选 YOLO 物体检测
    │                            frames / detections / tracks / scene_tags
+   ├─→ video_stabilization.py   手持素材 → source-bound 后端/决定/稳定工作副本
+   │                            全长原片-vs-稳定版 A/B + confirm gate
    │
    ├─→ highlight_picker.py      长视频精华候选 / brief-query 定向找片段
    │                            输出 score / hook / reason / render_config
@@ -412,6 +415,7 @@ python3 scripts/transcript_review.py apply \
 | [`auto_chapter_cards.py`](scripts/auto_chapter_cards.py) | `## ` 章节标题 / 静音 ≥1.5s 边界 / Pillow PNG 渲染 |
 | [`beat_sync.py`](scripts/beat_sync.py) | BGM → `beat_edit_plan.v1` 时间槽 / Markdown review，或把已有切点做 ±200ms snap；缺 `librosa` 时显式标记固定网格 fallback |
 | [`speed_ramp.py`](scripts/speed_ramp.py) | 显式 impact ranges → `speed_ramp_plan.v1` / digest 验证 / 可选插帧 / 音频同步 / 事务式 FFmpeg apply |
+| [`video_stabilization.py`](scripts/video_stabilization.py) | 源 hash + exact FFmpeg backend → 稳定工作副本 / 全长 A/B 对照 / 人工确认 gate |
 | [`auto_stickers.py`](scripts/auto_stickers.py) | 情绪关键词→emoji 池（excited 🚀✨🔥 / doubt 🤔 / data 📈 等） |
 | [`auto_emphasis.py`](scripts/auto_emphasis.py) | 问句 / 数字 claim / 转折 / 结论 / 风险提醒 / 停顿恢复 → `emphasis_cues[]` |
 | [`auto_enrich.py`](scripts/auto_enrich.py) | 编排上面模块，输出综合 plan JSON（含 emphasis 和 imagegen cues） |
@@ -433,6 +437,29 @@ python3 scripts/beat_sync.py \
 ```
 
 默认每 4 拍提出一个 program-time 切点，最短/最长镜头守卫会改选附近 beat；找不到合适 beat 才写入 `duration_guard`。输出只定义 `cut_times[]`、`segments[]` 和逐切点 evidence，不选择素材、不渲染、不修改源文件。`detection.method=fallback_grid` 时状态为 `review`，必须实际听音乐复核；确认后再把素材映射进 `render_config`、EDL 或 OTIO。已有 cut times 继续使用 `--cuts ... --window 0.2`。
+
+### 🧭 Video Stabilization — source-bound 手持防抖
+[`scripts/video_stabilization.py`](scripts/video_stabilization.py) · [详细文档](docs/prompts/84-video-stabilization.md)
+
+手机、运动相机或手持相机出现不想要的高频抖动时，先检查本机后端并把决定写成计划：
+
+```bash
+python3 scripts/video_stabilization.py doctor
+python3 scripts/video_stabilization.py plan origin/handheld.mp4 \
+  --decision stabilize \
+  --reviewed-by "editor" \
+  --note "固定机位访谈中的高频手抖，不是有意摇摄" \
+  --output work/video_stabilization_plan.json \
+  --markdown work/video_stabilization_plan.md
+python3 scripts/video_stabilization.py apply work/video_stabilization_plan.json \
+  --output work/handheld-stabilized.mp4 \
+  --comparison verify/handheld-stabilization-compare.mp4 \
+  --markdown work/video_stabilization_plan.md
+```
+
+`--backend auto` 创建计划时优先两遍 `vidstabdetect + vidstabtransform`；本机缺少它们时才选择 FFmpeg 内置单遍 `deshake`，并把 fallback warning 永久保存在 artifact 中。apply 不会临场换算法，原片永不覆盖，输出还会验证 duration、尺寸和音频存在性。
+
+用 1× 看完整左原片 / 右稳定版，检查人物、直线、画面四角、镜像边缘和有意 pan；可接受后运行 `confirm ... --reviewed-by "editor" --note "完整 A/B 已看..."`。确认前 `pipeline_manifest.py` 会阻塞，确认后仍实时验证源片、稳定版和 comparison 的 SHA-256。它不能修复滚动快门、运动模糊或失焦；稳定版只作为下游 working copy。
 
 ### ⚡ Speed Ramp — source-bound 局部慢动作 / velocity edit
 [`scripts/speed_ramp.py`](scripts/speed_ramp.py) · [详细文档](docs/prompts/83-speed-ramp.md)
@@ -492,7 +519,7 @@ python3 scripts/edit_brief_plan.py \
   --strict
 ```
 
-它会识别 `origin/interview.mp4` 这类源素材路径、目标平台、目标脚本对齐、多 take、长视频拆条、批量短视频、字幕、B-roll、BGM、去停顿、生成素材、PIP、调色、QA、发布包等信号，并把它们映射到已有脚本，例如 `script_alignment.py`、`highlight_picker.py`、`shorts_batch.py`、`jump_cut.py`、`auto_enrich.py`、`render_final.py`、`render_qa.py` 和 `publish_package.py`。`pipeline_manifest.py` 会发现 `edit_brief_plan.json`；当 `summary.blocking > 0`（例如 brief 为空或显式 source 缺失）时会作为 blocker，也可以用 `--require edit_brief_plan` 把需求路由作为 analysis gate。
+它会识别 `origin/interview.mp4` 这类源素材路径、目标平台、手持防抖、目标脚本对齐、多 take、长视频拆条、批量短视频、字幕、B-roll、BGM、去停顿、生成素材、PIP、调色、QA、发布包等信号，并把它们映射到已有脚本，例如 `video_stabilization.py`、`script_alignment.py`、`highlight_picker.py`、`shorts_batch.py`、`jump_cut.py`、`auto_enrich.py`、`render_final.py`、`render_qa.py` 和 `publish_package.py`。`pipeline_manifest.py` 会发现 `edit_brief_plan.json`；当 `summary.blocking > 0`（例如 brief 为空或显式 source 缺失）时会作为 blocker，也可以用 `--require edit_brief_plan` 把需求路由作为 analysis gate。
 
 ### 👁️ Video Understanding — 抽样帧 + 可选 YOLO 检测
 [`scripts/video_understanding.py`](scripts/video_understanding.py) · [详细文档](docs/prompts/47-video-understanding.md)
@@ -2160,6 +2187,23 @@ DAY=NN
 WORK=~/Movies/xiaohongshu/day$DAY
 SKILL=~/projects/video-editing-skill
 
+# 0b. 可选：手持素材防抖；只写 working copy，完整 A/B 确认前 manifest 会阻塞
+python3 $SKILL/scripts/video_stabilization.py plan $WORK/origin/handheld.mp4 \
+  --decision stabilize \
+  --reviewed-by "editor" \
+  --note "不想要的高频手抖，不是有意运镜" \
+  --output $WORK/work/video_stabilization_plan.json \
+  --markdown $WORK/work/video_stabilization_plan.md
+python3 $SKILL/scripts/video_stabilization.py apply $WORK/work/video_stabilization_plan.json \
+  --output $WORK/work/handheld-stabilized.mp4 \
+  --comparison $WORK/verify/handheld-stabilization-compare.mp4 \
+  --markdown $WORK/work/video_stabilization_plan.md
+# 用 1× 看完整 comparison 后：
+python3 $SKILL/scripts/video_stabilization.py confirm $WORK/work/video_stabilization_plan.json \
+  --reviewed-by "editor" \
+  --note "完整 A/B 已看；人物、边缘和有意摇摄均可接受" \
+  --markdown $WORK/work/video_stabilization_plan.md
+
 # 1. 转写
 python3 $SKILL/scripts/transcribe.py $WORK/origin/voice.mp3 \
   --word-timestamps --detect-fillers
@@ -2488,6 +2532,7 @@ pytest tests/test_color_grade.py -v         # 调色计划 + render_final 接入
 pytest tests/test_edit_preflight.py -v      # 渲染前结构/路径/参数预检 gate
 pytest tests/test_edit_revision.py -v       # 文本剪辑 artifact source-bound revision / undo / redo
 pytest tests/test_edit_recipe.py -v         # 可移植 render-config recipe / typed binding / replay preflight
+pytest tests/test_video_stabilization.py -v # source-bound 后端计划 / 工作副本 / 全长 A/B / confirm gate
 pytest tests/test_approval_receipt.py -v    # 最终交付件 SHA-256 审批收据 + stale gate
 pytest tests/test_publish_package.py -v     # 最终上传包 + gate 状态汇总
 pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
@@ -2611,6 +2656,23 @@ pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 g
 使用方式：先运行 `python3 scripts/edit_recipe.py export --config work/render_config.json --name fast-tech-explainer --description "快节奏科技口播" --output work/recipes/fast-tech-explainer_edit_recipe.json --markdown work/recipes/fast-tech-explainer_edit_recipe.md`，再用 `verify --recipe ...` 复核。新项目运行 `replay --recipe ... --bind video_1=origin/new.mp4 --bind transcript_1=work/new_transcript_reviewed.json --output work/render_config.json --receipt work/edit_recipe_replay.json --markdown work/edit_recipe_replay.md --strict`；实际 slot 名以 recipe Markdown 为准，每个都必须绑定一次。成功后仍要渲染并人工审片，最后审批继续使用 `approval_receipt.py`。
 
 验证结果：新增 11 项 edit-recipe 测试，并扩展 pipeline-manifest / edit-brief 回归；定向 `.venv/bin/python -m pytest tests/test_edit_recipe.py tests/test_pipeline_manifest.py tests/test_edit_brief_plan.py -q` 通过 `89 passed in 1.03s`，全量 `.venv/bin/python -m pytest tests -q` 通过 `764 passed in 12.36s`。覆盖路径去除与同源槽位去重、source preflight、canonical digest 篡改、重算 digest 后的路径泄漏、slot occurrence、精确 binding、类型错配、新 binding hash、CLI export/verify/replay round-trip、existing-output/input collision、replay preflight 和 manifest live gate；`.venv/bin/python -m compileall -q scripts tests`、全部新 CLI help、manifest category、Skill `quick_validate.py` 和 `git diff --check` 均通过。
+
+### 2026-08-09 自动化升级记录（Source-bound Video Stabilization）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`KyaniteLabs/kinocut` 的 stabilization engine](https://github.com/KyaniteLabs/kinocut/blob/master/kinocut/engine_stabilize.py) | 执行前强制检查 `vidstabdetect`，两遍 motion detect/transform 使用受控绝对临时路径，失败时不留下错误向量文件 | 新增 `doctor` 和 source-bound backend record；`vidstab` 可用时使用两遍临时 transforms，plan/apply 期间不静默切换算法 |
+| [`damionrashford/media-os` 的 ffmpeg-stabilize skill](https://github.com/damionrashford/media-os/blob/main/skills/ffmpeg-stabilize/SKILL.md) | 明确区分高质量两遍 `vidstab` 与内置单遍 `deshake` fallback，说明 re-encode、边缘/zoom 风险，并要求完整 A/B 复核 | 当前机器无 `vidstab` 时显式选择 `deshake`，把降级 warning 永久写进 artifact；apply 强制生成全长左右 comparison，不把 fallback 冒充等价实现 |
+| [`Fagan1024/smart-video-editor`](https://github.com/Fagan1024/smart-video-editor/blob/main/SKILL.md) | 先逐帧判断模糊、抖动、曝光、遮挡和镜头可用性，再决定取舍；自动参数不能替代画面判断 | `decision=review|stabilize|keep` 需要人区分不想要的抖动和有意运镜；稳定版完整复核并 `confirm` 前一直阻塞，不自动按粗糙 motion score 改素材 |
+| [`genchebur90-debug/video-editor-skill` 的 polish.py](https://github.com/genchebur90-debug/video-editor-skill/blob/main/video-editor/polish.py) | 稳定化先于降噪/锐化，默认保留音频，并提醒高 smoothing 会造成 floaty / jelly 观感 | 稳定化作为源素材 working-copy 阶段独立运行；原片不覆盖，后续再进入重构图、调色与渲染，review checklist 检查漂浮感和边缘扭曲 |
+
+新增/调整能力：新增 [`scripts/video_stabilization.py`](scripts/video_stabilization.py)、[`tests/test_video_stabilization.py`](tests/test_video_stabilization.py) 和 [`docs/prompts/84-video-stabilization.md`](docs/prompts/84-video-stabilization.md)。`doctor` 报告本机 `vidstab` / `deshake` 能力；`plan` 绑定源文件 SHA-256、大小、duration、fps、尺寸、音频状态、确切 backend/profile、人工决定和 canonical plan id。默认 `decision=review` 阻塞；`stabilize/keep` 必须有 reviewer label。`apply` 只写新 H.264/AAC working copy 和全长 720p A/B comparison，默认拒绝已有目标、symlink、source/plan 自覆盖，并验证稳定版 duration / 尺寸 / 音频契约；`confirm` 要求非空复核 note 后才清除 blocker。live `verify` 会重算 derived state、检查 FFmpeg filter、源片/稳定版/comparison hash 和 review status；即使重写 plan id，非规范 backend/settings 或 stale summary 仍会失败。`pipeline_manifest.py` 新增存在即 live verify、可 `--require video_stabilization_plan` 的 gate；`edit_brief_plan.py` 新增手持抖动/视频防抖路由，README、SKILL、daily workflow 和提示词索引已同步。
+
+使用方式：先运行 `python3 scripts/video_stabilization.py doctor`，看原片后用 `plan origin/handheld.mp4 --decision stabilize --reviewed-by editor --note "不想要的高频手抖" --output work/video_stabilization_plan.json --markdown work/video_stabilization_plan.md`；再执行 `apply work/video_stabilization_plan.json --output work/handheld-stabilized.mp4 --comparison verify/handheld-stabilization-compare.mp4 --markdown work/video_stabilization_plan.md`。以 1× 播放完整左右对照，确认人物、直线、四角、镜像边缘和有意 pan 无异常后，运行 `confirm ... --reviewed-by editor --note "完整 A/B 已看..."`，最后 `verify ... --strict`。稳定化不能修复 rolling shutter、运动模糊或失焦；下游只使用新 working copy，`origin/` 原片继续保留。
+
+验证结果：新增 11 项 stabilization 单元/安全/lifecycle 测试，并扩展 pipeline-manifest / edit-brief 回归；定向 `.venv/bin/python -m pytest tests/test_video_stabilization.py tests/test_pipeline_manifest.py tests/test_edit_brief_plan.py -q` 通过 `95 passed in 0.95s`，全量 `.venv/bin/python -m pytest tests -q` 通过 `796 passed in 14.47s`。真实 FFmpeg smoke 在本机 `vidstab=missing / deshake=available` 环境用 3 秒合成抖动 H.264/AAC 样片完成 `plan → apply → confirm → verify --strict`：最终 `blocking=0 / warnings=1`（明确 fallback）、稳定版 `640×360 / 30fps / 3.008s / audio=true`，全长 comparison 与 SHA-256 application record 均生成。`.venv/bin/python -m compileall -q scripts tests`、全部新 CLI help、edit-brief route、manifest category、Skill `quick_validate.py` 和 `git diff --check` 全部通过。
 
 ### 2026-08-08 自动化升级记录（Source-bound Speed Ramp）
 
@@ -2963,6 +3025,7 @@ pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 g
 | **80** | **[Edit Revision](docs/prompts/80-edit-revision.md)** | **剪辑文本 artifact 的 source-bound 审批、成组 apply 与 undo/redo** |
 | **82** | **[Portable Edit Recipe](docs/prompts/82-edit-recipe.md)** | **把已审 render_config 导出为 typed-slot 配方，并绑定新素材回放** |
 | **83** | **[Speed Ramp](docs/prompts/83-speed-ramp.md)** | **给 impact moment 做 source-bound 局部慢动作 / velocity edit** |
+| **84** | **[Video Stabilization](docs/prompts/84-video-stabilization.md)** | **手持素材 source-bound 防抖、全长 A/B 对照与人工确认 gate** |
 | **43** | **[Audio Cue Sheet](docs/prompts/43-audio-cue-sheet.md)** | **规划 BGM/SFX 和生成审批** |
 | **45** | **[Video Prompt Pack](docs/prompts/45-video-prompt-pack.md)** | **视频生成提示词包 + paid approval gate** |
 | **46** | **[Generation Task Log](docs/prompts/46-generation-task-log.md)** | **跟踪 submit_id、轮询、下载和本地落盘** |
@@ -3033,6 +3096,7 @@ scripts/
 ├── auto_broll.py               B-roll 调度                      [V3]
 ├── auto_chapter_cards.py       章节卡渲染                       [V3]
 ├── beat_sync.py                BGM beat edit slots / 切点吸附   [V3]
+├── video_stabilization.py      source-bound 手持防抖 / 全长 A/B confirm gate [V3]
 ├── speed_ramp.py               source-bound 局部变速计划 / 验证 / apply [V3]
 ├── audio_cue_sheet.py          BGM/SFX 音频设计清单               [V3]
 ├── auto_stickers.py            情绪→贴纸                        [V3]

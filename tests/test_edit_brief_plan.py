@@ -176,6 +176,24 @@ def test_speed_ramp_brief_routes_source_bound_plan(tmp_path):
     assert step["gate_category"] == "speed_ramp_plan"
 
 
+def test_shaky_footage_brief_routes_stabilization_review(tmp_path):
+    source = tmp_path / "handheld.mp4"
+    source.write_text("fake video", encoding="utf-8")
+
+    plan = build_plan(
+        f"给 {source} 做视频防抖，修复手持抖动后再剪辑",
+        project_dir=str(tmp_path),
+    )
+
+    step = next(step for step in plan["steps"] if step["id"] == "video_stabilization_plan")
+    assert step["script"] == "video_stabilization.py"
+    assert "video_stabilization.py plan" in step["command"]
+    assert "--decision review" in step["command"]
+    assert "work/video_stabilization_plan.json" in step["outputs"]
+    assert step["gate_category"] == "video_stabilization_plan"
+    assert any("full-length --comparison" in note for note in plan["notes"])
+
+
 def test_empty_brief_is_blocked():
     plan = build_plan("")
 

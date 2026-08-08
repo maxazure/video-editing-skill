@@ -10,6 +10,7 @@ from approval_receipt import create_receipt  # noqa: E402
 from edit_revision import APPROVAL_VERSION, apply_revision, audit_proposal, prepare_proposal  # noqa: E402
 from edit_recipe import export_recipe  # noqa: E402
 from speed_ramp import build_speed_ramp_plan, parse_hold  # noqa: E402
+from video_stabilization import build_plan as build_stabilization_plan  # noqa: E402
 
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -1180,6 +1181,46 @@ def test_speed_ramp_plan_can_be_required(tmp_path):
     )
 
     assert "speed_ramp_plan" in manifest["missing_required"]
+
+
+def test_video_stabilization_plan_is_live_verified(tmp_path, monkeypatch):
+    _publish_ready_project(tmp_path)
+    source = tmp_path / "origin" / "handheld.mp4"
+    _write(source, "fake handheld video")
+    media = {
+        "duration": 4.0,
+        "fps": 30.0,
+        "width": 640,
+        "height": 360,
+        "has_audio": True,
+    }
+    monkeypatch.setattr("video_stabilization.probe_media", lambda _path: dict(media))
+    monkeypatch.setattr("video_stabilization._available_filters", lambda: {"deshake"})
+    plan = build_stabilization_plan(
+        str(source),
+        decision="review",
+        filters={"deshake"},
+    )
+    _write(tmp_path / "work" / "video_stabilization_plan.json", plan)
+
+    manifest = build_manifest(str(tmp_path), target_stage="publish_ready")
+
+    assert "video_stabilization_plan" in manifest["blocked_gates"]
+    gate = next(g for g in manifest["gates"] if g["category"] == "video_stabilization_plan")
+    assert gate["status"] == "blocked"
+    assert "1 blocking item" in gate["notes"][0]
+
+
+def test_video_stabilization_plan_can_be_required(tmp_path):
+    _publish_ready_project(tmp_path)
+
+    manifest = build_manifest(
+        str(tmp_path),
+        target_stage="publish_ready",
+        required=["video_stabilization_plan"],
+    )
+
+    assert "video_stabilization_plan" in manifest["missing_required"]
 
 
 def test_markdown_contains_gate_table_and_next_actions(tmp_path):

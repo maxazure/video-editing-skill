@@ -107,6 +107,17 @@ SIGNAL_KEYWORDS: Mapping[str, Sequence[str]] = {
         "generated video",
     ),
     "audio_design": ("bgm", "music", "配乐", "音效", "sfx", "sound design", "声音设计"),
+    "video_stabilization": (
+        "video stabilization",
+        "stabilize video",
+        "camera shake",
+        "shaky footage",
+        "手持抖动",
+        "画面抖动",
+        "视频防抖",
+        "稳定画面",
+        "稳定视频",
+    ),
     "speed_ramp": (
         "speed ramp",
         "speed-ramp",
@@ -183,6 +194,7 @@ SIGNAL_LABELS: Mapping[str, str] = {
     "broll": "B-roll / stock 素材规划",
     "generated_assets": "生成式图片 / 视频素材",
     "audio_design": "BGM / SFX 声音设计",
+    "video_stabilization": "手持素材稳定化 / 防抖",
     "speed_ramp": "局部 speed ramp / velocity edit",
     "audio_sync": "外录音频对齐",
     "screen_focus": "录屏聚焦",
@@ -351,7 +363,7 @@ def build_plan(
 
     if source_media and not Path(source_media).expanduser().exists():
         blockers.append(f"source media not found: {source_media}")
-    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy", "speed_ramp"}):
+    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy", "video_stabilization", "speed_ramp"}):
         warnings.append("source media was not provided; commands use <source_media> placeholders")
 
     if transcript and not Path(transcript).expanduser().exists():
@@ -799,6 +811,39 @@ def build_plan(
                 outputs=["work/audio_cue_sheet.json", "work/audio_cue_sheet.md"],
                 gate_category="audio_cue_sheet",
             ),
+        )
+
+    if "video_stabilization" in ids:
+        _add_step(
+            steps,
+            seen,
+            _step(
+                "video_stabilization_plan",
+                phase="source",
+                script="video_stabilization.py",
+                label="Plan source-bound stabilization and A/B review",
+                reason="The brief identifies unintended handheld or camera shake that may need stabilization.",
+                command=shell(
+                    [
+                        python_bin,
+                        "scripts/video_stabilization.py",
+                        "plan",
+                        source,
+                        "--decision",
+                        "review",
+                        "--output",
+                        "work/video_stabilization_plan.json",
+                        "--markdown",
+                        "work/video_stabilization_plan.md",
+                    ]
+                ),
+                outputs=["work/video_stabilization_plan.json", "work/video_stabilization_plan.md"],
+                gate_category="video_stabilization_plan",
+            ),
+        )
+        notes.append(
+            "After deciding to stabilize, regenerate the plan with --decision stabilize --reviewed-by, "
+            "run apply with a full-length --comparison, watch it at 1x, then run confirm."
         )
 
     if "speed_ramp" in ids:

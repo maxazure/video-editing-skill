@@ -52,6 +52,25 @@
     # 原片不改；30 分钟以上还要复核头/中/尾，因为 V1 不测相机 clock drift。
     # 详见 docs/prompts/76-multicam-sync.md
 
+0b. # 可选：手持素材有不想要的抖动时，先保留原片并生成稳定工作副本：
+    python3 scripts/video_stabilization.py doctor
+    python3 scripts/video_stabilization.py plan origin/<handheld>.mp4 \
+      --decision stabilize \
+      --reviewed-by "<reviewer-label>" \
+      --note "<为什么这是需要去掉的抖动，而不是有意运镜>" \
+      --output work/video_stabilization_plan.json \
+      --markdown work/video_stabilization_plan.md
+    python3 scripts/video_stabilization.py apply work/video_stabilization_plan.json \
+      --output work/<handheld>-stabilized.mp4 \
+      --comparison verify/<handheld>-stabilization-compare.mp4 \
+      --markdown work/video_stabilization_plan.md
+    # 用 1× 看完整左原片/右稳定版；可接受后才 confirm：
+    python3 scripts/video_stabilization.py confirm work/video_stabilization_plan.json \
+      --reviewed-by "<reviewer-label>" \
+      --note "完整 A/B 已看；人物、边缘和有意摇摄均可接受" \
+      --markdown work/video_stabilization_plan.md
+    # 后续用 work/<handheld>-stabilized.mp4，不覆盖 origin；详见 docs/prompts/84-video-stabilization.md
+
 1. python3 scripts/transcribe.py origin/<voice>.mp3 \
      --engine auto --model auto --language zh --word-timestamps --detect-fillers \
      > work/transcript.json

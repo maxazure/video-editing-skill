@@ -1,6 +1,6 @@
 ---
 name: video-editing
-description: "Xiaohongshu/RED-tuned short-form video workflow for raw voice-over, talking-head, tutorials, interviews, podcasts, long videos, screen recordings, B-roll, captions, and generated assets. Covers edit routing, project bootstrap, transcription, source-bound context-aware semantic transcript review, synchronized local transcript review, multi-take packs, audio sync, cleanup, highlights/shorts, hook/story rewrite, content/source gates, B-roll/enrich/gpt-image-2/video-generation planning, generation reference-frame/style-lock preflight, screen focus, PIP, color grade, source-bound local speed ramps/velocity edits, reversible edit revisions, portable edit-recipe export/replay, preflight/render/QA/audio master, source-time edit comparison, retention-rhythm, subtitle-readability, platform-safe-area and rendered-speech continuity QA, review proxies, subtitles, CapCut import, multi-platform exports, cover A/B variants, captions, publish packages, dashboards, resume packets, EDL/FCPXML/OTIO, and Remotion animation."
+description: "Xiaohongshu/RED-tuned short-form video workflow for raw voice-over, talking-head, tutorials, interviews, podcasts, long videos, screen recordings, B-roll, captions, and generated assets. Covers edit routing, project bootstrap, transcription, semantic transcript review, local transcript review, multi-take packs, audio sync, source-bound video stabilization, cleanup, highlights/shorts, hook/story rewrite, content/source gates, B-roll/enrich/gpt-image-2/video-generation planning, reference-frame/style-lock preflight, screen focus, PIP, color grade, local speed ramps, reversible edit revisions, portable edit-recipe export/replay, preflight/render/QA/audio master, source-time edit comparison, retention-rhythm, subtitle-readability, platform-safe-area and rendered-speech continuity QA, review proxies, subtitles, CapCut import, multi-platform exports, cover A/B variants, captions, publish packages, dashboards, resume packets, EDL/FCPXML/OTIO, and Remotion animation."
 metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
 ---
 
@@ -28,6 +28,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ scene_boundaries.py      fixed/adaptive 视觉切点 + 逐切点 evidence
    ├─→ visual_dedupe.py         多来源场景 → 感知哈希重复组 / 保留建议 / review gate
    ├─→ video_understanding.py   抽样帧 + 可选 YOLO 检测 / tracks / scene_tags
+   ├─→ video_stabilization.py   手持素材 → source-bound 后端计划 / 工作副本 / 全长 A/B gate
    ├─→ highlight_picker.py      长视频精华候选 / brief-query 定向找片段
    ├─→ audio_boundary_snap.py   已选片段 → 词/句末/静音边界校正
    ├─→ shorts_batch.py          精华候选 → per-short render_config / render + QA job sheet
@@ -108,6 +109,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `scene_boundaries.py` | FFmpeg fixed/adaptive scene score → 场景边界 + cut evidence | `--method adaptive` `--adaptive-threshold` `--min-scene-score` `--min-scene-duration` |
 | `visual_dedupe.py` | 多来源场景三点感知哈希 → 重复组 / 保留建议 / review gate | `--manifest` / `<videos...>` `--hamming-threshold` `--include-same-source` `--strict` |
 | `video_understanding.py` | 抽样帧 + 可选 YOLO 物体检测 + 轻量 tracklets | `--detector yolo` `--scene-boundaries` `--external-detections` `--strict` |
+| `video_stabilization.py` | 源视频 → exact FFmpeg backend / source hash / 稳定工作副本 / 全长 A/B 复核 gate | `doctor` / `plan --decision` / `apply --comparison` / `confirm` / `verify --strict` |
 | `highlight_picker.py` | 长视频精华候选 + brief/query 定向找片段 | `--transcript` `--brief`/`--query` `--scene-boundaries` `--render-config` |
 | `audio_boundary_snap.py` | selected highlights → 词级、句末和静音边界校正 + blocker | `--candidates` `--transcript` `--media` `--markdown` `--strict` |
 | `shorts_batch.py` | highlight_candidates → 多条短视频 render_config / render + QA job sheet | `--highlights` `--video` `--render-config-dir` `--output-dir` `--strict` |
@@ -984,6 +986,12 @@ python3 scripts/render_final.py --config script/render_config.json --output medi
 - `apply` 用同目录临时文件渲染，成功后才替换目标；默认不覆盖、不跟随 output symlink，也不能覆盖 source
 - `--interpolate-fps` 是 FFmpeg motion interpolation，可能产生肢体 / 边缘伪影；极慢音频必须试听，必要时 plan 阶段加 `--mute-audio`
 - 最终必须用 1×、带声音完整播放；变速后重新生成字幕 / timecoded artifacts、跑 render QA，并重新做最终审批。详见 `docs/prompts/83-speed-ramp.md`
+
+**Video Stabilization source-bound 手持防抖**（仅用于不想要的抖动）：
+- 先运行 `video_stabilization.py doctor`。`plan --backend auto` 优先两遍 `vidstab`；缺少该 filter 时会把单遍 `deshake` 明确写进计划并保留降级 warning，不会在 apply 时静默换后端
+- 原片看过后，用 `plan origin/handheld.mp4 --decision stabilize --reviewed-by editor --output work/video_stabilization_plan.json --markdown work/video_stabilization_plan.md` 记录源 SHA-256、profile 和人工决定；有意手持 / pan 应改用 `--decision keep`
+- `apply ... --output work/handheld-stabilized.mp4 --comparison verify/handheld-stabilization-compare.mp4` 只写新工作副本与全长左/右 A/B；随后必须 1× 看完整 comparison，再运行 `confirm --reviewed-by ... --note ...`
+- `pipeline_manifest.py` 会实时检查源片、稳定版、comparison 的 hash 与复核状态。稳定化不能修复滚动快门、运动模糊或失焦；后续用工作副本，不覆盖 `origin/`。详见 `docs/prompts/84-video-stabilization.md`
 
 **PIP Overlay 录屏摄像头小窗**（录屏教程可选）：
 - 运行 `pip_overlay.py --camera origin/facecam.mp4 --segment "0,18,bottom_right" --segment "18,42,top_right" --sync-offset 0.18 --output work/pip_overlay_plan.json --markdown work/pip_overlay_plan.md`

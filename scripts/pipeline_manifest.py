@@ -215,6 +215,13 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         blocks_when_present=True,
     ),
     ArtifactDef(
+        "video_stabilization_plan",
+        "Video Stabilization Plan",
+        ("**/video_stabilization_plan.json", "**/*_video_stabilization_plan.json"),
+        "Run video_stabilization.py verify; apply the approved working copy and confirm the full A/B comparison.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "speed_ramp_plan",
         "Speed Ramp Plan",
         ("**/speed_ramp_plan.json", "**/*_speed_ramp_plan.json"),
@@ -679,6 +686,35 @@ def evaluate_category(
             elif _int_at(verification, "summary", "warnings"):
                 status = "warn" if status != "blocked" else status
                 notes.append(f"edit recipe source preflight had warnings: {artifact.path}")
+        return {
+            "category": definition.category,
+            "label": definition.label,
+            "status": status,
+            "artifact_count": len(artifacts),
+            "latest_path": artifacts[0].path,
+            "notes": sorted(set(notes)),
+            "next_action": definition.next_action if status in {"missing", "blocked", "warn"} else "",
+        }
+
+    if definition.category == "video_stabilization_plan":
+        from video_stabilization import verify_plan
+
+        for artifact in artifacts:
+            data = _load_json(artifact.path)
+            if data is None:
+                status = "blocked"
+                notes.append(f"unreadable video stabilization plan: {artifact.path}")
+                continue
+            verification = verify_plan(data)
+            blocking = _int_at(verification, "summary", "blocking")
+            if blocking:
+                status = "blocked"
+                notes.append(
+                    f"invalid video stabilization plan {artifact.path}: {blocking} blocking item(s)"
+                )
+            elif _int_at(verification, "summary", "warnings"):
+                status = "warn" if status != "blocked" else status
+                notes.append(f"video stabilization plan retains a reviewed backend warning: {artifact.path}")
         return {
             "category": definition.category,
             "label": definition.label,

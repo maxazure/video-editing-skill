@@ -1,6 +1,6 @@
 # Edit Brief Plan 自然语言剪辑需求路由
 
-把用户的一句话剪辑需求转成当前 skill 的本地执行 runbook：匹配平台、素材类型、字幕、长视频拆条、B-roll、生成素材、音频、PIP、调色、QA 和发布包等信号，然后输出现有脚本的建议顺序、命令、产物和 manifest gate。
+把用户的一句话剪辑需求转成当前 skill 的本地执行 runbook：匹配平台、素材类型、手持防抖、字幕、长视频拆条、B-roll、生成素材、音频、PIP、调色、QA 和发布包等信号，然后输出现有脚本的建议顺序、命令、产物和 manifest gate。
 
 ## 适用场景
 
@@ -48,6 +48,7 @@ python3 scripts/edit_brief_plan.py \
 | B-roll、stock、补画面 | `stock_material_plan.py` + `auto_enrich.py` |
 | 生图、Dreamina/即梦、Veo/Sora/LTX/Wan | `storyboard_plan.py` + `video_prompt_pack.py` |
 | BGM、音效、声音设计 | `audio_cue_sheet.py` |
+| 手持抖动、画面抖动、视频防抖、stabilize | `video_stabilization.py plan` → `apply --comparison` → `confirm` |
 | 录屏、点击、热点 | `screen_focus.py` |
 | facecam、小窗、PIP | `pip_overlay.py` |
 | 发布、标题、文案、上传包 | `generate_caption.py` + `publish_package.py` |
