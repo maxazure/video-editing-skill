@@ -9,6 +9,7 @@ from pipeline_manifest import build_manifest, emit_markdown  # noqa: E402
 from approval_receipt import create_receipt  # noqa: E402
 from edit_revision import APPROVAL_VERSION, apply_revision, audit_proposal, prepare_proposal  # noqa: E402
 from edit_recipe import export_recipe  # noqa: E402
+import delivery_encode  # noqa: E402
 from speed_ramp import build_speed_ramp_plan, parse_hold  # noqa: E402
 from video_stabilization import build_plan as build_stabilization_plan  # noqa: E402
 
@@ -136,6 +137,37 @@ def test_tampered_edit_recipe_blocks_manifest_even_if_summary_is_ready(tmp_path)
     assert manifest["status"] == "blocked"
     assert "edit_recipe" in manifest["blocked_gates"]
     gate = next(g for g in manifest["gates"] if g["category"] == "edit_recipe")
+    assert "1 blocking item" in gate["notes"][0]
+
+
+def test_unapplied_delivery_encode_plan_blocks_when_present(tmp_path, monkeypatch):
+    _publish_ready_project(tmp_path)
+    media = {
+        "duration": 4.0,
+        "fps": 30.0,
+        "width": 640,
+        "height": 360,
+        "rotation": 0,
+        "has_audio": True,
+        "video_codec": "h264",
+        "audio_codec": "aac",
+        "pixel_format": "yuv420p",
+        "format_names": ["mov", "mp4"],
+    }
+    monkeypatch.setattr(delivery_encode, "probe_media", lambda _path: dict(media))
+    plan = delivery_encode.build_plan(
+        str(tmp_path / "output" / "day58_master.mp4"),
+        str(tmp_path / "output" / "day58_delivery.mp4"),
+        max_size_mib=0.5,
+    )
+    _write(tmp_path / "work" / "delivery_encode_plan.json", plan)
+
+    manifest = build_manifest(str(tmp_path), target_stage="publish_ready")
+
+    assert manifest["status"] == "blocked"
+    assert "delivery_encode_plan" in manifest["blocked_gates"]
+    gate = next(g for g in manifest["gates"] if g["category"] == "delivery_encode_plan")
+    assert gate["status"] == "blocked"
     assert "1 blocking item" in gate["notes"][0]
 
 

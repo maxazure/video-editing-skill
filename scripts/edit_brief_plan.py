@@ -138,6 +138,17 @@ SIGNAL_KEYWORDS: Mapping[str, Sequence[str]] = {
     "qa": ("qa", "质检", "黑屏", "静音", "静帧", "检查成片"),
     "review_proxy": ("review proxy", "审片代理", "审片视频", "低码率审片", "时间码审片", "timecode review"),
     "multi_platform": ("三平台", "多平台", "multi platform", "多个平台", "xhs douyin", "小红书 抖音"),
+    "delivery_encode": (
+        "target size",
+        "size limit",
+        "file size",
+        "视频压缩",
+        "压缩视频",
+        "压到",
+        "文件大小",
+        "上传限制",
+        "传输限制",
+    ),
     "publish": ("发布", "上传", "publish", "upload", "发布包", "标题", "文案", "hashtag", "tags"),
     "subtitle_sidecar": ("srt", "vtt", "ass", "字幕文件", "sidecar"),
     "nle_handoff": ("premiere", "final cut", "fcpxml", "resolve", "达芬奇", "edl", "otio", "剪辑软件"),
@@ -204,6 +215,7 @@ SIGNAL_LABELS: Mapping[str, str] = {
     "qa": "成片质检",
     "review_proxy": "低码率时间码审片视频",
     "multi_platform": "多平台导出",
+    "delivery_encode": "目标大小交付编码",
     "publish": "发布包 / 文案",
     "subtitle_sidecar": "字幕 sidecar",
     "nle_handoff": "NLE 交接",
@@ -259,6 +271,11 @@ def infer_source_media(brief: str) -> str:
     if not match:
         return ""
     return match.group("path").rstrip(".,;:，。；：")
+
+
+def infer_delivery_size_mib(brief: str) -> Optional[float]:
+    match = re.search(r"(\d+(?:\.\d+)?)\s*(?:mib|mb|兆)", brief, re.IGNORECASE)
+    return float(match.group(1)) if match else None
 
 
 def detect_signals(brief: str, platforms: Sequence[str]) -> List[Dict[str, Any]]:
@@ -363,7 +380,7 @@ def build_plan(
 
     if source_media and not Path(source_media).expanduser().exists():
         blockers.append(f"source media not found: {source_media}")
-    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy", "video_stabilization", "speed_ramp"}):
+    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy", "video_stabilization", "speed_ramp", "delivery_encode"}):
         warnings.append("source media was not provided; commands use <source_media> placeholders")
 
     if transcript and not Path(transcript).expanduser().exists():
@@ -1186,6 +1203,64 @@ def build_plan(
                 outputs=["output/*_xhs.mp4", "output/*_douyin.mp4", "output/*_wxch.mp4"],
                 gate_category="platform_exports",
             ),
+        )
+
+    if "delivery_encode" in ids:
+        delivery_after_render = bool(
+            ids.intersection(
+                {
+                    "render",
+                    "target_script",
+                    "long_to_short",
+                    "batch_shorts",
+                    "cleanup_silence",
+                    "cleanup_words",
+                    "broll",
+                    "screen_focus",
+                    "pip",
+                    "color_grade",
+                    "edit_recipe_replay",
+                }
+            )
+        )
+        delivery_input = "output/final.mp4" if delivery_after_render else source
+        size_limit = infer_delivery_size_mib(normalized)
+        _add_step(
+            steps,
+            seen,
+            _step(
+                "delivery_encode_plan",
+                phase="publish",
+                script="delivery_encode.py",
+                label="Plan a source-bound target-size delivery MP4",
+                reason="The brief includes a file-size or upload ceiling that fixed-CRF export cannot guarantee.",
+                command=shell(
+                    [
+                        python_bin,
+                        "scripts/delivery_encode.py",
+                        "plan",
+                        delivery_input,
+                        "--delivery",
+                        "output/final_delivery.mp4",
+                        "--max-size-mib",
+                        str(size_limit) if size_limit is not None else "<max_size_mib>",
+                        "--output",
+                        "work/delivery_encode_plan.json",
+                        "--markdown",
+                        "work/delivery_encode_plan.md",
+                    ]
+                ),
+                outputs=[
+                    "work/delivery_encode_plan.json",
+                    "work/delivery_encode_plan.md",
+                    "output/final_delivery.mp4",
+                ],
+                gate_category="delivery_encode_plan",
+            ),
+        )
+        notes.append(
+            "After reviewing the two-pass plan, run delivery_encode.py apply, then watch the complete "
+            "delivery at normal speed and bind the exact output into render QA / approval receipt."
         )
 
     if "publish" in ids:

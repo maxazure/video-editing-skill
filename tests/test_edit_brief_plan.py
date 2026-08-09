@@ -194,6 +194,24 @@ def test_shaky_footage_brief_routes_stabilization_review(tmp_path):
     assert any("full-length --comparison" in note for note in plan["notes"])
 
 
+def test_file_size_brief_routes_target_size_delivery(tmp_path):
+    source = tmp_path / "master.mp4"
+    source.write_text("fake video", encoding="utf-8")
+
+    plan = build_plan(
+        f"把 {source} 视频压缩到 18MB 以内，满足上传限制",
+        project_dir=str(tmp_path),
+    )
+
+    step = next(step for step in plan["steps"] if step["id"] == "delivery_encode_plan")
+    assert step["script"] == "delivery_encode.py"
+    assert "delivery_encode.py plan" in step["command"]
+    assert "--max-size-mib 18.0" in step["command"]
+    assert str(source) in step["command"]
+    assert step["gate_category"] == "delivery_encode_plan"
+    assert any("normal speed" in note for note in plan["notes"])
+
+
 def test_empty_brief_is_blocked():
     plan = build_plan("")
 

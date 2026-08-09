@@ -2,7 +2,7 @@
 
 这是一个面向 **口播、教程、访谈、播客切片、录屏演示 / facecam demo** 的 AI 视频剪辑生产线：给它原始口播音频/视频、transcript、B-roll、摄像头小窗或素材目录，它可以把“还没整理的素材”推进到 **可发布的小红书 / 抖音 / 视频号短视频**。
 
-它不是一个单点 FFmpeg 脚本，而是一条完整工作流：**项目启动/素材导入 → 手持防抖 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp → 可逆剪辑修订 / 可移植剪辑配方 → 渲染前预检 → 单次编码渲染 → 质检 → 多平台导出 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
+它不是一个单点 FFmpeg 脚本，而是一条完整工作流：**项目启动/素材导入 → 手持防抖 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp → 可逆剪辑修订 / 可移植剪辑配方 → 渲染前预检 → 单次编码渲染 → 质检 → 多平台导出 / 目标大小交付编码 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
 
 ## 适合做什么
 
@@ -12,6 +12,7 @@
 - **多机位先同步再剪辑**：`multicam_sync.py` 把两台以上相机/手机/录音设备对齐到同一参考时间线，记录每路 offset、置信度、有效音轨、公共重叠区间，并可用多窗口 probe 测量长片时钟漂移；原片不改、不重编码。
 - **手持防抖保留原片和 A/B 证据**：`video_stabilization.py` 把源 SHA-256、确切 FFmpeg 后端和人工决定写进计划；apply 只生成新工作副本与全长左右对照，完整 1× 复核并 confirm 后 manifest 才放行。
 - **局部慢动作先计划再渲染**：`speed_ramp.py` 把显式 impact frame 周围的 `snap/ease/s_curve`、hold 和可选 FFmpeg 插帧编译成 source-bound 计划；源 hash 或 piece 时间映射漂移会阻塞，apply 采用同目录临时文件事务式落盘。
+- **上传大小限制变成硬门禁**：`delivery_encode.py` 依据源片时长计算两遍 H.264/AAC 码率，绑定源与输出 SHA-256；完整解码、音视频契约或硬大小上限任一失败都不会提升成交付件。
 - **事实型内容有 proof deck**：新闻、数据、产品事实或来源页截图可用 `source_receipts.py` 生成 URL/截图复核包，作为发布前 gate。
 - **最终审批绑定到具体文件字节**：`approval_receipt.py` 为人工看过的视频、封面、文案、字幕和 QA 报告记录 SHA-256；任何重渲染、替换、删除或 symlink 漂移都会让旧审批过期并阻塞发布。
 - **ASR 语义校稿不再只看单句**：`semantic_transcript_review.py` 为每条字幕附带全篇前后文，验证完整覆盖、源 transcript hash 和最小字符补丁；模型只能提建议，独立人工 choices 才能写 reviewed transcript。
@@ -246,6 +247,7 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    │                            交给 Premiere / Final Cut Pro / Resolve
    │
    ├─→ multi_export.py          小红书 3:4 / 抖音 9:16 / 视频号 ≤60s
+   ├─→ delivery_encode.py       硬大小上限 / 两遍 H.264 / 完整解码验证
    ├─→ generate_caption.py      标题 + 200-500 字正文 + 3-6 tags + 发布时段建议
    ├─→ cover_variants.py        2-4 套封面 A/B 方案 / 小尺寸预览 / 最终选择 gate
    ├─→ approval_receipt.py      已复核交付件 → SHA-256 收据 / stale approval gate
@@ -2052,6 +2054,26 @@ python3 scripts/source_receipts.py \
 | 抖音 / TikTok | 1080×1920 (9:16) | — | 全屏沉浸 |
 | 微信视频号 | 1080×1920 (9:16) | ≤60s | 自动截断；社交链分发 |
 
+### 📦 Delivery Encode — source-bound 目标大小交付
+[`scripts/delivery_encode.py`](scripts/delivery_encode.py) · [详细文档](docs/prompts/85-delivery-encode.md)
+
+对“视频必须小于 20 MiB”这类硬上传限制，不再靠 CRF 反复试猜。`plan` 会读取源片时长、音视频流、旋转后尺寸和帧率，预留 6% 容器安全余量，再为 libx264 两遍编码分配视频码率。`apply` 先写同目录临时 MP4，硬大小、容器、codec、尺寸、fps、时长、音轨、像素格式和全长解码都通过后才原子提升。
+
+```bash
+python3 scripts/delivery_encode.py plan output/master.mp4 \
+  --delivery output/master-under-20m.mp4 \
+  --max-size-mib 20 \
+  --output work/delivery_encode_plan.json \
+  --markdown work/delivery_encode_plan.md
+
+python3 scripts/delivery_encode.py apply work/delivery_encode_plan.json \
+  --markdown work/delivery_encode_plan.md
+
+python3 scripts/delivery_encode.py verify work/delivery_encode_plan.json --strict
+```
+
+可选 `--max-width` / `--max-height` 保持画幅比缩小，`--fps` 只允许不高于源片。交付编码是最后一次重编码，不能替代人工观感审片；交付 MP4 还应重跑 `render_qa.py`、字幕/平台安全区检查和 `approval_receipt.py`。
+
 ### ✍️ Caption Generator — 标题 + 正文 + 标签
 [`scripts/generate_caption.py`](scripts/generate_caption.py)
 
@@ -2488,6 +2510,7 @@ pytest tests/test_content_guard.py -v       # 80+ 规则的 38 个测试
 pytest tests/test_rewrite_script.py -v      # Story Engine
 pytest tests/test_auto_broll.py -v          # B-roll 调度
 pytest tests/test_multi_export.py -v        # 多平台比例转换
+pytest tests/test_delivery_encode.py -v     # 硬大小上限 / 两遍编码 / 完整解码门禁
 pytest tests/test_render_qa.py -v           # 渲染后质检
 pytest tests/test_shot_color_qa.py -v       # 成片镜头色彩 / 曝光 / broadcast-range 门禁
 pytest tests/test_retention_rhythm_qa.py -v # 成片 hook / 长镜头 / 节奏风险门禁
@@ -2539,6 +2562,23 @@ pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 pytest tests/test_review_dashboard.py -v    # 静态人工复核面板 + gate queue
 pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 gate
 ```
+
+### 2026-08-10 自动化升级记录（Target-size Delivery Encode）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`AKMessi/vex`](https://github.com/AKMessi/vex) | 依据媒体元数据规划目标大小两遍编码，执行前检查磁盘，交付时检查容器/流/尺寸/帧率/时长并全长解码 | 采用“先 plan、再 apply、现场 verify”和两遍编码；另外把超过用户上限从警告改为硬 blocker，并用 SHA-256 绑定源与交付字节 |
+| [`MastroMimmo/ffmpeg-skill`](https://github.com/MastroMimmo/ffmpeg-skill) | 用“compress under 10MB”这类用户意图组织简单命令，并给出压缩前后结果 | 保留简单 CLI 意图，但不复用它只调 CRF、不保证目标大小的实现；本项目以硬 ceiling 和交付契约为准 |
+| [`affaan-m/ECC` Video Editing skill](https://github.com/affaan-m/ECC/blob/main/skills/video-editing/SKILL.md) | 把确定性 FFmpeg 处理/代理文件与内容取舍分开，让自动化不假装完成审美判断 | 交付编码只证明技术契约；Markdown 和文档仍要求 1× 全片人工复核、交付后 QA 和新审批收据 |
+| [`6missedcalls/video-editing-skill`](https://github.com/6missedcalls/video-editing-skill) | 小型、单一职责的 FFmpeg 脚本可独立运行也可组合进 pipeline，依赖面小 | 新能力继续作为独立标准库 CLI，只复用项目已需要的 FFmpeg/ffprobe，不新增运行时框架 |
+
+新增/调整能力：新增 [`scripts/delivery_encode.py`](scripts/delivery_encode.py)、[`tests/test_delivery_encode.py`](tests/test_delivery_encode.py) 和 [`docs/prompts/85-delivery-encode.md`](docs/prompts/85-delivery-encode.md)。`plan` 绑定源路径、SHA-256、大小、时长、尺寸、fps、codec 和音轨，从硬 `--max-size-mib` 扣出 AAC 音频与 6% 安全余量，生成 canonical plan id 与 libx264 两遍命令。不可行的低码率直接拒绝；可选缩小分辨率/帧率，但不允许放大或插帧。`apply` 检查剩余磁盘，拒绝 symlink、路径冲突和默认覆盖；临时 MP4 必须通过硬大小、H.264/AAC、`yuv420p`、尺寸/fps/时长/音轨契约和 FFmpeg `-xerror` 全长解码，才会原子替换到交付路径。`verify` 重算源片/输出 hash 、canonical settings 和 derived status，即使手改 plan id 也不能隐藏漂移。`pipeline_manifest.py` 新增“存在即 live verify”的 `delivery_encode_plan` gate；`edit_brief_plan.py` 可从“压缩到 18MB 以内/满足上传限制”自动路由。README、SKILL、daily workflow 和提示词索引已同步。
+
+使用方式：先运行 `python3 scripts/delivery_encode.py plan output/master.mp4 --delivery output/master-under-20m.mp4 --max-size-mib 20 --output work/delivery_encode_plan.json --markdown work/delivery_encode_plan.md`，检查计划中的码率、缩放和 warnings；再运行 `python3 scripts/delivery_encode.py apply work/delivery_encode_plan.json --markdown work/delivery_encode_plan.md`，最后执行 `python3 scripts/delivery_encode.py verify work/delivery_encode_plan.json --strict`。如交付路径已存在，只有显式 `--force` 才允许在新文件已完整验证后原子替换。交付件必须重跑 QA 并人工完整审片，原版审批收据不可复用。
+
+验证结果：新增 11 项 delivery-encode 单元/安全/lifecycle 测试，并扩展 pipeline-manifest / edit-brief 回归；定向 `.venv/bin/python -m pytest tests/test_delivery_encode.py tests/test_edit_brief_plan.py tests/test_pipeline_manifest.py -q` 通过 `97 passed in 1.01s`，全量 `.venv/bin/python -m pytest tests -q` 通过 `809 passed in 14.78s`。严格真实 FFmpeg smoke 用 5 秒 640×360、30fps、H.264/AAC 高码率样片完成 `plan → apply → verify --strict`：源片 `3,024,189 bytes`，交付件 `803,194 bytes`，低于 `838,860 bytes` 硬上限，最终 `blocking=0 / warnings=0`，H.264/AAC、`yuv420p`、640×360、30fps、5.013s 契约和全长解码全部通过。`.venv/bin/python -m compileall -q scripts tests`、四个 CLI help、manifest category、中文 brief route、Skill `quick_validate.py` 和 `git diff --check` 也均通过。
 
 ### 2026-08-01 自动化升级记录（Long-form Multicam Clock Drift）
 
@@ -3140,6 +3180,7 @@ scripts/
 ├── export_otio.py              NLE handoff OTIO + manifest         [V3]
 ├── generate_standup_timeline.py Remotion timeline
 ├── multi_export.py             三平台导出                       [V3]
+├── delivery_encode.py          source-bound 硬大小交付编码      [V3]
 ├── generate_caption.py         标题/正文/标签                   [V3]
 ├── approval_receipt.py         SHA-256 审批收据 + stale gate       [V3]
 ├── publish_package.py          最终上传包 + gate 状态汇总           [V3]

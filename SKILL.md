@@ -1,6 +1,6 @@
 ---
 name: video-editing
-description: "Xiaohongshu/RED-tuned short-form video workflow for raw voice-over, talking-head, tutorials, interviews, podcasts, long videos, screen recordings, B-roll, captions, and generated assets. Covers edit routing, project bootstrap, transcription, semantic transcript review, local transcript review, multi-take packs, audio sync, source-bound video stabilization, cleanup, highlights/shorts, hook/story rewrite, content/source gates, B-roll/enrich/gpt-image-2/video-generation planning, reference-frame/style-lock preflight, screen focus, PIP, color grade, local speed ramps, reversible edit revisions, portable edit-recipe export/replay, preflight/render/QA/audio master, source-time edit comparison, retention-rhythm, subtitle-readability, platform-safe-area and rendered-speech continuity QA, review proxies, subtitles, CapCut import, multi-platform exports, cover A/B variants, captions, publish packages, dashboards, resume packets, EDL/FCPXML/OTIO, and Remotion animation."
+description: "Xiaohongshu/RED-tuned short-form video workflow for raw voice-over, talking-head, tutorials, interviews, podcasts, long videos, screen recordings, B-roll, captions, and generated assets. Covers edit routing, project bootstrap, transcription, semantic transcript review, local transcript review, multi-take packs, audio sync, source-bound video stabilization, cleanup, highlights/shorts, hook/story rewrite, content/source gates, B-roll/enrich/gpt-image-2/video-generation planning, reference-frame/style-lock preflight, screen focus, PIP, color grade, local speed ramps, reversible edit revisions, portable edit-recipe export/replay, preflight/render/QA/audio master, source-time edit comparison, retention-rhythm, subtitle-readability, platform-safe-area and rendered-speech continuity QA, review proxies, subtitles, CapCut import, multi-platform and target-size delivery exports, cover A/B variants, captions, publish packages, dashboards, resume packets, EDL/FCPXML/OTIO, and Remotion animation."
 metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
 ---
 
@@ -80,6 +80,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ export_fcpxml.py         render_config / cut list → FCPXML + manifest
    ├─→ export_otio.py           render_config / cut list → OTIO + manifest
    ├─→ multi_export.py          小红书 3:4 / 抖音 9:16 / 视频号 ≤60s
+   ├─→ delivery_encode.py       source-bound 两遍 H.264/AAC / 硬大小上限 / 完整解码 gate
    ├─→ generate_caption.py      标题 + 200-500 字正文 + 3-6 tags + 发布时段
    ├─→ cover_variants.py        2-4 套封面 / feed-size 预览 / 最终选择 gate
    ├─→ approval_receipt.py      已复核交付件 → SHA-256 收据 / stale approval gate
@@ -158,6 +159,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `export_fcpxml.py` | NLE handoff：导出 FCPXML + manifest | `--config render_config.json --output edit.fcpxml` / `--cut-list rough_cut.json --output rough.fcpxml` |
 | `export_otio.py` | NLE handoff：导出 OpenTimelineIO `.otio` + manifest | `--config render_config.json --output edit.otio` / `--cut-list rough_cut.json --output rough.otio` |
 | `multi_export.py` | 三平台导出 | `<input.mp4>` `--platforms xhs douyin wxch` |
+| `delivery_encode.py` | master → 目标大小 H.264/AAC MP4 / source hash / 两遍码率 / 完整解码 gate | `plan --delivery --max-size-mib` / `apply` / `verify --strict` |
 | `generate_caption.py` | 标题/正文/tag | `--script` `--profile` `--output` |
 | `cover_variants.py` | 多套封面 A/B 方案、feed-size 预览、标题协同和最终选择 | `<video>` `--title` `--caption` `--platform` `--render` `--select cover-c` `--strict` |
 | `approval_receipt.py` | 已复核视频/封面/文案/字幕/QA → SHA-256 收据和过期审批门禁 | `create --artifact ... --approved-by` / `verify --strict` |
@@ -1560,7 +1562,21 @@ python3 scripts/speech_continuity_qa.py output/final_transcript.json \
 
 必须对**已渲染 master**重新转录，不能复用源素材 transcript。`speech_continuity_qa.py` 会检查相邻 segment 的结尾/开头精确复读、相邻近重复 take 和句内即时口吃；不同 speaker 默认不互判。命中后先按时间码试听 master，再调整源 `render_config` / cut list，重新渲染并复跑。`pipeline_manifest.py --require speech_continuity_qa --strict` 可把这份报告设为发布必需项。
 
-**6m. 字幕文字最终校验**：
+**6m. 目标大小交付编码（有明确 MB 上限时跑）**：
+```bash
+python3 scripts/delivery_encode.py plan output/final.mp4 \
+  --delivery output/final_delivery.mp4 \
+  --max-size-mib 18 \
+  --output work/delivery_encode_plan.json \
+  --markdown work/delivery_encode_plan.md
+python3 scripts/delivery_encode.py apply work/delivery_encode_plan.json \
+  --markdown work/delivery_encode_plan.md
+python3 scripts/delivery_encode.py verify work/delivery_encode_plan.json
+```
+
+`delivery_encode.py` 绑定 master SHA-256，用两遍 `libx264` 在 6% 容器余量内计算 H.264/AAC 码率；输出超过硬上限、容器/流/尺寸/fps/时长/音频不符或完整 FFmpeg decode 失败都会阻塞。apply 只先写同目录临时 MP4，技术验证通过后才原子晋升，不覆盖源文件。完整解码不是画质批准；必须正常速度看完交付版，再跑 `render_qa.py` 并把最终 SHA-256 放入 `approval_receipt.py`。详见 [docs/prompts/85-delivery-encode.md](docs/prompts/85-delivery-encode.md)。
+
+**6n. 字幕文字最终校验**：
 1. 读取最终视频使用的所有 transcript 片段的文字
 2. 按最终视频的片段顺序，逐条检查以下问题：
    - **语音识别残留错误**：Phase 2.5 可能遗漏的同音字、专有名词错误

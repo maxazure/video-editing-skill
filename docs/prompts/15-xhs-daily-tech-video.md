@@ -391,6 +391,18 @@
      --output-dir output/ \
      --platforms xhs douyin wxch
 
+9a. # 可选：客户/平台明确限制文件大小时，对选定发布版做 source-bound 两遍交付编码：
+    python3 scripts/delivery_encode.py plan \
+      output/day<NN>_master_douyin.mp4 \
+      --delivery output/day<NN>_douyin_delivery.mp4 \
+      --max-size-mib <上限> \
+      --output work/delivery_encode_plan.json \
+      --markdown work/delivery_encode_plan.md
+    python3 scripts/delivery_encode.py apply work/delivery_encode_plan.json \
+      --markdown work/delivery_encode_plan.md
+    python3 scripts/delivery_encode.py verify work/delivery_encode_plan.json
+    # 完整解码通过不等于画质批准；正常速度看完整交付版，再跑 render_qa 并纳入 approval receipt。
+
 9b. # 可选：如果要交给 Premiere / FCP / Resolve 继续精修：
     python3 scripts/export_edl.py \
       --config work/render_config.json \
@@ -558,6 +570,8 @@ day<NN>/
 │   ├── edit_preflight.md
 │   ├── pipeline_manifest.json # 发布前 gate 汇总
 │   ├── pipeline_manifest.md
+│   ├── delivery_encode_plan.json # 可选：目标大小交付编码 / source + output hash gate
+│   ├── delivery_encode_plan.md
 │   ├── cover_variants.json # 封面 A/B 方案 + selected_cover
 │   ├── cover_variants.md
 │   ├── approval_receipt.json # 人工已复核交付件的 SHA-256 收据
@@ -581,6 +595,7 @@ day<NN>/
     │   └── day<NN>_shot_color_qa.md         # 镜头指标 + 可疑切点复核命令
     ├── day<NN>_master.mp4              # 9:16 主版本
     ├── day<NN>_master_xhs.mp4          # 3:4 小红书发布版
+    ├── day<NN>_douyin_delivery.mp4     # 可选：有硬大小上限的两遍交付版
     ├── day<NN>_master_douyin.mp4       # 9:16 抖音版
     ├── day<NN>_master_wxch.mp4         # 9:16 ≤60s 视频号版
     ├── day<NN>_master_qa.json          # 主片 QA

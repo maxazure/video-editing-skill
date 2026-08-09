@@ -86,6 +86,7 @@
 | 81 | [Shot Color QA 镜头色彩 / 曝光门禁](81-shot-color-qa.md) | rendered master → 镜头亮度/对比/色度/饱和度/broadcast-range 与切点跳变复核 |
 | 82 | [Portable Edit Recipe 可移植剪辑配方](82-edit-recipe.md) | 已审 render_config → typed slots / content digest / 新素材绑定回放 / preflight receipt |
 | 84 | [Video Stabilization source-bound 手持防抖](84-video-stabilization.md) | 源 hash / 确切 FFmpeg 后端 / 新工作副本 / 全长 A/B 对照 / 人工确认 gate |
+| 85 | [Target-size Delivery Encode 目标大小交付编码](85-delivery-encode.md) | master → source-bound 两遍 H.264/AAC、硬大小上限、完整解码和 live gate |
 
 ## 快速上手
 
@@ -169,3 +170,4 @@
 | 想把已审 render_config 存成模板，换一批素材继续复用 | [82-Portable Edit Recipe](82-edit-recipe.md) |
 | 想给动作 / 产品 reveal 的 impact moment 做局部慢动作或 velocity edit | [83-Speed Ramp](83-speed-ramp.md) |
 | 手持素材有不想要的抖动，想保留原片并对照防抖结果 | [84-Video Stabilization](84-video-stabilization.md) |
+| 客户或平台要求视频必须小于指定 MB | [85-Target-size Delivery Encode](85-delivery-encode.md) |

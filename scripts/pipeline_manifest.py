@@ -472,6 +472,13 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         "Run multi_export.py when separate platform deliverables are required.",
     ),
     ArtifactDef(
+        "delivery_encode_plan",
+        "Target-size Delivery Encode",
+        ("**/delivery_encode_plan.json", "**/*_delivery_encode_plan.json"),
+        "Run delivery_encode.py apply, then verify the source-bound size and decode contract before publishing.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "approval_receipt",
         "Approval Receipt",
         ("**/approval_receipt.json", "**/*_approval_receipt.json"),
@@ -742,6 +749,33 @@ def evaluate_category(
             elif _int_at(verification, "summary", "warnings"):
                 status = "warn" if status != "blocked" else status
                 notes.append(f"speed-ramp plan requires full-speed audio review: {artifact.path}")
+        return {
+            "category": definition.category,
+            "label": definition.label,
+            "status": status,
+            "artifact_count": len(artifacts),
+            "latest_path": artifacts[0].path,
+            "notes": sorted(set(notes)),
+            "next_action": definition.next_action if status in {"missing", "blocked", "warn"} else "",
+        }
+
+    if definition.category == "delivery_encode_plan":
+        from delivery_encode import verify_plan
+
+        for artifact in artifacts:
+            data = _load_json(artifact.path)
+            if data is None:
+                status = "blocked"
+                notes.append(f"unreadable delivery encode plan: {artifact.path}")
+                continue
+            verification = verify_plan(data)
+            blocking = _int_at(verification, "summary", "blocking")
+            if blocking:
+                status = "blocked"
+                notes.append(f"invalid delivery encode plan {artifact.path}: {blocking} blocking item(s)")
+            elif _int_at(verification, "summary", "warnings"):
+                status = "warn" if status != "blocked" else status
+                notes.append(f"delivery encode requires compression-quality review: {artifact.path}")
         return {
             "category": definition.category,
             "label": definition.label,
