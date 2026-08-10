@@ -2,7 +2,7 @@
 
 这是一个面向 **口播、教程、访谈、播客切片、录屏演示 / facecam demo** 的 AI 视频剪辑生产线：给它原始口播音频/视频、transcript、B-roll、摄像头小窗或素材目录，它可以把“还没整理的素材”推进到 **可发布的小红书 / 抖音 / 视频号短视频**。
 
-它不是一个单点 FFmpeg 脚本，而是一条完整工作流：**项目启动/素材导入 → 手持防抖 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp → 可逆剪辑修订 / 可移植剪辑配方 → 渲染前预检 → 单次编码渲染 → 质检 → 多平台导出 / 目标大小交付编码 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
+它不是一个单点 FFmpeg 脚本，而是一条完整工作流：**项目启动/素材导入 → 手持防抖 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 渲染前预检 → 单次编码渲染 → 质检 → 多平台导出 / 目标大小交付编码 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
 
 ## 适合做什么
 
@@ -13,6 +13,7 @@
 - **手持防抖保留原片和 A/B 证据**：`video_stabilization.py` 把源 SHA-256、确切 FFmpeg 后端和人工决定写进计划；apply 只生成新工作副本与全长左右对照，完整 1× 复核并 confirm 后 manifest 才放行。
 - **局部慢动作先计划再渲染**：`speed_ramp.py` 把显式 impact frame 周围的 `snap/ease/s_curve`、hold 和可选 FFmpeg 插帧编译成 source-bound 计划；源 hash 或 piece 时间映射漂移会阻塞，apply 采用同目录临时文件事务式落盘。
 - **上传大小限制变成硬门禁**：`delivery_encode.py` 依据源片时长计算两遍 H.264/AAC 码率，绑定源与输出 SHA-256；完整解码、音视频契约或硬大小上限任一失败都不会提升成交付件。
+- **专业声画错位不再靠手写 FFmpeg**：`audio_transition.py` 对明确边界规划 J-cut/L-cut，验证真实音频 handle、config/transcript/source hash 和 compiled timing；`render_final.py` 在同一次编码中完成画面硬切、音频 pre-lap/overhang、字幕、overlay 与 BGM。
 - **事实型内容有 proof deck**：新闻、数据、产品事实或来源页截图可用 `source_receipts.py` 生成 URL/截图复核包，作为发布前 gate。
 - **最终审批绑定到具体文件字节**：`approval_receipt.py` 为人工看过的视频、封面、文案、字幕和 QA 报告记录 SHA-256；任何重渲染、替换、删除或 symlink 漂移都会让旧审批过期并阻塞发布。
 - **ASR 语义校稿不再只看单句**：`semantic_transcript_review.py` 为每条字幕附带全篇前后文，验证完整覆盖、源 transcript hash 和最小字符补丁；模型只能提建议，独立人工 choices 才能写 reviewed transcript。
@@ -204,6 +205,8 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    │
    ├─→ jump_cut.py              自适应静音检测 → 20% 删除预算 → cut list → 去停顿成片 + 切点音频 fade
    │     └─→ timeline_view.py   源素材删除段 / 成片输出切点 filmstrip + waveform 人工复核图
+   │
+   ├─→ audio_transition.py      显式 J-cut/L-cut → source handle / hash / 单次编码 / 1× 试听 gate
    │
    ├─→ edit_revision.py         render_config/enrich_plan 等文本 artifact 可逆修订
    │                            source/dependency hash / 独立审批 / 成组 apply / undo / redo
@@ -487,6 +490,31 @@ python3 scripts/speed_ramp.py apply work/speed_ramp_plan.json \
 
 必须用 1×、带声音播放最终文件，检查 impact frame、曲线手感、插值伪影和极慢音频。局部变速会改变下游时间线：如果已有字幕、章节、cue 或 approval receipt，必须重新生成 / 审批；`pipeline_manifest.py --require speed_ramp_plan --strict` 可把 plan 设为显式 gate。
 
+### 🎧 J-cut / L-cut — source-bound 声画错位转场
+[`scripts/audio_transition.py`](scripts/audio_transition.py) · [详细文档](docs/prompts/86-audio-transition.md)
+
+访谈、场景转换或叙事片需要“下一镜声音先进入”或“画面先切、上一镜声音继续”时，先完成 clip 选择，再逐边界试听并显式建计划：
+
+```bash
+python3 scripts/audio_transition.py plan work/render_config.json \
+  --transition 1,j_cut,0.40 \
+  --transition 3,l_cut,0.55 \
+  --output work/audio_transition_plan.json \
+  --markdown work/audio_transition_plan.md
+
+python3 scripts/audio_transition.py apply work/audio_transition_plan.json \
+  --output output/master.mp4 \
+  --receipt work/audio_transition_apply.json
+
+python3 scripts/audio_transition.py verify work/audio_transition_plan.json \
+  --receipt work/audio_transition_apply.json \
+  --strict
+```
+
+J-cut 读取下一 clip 画面入点之前的真实源音频，到视觉切点重新与画面对齐；L-cut 读取上一 clip 出点之后的真实源音频，并让下一 clip 的主音频从 overlap 之后恢复同步。没有足够 handle、L-cut 会意外吞掉下一句开头、config/transcript/source hash 漂移或 compiled timing 被修改都会阻塞。计划存在时，`pipeline_manifest.py` 会 live verify；`edit_brief_plan.py` 也能从“声音先行 / J-cut / 画面先切声音后走”自动路由。
+
+`apply` 通过 `render_final.py --audio-transition-plan` 把画面、错位主音频、字幕、overlay、BGM 和响度链留在同一次 FFmpeg 编码里，并写 source-bound receipt。计划、Markdown、成片和 receipt 默认都拒绝覆盖；有外部 enrich/调色/降噪等 CLI 参数时，应在原 `render_final.py` 命令上追加 plan，而不是丢掉参数改用 wrapper。机器验证不能判断交叠对白是否正确；每个改变边界必须以 1× 在耳机和手机扬声器上试听，确认没有吞字、复读、双人声、click、泵动或环境底噪跳变。
+
 ### 🧱 Project Bootstrap — 项目启动与素材导入
 [`scripts/project_bootstrap.py`](scripts/project_bootstrap.py) · [详细文档](docs/prompts/61-project-bootstrap.md)
 
@@ -521,7 +549,7 @@ python3 scripts/edit_brief_plan.py \
   --strict
 ```
 
-它会识别 `origin/interview.mp4` 这类源素材路径、目标平台、手持防抖、目标脚本对齐、多 take、长视频拆条、批量短视频、字幕、B-roll、BGM、去停顿、生成素材、PIP、调色、QA、发布包等信号，并把它们映射到已有脚本，例如 `video_stabilization.py`、`script_alignment.py`、`highlight_picker.py`、`shorts_batch.py`、`jump_cut.py`、`auto_enrich.py`、`render_final.py`、`render_qa.py` 和 `publish_package.py`。`pipeline_manifest.py` 会发现 `edit_brief_plan.json`；当 `summary.blocking > 0`（例如 brief 为空或显式 source 缺失）时会作为 blocker，也可以用 `--require edit_brief_plan` 把需求路由作为 analysis gate。
+它会识别 `origin/interview.mp4` 这类源素材路径、目标平台、手持防抖、目标脚本对齐、多 take、长视频拆条、批量短视频、字幕、B-roll、BGM、去停顿、J-cut/L-cut、生成素材、PIP、调色、QA、发布包等信号，并把它们映射到已有脚本，例如 `video_stabilization.py`、`script_alignment.py`、`highlight_picker.py`、`shorts_batch.py`、`jump_cut.py`、`audio_transition.py`、`auto_enrich.py`、`render_final.py`、`render_qa.py` 和 `publish_package.py`。`pipeline_manifest.py` 会发现 `edit_brief_plan.json`；当 `summary.blocking > 0`（例如 brief 为空或显式 source 缺失）时会作为 blocker，也可以用 `--require edit_brief_plan` 把需求路由作为 analysis gate。
 
 ### 👁️ Video Understanding — 抽样帧 + 可选 YOLO 检测
 [`scripts/video_understanding.py`](scripts/video_understanding.py) · [详细文档](docs/prompts/47-video-understanding.md)
@@ -2551,6 +2579,7 @@ pytest tests/test_audio_cue_sheet.py -v     # BGM/SFX 音频设计清单
 pytest tests/test_multicam_sync.py -v       # 多机位 offset / 最响音轨 / pairwise / 真实预览
 pytest tests/test_speech_denoise.py -v      # 口播降噪 preset / 顺序 / 真实 FFmpeg SNR smoke
 pytest tests/test_bgm_ducking.py -v         # 旁白驱动 BGM sidechain + 真实 FFmpeg smoke
+pytest tests/test_audio_transition.py -v    # J-cut/L-cut source handle / hash / 单次编码 / receipt
 pytest tests/test_color_grade.py -v         # 调色计划 + render_final 接入
 pytest tests/test_edit_preflight.py -v      # 渲染前结构/路径/参数预检 gate
 pytest tests/test_edit_revision.py -v       # 文本剪辑 artifact source-bound revision / undo / redo
@@ -2562,6 +2591,23 @@ pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 pytest tests/test_review_dashboard.py -v    # 静态人工复核面板 + gate queue
 pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 gate
 ```
+
+### 2026-08-11 自动化升级记录（Source-bound J-cut / L-cut Audio Transitions）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`Rajbharti06/Ultimate-Video-Editing-Skills`](https://github.com/Rajbharti06/Ultimate-Video-Editing-Skills/blob/main/skills/ultimate-video-editor/SKILL.md) | 明确区分 J-cut（声音先于画面）和 L-cut（画面先于声音），并要求切点 30ms audio fade；sound-design 指南把 pre-lap 与 room tone 作为专业衔接手法 | 采用显式 per-boundary J/L 语义和 30ms 普通边缘 fade；不照搬“always”规则，只有用户/剪辑者选中的边界才启用 |
+| [`browser-use/video-use`](https://github.com/browser-use/video-use/blob/main/SKILL.md) / [`helpers/render.py`](https://github.com/browser-use/video-use/blob/main/helpers/render.py) | 把 L-cut/J-cut 列为 agent 应能按素材需要构建的手法，实际 renderer 给每段烘焙 30ms fade，并要求从波形/时间线复核切点 | 保留 audio-first 与切点复核原则；新增可重建的 source-time/output-time layers，不把手写 FFmpeg 当作不可审计的最终状态 |
+| [`Bomx/super-video-maker-skill`](https://github.com/Bomx/super-video-maker-skill/blob/main/recipes/avatar-hook-broll.json) | avatar hook 到连续 VO 使用短 acrossfade，并把音频存在、响度和 seam QC 写进交付检查 | 借鉴短交叠与 seam QC，但不绑定 avatar/provider；主音频转场继续接本项目 loudness、render QA 和 receipt 链路 |
+| [`6missedcalls/video-editing-skill`](https://github.com/6missedcalls/video-editing-skill) | 单一职责脚本可独立运行，也可组合进完整 FFmpeg pipeline | 新功能保持标准库 CLI；`apply` 是安全 wrapper，同时 `render_final.py --audio-transition-plan` 可直接组合到现有单次编码渲染 |
+
+新增/调整能力：新增 [`scripts/audio_transition.py`](scripts/audio_transition.py)、[`tests/test_audio_transition.py`](tests/test_audio_transition.py) 和 [`docs/prompts/86-audio-transition.md`](docs/prompts/86-audio-transition.md)。`plan` 从已有 `render_config` / transcript 编译画面硬切与独立主音频 layers，J-cut 读取 incoming clip 入点之前的真实 handle，L-cut 延续 outgoing clip 出点之后的真实 handle并让 incoming audio 从 overlap 后恢复同步；handle 不足、时长越界、重复边界或短 clip 会 fail closed。config、transcript、源视频/B-roll 的 SHA-256、大小、媒体契约、clip timing、fade、source/output coverage 与 canonical plan id 全部入账；`verify` 从 live inputs 重建，即使重写 plan id 也不能隐藏 compiled layer 漂移。计划、Markdown、成片与 receipt 默认拒绝覆盖已有目标。`apply` 通过新增的 `render_final.py --audio-transition-plan` 把画面、错位主音频、字幕、overlay、BGM 和响度链留在一次 FFmpeg 编码中，临时文件成功 probe 后才原子提升并写 receipt。`pipeline_manifest.py` 新增存在即 live verify、可 `--require audio_transition_plan` 的 gate；`edit_brief_plan.py` 新增 J-cut/L-cut/声音先行/声音延续路由。README、SKILL、daily workflow 和提示词索引已同步。
+
+使用方式：先逐边界试听素材，再运行 `python3 scripts/audio_transition.py plan work/render_config.json --transition 1,j_cut,0.4 --transition 3,l_cut,0.5 --output work/audio_transition_plan.json --markdown work/audio_transition_plan.md`；用 `audio_transition.py apply ... --output output/master.mp4 --receipt work/audio_transition_apply.json` 安全渲染，或把 `--audio-transition-plan work/audio_transition_plan.json` 加到现有 `render_final.py` 命令；最后执行 `audio_transition.py verify ... --receipt ... --strict`。L-cut 会跳过 incoming clip 等长的开头音频以恢复同步，只能在该 handle 是 ambience/room tone/呼吸或明确要舍弃内容时使用。机器验证不能判断交叠对白是否合适；每个改变边界必须以 1× 在耳机和手机扬声器上试听。
+
+验证结果：新增 13 项 audio-transition 计划/安全/篡改/lifecycle/真实渲染测试，并扩展 pipeline-manifest、edit-brief 与 render integration 回归；定向 `.venv/bin/python -m pytest tests/test_audio_transition.py tests/test_pipeline_manifest.py tests/test_edit_brief_plan.py tests/test_render_guard_integration.py -q` 通过 `104 passed in 4.80s`，最终全量 `.venv/bin/python -m pytest tests -q` 通过 `825 passed in 17.11s`。真实 FFmpeg smoke 分别执行 J-cut 与 L-cut `plan → apply → receipt verify`，两者都输出 2.4 秒、160×90、24fps 的 H.264/AAC 文件，保留音轨，临时输出清理且所有产物默认拒绝覆盖；CLI round-trip 另跑一遍 J-cut。`.venv/bin/python -m compileall -q scripts tests`、CLI help、manifest category、中文 brief route、Skill `quick_validate.py` 和 `git diff --check` 也均通过。
 
 ### 2026-08-10 自动化升级记录（Target-size Delivery Encode）
 
@@ -3066,6 +3112,7 @@ pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 g
 | **82** | **[Portable Edit Recipe](docs/prompts/82-edit-recipe.md)** | **把已审 render_config 导出为 typed-slot 配方，并绑定新素材回放** |
 | **83** | **[Speed Ramp](docs/prompts/83-speed-ramp.md)** | **给 impact moment 做 source-bound 局部慢动作 / velocity edit** |
 | **84** | **[Video Stabilization](docs/prompts/84-video-stabilization.md)** | **手持素材 source-bound 防抖、全长 A/B 对照与人工确认 gate** |
+| **86** | **[J-cut / L-cut Audio Transition](docs/prompts/86-audio-transition.md)** | **显式声音先行/延续边界、source handle/hash、单次编码与 1× 试听 gate** |
 | **43** | **[Audio Cue Sheet](docs/prompts/43-audio-cue-sheet.md)** | **规划 BGM/SFX 和生成审批** |
 | **45** | **[Video Prompt Pack](docs/prompts/45-video-prompt-pack.md)** | **视频生成提示词包 + paid approval gate** |
 | **46** | **[Generation Task Log](docs/prompts/46-generation-task-log.md)** | **跟踪 submit_id、轮询、下载和本地落盘** |
@@ -3138,6 +3185,7 @@ scripts/
 ├── beat_sync.py                BGM beat edit slots / 切点吸附   [V3]
 ├── video_stabilization.py      source-bound 手持防抖 / 全长 A/B confirm gate [V3]
 ├── speed_ramp.py               source-bound 局部变速计划 / 验证 / apply [V3]
+├── audio_transition.py         J-cut/L-cut source handle / 单次编码 / receipt [V3]
 ├── audio_cue_sheet.py          BGM/SFX 音频设计清单               [V3]
 ├── auto_stickers.py            情绪→贴纸                        [V3]
 ├── auto_emphasis.py            问句/数字/转折/结论强调点          [V3]

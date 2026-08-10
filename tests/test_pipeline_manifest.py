@@ -1215,6 +1215,49 @@ def test_speed_ramp_plan_can_be_required(tmp_path):
     assert "speed_ramp_plan" in manifest["missing_required"]
 
 
+def test_audio_transition_plan_is_live_verified_and_can_be_required(tmp_path, monkeypatch):
+    _publish_ready_project(tmp_path)
+    plan_path = tmp_path / "work" / "audio_transition_plan.json"
+    _write(plan_path, {
+        "version": "audio_transition_plan.v1",
+        "plan_id": "planned",
+        "summary": {"blocking": 0, "warnings": 2},
+    })
+
+    monkeypatch.setattr(
+        "audio_transition.verify_plan",
+        lambda _plan: {"summary": {"blocking": 0, "warnings": 2}, "blockers": []},
+    )
+    current = build_manifest(
+        str(tmp_path),
+        target_stage="publish_ready",
+        required=["audio_transition_plan"],
+    )
+    gate = next(g for g in current["gates"] if g["category"] == "audio_transition_plan")
+    assert gate["status"] == "warn"
+    assert gate["required"] is True
+    assert "audio_transition_plan" not in current["blocked_gates"]
+
+    monkeypatch.setattr(
+        "audio_transition.verify_plan",
+        lambda _plan: {"summary": {"blocking": 1, "warnings": 0}, "blockers": ["stale source"]},
+    )
+    stale = build_manifest(str(tmp_path), target_stage="publish_ready")
+    gate = next(g for g in stale["gates"] if g["category"] == "audio_transition_plan")
+    assert gate["status"] == "blocked"
+    assert "audio_transition_plan" in stale["blocked_gates"]
+
+
+def test_audio_transition_plan_can_be_required(tmp_path):
+    manifest = build_manifest(
+        str(tmp_path),
+        target_stage="analysis",
+        required=["audio_transition_plan"],
+    )
+
+    assert "audio_transition_plan" in manifest["missing_required"]
+
+
 def test_video_stabilization_plan_is_live_verified(tmp_path, monkeypatch):
     _publish_ready_project(tmp_path)
     source = tmp_path / "origin" / "handheld.mp4"

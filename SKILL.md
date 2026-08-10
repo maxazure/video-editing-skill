@@ -1,6 +1,6 @@
 ---
 name: video-editing
-description: "Xiaohongshu/RED-tuned short-form video workflow for raw voice-over, talking-head, tutorials, interviews, podcasts, long videos, screen recordings, B-roll, captions, and generated assets. Covers edit routing, project bootstrap, transcription, semantic transcript review, local transcript review, multi-take packs, audio sync, source-bound video stabilization, cleanup, highlights/shorts, hook/story rewrite, content/source gates, B-roll/enrich/gpt-image-2/video-generation planning, reference-frame/style-lock preflight, screen focus, PIP, color grade, local speed ramps, reversible edit revisions, portable edit-recipe export/replay, preflight/render/QA/audio master, source-time edit comparison, retention-rhythm, subtitle-readability, platform-safe-area and rendered-speech continuity QA, review proxies, subtitles, CapCut import, multi-platform and target-size delivery exports, cover A/B variants, captions, publish packages, dashboards, resume packets, EDL/FCPXML/OTIO, and Remotion animation."
+description: "Xiaohongshu/RED-tuned short-form video workflow for raw voice-over, talking-head, tutorials, interviews, podcasts, long videos, screen recordings, B-roll, captions, and generated assets. Covers edit routing, project bootstrap, transcription, semantic transcript review, multi-take packs, audio sync, source-bound video stabilization, cleanup, highlights/shorts, hook/story rewrite, content/source gates, B-roll/enrich/gpt-image-2/video-generation planning, reference-frame/style-lock preflight, screen focus, PIP, color grade, local speed ramps, explicit J-cut/L-cut audio transitions, reversible edit revisions, portable edit-recipe export/replay, preflight/render/QA/audio master, source-time edit comparison, retention-rhythm, subtitle-readability, platform-safe-area and rendered-speech continuity QA, review proxies, subtitles, CapCut import, multi-platform and target-size delivery exports, cover A/B variants, captions, publish packages, dashboards, resume packets, EDL/FCPXML/OTIO, and Remotion animation."
 metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
 ---
 
@@ -55,6 +55,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ pip_overlay.py           录屏 + facecam → PIP 小窗计划
    ├─→ color_grade.py           bounded 调色 plan / render_final 单次编码接入
    ├─→ jump_cut.py              自适应去停顿 + 20% 删除预算 + 可审计 cut list + 30ms 防爆音 fade
+   ├─→ audio_transition.py      显式 J-cut/L-cut → source handle / hash / 1× 试听 gate
    ├─→ edit_revision.py         文本剪辑 artifact → source-bound 审批 / 成组 apply / undo / redo
    ├─→ edit_recipe.py           已审 render_config → typed-slot 可移植配方 / 新素材绑定回放
    ├─→ edit_preflight.py        render_config/enrich_plan/cut list 渲染前预检 gate
@@ -136,11 +137,12 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `pip_overlay.py` | 录屏 + facecam → PIP 摄像头小窗 enrich plan | `--camera` `--segment` `--sync-offset` `--output` |
 | `color_grade.py` | bounded 调色 plan + FFmpeg filter + 可选现有 master 复版 | `--preset` `--output` `--markdown` `--render-output` `--strict` |
 | `jump_cut.py` | 自适应静音检测 → 去停顿计划 / 删除预算 gate / 成片 + 切点音频 fade | `<input.mp4>` `--dry-run` `--cut-list cuts.json` `--strict` / `--output jumpcut.mp4` `--max-removal-ratio 0.20` `--allow-over-budget` |
+| `audio_transition.py` | render_config → 显式 J-cut/L-cut source handle / hash / 单次编码 apply / receipt | `plan --transition AFTER_CLIP,TYPE,DURATION` / `apply --output` / `verify --receipt --strict` |
 | `edit_revision.py` | render_config/enrich_plan 等文本 artifact → source-bound proposal / 独立审批 / 成组 apply / undo / redo | `prepare --artifact --depends-on` / `audit --strict` / `apply --approval` / `status|undo|redo` |
 | `edit_recipe.py` | 已审 render_config → typed-slot 无路径配方 / digest 验证 / 绑定新素材回放 | `export --config --name` / `verify --recipe` / `replay --bind SLOT=PATH --receipt --strict` |
 | `edit_preflight.py` | render_config/enrich_plan/cut list 渲染前预检 gate | `--config render_config.json` `--enrich-plan enrich_plan.json` `--output edit_preflight.json` `--strict` |
 | `platform_safe_area_qa.py` | 字幕、badge、PIP、CTA、章节卡、marker → 平台 UI 遮挡 gate + SVG guide | `--config` `--enrich-plan` `--elements` `--platform xhs|douyin|wxch` `--guide` `--strict` |
-| `render_final.py` | 单次编码渲染 + 可选口播降噪 + enrich_plan + 旁白驱动 BGM ducking | `--config render_config.json` `--speech-denoise light` `--enrich-plan enrich_plan.json` `--bgm-ducking` `--output final.mp4` |
+| `render_final.py` | 单次编码渲染 + 可选口播降噪 / J-cut/L-cut / enrich_plan / 旁白驱动 BGM ducking | `--config render_config.json` `--audio-transition-plan audio_transition_plan.json` `--speech-denoise light` `--enrich-plan enrich_plan.json` `--bgm-ducking` `--output final.mp4` |
 | `render_qa.py` | 渲染后 QA：尺寸/音频/黑屏/静帧/静音 + review packet | `<video.mp4>` `--platform douyin` `--json qa.json` `--review-dir verify/qa` |
 | `shot_color_qa.py` | rendered master → 镜头亮度/对比/色度/饱和度/broadcast-range 与切点跳变 gate | `<video.mp4>` `--scene-boundaries` `--output shot_color_qa.json` `--markdown` `--strict` |
 | `retention_rhythm_qa.py` | 成片 hook 活动、长镜头、注意力空窗、等距/快切和字幕节奏风险 | `<video.mp4>` `--timed-text subtitles.json` `--output retention_rhythm_qa.json` `--strict` |
@@ -988,6 +990,13 @@ python3 scripts/render_final.py --config script/render_config.json --output medi
 - `apply` 用同目录临时文件渲染，成功后才替换目标；默认不覆盖、不跟随 output symlink，也不能覆盖 source
 - `--interpolate-fps` 是 FFmpeg motion interpolation，可能产生肢体 / 边缘伪影；极慢音频必须试听，必要时 plan 阶段加 `--mute-audio`
 - 最终必须用 1×、带声音完整播放；变速后重新生成字幕 / timecoded artifacts、跑 render QA，并重新做最终审批。详见 `docs/prompts/83-speed-ramp.md`
+
+**J-cut / L-cut 声音先行 / 延续转场**（访谈、叙事、场景切换可选）：
+- 只在人工明确选定的边界运行：`audio_transition.py plan work/render_config.json --transition 1,j_cut,0.4 --transition 3,l_cut,0.5 --output work/audio_transition_plan.json --markdown work/audio_transition_plan.md`
+- J-cut 使用下一 clip 入点之前的真实源音频 handle；L-cut 使用上一 clip 出点之后的 handle，并跳过下一 clip 等长的开头音频以恢复同步。handle 不足直接阻塞，不用静音伪造
+- 计划绑定 render config、transcript、源片/B-roll SHA-256 和 canonical plan id；`verify` 会从 live inputs 重新编译，手改 digest 不能隐藏漂移
+- 用 `audio_transition.py apply ... --output output/master.mp4 --receipt work/audio_transition_apply.json`，或给 `render_final.py` 加 `--audio-transition-plan`；字幕、overlay、BGM 和错位主音频仍在一次 FFmpeg 编码中完成
+- 必须在 1× 用耳机和手机逐个试听改变的边界，确认无吞字、复读、双人声、click、泵动和环境底噪跳变。机器只能验证时序/hash，不能判断交叠对白是否合适。详见 [docs/prompts/86-audio-transition.md](docs/prompts/86-audio-transition.md)
 
 **Video Stabilization source-bound 手持防抖**（仅用于不想要的抖动）：
 - 先运行 `video_stabilization.py doctor`。`plan --backend auto` 优先两遍 `vidstab`；缺少该 filter 时会把单遍 `deshake` 明确写进计划并保留降级 warning，不会在 apply 时静默换后端

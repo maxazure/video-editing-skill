@@ -327,6 +327,15 @@
 
    (抖音/视频号派生版分别改用 --platform douyin / wxch；平台 UI 有变化时传 --safe-left/top/right/bottom 实测像素)
 
+5d. # 可选：明确需要“声音先行”或“画面先切、声音后走”时，逐边界试听后规划 J-cut/L-cut：
+     python3 scripts/audio_transition.py plan work/render_config.json \
+       --transition <after_clip>,<j_cut|l_cut>,<duration_seconds> \
+       --output work/audio_transition_plan.json \
+       --markdown work/audio_transition_plan.md
+
+   （没有足够源音频 handle 会直接阻塞；先用 `--primary-speed 1.0 --audio-transition-plan ...`
+   渲染 1× 审片版，耳机和手机逐边界确认无吞字/复读/click，再渲染最终速度。详见 docs/prompts/86-audio-transition.md。）
+
 6. python3 scripts/render_final.py \
      --config work/render_config.json \
      --enrich-plan work/enrich_plan.json \
@@ -335,6 +344,9 @@
      --bgm-ducking \
      --subtitle-style karaoke \
      --output output/day<NN>_master.mp4
+
+   （如果 5d 生成了计划，渲染命令追加
+   `--audio-transition-plan work/audio_transition_plan.json`；默认不自动启用或猜测 J-cut/L-cut。）
 
    （仅当源口播有稳定空调/风扇/电流底噪并已 A/B 试听时，加 `--speech-denoise light`；
    噪声明显才试 `medium`，已做过云端/机内降噪或 VAD/noise gate 时保持 off。）
@@ -516,6 +528,7 @@
 - subtitle_readability_qa 的输出（BLOCK 必须修；WARN 要在正常速度看成片）
 - retention_rhythm_qa 的输出（BLOCK 必须修；WARN 要结合成片人工判断）
 - audio_master_report 的输出（必须 `summary.blocking == 0`）
+- 如用了 J-cut/L-cut，给我 audio_transition_plan / apply receipt，并说明每个改变边界的 1× 耳机 + 手机试听结论
 - 如有 jump_cut 或 QA WARN/FAIL，给我 timeline_view PNG 路径和人工判断
 
 注意事项：
@@ -566,6 +579,9 @@ day<NN>/
 │   ├── day<NN>_edit.otio   # 可选：OTIO handoff
 │   ├── day<NN>_edit.otio.json # 可选：OTIO manifest
 │   ├── render_config.json  # 喂给 render_final 的配置
+│   ├── audio_transition_plan.json # 可选：J-cut/L-cut source handle / hash / 时序 gate
+│   ├── audio_transition_plan.md   # 可选：逐边界 1× 试听清单
+│   ├── audio_transition_apply.json # 可选：单次编码输出 receipt
 │   ├── edit_preflight.json # 渲染前预检 gate
 │   ├── edit_preflight.md
 │   ├── pipeline_manifest.json # 发布前 gate 汇总

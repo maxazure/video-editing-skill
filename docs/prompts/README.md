@@ -87,6 +87,7 @@
 | 82 | [Portable Edit Recipe 可移植剪辑配方](82-edit-recipe.md) | 已审 render_config → typed slots / content digest / 新素材绑定回放 / preflight receipt |
 | 84 | [Video Stabilization source-bound 手持防抖](84-video-stabilization.md) | 源 hash / 确切 FFmpeg 后端 / 新工作副本 / 全长 A/B 对照 / 人工确认 gate |
 | 85 | [Target-size Delivery Encode 目标大小交付编码](85-delivery-encode.md) | master → source-bound 两遍 H.264/AAC、硬大小上限、完整解码和 live gate |
+| 86 | [J-cut / L-cut Audio Transition 声音先行 / 延续转场](86-audio-transition.md) | render_config → 显式声画错位边界、source handle / hash / 单次编码 / 1× 试听 gate |
 
 ## 快速上手
 
@@ -171,3 +172,4 @@
 | 想给动作 / 产品 reveal 的 impact moment 做局部慢动作或 velocity edit | [83-Speed Ramp](83-speed-ramp.md) |
 | 手持素材有不想要的抖动，想保留原片并对照防抖结果 | [84-Video Stabilization](84-video-stabilization.md) |
 | 客户或平台要求视频必须小于指定 MB | [85-Target-size Delivery Encode](85-delivery-encode.md) |
+| 想让下一镜声音先进入，或画面切走后保留上一镜声音 | [86-J-cut / L-cut Audio Transition](86-audio-transition.md) |

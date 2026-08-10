@@ -1214,6 +1214,11 @@ def main():
                         help="Optional enrich-plan JSON. Repeatable. Merges B-roll, "
                              "stickers, chapter cards, generated image cues, and "
                              "screen focus or PIP camera events into the render.")
+    parser.add_argument(
+        "--audio-transition-plan",
+        help="Optional source-bound audio_transition_plan.v1. Uses explicit J-cut/L-cut "
+             "audio handles while keeping the visual timeline in this render config.",
+    )
     parser.add_argument("--color-grade", default=None,
                         help="Optional color grade preset, filter, or color_grade.v1 JSON plan path. "
                              "Overrides config color_grade.")
@@ -1369,6 +1374,31 @@ def main():
         print("Error: No clips in config", file=sys.stderr)
         sys.exit(1)
 
+    audio_transition_plan = None
+    if args.audio_transition_plan:
+        from audio_transition import load_plan as load_audio_transition_plan
+        from audio_transition import plan_matches_clips, verify_plan as verify_audio_transition_plan
+
+        try:
+            audio_transition_plan = load_audio_transition_plan(args.audio_transition_plan)
+            transition_verification = verify_audio_transition_plan(audio_transition_plan)
+        except ValueError as exc:
+            print(f"Error: invalid audio transition plan: {exc}", file=sys.stderr)
+            sys.exit(2)
+        transition_blockers = list(transition_verification.get("blockers") or [])
+        transition_blockers.extend(plan_matches_clips(audio_transition_plan, clips))
+        if transition_blockers:
+            print("Error: audio transition plan is blocked:", file=sys.stderr)
+            for blocker in transition_blockers:
+                print(f"  - {blocker}", file=sys.stderr)
+            sys.exit(2)
+        summary = audio_transition_plan.get("summary") or {}
+        print(
+            "Audio transitions: "
+            f"{summary.get('j_cuts', 0)} J-cut(s), {summary.get('l_cuts', 0)} L-cut(s); "
+            "full-speed boundary review required"
+        )
+
     # Get video dimensions from first source
     first_video = clips[0]["video"]
     _, width, height, fps, _ = get_video_info(first_video)
@@ -1391,7 +1421,20 @@ def main():
             print("  Note: No word timestamps in transcript — using even distribution fallback")
 
     # --- Step 1: Build segment selection filter ---
-    if _clips_in_temporal_order(clips):
+    if audio_transition_plan is not None:
+        from audio_transition import build_filter_graph as build_audio_transition_filter
+
+        base_filter, input_files = build_audio_transition_filter(
+            audio_transition_plan,
+            target_w=width,
+            target_h=height,
+            target_fps=fps,
+        )
+        print(
+            "Using trim/mix filter with explicit audio transitions: "
+            f"{len(clips)} clips from {len(input_files)} video(s)"
+        )
+    elif _clips_in_temporal_order(clips):
         base_filter, input_files = build_select_filter(clips, fps)
         print(f"Using select filter: {len(clips)} segments from 1 video")
     else:

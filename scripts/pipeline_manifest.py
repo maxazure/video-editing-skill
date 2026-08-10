@@ -140,6 +140,13 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         blocks_when_present=True,
     ),
     ArtifactDef(
+        "audio_transition_plan",
+        "J-cut / L-cut Audio Transition Plan",
+        ("**/audio_transition_plan.json", "**/*_audio_transition_plan.json"),
+        "Run audio_transition.py verify, apply through render_final.py, then review every changed boundary at 1x.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "shorts_batch",
         "Shorts Batch",
         ("**/shorts_batch.json", "**/*_shorts_batch.json"),
@@ -749,6 +756,33 @@ def evaluate_category(
             elif _int_at(verification, "summary", "warnings"):
                 status = "warn" if status != "blocked" else status
                 notes.append(f"speed-ramp plan requires full-speed audio review: {artifact.path}")
+        return {
+            "category": definition.category,
+            "label": definition.label,
+            "status": status,
+            "artifact_count": len(artifacts),
+            "latest_path": artifacts[0].path,
+            "notes": sorted(set(notes)),
+            "next_action": definition.next_action if status in {"missing", "blocked", "warn"} else "",
+        }
+
+    if definition.category == "audio_transition_plan":
+        from audio_transition import verify_plan
+
+        for artifact in artifacts:
+            data = _load_json(artifact.path)
+            if data is None:
+                status = "blocked"
+                notes.append(f"unreadable audio-transition plan: {artifact.path}")
+                continue
+            verification = verify_plan(data)
+            blocking = _int_at(verification, "summary", "blocking")
+            if blocking:
+                status = "blocked"
+                notes.append(f"invalid audio-transition plan {artifact.path}: {blocking} blocking item(s)")
+            elif _int_at(verification, "summary", "warnings"):
+                status = "warn" if status != "blocked" else status
+                notes.append(f"J-cut/L-cut boundaries require full-speed listening review: {artifact.path}")
         return {
             "category": definition.category,
             "label": definition.label,

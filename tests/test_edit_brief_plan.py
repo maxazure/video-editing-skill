@@ -176,6 +176,27 @@ def test_speed_ramp_brief_routes_source_bound_plan(tmp_path):
     assert step["gate_category"] == "speed_ramp_plan"
 
 
+def test_j_cut_brief_routes_audio_transition_plan_into_render(tmp_path):
+    source = tmp_path / "interview.mp4"
+    source.write_text("fake video", encoding="utf-8")
+
+    plan = build_plan(
+        f"给 {source} 的两个片段做 J-cut，让声音先行再渲染成片",
+        project_dir=str(tmp_path),
+    )
+
+    ids = [step["id"] for step in plan["steps"]]
+    assert ids.index("audio_transition_plan") < ids.index("edit_preflight") < ids.index("master_video")
+    step = next(step for step in plan["steps"] if step["id"] == "audio_transition_plan")
+    assert step["script"] == "audio_transition.py"
+    assert "<after_clip>,<j_cut|l_cut>,<duration_seconds>" in step["command"]
+    assert step["gate_category"] == "audio_transition_plan"
+    render = next(step for step in plan["steps"] if step["id"] == "master_video")
+    assert "--audio-transition-plan work/audio_transition_plan.json" in render["command"]
+    assert "--primary-speed 1.0" in render["command"]
+    assert any("headphones" in note for note in plan["notes"])
+
+
 def test_shaky_footage_brief_routes_stabilization_review(tmp_path):
     source = tmp_path / "handheld.mp4"
     source.write_text("fake video", encoding="utf-8")

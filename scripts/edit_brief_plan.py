@@ -130,6 +130,22 @@ SIGNAL_KEYWORDS: Mapping[str, Sequence[str]] = {
         "慢动作",
         "慢镜头",
     ),
+    "audio_transition": (
+        "j-cut",
+        "j cut",
+        "jcut",
+        "l-cut",
+        "l cut",
+        "lcut",
+        "pre-lap audio",
+        "audio prelap",
+        "audio overlap edit",
+        "声音先行",
+        "声音提前进入",
+        "画面先切声音后走",
+        "声音延续",
+        "音频交叠剪辑",
+    ),
     "audio_sync": ("外录", "领夹麦", "lav", "recorder", "scratch audio", "audio sync", "对齐音频", "同步音频"),
     "screen_focus": ("录屏", "screen recording", "demo", "cursor", "点击", "热点", "focus"),
     "pip": ("facecam", "webcam", "小窗", "pip", "camera overlay", "摄像头"),
@@ -207,6 +223,7 @@ SIGNAL_LABELS: Mapping[str, str] = {
     "audio_design": "BGM / SFX 声音设计",
     "video_stabilization": "手持素材稳定化 / 防抖",
     "speed_ramp": "局部 speed ramp / velocity edit",
+    "audio_transition": "J-cut / L-cut 声画错位转场",
     "audio_sync": "外录音频对齐",
     "screen_focus": "录屏聚焦",
     "pip": "摄像头小窗",
@@ -896,6 +913,39 @@ def build_plan(
             ),
         )
 
+    if "audio_transition" in ids:
+        _add_step(
+            steps,
+            seen,
+            _step(
+                "audio_transition_plan",
+                phase="edit",
+                script="audio_transition.py",
+                label="Plan explicit source-bound J-cut/L-cut boundaries",
+                reason="The brief asks for audio to lead picture or continue after a visual cut.",
+                command=shell(
+                    [
+                        python_bin,
+                        "scripts/audio_transition.py",
+                        "plan",
+                        "work/render_config.json",
+                        "--transition",
+                        "<after_clip>,<j_cut|l_cut>,<duration_seconds>",
+                        "--output",
+                        "work/audio_transition_plan.json",
+                        "--markdown",
+                        "work/audio_transition_plan.md",
+                    ]
+                ),
+                outputs=["work/audio_transition_plan.json", "work/audio_transition_plan.md"],
+                gate_category="audio_transition_plan",
+            ),
+        )
+        notes.append(
+            "J-cut/L-cut timing must be chosen per boundary after listening to source handles. "
+            "Apply through render_final.py, then review every changed seam at 1x on headphones and phone speakers."
+        )
+
     if "screen_focus" in ids:
         _add_step(
             steps,
@@ -1103,11 +1153,14 @@ def build_plan(
                 gate_category="edit_preflight",
             ),
         )
-        render_command = [python_bin, "scripts/render_final.py", "--config", "work/render_config.json", "--output", "output/final.mp4", "--primary-speed", "1.25", "--versioned-output"]
+        primary_speed = "1.0" if "audio_transition" in ids else "1.25"
+        render_command = [python_bin, "scripts/render_final.py", "--config", "work/render_config.json", "--output", "output/final.mp4", "--primary-speed", primary_speed, "--versioned-output"]
         if "broll" in ids or "generated_assets" in ids or "audio_design" in ids or "screen_focus" in ids or "pip" in ids:
             render_command.extend(["--enrich-plan", "work/enrich_plan.json"])
         if "color_grade" in ids:
             render_command.extend(["--color-grade", "work/color_grade.json"])
+        if "audio_transition" in ids:
+            render_command.extend(["--audio-transition-plan", "work/audio_transition_plan.json"])
         _add_step(
             steps,
             seen,
