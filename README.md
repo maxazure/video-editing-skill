@@ -2538,6 +2538,7 @@ pytest tests/test_content_guard.py -v       # 80+ 规则的 38 个测试
 pytest tests/test_rewrite_script.py -v      # Story Engine
 pytest tests/test_auto_broll.py -v          # B-roll 调度
 pytest tests/test_multi_export.py -v        # 多平台比例转换
+pytest tests/test_hdr_sdr.py -v             # PQ/HLG → Rec.709 SDR / color tags / 完整解码门禁
 pytest tests/test_delivery_encode.py -v     # 硬大小上限 / 两遍编码 / 完整解码门禁
 pytest tests/test_render_qa.py -v           # 渲染后质检
 pytest tests/test_shot_color_qa.py -v       # 成片镜头色彩 / 曝光 / broadcast-range 门禁
@@ -2591,6 +2592,23 @@ pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 pytest tests/test_review_dashboard.py -v    # 静态人工复核面板 + gate queue
 pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 gate
 ```
+
+### 2026-08-12 自动化升级记录（Source-bound HDR → Rec.709 SDR Delivery）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`browser-use/video-use` `helpers/render.py`](https://github.com/browser-use/video-use/blob/main/helpers/render.py) | 用 `ffprobe color_transfer` 识别 iPhone HLG / PQ，并在普通 8-bit 社媒输出前接 `zscale + tonemap`；明确 QuickTime 可能在本机掩盖平台上传后的过曝/霓虹问题 | 采用 PQ/HLG metadata 检测和 linear-light Hable 链，但不静默自动猜测；计划必须先绑定源片和色彩契约 |
+| [`damionrashford/media-os` `ffmpeg-hdr-color`](https://github.com/damionrashford/media-os/blob/main/skills/ffmpeg-hdr-color/SKILL.md) | 区分真正 tone-map 与只改 primaries 的 colorspace conversion，要求 linear float sandwich、显式 BT.709 输出 tags，并在输出后复查 | 固定使用 `zscale → gbrpf32le → hable → BT.709 limited`，四项 color tag、pixel format 和完整解码全部进入硬契约 |
+| [`openakita/openakita` Footage Gate validation](https://github.com/openakita/openakita/blob/main/plugins/footage-gate/VALIDATION.md) | 把 HDR 误调色列为真实上游回归，要求 tone-map 在 `eq`/调色前执行，并用测试固定滤镜顺序 | 本轮只负责 HDR master 的 SDR derivative，不把技术转换和 creative grade 混在一起；缺依赖在编码前 fail closed |
+| [`theSamPadilla/montaj` render color-space contract](https://github.com/theSamPadilla/montaj/blob/main/docs/RENDER.md#project-color-space) | 为项目显式声明工作色彩空间，混合素材先归一化；输出 codec、bit depth 和 color metadata 必须一致 | 吸收“明确色彩契约 + 输出复查”；本轮保持单文件交付边界，不引入完整 HDR project/mixed-timeline 体系 |
+
+新增/调整能力：新增 [`scripts/hdr_sdr.py`](scripts/hdr_sdr.py)、[`tests/test_hdr_sdr.py`](tests/test_hdr_sdr.py) 和 [`docs/prompts/87-hdr-sdr.md`](docs/prompts/87-hdr-sdr.md)。`plan` 绑定源绝对路径、SHA-256、大小、时长、显示尺寸、fps、codec、音轨、pixel format/bit depth、四项 color metadata 与 HDR side data；只接受 `smpte2084` PQ 或 `arib-std-b67` HLG，并要求 BT.2020 primaries/matrix，普通 SDR、未知或矛盾 tags 直接拒绝。`apply` 要求 FFmpeg 同时存在 `zscale` 和 `tonemap`，固定走 explicit input transfer → linear float → BT.709 primaries → Hable → BT.709 transfer/matrix/limited-range → `yuv420p`，输出 H.264/AAC MP4；临时文件必须通过 BT.709 四 tags、容器/codec/pixel format、尺寸/fps/时长/音轨和 `-xerror` 全长解码才原子提升。`verify` 现场重算源/输出 hash、media/color contract、canonical settings、plan id 和 decode receipt。`pipeline_manifest.py` 新增存在即 live verify、可 `--require hdr_sdr_plan` 的 gate；`edit_brief_plan.py` 新增 iPhone HDR/HLG/PQ/HDR 转 SDR/Rec.709/过曝意图路由，并在同时需要硬大小压缩时先产 SDR、再把 `delivery_encode.py` 接到 SDR 文件。README、SKILL、daily workflow 和提示词索引已同步。
+
+使用方式：运行 `python3 scripts/hdr_sdr.py plan output/master_hdr.mp4 --delivery output/master_sdr.mp4 --output work/hdr_sdr_plan.json --markdown work/hdr_sdr_plan.md`；确认 metadata/profile/filter 后执行 `python3 scripts/hdr_sdr.py apply work/hdr_sdr_plan.json`，最后运行 `python3 scripts/hdr_sdr.py verify work/hdr_sdr_plan.json` 和 `pipeline_manifest.py --require hdr_sdr_plan --strict`。Dolby Vision/HDR10+ 动态 metadata 不会保留；技术通过后仍须在可信 SDR 显示器完整检查肤色、高光、阴影、渐变和饱和色，并对 SDR 文件重跑 render QA、shot color QA 和审批收据。
+
+验证结果：HDR/manifest/brief 专项回归 `101 passed in 1.11s`，全量回归 `837 passed in 18.77s`；`compileall`、四组 HDR CLI help、manifest 分类枚举、`git diff --check` 和 Skill `quick_validate` 均通过。另以真实 10-bit BT.2020 HLG/HEVC 样片跑了 fail-closed smoke：计划正确识别 `arib-std-b67` HLG，同时明确报告缺 `zscale` 和尚未 apply 两项 blocker；`apply` 返回 1，且没有写出 SDR 交付文件。本机 `/opt/homebrew/bin/ffmpeg 8.1.1` 有 `tonemap` 但没有 `zscale`，因此没有虚报真实 tone-map 成功，也没有安装额外 FFmpeg 或使用退化滤镜；完整编码、输出契约、全长解码、原子提升和 live verify 生命周期由 deterministic mocked FFprobe/FFmpeg 测试覆盖。实际使用前须安装带 `zscale`（libzimg）和 `tonemap` 的 FFmpeg，再以真实 PQ/HLG 项目完成视觉验收。
 
 ### 2026-08-11 自动化升级记录（Source-bound J-cut / L-cut Audio Transitions）
 
@@ -3113,6 +3131,7 @@ pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 g
 | **83** | **[Speed Ramp](docs/prompts/83-speed-ramp.md)** | **给 impact moment 做 source-bound 局部慢动作 / velocity edit** |
 | **84** | **[Video Stabilization](docs/prompts/84-video-stabilization.md)** | **手持素材 source-bound 防抖、全长 A/B 对照与人工确认 gate** |
 | **86** | **[J-cut / L-cut Audio Transition](docs/prompts/86-audio-transition.md)** | **显式声音先行/延续边界、source handle/hash、单次编码与 1× 试听 gate** |
+| **87** | **[HDR → Rec.709 SDR Delivery](docs/prompts/87-hdr-sdr.md)** | **PQ/HLG source hash、Hable tone-map、BT.709 tags、完整解码和 live gate** |
 | **43** | **[Audio Cue Sheet](docs/prompts/43-audio-cue-sheet.md)** | **规划 BGM/SFX 和生成审批** |
 | **45** | **[Video Prompt Pack](docs/prompts/45-video-prompt-pack.md)** | **视频生成提示词包 + paid approval gate** |
 | **46** | **[Generation Task Log](docs/prompts/46-generation-task-log.md)** | **跟踪 submit_id、轮询、下载和本地落盘** |
@@ -3228,6 +3247,7 @@ scripts/
 ├── export_otio.py              NLE handoff OTIO + manifest         [V3]
 ├── generate_standup_timeline.py Remotion timeline
 ├── multi_export.py             三平台导出                       [V3]
+├── hdr_sdr.py                  PQ/HLG → source-bound Rec.709 SDR / full-decode gate [V3]
 ├── delivery_encode.py          source-bound 硬大小交付编码      [V3]
 ├── generate_caption.py         标题/正文/标签                   [V3]
 ├── approval_receipt.py         SHA-256 审批收据 + stale gate       [V3]

@@ -154,6 +154,25 @@ SIGNAL_KEYWORDS: Mapping[str, Sequence[str]] = {
     "qa": ("qa", "质检", "黑屏", "静音", "静帧", "检查成片"),
     "review_proxy": ("review proxy", "审片代理", "审片视频", "低码率审片", "时间码审片", "timecode review"),
     "multi_platform": ("三平台", "多平台", "multi platform", "多个平台", "xhs douyin", "小红书 抖音"),
+    "hdr_sdr": (
+        "hdr to sdr",
+        "hdr-to-sdr",
+        "tone map",
+        "tone-map",
+        "tonemap",
+        "rec.709",
+        "rec709",
+        "iphone hdr",
+        "hlg",
+        "smpte2084",
+        "pq hdr",
+        "hdr转sdr",
+        "hdr 转 sdr",
+        "hdr转rec709",
+        "hdr 转 rec709",
+        "hdr过曝",
+        "hdr 过曝",
+    ),
     "delivery_encode": (
         "target size",
         "size limit",
@@ -232,6 +251,7 @@ SIGNAL_LABELS: Mapping[str, str] = {
     "qa": "成片质检",
     "review_proxy": "低码率时间码审片视频",
     "multi_platform": "多平台导出",
+    "hdr_sdr": "PQ/HLG HDR → Rec.709 SDR 交付",
     "delivery_encode": "目标大小交付编码",
     "publish": "发布包 / 文案",
     "subtitle_sidecar": "字幕 sidecar",
@@ -397,7 +417,7 @@ def build_plan(
 
     if source_media and not Path(source_media).expanduser().exists():
         blockers.append(f"source media not found: {source_media}")
-    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy", "video_stabilization", "speed_ramp", "delivery_encode"}):
+    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy", "video_stabilization", "speed_ramp", "hdr_sdr", "delivery_encode"}):
         warnings.append("source media was not provided; commands use <source_media> placeholders")
 
     if transcript and not Path(transcript).expanduser().exists():
@@ -1258,6 +1278,61 @@ def build_plan(
             ),
         )
 
+    if "hdr_sdr" in ids:
+        hdr_after_render = bool(
+            ids.intersection(
+                {
+                    "render",
+                    "target_script",
+                    "long_to_short",
+                    "batch_shorts",
+                    "cleanup_silence",
+                    "cleanup_words",
+                    "broll",
+                    "screen_focus",
+                    "pip",
+                    "color_grade",
+                    "edit_recipe_replay",
+                }
+            )
+        )
+        hdr_input = "output/final.mp4" if hdr_after_render else source
+        _add_step(
+            steps,
+            seen,
+            _step(
+                "hdr_sdr_plan",
+                phase="publish",
+                script="hdr_sdr.py",
+                label="Plan a source-bound HDR to Rec.709 SDR delivery",
+                reason="The brief identifies PQ/HLG HDR footage that needs a predictable SDR social-platform derivative.",
+                command=shell(
+                    [
+                        python_bin,
+                        "scripts/hdr_sdr.py",
+                        "plan",
+                        hdr_input,
+                        "--delivery",
+                        "output/final_sdr.mp4",
+                        "--output",
+                        "work/hdr_sdr_plan.json",
+                        "--markdown",
+                        "work/hdr_sdr_plan.md",
+                    ]
+                ),
+                outputs=[
+                    "work/hdr_sdr_plan.json",
+                    "work/hdr_sdr_plan.md",
+                    "output/final_sdr.mp4",
+                ],
+                gate_category="hdr_sdr_plan",
+            ),
+        )
+        notes.append(
+            "hdr_sdr.py refuses unknown/incomplete color metadata and FFmpeg builds without zscale+tonemap; "
+            "after apply, review the full SDR derivative for skin tones, highlights, shadows, and gradients."
+        )
+
     if "delivery_encode" in ids:
         delivery_after_render = bool(
             ids.intersection(
@@ -1276,7 +1351,10 @@ def build_plan(
                 }
             )
         )
-        delivery_input = "output/final.mp4" if delivery_after_render else source
+        if "hdr_sdr" in ids:
+            delivery_input = "output/final_sdr.mp4"
+        else:
+            delivery_input = "output/final.mp4" if delivery_after_render else source
         size_limit = infer_delivery_size_mib(normalized)
         _add_step(
             steps,

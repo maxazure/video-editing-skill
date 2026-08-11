@@ -479,6 +479,13 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         "Run multi_export.py when separate platform deliverables are required.",
     ),
     ArtifactDef(
+        "hdr_sdr_plan",
+        "HDR to Rec.709 SDR Delivery",
+        ("**/hdr_sdr_plan.json", "**/*_hdr_sdr_plan.json"),
+        "Run hdr_sdr.py apply, then live-verify BT.709 tags, source/output hashes, and the full-decode receipt.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "delivery_encode_plan",
         "Target-size Delivery Encode",
         ("**/delivery_encode_plan.json", "**/*_delivery_encode_plan.json"),
@@ -810,6 +817,33 @@ def evaluate_category(
             elif _int_at(verification, "summary", "warnings"):
                 status = "warn" if status != "blocked" else status
                 notes.append(f"delivery encode requires compression-quality review: {artifact.path}")
+        return {
+            "category": definition.category,
+            "label": definition.label,
+            "status": status,
+            "artifact_count": len(artifacts),
+            "latest_path": artifacts[0].path,
+            "notes": sorted(set(notes)),
+            "next_action": definition.next_action if status in {"missing", "blocked", "warn"} else "",
+        }
+
+    if definition.category == "hdr_sdr_plan":
+        from hdr_sdr import verify_plan
+
+        for artifact in artifacts:
+            data = _load_json(artifact.path)
+            if data is None:
+                status = "blocked"
+                notes.append(f"unreadable HDR-to-SDR plan: {artifact.path}")
+                continue
+            verification = verify_plan(data)
+            blocking = _int_at(verification, "summary", "blocking")
+            if blocking:
+                status = "blocked"
+                notes.append(f"invalid HDR-to-SDR plan {artifact.path}: {blocking} blocking item(s)")
+            elif _int_at(verification, "summary", "warnings"):
+                status = "warn" if status != "blocked" else status
+                notes.append(f"HDR-to-SDR delivery requires full visual color review: {artifact.path}")
         return {
             "category": definition.category,
             "label": definition.label,

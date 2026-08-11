@@ -81,6 +81,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ export_fcpxml.py         render_config / cut list → FCPXML + manifest
    ├─→ export_otio.py           render_config / cut list → OTIO + manifest
    ├─→ multi_export.py          小红书 3:4 / 抖音 9:16 / 视频号 ≤60s
+   ├─→ hdr_sdr.py               PQ/HLG HDR → source-bound Rec.709 SDR / 完整解码 gate
    ├─→ delivery_encode.py       source-bound 两遍 H.264/AAC / 硬大小上限 / 完整解码 gate
    ├─→ generate_caption.py      标题 + 200-500 字正文 + 3-6 tags + 发布时段
    ├─→ cover_variants.py        2-4 套封面 / feed-size 预览 / 最终选择 gate
@@ -161,6 +162,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `export_fcpxml.py` | NLE handoff：导出 FCPXML + manifest | `--config render_config.json --output edit.fcpxml` / `--cut-list rough_cut.json --output rough.fcpxml` |
 | `export_otio.py` | NLE handoff：导出 OpenTimelineIO `.otio` + manifest | `--config render_config.json --output edit.otio` / `--cut-list rough_cut.json --output rough.otio` |
 | `multi_export.py` | 三平台导出 | `<input.mp4>` `--platforms xhs douyin wxch` |
+| `hdr_sdr.py` | PQ/HLG master → source-bound Hable tone-map / BT.709 limited tags / 完整解码 gate | `plan --delivery` / `apply` / `verify --strict` |
 | `delivery_encode.py` | master → 目标大小 H.264/AAC MP4 / source hash / 两遍码率 / 完整解码 gate | `plan --delivery --max-size-mib` / `apply` / `verify --strict` |
 | `generate_caption.py` | 标题/正文/tag | `--script` `--profile` `--output` |
 | `cover_variants.py` | 多套封面 A/B 方案、feed-size 预览、标题协同和最终选择 | `<video>` `--title` `--caption` `--platform` `--render` `--select cover-c` `--strict` |
@@ -1571,7 +1573,19 @@ python3 scripts/speech_continuity_qa.py output/final_transcript.json \
 
 必须对**已渲染 master**重新转录，不能复用源素材 transcript。`speech_continuity_qa.py` 会检查相邻 segment 的结尾/开头精确复读、相邻近重复 take 和句内即时口吃；不同 speaker 默认不互判。命中后先按时间码试听 master，再调整源 `render_config` / cut list，重新渲染并复跑。`pipeline_manifest.py --require speech_continuity_qa --strict` 可把这份报告设为发布必需项。
 
-**6m. 目标大小交付编码（有明确 MB 上限时跑）**：
+**6m. PQ/HLG HDR → Rec.709 SDR 交付（HDR master 面向普通社媒/网页时跑）**：
+```bash
+python3 scripts/hdr_sdr.py plan output/final_hdr.mp4 \
+  --delivery output/final_sdr.mp4 \
+  --output work/hdr_sdr_plan.json \
+  --markdown work/hdr_sdr_plan.md
+python3 scripts/hdr_sdr.py apply work/hdr_sdr_plan.json
+python3 scripts/hdr_sdr.py verify work/hdr_sdr_plan.json
+```
+
+`hdr_sdr.py` 只接受 metadata 明确的 `smpte2084` PQ 或 `arib-std-b67` HLG，并要求 BT.2020 primaries/matrix；未知/矛盾 color tags 会 fail closed。正确转换必须同时有 FFmpeg `zscale` + `tonemap`，不允许用裸 tonemap 或只降到 `yuv420p` 的退化回退。apply 用 linear-light float + Hable 生成 H.264/AAC、`yuv420p`、BT.709 limited-range MP4，显式验证四项 color tag、时长/尺寸/fps/音轨、hash 和全长解码后才原子提升。Dolby Vision/HDR10+ 动态 metadata 不保留；必须在可信 SDR 屏完整复核肤色、高光、阴影、渐变和饱和色，再对 SDR 文件重跑 QA 和审批。详见 [docs/prompts/87-hdr-sdr.md](docs/prompts/87-hdr-sdr.md)。
+
+**6n. 目标大小交付编码（有明确 MB 上限时跑）**：
 ```bash
 python3 scripts/delivery_encode.py plan output/final.mp4 \
   --delivery output/final_delivery.mp4 \
@@ -1585,7 +1599,7 @@ python3 scripts/delivery_encode.py verify work/delivery_encode_plan.json
 
 `delivery_encode.py` 绑定 master SHA-256，用两遍 `libx264` 在 6% 容器余量内计算 H.264/AAC 码率；输出超过硬上限、容器/流/尺寸/fps/时长/音频不符或完整 FFmpeg decode 失败都会阻塞。apply 只先写同目录临时 MP4，技术验证通过后才原子晋升，不覆盖源文件。完整解码不是画质批准；必须正常速度看完交付版，再跑 `render_qa.py` 并把最终 SHA-256 放入 `approval_receipt.py`。详见 [docs/prompts/85-delivery-encode.md](docs/prompts/85-delivery-encode.md)。
 
-**6n. 字幕文字最终校验**：
+**6o. 字幕文字最终校验**：
 1. 读取最终视频使用的所有 transcript 片段的文字
 2. 按最终视频的片段顺序，逐条检查以下问题：
    - **语音识别残留错误**：Phase 2.5 可能遗漏的同音字、专有名词错误

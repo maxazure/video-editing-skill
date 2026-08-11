@@ -233,6 +233,24 @@ def test_file_size_brief_routes_target_size_delivery(tmp_path):
     assert any("normal speed" in note for note in plan["notes"])
 
 
+def test_hdr_sdr_route_uses_source_bound_delivery_gate(tmp_path):
+    source = tmp_path / "iphone-hdr.mov"
+    source.write_text("fake hdr", encoding="utf-8")
+
+    plan = build_plan(
+        f"把 {source} 的 iPhone HLG HDR 转成 Rec.709 SDR，避免平台上传后过曝",
+        project_dir=str(tmp_path),
+    )
+
+    step = next(step for step in plan["steps"] if step["id"] == "hdr_sdr_plan")
+    assert step["script"] == "hdr_sdr.py"
+    assert "hdr_sdr.py plan" in step["command"]
+    assert str(source) in step["command"]
+    assert "--delivery output/final_sdr.mp4" in step["command"]
+    assert step["gate_category"] == "hdr_sdr_plan"
+    assert any("zscale+tonemap" in note for note in plan["notes"])
+
+
 def test_empty_brief_is_blocked():
     plan = build_plan("")
 

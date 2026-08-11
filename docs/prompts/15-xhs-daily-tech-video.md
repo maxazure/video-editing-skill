@@ -403,7 +403,18 @@
      --output-dir output/ \
      --platforms xhs douyin wxch
 
-9a. # 可选：客户/平台明确限制文件大小时，对选定发布版做 source-bound 两遍交付编码：
+9a. # 可选：源片/master 是明确 PQ/HLG HDR，而发布目标需要 Rec.709 SDR 时：
+    python3 scripts/hdr_sdr.py plan \
+      output/day<NN>_master_hdr.mp4 \
+      --delivery output/day<NN>_master_sdr.mp4 \
+      --output work/hdr_sdr_plan.json \
+      --markdown work/hdr_sdr_plan.md
+    python3 scripts/hdr_sdr.py apply work/hdr_sdr_plan.json
+    python3 scripts/hdr_sdr.py verify work/hdr_sdr_plan.json
+    # 未知 color tags 或缺少 zscale+tonemap 会在编码前阻塞；完整看完 SDR 版，再重跑 QA 和审批。
+    # 详见 docs/prompts/87-hdr-sdr.md
+
+9b. # 可选：客户/平台明确限制文件大小时，对选定发布版做 source-bound 两遍交付编码：
     python3 scripts/delivery_encode.py plan \
       output/day<NN>_master_douyin.mp4 \
       --delivery output/day<NN>_douyin_delivery.mp4 \
@@ -415,7 +426,7 @@
     python3 scripts/delivery_encode.py verify work/delivery_encode_plan.json
     # 完整解码通过不等于画质批准；正常速度看完整交付版，再跑 render_qa 并纳入 approval receipt。
 
-9b. # 可选：如果要交给 Premiere / FCP / Resolve 继续精修：
+9c. # 可选：如果要交给 Premiere / FCP / Resolve 继续精修：
     python3 scripts/export_edl.py \
       --config work/render_config.json \
       --output work/day<NN>_edit.edl \
@@ -525,6 +536,7 @@
 - content_guard 的输出（必须 ✅ 无违规）
 - render_qa 的输出（必须没有 FAIL；WARN 要解释）
 - shot_color_qa 的输出（broadcast-range / coverage BLOCK 必须修；切点 WARN 要看 master）
+- 如输入是 PQ/HLG HDR，给我 hdr_sdr_plan、BT.709 四项 color tag 和完整 SDR 审片结论
 - subtitle_readability_qa 的输出（BLOCK 必须修；WARN 要在正常速度看成片）
 - retention_rhythm_qa 的输出（BLOCK 必须修；WARN 要结合成片人工判断）
 - audio_master_report 的输出（必须 `summary.blocking == 0`）
@@ -586,6 +598,8 @@ day<NN>/
 │   ├── edit_preflight.md
 │   ├── pipeline_manifest.json # 发布前 gate 汇总
 │   ├── pipeline_manifest.md
+│   ├── hdr_sdr_plan.json # 可选：PQ/HLG → BT.709 SDR / source + output hash gate
+│   ├── hdr_sdr_plan.md
 │   ├── delivery_encode_plan.json # 可选：目标大小交付编码 / source + output hash gate
 │   ├── delivery_encode_plan.md
 │   ├── cover_variants.json # 封面 A/B 方案 + selected_cover
@@ -610,6 +624,7 @@ day<NN>/
     │   ├── day<NN>_shot_color_qa.json       # 镜头色彩 / 曝光 / broadcast-range gate
     │   └── day<NN>_shot_color_qa.md         # 镜头指标 + 可疑切点复核命令
     ├── day<NN>_master.mp4              # 9:16 主版本
+    ├── day<NN>_master_sdr.mp4          # 可选：PQ/HLG master 的 Rec.709 SDR 交付版
     ├── day<NN>_master_xhs.mp4          # 3:4 小红书发布版
     ├── day<NN>_douyin_delivery.mp4     # 可选：有硬大小上限的两遍交付版
     ├── day<NN>_master_douyin.mp4       # 9:16 抖音版

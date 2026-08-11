@@ -10,6 +10,7 @@ from approval_receipt import create_receipt  # noqa: E402
 from edit_revision import APPROVAL_VERSION, apply_revision, audit_proposal, prepare_proposal  # noqa: E402
 from edit_recipe import export_recipe  # noqa: E402
 import delivery_encode  # noqa: E402
+import hdr_sdr  # noqa: E402
 from speed_ramp import build_speed_ramp_plan, parse_hold  # noqa: E402
 from video_stabilization import build_plan as build_stabilization_plan  # noqa: E402
 
@@ -169,6 +170,50 @@ def test_unapplied_delivery_encode_plan_blocks_when_present(tmp_path, monkeypatc
     gate = next(g for g in manifest["gates"] if g["category"] == "delivery_encode_plan")
     assert gate["status"] == "blocked"
     assert "1 blocking item" in gate["notes"][0]
+
+
+def test_hdr_sdr_plan_is_live_verified_and_can_be_required(tmp_path, monkeypatch):
+    _publish_ready_project(tmp_path)
+    media = {
+        "duration": 4.0,
+        "fps": 30.0,
+        "width": 640,
+        "height": 360,
+        "rotation": 0,
+        "has_audio": True,
+        "video_codec": "hevc",
+        "audio_codec": "aac",
+        "pixel_format": "yuv420p10le",
+        "bit_depth": 10,
+        "color_primaries": "bt2020",
+        "color_transfer": "arib-std-b67",
+        "color_space": "bt2020nc",
+        "color_range": "tv",
+        "side_data_types": [],
+        "format_names": ["mov", "mp4"],
+    }
+    monkeypatch.setattr(hdr_sdr, "probe_media", lambda _path: dict(media))
+    monkeypatch.setattr(hdr_sdr, "_available_filters", lambda: set(hdr_sdr.REQUIRED_FILTERS))
+    plan = hdr_sdr.build_plan(
+        str(tmp_path / "output" / "day58_master.mp4"),
+        str(tmp_path / "output" / "day58_sdr.mp4"),
+    )
+    _write(tmp_path / "work" / "hdr_sdr_plan.json", plan)
+
+    manifest = build_manifest(str(tmp_path), target_stage="publish_ready")
+
+    assert "hdr_sdr_plan" in manifest["blocked_gates"]
+    gate = next(g for g in manifest["gates"] if g["category"] == "hdr_sdr_plan")
+    assert gate["status"] == "blocked"
+    assert "1 blocking item" in gate["notes"][0]
+
+    (tmp_path / "work" / "hdr_sdr_plan.json").unlink()
+    required = build_manifest(
+        str(tmp_path),
+        target_stage="publish_ready",
+        required=["hdr_sdr_plan"],
+    )
+    assert "hdr_sdr_plan" in required["missing_required"]
 
 
 def test_multiple_approval_receipts_block_as_ambiguous(tmp_path):
