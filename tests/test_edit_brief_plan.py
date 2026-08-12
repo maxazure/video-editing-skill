@@ -40,6 +40,27 @@ def test_batch_short_brief_routes_highlights_before_batch(tmp_path):
     assert "work/audio_boundary_plan.json" in batch["command"]
 
 
+def test_multimodal_dead_air_brief_prefers_source_bound_and_gate(tmp_path):
+    source = tmp_path / "origin" / "talk.mp4"
+    source.parent.mkdir(parents=True)
+    source.write_text("fake video", encoding="utf-8")
+
+    plan = build_plan(
+        f"把 {source} 里静音且画面静止的多模态死区剪掉，再渲染成片",
+        project_dir=str(tmp_path),
+    )
+
+    ids = [step["id"] for step in plan["steps"]]
+    assert "multimodal_dead_air_plan" in ids
+    assert "jump_cut" not in ids
+    step = next(step for step in plan["steps"] if step["id"] == "multimodal_dead_air_plan")
+    assert step["script"] == "multimodal_dead_air.py"
+    assert "multimodal_dead_air.py plan" in step["command"]
+    assert "work/multimodal_dead_air_plan.json" in step["outputs"]
+    assert step["gate_category"] == "multimodal_dead_air_plan"
+    assert any("timeline_view.py" in note for note in plan["notes"])
+
+
 def test_generated_assets_note_and_prompt_pack_steps(tmp_path):
     source = tmp_path / "talk.mp4"
     source.write_text("fake video", encoding="utf-8")

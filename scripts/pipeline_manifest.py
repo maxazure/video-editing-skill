@@ -108,6 +108,13 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         blocks_when_present=True,
     ),
     ArtifactDef(
+        "multimodal_dead_air_plan",
+        "Multimodal Dead-Air Plan",
+        ("**/multimodal_dead_air_plan.json", "**/*_multimodal_dead_air_plan.json"),
+        "Run multimodal_dead_air.py verify, review every proposed source cut, then apply and watch the full output at 1x.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "scene_boundaries",
         "Scene Boundaries",
         ("**/scene_boundaries.json", "**/*_scene_boundaries.json"),
@@ -736,6 +743,35 @@ def evaluate_category(
             elif _int_at(verification, "summary", "warnings"):
                 status = "warn" if status != "blocked" else status
                 notes.append(f"video stabilization plan retains a reviewed backend warning: {artifact.path}")
+        return {
+            "category": definition.category,
+            "label": definition.label,
+            "status": status,
+            "artifact_count": len(artifacts),
+            "latest_path": artifacts[0].path,
+            "notes": sorted(set(notes)),
+            "next_action": definition.next_action if status in {"missing", "blocked", "warn"} else "",
+        }
+
+    if definition.category == "multimodal_dead_air_plan":
+        from multimodal_dead_air import verify_plan
+
+        for artifact in artifacts:
+            data = _load_json(artifact.path)
+            if data is None:
+                status = "blocked"
+                notes.append(f"unreadable multimodal dead-air plan: {artifact.path}")
+                continue
+            verification = verify_plan(data)
+            blocking = _int_at(verification, "summary", "blocking")
+            if blocking:
+                status = "blocked"
+                notes.append(
+                    f"invalid multimodal dead-air plan {artifact.path}: {blocking} blocking item(s)"
+                )
+            elif _int_at(verification, "summary", "warnings"):
+                status = "warn" if status != "blocked" else status
+                notes.append(f"multimodal dead-air plan retains a removal-budget override: {artifact.path}")
         return {
             "category": definition.category,
             "label": definition.label,

@@ -1,6 +1,6 @@
 ---
 name: video-editing
-description: "Xiaohongshu/RED-tuned short-form video workflow for raw voice-over, talking-head, tutorials, interviews, podcasts, long videos, screen recordings, B-roll, captions, and generated assets. Covers edit routing, project bootstrap, transcription, semantic transcript review, multi-take packs, audio sync, source-bound video stabilization, cleanup, highlights/shorts, hook/story rewrite, content/source gates, B-roll/enrich/gpt-image-2/video-generation planning, reference-frame/style-lock preflight, screen focus, PIP, color grade, local speed ramps, explicit J-cut/L-cut audio transitions, reversible edit revisions, portable edit-recipe export/replay, preflight/render/QA/audio master, source-time edit comparison, retention-rhythm, subtitle-readability, platform-safe-area and rendered-speech continuity QA, review proxies, subtitles, CapCut import, multi-platform and target-size delivery exports, cover A/B variants, captions, publish packages, dashboards, resume packets, EDL/FCPXML/OTIO, and Remotion animation."
+description: "Xiaohongshu/RED-tuned short-form video workflow for voice-over, talking-head, tutorials, interviews, podcasts, long videos, screen recordings, B-roll, captions, and generated assets. Covers edit routing, transcription, semantic transcript review, multi-take packs, audio sync, video stabilization, silence/freeze multimodal dead-air cleanup, highlights/shorts, hook/story rewrite, content/source gates, B-roll/enrich/gpt-image-2/video-generation planning, reference-frame/style-lock preflight, screen focus, PIP, color grade, speed ramps, J-cut/L-cut audio transitions, reversible edit revisions, portable edit-recipe replay, preflight/render/QA/audio master, source-time edit comparison, retention-rhythm, subtitle-readability, platform-safe-area and rendered-speech continuity QA, review proxies, subtitles, CapCut import, multi-platform and target-size exports, cover A/B variants, captions, publish packages, dashboards, resume packets, EDL/FCPXML/OTIO, and Remotion animation."
 metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
 ---
 
@@ -55,6 +55,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ pip_overlay.py           录屏 + facecam → PIP 小窗计划
    ├─→ color_grade.py           bounded 调色 plan / render_final 单次编码接入
    ├─→ jump_cut.py              自适应去停顿 + 20% 删除预算 + 可审计 cut list + 30ms 防爆音 fade
+   ├─→ multimodal_dead_air.py   静音 AND 静帧 → source-bound 保守删段 / 单次编码 / live gate
    ├─→ audio_transition.py      显式 J-cut/L-cut → source handle / hash / 1× 试听 gate
    ├─→ edit_revision.py         文本剪辑 artifact → source-bound 审批 / 成组 apply / undo / redo
    ├─→ edit_recipe.py           已审 render_config → typed-slot 可移植配方 / 新素材绑定回放
@@ -138,6 +139,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `pip_overlay.py` | 录屏 + facecam → PIP 摄像头小窗 enrich plan | `--camera` `--segment` `--sync-offset` `--output` |
 | `color_grade.py` | bounded 调色 plan + FFmpeg filter + 可选现有 master 复版 | `--preset` `--output` `--markdown` `--render-output` `--strict` |
 | `jump_cut.py` | 自适应静音检测 → 去停顿计划 / 删除预算 gate / 成片 + 切点音频 fade | `<input.mp4>` `--dry-run` `--cut-list cuts.json` `--strict` / `--output jumpcut.mp4` `--max-removal-ratio 0.20` `--allow-over-budget` |
+| `multimodal_dead_air.py` | 静音 + 静帧交集 → source-bound 死区计划 / live verify / 单次编码工作副本 | `plan --delivery --output --markdown --strict` / `verify --strict` / `apply --markdown` |
 | `audio_transition.py` | render_config → 显式 J-cut/L-cut source handle / hash / 单次编码 apply / receipt | `plan --transition AFTER_CLIP,TYPE,DURATION` / `apply --output` / `verify --receipt --strict` |
 | `edit_revision.py` | render_config/enrich_plan 等文本 artifact → source-bound proposal / 独立审批 / 成组 apply / undo / redo | `prepare --artifact --depends-on` / `audit --strict` / `apply --approval` / `status|undo|redo` |
 | `edit_recipe.py` | 已审 render_config → typed-slot 无路径配方 / digest 验证 / 绑定新素材回放 | `export --config --name` / `verify --recipe` / `replay --bind SLOT=PATH --receipt --strict` |
@@ -806,6 +808,28 @@ python3 scripts/rough_cut.py \
 ```
 
 `rough_cut.py` 会输出 `decisions` / `removed_segments` / `keep_segments` / `speedup_ratio`。它不调用 LLM，不提交任何付费任务；只用 `transcribe.py --detect-fillers` 的 filler metadata 和相邻文本相似度做保守粗剪。渲染前用 `timeline_view.py --cut-list work/rough_cut.json` 看源素材删除段；渲染后用 `--rendered-cut-list work/rough_cut.json` 看成片实际拼接点。
+
+### Phase 2.6b: Multimodal Dead-Air（静音 + 静帧保守去死区，可选）
+
+如果纯音频 `jump_cut.py` 可能误删仍有表情、手势、产品展示或屏幕操作的停顿，改用音频静音与画面静帧的 AND gate：
+
+```bash
+python3 scripts/multimodal_dead_air.py plan origin/talking.mp4 \
+  --delivery work/talking-dead-air-tight.mp4 \
+  --output work/multimodal_dead_air_plan.json \
+  --markdown work/multimodal_dead_air_plan.md \
+  --strict
+python3 scripts/multimodal_dead_air.py verify work/multimodal_dead_air_plan.json --strict
+DEAD_AIR_CUT_COUNT="$(python3 -c 'import json; print(len(json.load(open("work/multimodal_dead_air_plan.json"))["removed_segments"]))')"
+python3 scripts/timeline_view.py origin/talking.mp4 \
+  --cut-list work/multimodal_dead_air_plan.json \
+  --output-dir verify/dead-air-cuts \
+  --limit "$DEAD_AIR_CUT_COUNT"
+python3 scripts/multimodal_dead_air.py apply work/multimodal_dead_air_plan.json \
+  --markdown work/multimodal_dead_air_plan.md
+```
+
+默认只有静帧覆盖静音至少 60% 才入选，并且只删除二者交集；80ms padding、30ms 音频 fade 和 20% 删除预算继续生效。计划绑定源 SHA-256 和媒体契约，apply 使用临时 MP4，并在 H.264/AAC、`yuv420p`、尺寸、帧率、采样率、声道、时长和完整解码全部通过后原子提升。`timeline_view.py` 默认只看 20 个切点，因此必须像上面一样把本计划的实际删除段数传给 `--limit`；若计数为 0，停止并保留原片。它不理解表演、语义或有意留白；所有源切点仍须先看，输出仍须 1× 带声音完整复核。详见 [docs/prompts/88-multimodal-dead-air.md](docs/prompts/88-multimodal-dead-air.md)。
 
 ### Phase 3: User Interaction（用户交互）
 

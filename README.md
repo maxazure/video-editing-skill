@@ -2,13 +2,14 @@
 
 这是一个面向 **口播、教程、访谈、播客切片、录屏演示 / facecam demo** 的 AI 视频剪辑生产线：给它原始口播音频/视频、transcript、B-roll、摄像头小窗或素材目录，它可以把“还没整理的素材”推进到 **可发布的小红书 / 抖音 / 视频号短视频**。
 
-它不是一个单点 FFmpeg 脚本，而是一条完整工作流：**项目启动/素材导入 → 手持防抖 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 渲染前预检 → 单次编码渲染 → 质检 → 多平台导出 / 目标大小交付编码 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
+它不是一个单点 FFmpeg 脚本，而是一条完整工作流：**项目启动/素材导入 → 手持防抖 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 渲染前预检 → 单次编码渲染 → 质检 → 多平台导出 / 目标大小交付编码 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
 
 ## 适合做什么
 
 - **把口播短视频从“素材堆”推进到“发布包”**：项目目录、source inventory、转写、清稿、分镜、素材清单、渲染配置、字幕 sidecar、QA、标题正文和标签都能落成可审计 artifact。
 - **针对中文社媒口播做过生产化调参**：Heavy CJK 字幕、1.25x 主输出、响度规范化、平台违禁词 lint、章节卡、贴纸、BGM/SFX cue、三平台导出都不是通用 demo。
 - **噪声口播可在单次编码内保守清理**：`render_final.py --speech-denoise light|medium|strong` 会在变速、压缩、响度规范化和 BGM ducking 前处理低频震动与稳态底噪；默认关闭，最大降噪限制为 12 dB。
+- **停顿删段可同时看声音和画面**：`multimodal_dead_air.py` 只有在静帧覆盖静音达到门槛时才提出候选，实际只删二者交集；源 hash、20% 删除预算、切点复盘、单次编码和完整解码都进入 gate。
 - **多机位先同步再剪辑**：`multicam_sync.py` 把两台以上相机/手机/录音设备对齐到同一参考时间线，记录每路 offset、置信度、有效音轨、公共重叠区间，并可用多窗口 probe 测量长片时钟漂移；原片不改、不重编码。
 - **手持防抖保留原片和 A/B 证据**：`video_stabilization.py` 把源 SHA-256、确切 FFmpeg 后端和人工决定写进计划；apply 只生成新工作副本与全长左右对照，完整 1× 复核并 confirm 后 manifest 才放行。
 - **局部慢动作先计划再渲染**：`speed_ramp.py` 把显式 impact frame 周围的 `snap/ease/s_curve`、hold 和可选 FFmpeg 插帧编译成 source-bound 计划；源 hash 或 piece 时间映射漂移会阻塞，apply 采用同目录临时文件事务式落盘。
@@ -1194,6 +1195,28 @@ python3 scripts/jump_cut.py input/talking.mp4 --output output/talking.jumpcut.mp
 ```
 
 cut list 会记录 `removal_budget`、`status`、`summary.blocking`、blockers/warnings。若预计删除超过 20%，先检查 `removed_segments` 和切点复盘图，再调整 `--min-silence` / `--pad` / `--max-removal-ratio`；只有明确接受超预算剪辑时才加 `--allow-over-budget`。`pipeline_manifest.py` 会把未批准的超预算 jump cut 识别为 `rough_cut` blocker。
+
+### ✂️ Multimodal Dead-Air — 静音 + 静帧保守剪辑
+[`scripts/multimodal_dead_air.py`](scripts/multimodal_dead_air.py) · [详细文档](docs/prompts/88-multimodal-dead-air.md)
+
+当口播停顿里可能仍有表情、手势、产品展示或屏幕操作时，纯音频去静音过于激进。这个流程同时运行 FFmpeg `silencedetect` 与 `freezedetect`：默认静帧覆盖一段静音至少 60% 才入选，并且只删除二者交集。
+
+```bash
+python3 scripts/multimodal_dead_air.py plan origin/talking.mp4 \
+  --delivery work/talking-dead-air-tight.mp4 \
+  --output work/multimodal_dead_air_plan.json \
+  --markdown work/multimodal_dead_air_plan.md \
+  --strict
+python3 scripts/multimodal_dead_air.py verify work/multimodal_dead_air_plan.json --strict
+DEAD_AIR_CUT_COUNT="$(python3 -c 'import json; print(len(json.load(open("work/multimodal_dead_air_plan.json"))["removed_segments"]))')"
+python3 scripts/timeline_view.py origin/talking.mp4 \
+  --cut-list work/multimodal_dead_air_plan.json --output-dir verify/dead-air-cuts \
+  --limit "$DEAD_AIR_CUT_COUNT"
+python3 scripts/multimodal_dead_air.py apply work/multimodal_dead_air_plan.json \
+  --markdown work/multimodal_dead_air_plan.md
+```
+
+计划绑定源文件 SHA-256 与媒体契约，保留 80ms 切点 padding、30ms 音频 fade 和 20% 总删除预算。apply 复用 `jump_cut.py` 的 `trim/atrim + concat` 单次编码器；临时 MP4 必须通过 H.264/AAC、`yuv420p`、尺寸、帧率、采样率、声道、时长和全长解码契约才原子提升，输出 hash 与媒体记录会写回计划并由 manifest live verify。`timeline_view.py` 默认最多显示 20 个切点，上面的实际计数确保全部候选进入复核；计数为 0 时保留原片。它不是表演或语义判断器，必须先看所有源切点，再 1× 带声音完整播放工作副本。
 
 ### 🔎 Timeline View — 源素材/成片切点复盘图
 [`scripts/timeline_view.py`](scripts/timeline_view.py) · [详细文档](docs/prompts/22-timeline-view.md)
@@ -2556,6 +2579,7 @@ pytest tests/test_semantic_transcript_review.py -v # 全篇上下文审校 / 最
 pytest tests/test_edit_brief_plan.py -v     # 自然语言剪辑需求 → 本地 runbook
 pytest tests/test_hook_variants.py -v       # 前三秒 hook 批量角度 + 风险检查
 pytest tests/test_rough_cut.py -v           # ASR 粗剪：口头禅/重复句 cut list
+pytest tests/test_multimodal_dead_air.py -v # 静音 AND 静帧死区计划 / 安全渲染 / live verify
 pytest tests/test_timeline_view.py -v       # 源素材/成片切点可视化复盘图
 pytest tests/test_edit_compare.py -v        # 原片/成片 source-time 双栏对照 + 像素映射验证
 pytest tests/test_generate_caption.py -v    # 文案合成
@@ -2592,6 +2616,22 @@ pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 pytest tests/test_review_dashboard.py -v    # 静态人工复核面板 + gate queue
 pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 gate
 ```
+
+### 2026-08-13 自动化升级记录（Source-bound Multimodal Dead-Air Cuts）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`WyattBlue/auto-editor`](https://github.com/WyattBlue/auto-editor) | 支持把 audio 与 motion 分析组合成剪辑表达式，不只依赖单一静音阈值 | 采用音画联合判定，但把自动剪辑收紧为“静音 AND 静帧覆盖达到门槛”，避免保留现场动作时误删 |
+| [`mazsola2k/ai-video-editor`](https://github.com/mazsola2k/ai-video-editor) | narrated/unboxing 模式同时运行 FFmpeg `silencedetect` 与 `freezedetect`，静帧覆盖静音达到 60% 才处理 | 采用 60% 默认覆盖门槛；实际只删除两种检测结果的交集，并保留切点 padding 和 30ms 音频 fade |
+| [`htekdev/vidpipe`](https://github.com/htekdev/vidpipe) | context-aware silence removal 设有 20% 总删减上限，防止一次自动操作重写成片节奏 | 复用项目既有的 20% removal budget，超限默认阻断；只有显式 `--allow-over-budget` 才允许继续 |
+
+新增/调整能力：新增 [`scripts/multimodal_dead_air.py`](scripts/multimodal_dead_air.py)、[`tests/test_multimodal_dead_air.py`](tests/test_multimodal_dead_air.py) 和 [`docs/prompts/88-multimodal-dead-air.md`](docs/prompts/88-multimodal-dead-air.md)。`plan` 用 FFmpeg 同时检测静音和静帧，只有静帧覆盖某段静音达到默认 60% 时才提出候选，最终删除范围严格取二者交集；默认保留 80ms 切点 padding、使用 30ms 音频 fade，并以 20% source-duration 删除预算 fail closed。计划绑定源视频绝对路径、SHA-256、大小、媒体契约、完整分析结果、canonical settings 与 plan id；`verify` 从 live source 重建派生状态，可识别源漂移、手工改写检测结果、canonical budget blocker/warning 和应用后输出漂移。`apply` 只写同目录临时 MP4，通过 H.264/AAC、`yuv420p`、尺寸、帧率、采样率、声道、时长、完整 `ffmpeg -xerror` 解码和输出 hash 检查后才原子提升；默认拒绝覆盖已有文件、symlink、源片或计划/Markdown/交付件路径碰撞。`pipeline_manifest.py` 新增存在即 live verify、可 `--require multimodal_dead_air_plan` 的 gate；`edit_brief_plan.py` 新增“静音且画面静止 / silence and freeze”意图路由，并避免同时重复安排普通 audio-only `jump_cut`。README、SKILL、daily workflow 和提示词索引已同步。
+
+使用方式：运行 `python3 scripts/multimodal_dead_air.py plan origin/talking.mp4 --delivery work/dead-air-tight.mp4 --output work/multimodal_dead_air_plan.json --markdown work/multimodal_dead_air_plan.md --strict`；逐段复核 Markdown，并给 `timeline_view.py --cut-list work/multimodal_dead_air_plan.json --limit <removed_segments实际数量>` 显式传入全部切点数，再执行 `python3 scripts/multimodal_dead_air.py apply work/multimodal_dead_air_plan.json --markdown work/multimodal_dead_air_plan.md`。若没有删除段，停止并保留原片。交付前运行 `python3 scripts/multimodal_dead_air.py verify work/multimodal_dead_air_plan.json --strict` 和现有 render QA；完整项目进入发布阶段后，再运行默认 publish-ready 的 `pipeline_manifest.py --require multimodal_dead_air_plan --strict`。只有音频静音但画面仍有动作、表情、演示或有意停顿时不会自动删除；只想做音频静音跳剪时继续使用 `jump_cut.py`。
+
+验证结果：定向 `.venv/bin/python -m pytest tests/test_multimodal_dead_air.py tests/test_edit_brief_plan.py tests/test_pipeline_manifest.py -q` 通过 `110 passed in 1.18s`，最终全量 `.venv/bin/python -m pytest tests -q` 通过 `856 passed in 16.91s`。真实 10 秒样片包含 2 秒“蓝色静帧 + 静音”，检测得到 `1 silence / 1 freeze / 1 candidate / 100% overlap`；切点 padding 后删除 `1.84s`（18.4%，低于预算），成功输出 `8.18s` H.264/AAC、`yuv420p`、320×180、30fps、48kHz 单声道 MP4，`blocking=0`，完整解码与 application hash 均通过。测试另固定了 canonical 超预算 blocker 必须阻断 apply/manifest、override warning 必须保留，以及 codec/pixel-format 漂移不得提升临时文件。独立前向演练确认用户请求会路由到多模态模式而非 audio-only jump cut，并据此补齐“全部切点计数”、空计划停止、平台不猜测和 manifest 边界说明。`.venv/bin/python -m compileall -q scripts tests`、四组新 CLI help、brief route、manifest category、Skill `quick_validate.py` 和 `git diff --check` 也全部通过。
 
 ### 2026-08-12 自动化升级记录（Source-bound HDR → Rec.709 SDR Delivery）
 
@@ -3132,6 +3172,7 @@ pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 g
 | **84** | **[Video Stabilization](docs/prompts/84-video-stabilization.md)** | **手持素材 source-bound 防抖、全长 A/B 对照与人工确认 gate** |
 | **86** | **[J-cut / L-cut Audio Transition](docs/prompts/86-audio-transition.md)** | **显式声音先行/延续边界、source handle/hash、单次编码与 1× 试听 gate** |
 | **87** | **[HDR → Rec.709 SDR Delivery](docs/prompts/87-hdr-sdr.md)** | **PQ/HLG source hash、Hable tone-map、BT.709 tags、完整解码和 live gate** |
+| **88** | **[Multimodal Dead-Air](docs/prompts/88-multimodal-dead-air.md)** | **只剪同时静音且画面静止的死区** |
 | **43** | **[Audio Cue Sheet](docs/prompts/43-audio-cue-sheet.md)** | **规划 BGM/SFX 和生成审批** |
 | **45** | **[Video Prompt Pack](docs/prompts/45-video-prompt-pack.md)** | **视频生成提示词包 + paid approval gate** |
 | **46** | **[Generation Task Log](docs/prompts/46-generation-task-log.md)** | **跟踪 submit_id、轮询、下载和本地落盘** |
@@ -3191,6 +3232,7 @@ scripts/
 ├── highlight_picker.py         长视频精华候选 / brief 定向找片段      [V3]
 ├── audio_boundary_snap.py      词/句末/静音剪辑边界校正              [V3]
 ├── rough_cut.py                transcript 粗剪：去口头禅/重复句      [V3]
+├── multimodal_dead_air.py      静音 AND 静帧 / source hash / 单次编码 gate [V3]
 ├── extract_audio.py            音频提取
 ├── split_video.py              按句切片（V2 兼容）
 ├── media_library.py            素材库索引（CLIP-ready）

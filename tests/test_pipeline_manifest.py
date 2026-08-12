@@ -11,6 +11,8 @@ from edit_revision import APPROVAL_VERSION, apply_revision, audit_proposal, prep
 from edit_recipe import export_recipe  # noqa: E402
 import delivery_encode  # noqa: E402
 import hdr_sdr  # noqa: E402
+import multimodal_dead_air  # noqa: E402
+from jump_cut import Segment  # noqa: E402
 from speed_ramp import build_speed_ramp_plan, parse_hold  # noqa: E402
 from video_stabilization import build_plan as build_stabilization_plan  # noqa: E402
 
@@ -53,6 +55,91 @@ def test_missing_required_artifacts_block_publish_ready(tmp_path):
     assert manifest["status"] == "blocked"
     assert "master_video" in manifest["missing_required"]
     assert any("render_final.py" in action for action in manifest["next_actions"])
+
+
+def test_multimodal_dead_air_plan_is_live_verified_and_can_be_required(tmp_path, monkeypatch):
+    _publish_ready_project(tmp_path)
+    source = tmp_path / "origin" / "talk.mp4"
+    _write(source, "source video")
+    media = {
+        "duration": 10.0,
+        "fps": 30.0,
+        "width": 640,
+        "height": 360,
+        "rotation": 0,
+        "has_audio": True,
+        "has_video": True,
+        "video_codec": "h264",
+        "pixel_format": "yuv420p",
+        "audio_codec": "aac",
+        "sample_rate": 48000,
+        "channels": 2,
+    }
+    monkeypatch.setattr(multimodal_dead_air, "probe_media", lambda _path: dict(media))
+    plan = multimodal_dead_air.build_plan(
+        str(source),
+        str(tmp_path / "output" / "talk-tight.mp4"),
+        media=media,
+        silences=[Segment(2.0, 3.0, 1.0)],
+        freezes=[Segment(2.0, 3.0, 1.0)],
+        noise_db=-35.0,
+    )
+    _write(tmp_path / "work" / "multimodal_dead_air_plan.json", plan)
+
+    current = build_manifest(str(tmp_path), target_stage="publish_ready")
+    gate = next(g for g in current["gates"] if g["category"] == "multimodal_dead_air_plan")
+    assert gate["status"] == "ready"
+
+    source.write_text("changed source video", encoding="utf-8")
+    stale = build_manifest(str(tmp_path), target_stage="publish_ready")
+    gate = next(g for g in stale["gates"] if g["category"] == "multimodal_dead_air_plan")
+    assert gate["status"] == "blocked"
+    assert "multimodal_dead_air_plan" in stale["blocked_gates"]
+
+    (tmp_path / "work" / "multimodal_dead_air_plan.json").unlink()
+    required = build_manifest(
+        str(tmp_path),
+        target_stage="publish_ready",
+        required=["multimodal_dead_air_plan"],
+    )
+    assert "multimodal_dead_air_plan" in required["missing_required"]
+
+
+def test_multimodal_dead_air_budget_blocker_reaches_manifest(tmp_path, monkeypatch):
+    _publish_ready_project(tmp_path)
+    source = tmp_path / "origin" / "talk.mp4"
+    _write(source, "source video")
+    media = {
+        "duration": 10.0,
+        "fps": 30.0,
+        "width": 640,
+        "height": 360,
+        "rotation": 0,
+        "has_audio": True,
+        "has_video": True,
+        "video_codec": "h264",
+        "pixel_format": "yuv420p",
+        "audio_codec": "aac",
+        "sample_rate": 48000,
+        "channels": 2,
+    }
+    monkeypatch.setattr(multimodal_dead_air, "probe_media", lambda _path: dict(media))
+    plan = multimodal_dead_air.build_plan(
+        str(source),
+        str(tmp_path / "output" / "talk-tight.mp4"),
+        media=media,
+        silences=[Segment(2.0, 6.0, 4.0)],
+        freezes=[Segment(2.0, 6.0, 4.0)],
+        noise_db=-35.0,
+        max_removal_ratio=0.2,
+    )
+    _write(tmp_path / "work" / "multimodal_dead_air_plan.json", plan)
+
+    manifest = build_manifest(str(tmp_path), target_stage="publish_ready")
+    gate = next(g for g in manifest["gates"] if g["category"] == "multimodal_dead_air_plan")
+
+    assert gate["status"] == "blocked"
+    assert "multimodal_dead_air_plan" in manifest["blocked_gates"]
 
 
 def test_current_approval_receipt_can_be_required_for_publish(tmp_path):

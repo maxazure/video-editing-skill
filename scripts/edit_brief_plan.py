@@ -85,6 +85,18 @@ SIGNAL_KEYWORDS: Mapping[str, Sequence[str]] = {
     ),
     "batch_shorts": ("batch", "批量", "多条短视频", "3 条", "三条", "5 条", "五条", "several shorts", "multiple shorts"),
     "hook": ("hook", "开头", "前三秒", "3 秒", "3秒", "opening", "first three seconds"),
+    "multimodal_dead_air": (
+        "multimodal dead air",
+        "multimodal silence",
+        "silence and freeze",
+        "silent and static",
+        "audio silence plus video freeze",
+        "静音且画面静止",
+        "静音和静帧",
+        "静默和静止",
+        "声音空白画面不动",
+        "多模态死区",
+    ),
     "cleanup_silence": ("remove silence", "silence", "停顿", "空白", "冷场", "jump cut", "剪紧", "紧凑"),
     "cleanup_words": ("口头禅", "卡壳", "重复句", "filler", "stutter", "rough cut"),
     "story_rewrite": ("rewrite", "清稿", "重写", "重组", "故事线", "叙事", "结构", "story"),
@@ -232,6 +244,7 @@ SIGNAL_LABELS: Mapping[str, str] = {
     "long_to_short": "长视频拆短视频",
     "batch_shorts": "多条短视频批量规划",
     "hook": "前三秒 hook",
+    "multimodal_dead_air": "静音 + 静帧多模态死区剪辑",
     "cleanup_silence": "去停顿 / jump cut",
     "cleanup_words": "去口头禅 / 重复句",
     "story_rewrite": "清稿 / 叙事重组",
@@ -417,7 +430,7 @@ def build_plan(
 
     if source_media and not Path(source_media).expanduser().exists():
         blockers.append(f"source media not found: {source_media}")
-    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy", "video_stabilization", "speed_ramp", "hdr_sdr", "delivery_encode"}):
+    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy", "multimodal_dead_air", "video_stabilization", "speed_ramp", "hdr_sdr", "delivery_encode"}):
         warnings.append("source media was not provided; commands use <source_media> placeholders")
 
     if transcript and not Path(transcript).expanduser().exists():
@@ -447,7 +460,7 @@ def build_plan(
             }
         )
     )
-    wants_render = bool(ids.intersection({"render", "publish", "target_script", "long_to_short", "batch_shorts", "cleanup_silence", "cleanup_words", "broll", "screen_focus", "pip", "color_grade", "edit_recipe_replay"}))
+    wants_render = bool(ids.intersection({"render", "publish", "target_script", "long_to_short", "batch_shorts", "multimodal_dead_air", "cleanup_silence", "cleanup_words", "broll", "screen_focus", "pip", "color_grade", "edit_recipe_replay"}))
     wants_clean_script = bool(
         ids.intersection({"story_rewrite", "hook", "content_guard", "source_receipts", "broll", "generated_assets", "publish"})
         and "target_script" not in ids
@@ -722,7 +735,41 @@ def build_plan(
             ),
         )
 
-    if "cleanup_silence" in ids:
+    if "multimodal_dead_air" in ids:
+        _add_step(
+            steps,
+            seen,
+            _step(
+                "multimodal_dead_air_plan",
+                phase="edit",
+                script="multimodal_dead_air.py",
+                label="Plan conservative silence + freeze dead-air cuts",
+                reason="The brief asks to remove only intervals that are both silent and visually static.",
+                command=shell(
+                    [
+                        python_bin,
+                        "scripts/multimodal_dead_air.py",
+                        "plan",
+                        source,
+                        "--delivery",
+                        "work/dead-air-tight.mp4",
+                        "--output",
+                        "work/multimodal_dead_air_plan.json",
+                        "--markdown",
+                        "work/multimodal_dead_air_plan.md",
+                        "--strict",
+                    ]
+                ),
+                outputs=["work/multimodal_dead_air_plan.json", "work/multimodal_dead_air_plan.md"],
+                gate_category="multimodal_dead_air_plan",
+            ),
+        )
+        notes.append(
+            "Review every multimodal dead-air cut with timeline_view.py, then run "
+            "multimodal_dead_air.py apply and use the validated working copy downstream."
+        )
+
+    if "cleanup_silence" in ids and "multimodal_dead_air" not in ids:
         _add_step(
             steps,
             seen,

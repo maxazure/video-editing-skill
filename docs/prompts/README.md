@@ -89,6 +89,7 @@
 | 85 | [Target-size Delivery Encode 目标大小交付编码](85-delivery-encode.md) | master → source-bound 两遍 H.264/AAC、硬大小上限、完整解码和 live gate |
 | 86 | [J-cut / L-cut Audio Transition 声音先行 / 延续转场](86-audio-transition.md) | render_config → 显式声画错位边界、source handle / hash / 单次编码 / 1× 试听 gate |
 | 87 | [HDR → Rec.709 SDR Delivery 社媒交付](87-hdr-sdr.md) | PQ/HLG master → source-bound Hable tone-map、BT.709 tags、全长解码和 live gate |
+| 88 | [Multimodal Dead-Air 静音 + 静帧保守剪辑](88-multimodal-dead-air.md) | silence AND freeze → 60% 覆盖、交集删段、20% 预算、source hash 与单次编码 gate |
 
 ## 快速上手
 
@@ -122,6 +123,7 @@
 | 抽象概念想用 AI 生图（注意力机制/复利…） | [19-imagegen](19-imagegen.md) |
 | 渲染后想确认没有黑屏/静帧/静音/尺寸错 | [20-Render QA](20-render-qa.md) |
 | 口播停顿太多想自动剪紧 | [21-Jump Cut](21-jump-cut.md) |
+| 只想删掉同时静音且画面静止的死区 | [88-Multimodal Dead-Air](88-multimodal-dead-air.md) |
 | 想人工看源素材或成片切点附近画面和波形 | [22-Timeline View](22-timeline-view.md) |
 | 不想每次渲染覆盖上一版成片 | [23-Versioned Output](23-versioned-output.md) |
 | 生成图/生成视频前想先审分镜和路由 | [24-Storyboard Plan](24-storyboard-plan.md) |

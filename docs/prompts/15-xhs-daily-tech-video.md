@@ -262,6 +262,23 @@
     # 默认最多删除源时长的 20%；超限会 blocked，审查后才调高 --max-removal-ratio 或加 --allow-over-budget。
     # 详见 docs/prompts/21-jump-cut.md 和 docs/prompts/22-timeline-view.md
 
+4i. # 可选：停顿里可能仍有表情/手势/屏幕操作时，用静音 AND 静帧的保守模式代替 4h：
+    python3 scripts/multimodal_dead_air.py plan origin/<talking_video>.mp4 \
+      --delivery work/<talking_video>-dead-air-tight.mp4 \
+      --output work/multimodal_dead_air_plan.json \
+      --markdown work/multimodal_dead_air_plan.md \
+      --strict
+    python3 scripts/multimodal_dead_air.py verify work/multimodal_dead_air_plan.json --strict
+    DEAD_AIR_CUT_COUNT="$(python3 -c 'import json; print(len(json.load(open("work/multimodal_dead_air_plan.json"))["removed_segments"]))')"
+    python3 scripts/timeline_view.py origin/<talking_video>.mp4 \
+      --cut-list work/multimodal_dead_air_plan.json \
+      --output-dir verify/dead-air-cuts \
+      --limit "$DEAD_AIR_CUT_COUNT"
+    # 默认静帧要覆盖静音至少 60%，只删交集；逐段复核后才 apply：
+    python3 scripts/multimodal_dead_air.py apply work/multimodal_dead_air_plan.json \
+      --markdown work/multimodal_dead_air_plan.md
+    # DEAD_AIR_CUT_COUNT=0 时停止并保留原片；否则完整 1× 看完工作副本并重跑 render_qa，再把它作为后续 source；详见 docs/prompts/88-multimodal-dead-air.md
+
 5. python3 scripts/content_guard.py \
      --script work/clean_script.md \
      --title "<候选标题>" \
@@ -541,6 +558,7 @@
 - retention_rhythm_qa 的输出（BLOCK 必须修；WARN 要结合成片人工判断）
 - audio_master_report 的输出（必须 `summary.blocking == 0`）
 - 如用了 J-cut/L-cut，给我 audio_transition_plan / apply receipt，并说明每个改变边界的 1× 耳机 + 手机试听结论
+- 如用了 multimodal dead-air，给我 plan/verify 状态、源切点复盘路径和完整工作副本审片结论
 - 如有 jump_cut 或 QA WARN/FAIL，给我 timeline_view PNG 路径和人工判断
 
 注意事项：
@@ -584,6 +602,8 @@ day<NN>/
 │   ├── storyboard_assets.json # 素材任务清单 + ready/paid 预检
 │   ├── storyboard_assets.md   # 人工 review 版素材表
 │   ├── jumpcut.json        # 可选：去停顿 cut list
+│   ├── multimodal_dead_air_plan.json # 可选：静音 AND 静帧 source-bound 死区计划
+│   ├── multimodal_dead_air_plan.md   # 可选：覆盖率/交集/切点复核表
 │   ├── day<NN>_edit.edl    # 可选：NLE handoff
 │   ├── day<NN>_edit.edl.json # 可选：EDL manifest
 │   ├── day<NN>_edit.fcpxml # 可选：FCPXML handoff
