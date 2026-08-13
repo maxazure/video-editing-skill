@@ -90,6 +90,7 @@
 | 86 | [J-cut / L-cut Audio Transition 声音先行 / 延续转场](86-audio-transition.md) | render_config → 显式声画错位边界、source handle / hash / 单次编码 / 1× 试听 gate |
 | 87 | [HDR → Rec.709 SDR Delivery 社媒交付](87-hdr-sdr.md) | PQ/HLG master → source-bound Hable tone-map、BT.709 tags、全长解码和 live gate |
 | 88 | [Multimodal Dead-Air 静音 + 静帧保守剪辑](88-multimodal-dead-air.md) | silence AND freeze → 60% 覆盖、交集删段、20% 预算、source hash 与单次编码 gate |
+| 89 | [Generated Clip Review 生成视频片段复核](89-generated-clip-review.md) | 生成 clip → contact sheet、常识/物理/身份评分、裁切范围、重生建议和 live gate |
 
 ## 快速上手
 
@@ -138,6 +139,7 @@
 | 本地 B-roll 不够，想先规划 stock 素材搜索 | [44-Stock Material Plan](44-stock-material-plan.md) |
 | 分镜要交给 Dreamina/Veo/LTX/Wan/Sora 生成视频 | [45-Video Prompt Pack](45-video-prompt-pack.md) |
 | 已提交异步生成任务，要保存 submit_id 并跟踪下载 | [46-Generation Task Log](46-generation-task-log.md) |
+| 生成视频已经下载，想在组装前查物理、身份、道具和可用裁切范围 | [89-Generated Clip Review](89-generated-clip-review.md) |
 | 想识别视频里的人、屏幕、手机或动态主体 | [47-Video Understanding](47-video-understanding.md) |
 | 想统一成片色彩或加轻微质感 | [48-Color Grade](48-color-grade.md) |
 | 准备上传前想核对平台视频、文案和 gate | [49-Publish Package](49-publish-package.md) |

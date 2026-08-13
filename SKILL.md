@@ -47,6 +47,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ reference_frame_preflight.py
    │                            首帧/style key 尺寸/方向/透明背景/画幅 gate
    ├─→ generation_task_log.py   异步生成任务台账 / submit_id / 下载 gate
+   ├─→ generated_clip_review.py 生成片段 contact sheet / 常识物理 / 连续性 / 重生 gate
    ├─→ storyboard_assets.py     素材任务清单 / ready 预检 / paid 额度提醒
    │                            可选 media_library.py recommend 排名 B-roll 候选
    ├─→ stock_material_plan.py   远程 stock 搜索规划
@@ -134,6 +135,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `video_prompt_pack.py` | storyboard_plan → 多 provider 视频生成提示词包 + 角色/品牌/style lock + paid approval gate | `--storyboard-plan` `--style-reference` `--provider` `--animate-stills` `--approved` `--strict` |
 | `reference_frame_preflight.py` | video_prompt_pack → 首帧/style key 存在性、解码、尺寸、方向、画幅、透明背景 gate | `--prompt-pack` `--require-style-reference` `--reference shot_id=...` `--strict` |
 | `generation_task_log.py` | 异步生成任务台账：submit_id/task id、轮询、下载、本地落盘 gate | `add` `update` `import-provider-decision` `report --strict` |
+| `generated_clip_review.py` | 生成视频片段 source-bound 视觉复核：contact sheet、评分、裁切范围、重生建议 | `prepare --clip/--asset-manifest` `audit --request --response` `verify --report --strict` |
 | `storyboard_assets.py` | storyboard_plan → 素材清单 + ready/paid 预检 | `--storyboard-plan` `--asset-root` `--output` `--strict` |
 | `screen_focus.py` | 录屏点击/热点 → 聚焦 zoom enrich plan | `--events` `--event` `--screen-width` `--output` |
 | `pip_overlay.py` | 录屏 + facecam → PIP 摄像头小窗 enrich plan | `--camera` `--segment` `--sync-offset` `--output` |
@@ -1078,6 +1080,15 @@ python3 scripts/render_final.py --config script/render_config.json --output medi
 - 下载完成后更新本地文件：`generation_task_log.py update --log work/generation_tasks.json --provider dreamina --task-id <submit_id> --status downloaded --asset-path work/generated_video/shot_002.mp4 --markdown work/generation_tasks.md`
 - 输出 `generation_task_log.v1`，包含 `poll_command`、`download_command`、`readiness` 和 `summary.blocking`
 - `completed` 但没有本地 `asset_path` 仍会阻塞；`pipeline_manifest.py` 会自动识别 `generation_tasks.json` 并把未清零任务列为 gate
+
+**Generated Clip Review 生成视频片段复核**（生成结果下载后、组装前必跑）：
+- 先刷新 `storyboard_assets.json`，再运行 `generated_clip_review.py prepare --project-dir . --asset-manifest work/storyboard_assets.json --contact-sheet-dir verify/generated_clips --output work/generated_clip_review_request.json --markdown work/generated_clip_review_request.md --response-template work/generated_clip_review_response.json`
+- reviewer 必须完整执行 1× 带声、0.25×、静音看画面、只听声音四遍检查；contact sheet 只是抽样导航，不能代替播放完整片段
+- response 对每条 clip 记录 identity/wardrobe、action/end state、motion/anatomy/physics、camera、frame integrity、look consistency 六项 1–5 分，以及 hard-fail code、`keep_ranges` / `remove_ranges`、是否重生和具体 `prompt_fix`
+- `pass` 要求加权分 ≥80 且无删段；`pass_with_edits` 要求 ≥65，并由 keep/remove 精确覆盖全片；常识/物理、身份、道具、文字水印、连续性或音画 hard fail 无论总分多高都必须 `fail`
+- 填完 response 后运行 `generated_clip_review.py audit --request work/generated_clip_review_request.json --response work/generated_clip_review_response.json --output work/generated_clip_review.json --markdown work/generated_clip_review.md --strict`；任何 clip/contact sheet 漂移、缺审、非法区间或需重生都会阻塞
+- 组装/发布前再运行 `generated_clip_review.py verify --report work/generated_clip_review.json --strict`，也可用 `pipeline_manifest.py --require generated_clip_review --strict`。reviewer label 不是身份认证或数字签名
+- 详细说明见 [docs/prompts/89-generated-clip-review.md](docs/prompts/89-generated-clip-review.md)
 
 **Storyboard Assets 素材清单与预检**（分镜后、渲染前推荐）：
 - 运行 `storyboard_assets.py --storyboard-plan work/storyboard_plan.json --asset-root work --media-library . --output work/storyboard_assets.json --markdown work/storyboard_assets.md`

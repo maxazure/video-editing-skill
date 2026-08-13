@@ -897,6 +897,38 @@ def build_plan(
                 gate_category="video_prompt_pack",
             ),
         )
+        _add_step(
+            steps,
+            seen,
+            _step(
+                "storyboard_assets",
+                phase="assets",
+                script="storyboard_assets.py",
+                label="Refresh generated asset readiness after provider downloads",
+                reason="Generated clips must exist locally before visual review and final assembly.",
+                command=shell([python_bin, "scripts/storyboard_assets.py", "--storyboard-plan", "work/storyboard_plan.json", "--asset-root", "work", "--output", "work/storyboard_assets.json", "--markdown", "work/storyboard_assets.md", "--strict"]),
+                outputs=["work/storyboard_assets.json", "work/storyboard_assets.md"],
+                gate_category="storyboard_assets",
+            ),
+        )
+        _add_step(
+            steps,
+            seen,
+            _step(
+                "generated_clip_review",
+                phase="review",
+                script="generated_clip_review.py",
+                label="Review generated clips for physics, identity, continuity, and usable ranges",
+                reason="Downloaded generated video is raw material until source-bound visual review passes.",
+                command=shell([python_bin, "scripts/generated_clip_review.py", "prepare", "--project-dir", project_dir, "--asset-manifest", "work/storyboard_assets.json", "--contact-sheet-dir", "verify/generated_clips", "--output", "work/generated_clip_review_request.json", "--markdown", "work/generated_clip_review_request.md", "--response-template", "work/generated_clip_review_response.json"]),
+                outputs=[
+                    "work/generated_clip_review_request.json",
+                    "work/generated_clip_review_response.json",
+                    "work/generated_clip_review.json",
+                ],
+                gate_category="generated_clip_review",
+            ),
+        )
 
     if "audio_design" in ids:
         _add_step(

@@ -10,6 +10,7 @@ from approval_receipt import create_receipt  # noqa: E402
 from edit_revision import APPROVAL_VERSION, apply_revision, audit_proposal, prepare_proposal  # noqa: E402
 from edit_recipe import export_recipe  # noqa: E402
 import delivery_encode  # noqa: E402
+import generated_clip_review  # noqa: E402
 import hdr_sdr  # noqa: E402
 import multimodal_dead_air  # noqa: E402
 from jump_cut import Segment  # noqa: E402
@@ -140,6 +141,87 @@ def test_multimodal_dead_air_budget_blocker_reaches_manifest(tmp_path, monkeypat
 
     assert gate["status"] == "blocked"
     assert "multimodal_dead_air_plan" in manifest["blocked_gates"]
+
+
+def test_generated_clip_review_is_live_verified_and_can_be_required(tmp_path, monkeypatch):
+    _publish_ready_project(tmp_path)
+    clip = tmp_path / "work" / "generated_video" / "shot_001.mp4"
+    clip.parent.mkdir(parents=True)
+    clip.write_bytes(b"generated-video")
+    media = {
+        "duration": 4.0,
+        "fps": 24.0,
+        "width": 640,
+        "height": 360,
+        "video_codec": "h264",
+        "pixel_format": "yuv420p",
+        "has_audio": True,
+        "audio_codec": "aac",
+        "sample_rate": 48000,
+        "channels": 2,
+    }
+    monkeypatch.setattr(generated_clip_review, "probe_media", lambda _path: dict(media))
+
+    def fake_sheet(_clip, output, **_kwargs):
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(b"contact-sheet")
+        return {
+            "sample_fps": 2.0,
+            "estimated_frames": 8,
+            "columns": 8,
+            "rows": 1,
+            "thumb_width": 320,
+        }
+
+    monkeypatch.setattr(generated_clip_review, "generate_contact_sheet", fake_sheet)
+    request = generated_clip_review.prepare_request(
+        [{"clip_id": "shot_001", "path": str(clip)}],
+        project_dir=str(tmp_path),
+        contact_sheet_dir="verify/generated_clips",
+    )
+    response = {
+        "version": generated_clip_review.RESPONSE_VERSION,
+        "request_id": request["request_id"],
+        "reviewed_by": "visual-review-agent",
+        "reviews": [
+            {
+                "clip_id": "shot_001",
+                "verdict": "pass",
+                "story_readability": "clear",
+                "scores": {key: 5 for key in generated_clip_review.SCORE_WEIGHTS},
+                "hard_fail_codes": [],
+                "keep_ranges": [],
+                "remove_ranges": [],
+                "regenerate": False,
+                "prompt_fix": "",
+                "notes": "Full-speed, slow, muted, and audio-only review passes are clean.",
+            }
+        ],
+    }
+    report_path = tmp_path / "work" / "generated_clip_review.json"
+    _write(report_path, generated_clip_review.build_report(request, response))
+
+    ready = build_manifest(
+        str(tmp_path),
+        target_stage="publish_ready",
+        required=["generated_clip_review"],
+    )
+    gate = next(g for g in ready["gates"] if g["category"] == "generated_clip_review")
+    assert gate["status"] == "ready"
+
+    clip.write_bytes(b"changed-generated-video")
+    stale = build_manifest(str(tmp_path), target_stage="publish_ready")
+    gate = next(g for g in stale["gates"] if g["category"] == "generated_clip_review")
+    assert gate["status"] == "blocked"
+    assert "generated_clip_review" in stale["blocked_gates"]
+
+    report_path.unlink()
+    missing = build_manifest(
+        str(tmp_path),
+        target_stage="publish_ready",
+        required=["generated_clip_review"],
+    )
+    assert "generated_clip_review" in missing["missing_required"]
 
 
 def test_current_approval_receipt_can_be_required_for_publish(tmp_path):

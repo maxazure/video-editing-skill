@@ -191,6 +191,8 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    │
    ├─→ generation_task_log.py   异步生成任务台账
    │                            submit_id / 轮询 / 下载 / 本地落盘 gate
+   ├─→ generated_clip_review.py 下载后的生成视频片段复核
+   │                            contact sheet / 常识物理 / 身份道具 / 裁切与重生 gate
    │
    ├─→ storyboard_assets.py     shot cards → 素材任务清单 / ready 预检
    │                            imagegen / Dreamina / motion / broll 状态表
@@ -893,6 +895,37 @@ python3 scripts/generation_task_log.py update \
 ```
 
 输出 `generation_task_log.v1`：`tasks[].provider_task_id` 保存 Dreamina `submit_id` / provider task id，`poll_command` / `download_command` 保存下一步命令，`readiness` 区分 `needs_approval` / `pending` / `processing` / `needs_download` / `missing_asset` / `failed` / `ready`。`--strict` 会在 `summary.blocking > 0` 时返回 2；`pipeline_manifest.py` 会自动识别 `generation_tasks.json` 并把未清零的异步任务列为 blocking gate。
+
+### 🎬 Generated Clip Review — 生成视频片段复核
+[`scripts/generated_clip_review.py`](scripts/generated_clip_review.py) · [详细文档](docs/prompts/89-generated-clip-review.md)
+
+生成视频下载成功只说明 provider 任务完成，不代表片段可进入时间线。这个本地 gate 把每条生成 clip 的文件 hash、媒体契约和有界 contact sheet 绑定到复核 request，再审计 reviewer 对常识/物理、身份服装、动作终态、镜头、道具/画面完整性和 look 的评分、hard fail、可用裁切范围与重生建议。
+
+```bash
+# 1. 从已刷新为 ready 的 storyboard_assets 提取生成视频并制作 contact sheets
+python3 scripts/generated_clip_review.py prepare \
+  --project-dir . \
+  --asset-manifest work/storyboard_assets.json \
+  --contact-sheet-dir verify/generated_clips \
+  --output work/generated_clip_review_request.json \
+  --markdown work/generated_clip_review_request.md \
+  --response-template work/generated_clip_review_response.json
+
+# 2. 完整看过 1× 带声、0.25×、静音画面和 audio-only 后填写 response，再审计
+python3 scripts/generated_clip_review.py audit \
+  --request work/generated_clip_review_request.json \
+  --response work/generated_clip_review_response.json \
+  --output work/generated_clip_review.json \
+  --markdown work/generated_clip_review.md \
+  --strict
+
+# 3. 组装/发布前重新核对 live clips、contact sheets 和 canonical audit
+python3 scripts/generated_clip_review.py verify \
+  --report work/generated_clip_review.json \
+  --strict
+```
+
+`pass` 要求加权分至少 80、故事清晰、没有 hard fail 且无需删段；`pass_with_edits` 要求至少 65，并让 `keep_ranges` / `remove_ranges` 无缝覆盖整条片段；身份断裂、错误/缺失动作、肢体或物理失败、多余主体、关键道具消失、生成文字/水印、连续性矛盾、音画矛盾和 explicit must-avoid 都会越过高分直接 `fail`，要求 `regenerate=true + prompt_fix`。clip/contact sheet 漂移、漏审、区间重叠/缺口和报告派生状态篡改都会 fail closed；`pipeline_manifest.py --require generated_clip_review --strict` 可设为发布门禁。reviewer label 不是身份认证或数字签名，contact sheet 也不能替代完整播放。
 
 ### 🗂️ Media Library Recommend — 本地 B-roll 候选推荐
 [`scripts/media_library.py`](scripts/media_library.py)
@@ -2589,6 +2622,7 @@ pytest tests/test_storyboard_plan.py -v     # 分镜 shot cards + 生成路由
 pytest tests/test_video_prompt_pack.py -v   # 视频生成提示词包 + 审批 gate
 pytest tests/test_reference_frame_preflight.py -v # 首帧/style key 尺寸/方向/透明背景 gate
 pytest tests/test_generation_task_log.py -v # 异步生成任务台账 + 下载 gate
+pytest tests/test_generated_clip_review.py -v # 生成视频 contact sheet / 评分 / 裁切 / 重生 / stale gate
 pytest tests/test_video_understanding.py -v # 抽样帧 + 可选 YOLO 检测 artifact
 pytest tests/test_scene_boundaries.py -v # fixed/adaptive 场景检测 + cut evidence
 pytest tests/test_visual_dedupe.py -v # 跨来源重复场景检测 + 保留建议
@@ -2616,6 +2650,23 @@ pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 pytest tests/test_review_dashboard.py -v    # 静态人工复核面板 + gate queue
 pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 gate
 ```
+
+### 2026-08-14 自动化升级记录（Source-bound Generated Clip Review）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`a86582751/doubao-seedance-video-skill` visual review standards](https://github.com/a86582751/doubao-seedance-video-skill/blob/main/references/visual-review-standards.md) | 把生成片段与最终组装分成两个 review phase；片段先查常识/物理、身份/道具漂移、重复动作、故事可读性和可用裁切范围，坏动作本身不能靠快切掩盖 | 新增独立的 per-clip `prepare → audit → verify` 门禁；本轮只批准片段或裁切范围，不扩张为自动多片 EDL/转场执行器 |
+| [`wuwangzhang1216/DirectorSKILL` QC checklist](https://github.com/wuwangzhang1216/DirectorSKILL/blob/main/assets/qc-checklist.md) | POST gate 用 identity/action/physics/camera/frame/look 六项加权评分，同时规定 hard blocker 高于总分；65–79 只有存在 edit-side fix 才能保留 | 采用同一组可解释维度与 `80 pass / 65 pass_with_edits` 阈值；hard fail 无论高分都要求重生，trim-only 必须给可执行的完整 keep/remove coverage |
+| [`memex-lab/product-launch-video-skill` pre-render review](https://github.com/memex-lab/product-launch-video-skill/blob/main/skills/product-launch-video/SKILL.md#phase-5-pre-render-review) | full render 前按场景导出代表帧，先找 layout/crop/overlap/contrast 问题，避免把昂贵渲染当第一轮检查 | 对每条生成 clip 自动产有界 contact sheet，长片按 `max_frames` 降采样；但明确抽样不能替代 1×、0.25×、静音和 audio-only 完整审片 |
+| [`openai/skills` hatch-pet QA rubric](https://github.com/openai/skills/blob/main/skills/.curated/hatch-pet/references/qa-rubric.md) | 生成动画失败时先修最小范围：单帧、单 row，只有广泛身份/布局破损才整体重生 | `pass_with_edits` 精确冻结可保留/移除范围；只有可局部裁除且不含 hard fail 的问题才能保留，结构性身份/物理/叙事失败回到生成阶段 |
+
+新增/调整能力：新增 [`scripts/generated_clip_review.py`](scripts/generated_clip_review.py)、[`tests/test_generated_clip_review.py`](tests/test_generated_clip_review.py) 和 [`docs/prompts/89-generated-clip-review.md`](docs/prompts/89-generated-clip-review.md)。`prepare` 接受重复 `--clip [id=]path` 或 `--asset-manifest storyboard_assets.json`，拒绝项目外路径、symlink、重复 id/path 和不可解码视频，为每条 clip 记录 SHA-256、大小、媒体契约，并用 FFmpeg 生成受 `--sample-fps / --max-frames` 约束的 contact sheet 后绑定其 hash。response 固定六项 1–5 分、story readability、9 类 hard-fail code、keep/remove range、regenerate、prompt fix 和 evidence notes；`audit` 要求 exact clip coverage，独立重算 100 分加权结果，检查 verdict 阈值、hard-fail override、区间边界/重叠/完整 coverage 和 source/contact-sheet drift，再输出 `generated_clip_review.v1`。`verify` 从嵌入的 request/response 重做 live canonical audit，识别源片、contact sheet、reviews、summary、status 和 report id 漂移；reviewer label 明确不是身份认证或数字签名。
+
+使用方式：先刷新 `storyboard_assets.json`，运行 `python3 scripts/generated_clip_review.py prepare --project-dir . --asset-manifest work/storyboard_assets.json --contact-sheet-dir verify/generated_clips --output work/generated_clip_review_request.json --markdown work/generated_clip_review_request.md --response-template work/generated_clip_review_response.json`；完整执行 1× 带声、0.25×、静音画面和 audio-only 四遍审片后填 response，再运行 `python3 scripts/generated_clip_review.py audit --request work/generated_clip_review_request.json --response work/generated_clip_review_response.json --output work/generated_clip_review.json --markdown work/generated_clip_review.md --strict` 和 `python3 scripts/generated_clip_review.py verify --report work/generated_clip_review.json --strict`。生成素材 brief 现在会在 prompt pack 后安排 asset refresh 与 generated clip review；`pipeline_manifest.py --require generated_clip_review --strict` 可把报告设为发布门禁。`pass_with_edits` 只批准列出的 keep ranges，组装时不得恢复 remove ranges；`fail` 必须回到生成阶段，不能用装饰转场掩盖。
+
+验证结果：新增 8 项 generated-clip 单元/篡改/真实 CLI 测试，并扩展 edit-brief 与 pipeline-manifest 回归；定向 `.venv/bin/python -m pytest tests/test_generated_clip_review.py tests/test_edit_brief_plan.py tests/test_pipeline_manifest.py -q` 通过 `104 passed in 1.53s`，全量 `.venv/bin/python -m pytest tests -q` 通过 `866 passed in 17.49s`。独立真实 FFmpeg smoke 用 4 秒、320×180、24fps、H.264/AAC 样片生成 8 帧 contact sheet（2596×188），人工查看确认帧序覆盖全片进度；真实 CLI 测试另完成 `prepare → audit → verify` ready round trip，并固定项目外/symlink 输入、source drift、stored summary/report id 篡改、hard-fail 高分绕过和 trim coverage 缺口都必须阻断。`.venv/bin/python -m compileall -q scripts tests`、三组新 CLI help、Skill `quick_validate.py` 和 `git diff --check` 全部通过。
 
 ### 2026-08-13 自动化升级记录（Source-bound Multimodal Dead-Air Cuts）
 

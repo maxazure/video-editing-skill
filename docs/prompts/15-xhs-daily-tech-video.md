@@ -246,7 +246,18 @@
     # 渲染前可加 --strict；如果有 needs_approval，提交 Dreamina/即梦前必须确认 credits。
     # 详见 docs/prompts/25-storyboard-assets.md
 
-4h. # 如果输入是完整口播视频、访谈或录屏，且停顿很多，可先生成去停顿 cut list：
+4h. # 生成视频下载且 storyboard_assets 刷新为 ready 后，组装前做 source-bound 视觉复核：
+    python3 scripts/generated_clip_review.py prepare \
+      --project-dir . \
+      --asset-manifest work/storyboard_assets.json \
+      --contact-sheet-dir verify/generated_clips \
+      --output work/generated_clip_review_request.json \
+      --markdown work/generated_clip_review_request.md \
+      --response-template work/generated_clip_review_response.json
+    # 完整看过 1×带声、0.25×、静音和 audio-only 后填 response，再运行 audit --strict / verify --strict。
+    # hard fail 或需重生不能靠转场掩盖；详见 docs/prompts/89-generated-clip-review.md
+
+4i. # 如果输入是完整口播视频、访谈或录屏，且停顿很多，可先生成去停顿 cut list：
     python3 scripts/jump_cut.py origin/<talking_video>.mp4 \
       --dry-run \
       --cut-list work/jumpcut.json \
@@ -262,7 +273,7 @@
     # 默认最多删除源时长的 20%；超限会 blocked，审查后才调高 --max-removal-ratio 或加 --allow-over-budget。
     # 详见 docs/prompts/21-jump-cut.md 和 docs/prompts/22-timeline-view.md
 
-4i. # 可选：停顿里可能仍有表情/手势/屏幕操作时，用静音 AND 静帧的保守模式代替 4h：
+4j. # 可选：停顿里可能仍有表情/手势/屏幕操作时，用静音 AND 静帧的保守模式代替 4i：
     python3 scripts/multimodal_dead_air.py plan origin/<talking_video>.mp4 \
       --delivery work/<talking_video>-dead-air-tight.mp4 \
       --output work/multimodal_dead_air_plan.json \
@@ -601,6 +612,9 @@ day<NN>/
 │   ├── generation_tasks.md   # 人工 review 版任务台账
 │   ├── storyboard_assets.json # 素材任务清单 + ready/paid 预检
 │   ├── storyboard_assets.md   # 人工 review 版素材表
+│   ├── generated_clip_review_request.json # 生成片段 source-bound 复核请求
+│   ├── generated_clip_review_response.json # reviewer 评分/裁切/重生决定
+│   ├── generated_clip_review.json # live-verified 生成片段 gate
 │   ├── jumpcut.json        # 可选：去停顿 cut list
 │   ├── multimodal_dead_air_plan.json # 可选：静音 AND 静帧 source-bound 死区计划
 │   ├── multimodal_dead_air_plan.md   # 可选：覆盖率/交集/切点复核表

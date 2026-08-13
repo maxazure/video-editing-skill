@@ -293,6 +293,24 @@ def test_emit_markdown_includes_commands_and_manifest_check(tmp_path):
     assert "scripts/pipeline_manifest.py" in markdown
 
 
+def test_generated_video_brief_routes_downloaded_clips_through_visual_review(tmp_path):
+    source = tmp_path / "talk.mp4"
+    source.write_text("fake video", encoding="utf-8")
+
+    plan = build_plan(
+        f"把 {source} 配上 Dreamina 生成视频并做生成片段质检后发布",
+        project_dir=str(tmp_path),
+    )
+
+    ids = [step["id"] for step in plan["steps"]]
+    assert ids.index("video_prompt_pack") < ids.index("storyboard_assets")
+    assert ids.index("storyboard_assets") < ids.index("generated_clip_review")
+    step = next(step for step in plan["steps"] if step["id"] == "generated_clip_review")
+    assert step["script"] == "generated_clip_review.py"
+    assert "--asset-manifest work/storyboard_assets.json" in step["command"]
+    assert step["gate_category"] == "generated_clip_review"
+
+
 def test_cli_writes_json_and_markdown(tmp_path):
     source = tmp_path / "talk.mp4"
     source.write_text("fake video", encoding="utf-8")

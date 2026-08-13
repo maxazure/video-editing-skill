@@ -222,6 +222,13 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         blocks_when_present=True,
     ),
     ArtifactDef(
+        "generated_clip_review",
+        "Generated Clip Review",
+        ("**/generated_clip_review.json", "**/*_generated_clip_review.json"),
+        "Run generated_clip_review.py prepare/audit, regenerate failed clips, and verify the source-bound report before assembly.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "transition_bridge",
         "Transition Bridge",
         ("**/transition_bridge_plan.json", "**/*_transition_bridge*.json"),
@@ -714,6 +721,35 @@ def evaluate_category(
             elif _int_at(verification, "summary", "warnings"):
                 status = "warn" if status != "blocked" else status
                 notes.append(f"edit recipe source preflight had warnings: {artifact.path}")
+        return {
+            "category": definition.category,
+            "label": definition.label,
+            "status": status,
+            "artifact_count": len(artifacts),
+            "latest_path": artifacts[0].path,
+            "notes": sorted(set(notes)),
+            "next_action": definition.next_action if status in {"missing", "blocked", "warn"} else "",
+        }
+
+    if definition.category == "generated_clip_review":
+        from generated_clip_review import verify_report
+
+        for artifact in artifacts:
+            data = _load_json(artifact.path)
+            if data is None:
+                status = "blocked"
+                notes.append(f"unreadable generated clip review: {artifact.path}")
+                continue
+            verification = verify_report(data)
+            blocking = _int_at(verification, "summary", "blocking")
+            if blocking:
+                status = "blocked"
+                notes.append(
+                    f"invalid generated clip review {artifact.path}: {blocking} blocking item(s)"
+                )
+            elif _int_at(verification, "summary", "warnings"):
+                status = "warn" if status != "blocked" else status
+                notes.append(f"generated clip review retains approved trim-only edits: {artifact.path}")
         return {
             "category": definition.category,
             "label": definition.label,
