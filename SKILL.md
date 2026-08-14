@@ -48,6 +48,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    │                            首帧/style key 尺寸/方向/透明背景/画幅 gate
    ├─→ generation_task_log.py   异步生成任务台账 / submit_id / 下载 gate
    ├─→ generated_clip_review.py 生成片段 contact sheet / 常识物理 / 连续性 / 重生 gate
+   ├─→ generation_lessons.py    已审片段 → provider/model scoped 提示词经验库
    ├─→ storyboard_assets.py     素材任务清单 / ready 预检 / paid 额度提醒
    │                            可选 media_library.py recommend 排名 B-roll 候选
    ├─→ stock_material_plan.py   远程 stock 搜索规划
@@ -136,6 +137,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `reference_frame_preflight.py` | video_prompt_pack → 首帧/style key 存在性、解码、尺寸、方向、画幅、透明背景 gate | `--prompt-pack` `--require-style-reference` `--reference shot_id=...` `--strict` |
 | `generation_task_log.py` | 异步生成任务台账：submit_id/task id、轮询、下载、本地落盘 gate | `add` `update` `import-provider-decision` `report --strict` |
 | `generated_clip_review.py` | 生成视频片段 source-bound 视觉复核：contact sheet、评分、裁切范围、重生建议 | `prepare --clip/--asset-manifest` `audit --request --response` `verify --report --strict` |
+| `generation_lessons.py` | 从 canonical generated-clip review 提取经明确批准的 provider/model/category 经验，并供下一次 prompt pack 选择 | `add --review --clip-id --lesson --approved-by [--supersedes]` `verify --strict` `select --provider [--model]` |
 | `storyboard_assets.py` | storyboard_plan → 素材清单 + ready/paid 预检 | `--storyboard-plan` `--asset-root` `--output` `--strict` |
 | `screen_focus.py` | 录屏点击/热点 → 聚焦 zoom enrich plan | `--events` `--event` `--screen-width` `--output` |
 | `pip_overlay.py` | 录屏 + facecam → PIP 摄像头小窗 enrich plan | `--camera` `--segment` `--sync-offset` `--output` |
@@ -1088,6 +1090,14 @@ python3 scripts/render_final.py --config script/render_config.json --output medi
 - `pass` 要求加权分 ≥80 且无删段；`pass_with_edits` 要求 ≥65，并由 keep/remove 精确覆盖全片；常识/物理、身份、道具、文字水印、连续性或音画 hard fail 无论总分多高都必须 `fail`
 - 填完 response 后运行 `generated_clip_review.py audit --request work/generated_clip_review_request.json --response work/generated_clip_review_response.json --output work/generated_clip_review.json --markdown work/generated_clip_review.md --strict`；任何 clip/contact sheet 漂移、缺审、非法区间或需重生都会阻塞
 - 组装/发布前再运行 `generated_clip_review.py verify --report work/generated_clip_review.json --strict`，也可用 `pipeline_manifest.py --require generated_clip_review --strict`。reviewer label 不是身份认证或数字签名
+
+**Generation Lessons 生成视频经验闭环**（可选；只沉淀可泛化且人工明确批准的经验）：
+- 从已完成的 `generated_clip_review.json` 选定一条 clip，运行 `generation_lessons.py add --library work/generation_lessons.json --review work/generated_clip_review.json --clip-id shot_002 --category hand_contact --lesson "For hand-to-prop contact, isolate one interaction and keep the hand visible through release." --approved-by "<reviewer-label>" --model seedance-2.0`
+- `add` 会实时重算 canonical review，允许“片段确实需要重生”这一预期 blocker，但拒绝 source/contact-sheet 漂移、漏审、非法 response、stored summary/report-id 篡改；entry 绑定 report/request/clip/contact-sheet SHA-256。`approved_by` 只是审计标签，不是身份认证或签名
+- 复用前运行 `generation_lessons.py verify --library work/generation_lessons.json --strict`；按 provider/model/category 预览可用 `generation_lessons.py select --library work/generation_lessons.json --provider dreamina_seedance --model seedance-2.0 --limit 3 --output work/selected_generation_lessons.json --markdown work/selected_generation_lessons.md`
+- 新证据与旧规则冲突时，不删除旧 entry；新建 lesson 并加 `--supersedes <old-lesson-id>`。旧 evidence 继续留在 library，但只要新 entry 也匹配当前 provider/model/category，`select` 就排除被替代规则
+- 下一次生成提示词包显式加 `video_prompt_pack.py ... --lesson-library work/generation_lessons.json --lesson-model seedance-2.0 --lesson-limit 3`。provider 专属规则优先，未给 `--lesson-model` 时不会误用 model-specific 经验；脚本只追加人工批准的 `lesson`，不会自动把 clip-specific `prompt_fix` 当成通用规则，也不会自动重生或消费 credits
+- 生图优先使用 Codex 内置 `image_gen` 工具，即 OpenAI GPT Image 2（`gpt-image-2`）。
 - 详细说明见 [docs/prompts/89-generated-clip-review.md](docs/prompts/89-generated-clip-review.md)
 
 **Storyboard Assets 素材清单与预检**（分镜后、渲染前推荐）：

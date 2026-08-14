@@ -91,6 +91,7 @@
 | 87 | [HDR → Rec.709 SDR Delivery 社媒交付](87-hdr-sdr.md) | PQ/HLG master → source-bound Hable tone-map、BT.709 tags、全长解码和 live gate |
 | 88 | [Multimodal Dead-Air 静音 + 静帧保守剪辑](88-multimodal-dead-air.md) | silence AND freeze → 60% 覆盖、交集删段、20% 预算、source hash 与单次编码 gate |
 | 89 | [Generated Clip Review 生成视频片段复核](89-generated-clip-review.md) | 生成 clip → contact sheet、常识/物理/身份评分、裁切范围、重生建议和 live gate |
+| 90 | [Generation Lessons 生成视频复核经验闭环](90-generation-lessons.md) | generated clip review → 人工批准、provider/model scoped 经验库 → 下一次 prompt pack |
 
 ## 快速上手
 

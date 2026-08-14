@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
 
+from generation_lessons import load_library, select_lessons, verify_library
 from storyboard_plan import ROUTING_SENTENCE
 
 
@@ -253,18 +254,35 @@ def build_video_prompt_pack(
     approved: bool = False,
     animate_stills: bool = False,
     style_reference: Optional[str] = None,
+    lesson_library: Optional[Mapping[str, Any]] = None,
+    lesson_model: str = "",
+    lesson_categories: Optional[Sequence[str]] = None,
+    lesson_limit: int = 3,
     default_duration: float = 4.0,
     max_duration: float = 8.0,
 ) -> Dict[str, Any]:
+    if lesson_limit < 0 or lesson_limit > 10:
+        raise ValueError("lesson_limit must be between 0 and 10")
     characters = list(characters or [])
     brand_anchors = list(brand_anchors or [])
     target = plan.get("target") if isinstance(plan.get("target"), Mapping) else {}
     aspect = str(target.get("aspect") or "9:16")
     shared_style_reference = _explicit_reference(style_reference)
+    lesson_library_id = ""
+    if lesson_library is not None:
+        lesson_verification = verify_library(lesson_library)
+        if lesson_verification["summary"]["blocking"]:
+            raise ValueError(
+                "generation lesson library is invalid: "
+                + "; ".join(lesson_verification["blockers"])
+            )
+        lesson_library_id = str(lesson_library.get("library_id") or "")
 
     items: List[Dict[str, Any]] = []
     provider_counts: Dict[str, int] = {}
     approval_required = 0
+    applied_lesson_ids = set()
+    applied_lesson_count = 0
 
     for pos, shot in enumerate(plan.get("shots") or []):
         if not isinstance(shot, Mapping):
@@ -304,6 +322,25 @@ def build_video_prompt_pack(
                 f"{prompt} STYLE LOCK: Match the shared style reference and the same palette, "
                 "line/fill treatment, texture, lighting, and finish across every generated shot."
             )
+        matched_lessons = (
+            select_lessons(
+                lesson_library,
+                provider=selected_provider,
+                model=lesson_model,
+                categories=lesson_categories,
+                limit=lesson_limit,
+            )
+            if lesson_library is not None and selected_provider in GENERATED_VIDEO_PROVIDERS
+            else []
+        )
+        if matched_lessons:
+            constraints = " ".join(
+                f"[{(entry.get('scope') or {}).get('category', '')}] {entry.get('lesson', '')}"
+                for entry in matched_lessons
+            )
+            prompt = f"{prompt} LEARNED CONSTRAINTS: {constraints}"
+            applied_lesson_count += len(matched_lessons)
+            applied_lesson_ids.update(str(entry.get("lesson_id") or "") for entry in matched_lessons)
         items.append({
             "shot_id": shot_id,
             "section": shot.get("section"),
@@ -322,6 +359,16 @@ def build_video_prompt_pack(
             "style_reference": dict(shared_style_reference),
             "prompt": prompt,
             "negative_prompt": DEFAULT_NEGATIVE_PROMPT,
+            "generation_lessons": [
+                {
+                    "lesson_id": entry.get("lesson_id"),
+                    "scope": dict(entry.get("scope") or {}),
+                    "lesson": entry.get("lesson"),
+                    "prompt_fix": entry.get("prompt_fix"),
+                    "source": dict(entry.get("source") or {}),
+                }
+                for entry in matched_lessons
+            ],
             "continuity_anchors": continuity,
             "approval_required": requires_approval,
             "approval_status": "approved" if (requires_approval and approved) else ("needs_approval" if requires_approval else "not_required"),
@@ -355,6 +402,12 @@ def build_video_prompt_pack(
             "characters": characters,
             "brand_anchors": brand_anchors,
             "style_reference": shared_style_reference,
+            "lesson_library": {
+                "library_id": lesson_library_id,
+                "model": lesson_model or "*",
+                "categories": list(lesson_categories or []),
+                "limit_per_shot": lesson_limit,
+            },
             "character_sheet_prompt": _character_sheet_prompt(characters, brand_anchors, aspect),
             "negative_prompt": DEFAULT_NEGATIVE_PROMPT,
         },
@@ -363,11 +416,14 @@ def build_video_prompt_pack(
             "approval_required": approval_required,
             "blocking": approval_required,
             "style_reference_ready": int(bool(shared_style_reference["resolved_path"])),
+            "generation_lessons_applied": applied_lesson_count,
+            "unique_generation_lessons": len(applied_lesson_ids),
             **{f"provider_{key}": value for key, value in sorted(provider_counts.items())},
         },
         "items": items,
         "next_steps": [
             "Review prompts and reference paths before submitting any generated-video job.",
+            "Verify the generation lesson library and review every learned constraint before reusing it.",
             "Use Codex image_gen first for still references and character sheets.",
             "Run reference_frame_preflight.py to verify first-frame and shared style-reference geometry.",
             "Confirm provider credits before running Dreamina/即梦, Veo, LTX, Wan, or Sora jobs.",
@@ -404,6 +460,7 @@ def emit_markdown(pack: Mapping[str, Any]) -> str:
         f"- Items: {pack.get('summary', {}).get('items', 0)}",
         f"- Approval required: {pack.get('summary', {}).get('approval_required', 0)}",
         f"- Blocking: {pack.get('summary', {}).get('blocking', 0)}",
+        f"- Learned constraints applied: {pack.get('summary', {}).get('generation_lessons_applied', 0)}",
         f"- Shared style reference: `{style_reference_path}`",
         "",
         "## Character / Style Reference",
@@ -436,6 +493,16 @@ def emit_markdown(pack: Mapping[str, Any]) -> str:
         ])
         if item.get("approval_note"):
             lines.extend([f"> {item['approval_note']}", ""])
+        if item.get("generation_lessons"):
+            lines.extend([
+                "**Approved generation lessons**",
+                "",
+                *[
+                    f"- `{str(entry.get('lesson_id') or '')[:12]}` [{(entry.get('scope') or {}).get('category', '')}] {entry.get('lesson', '')}"
+                    for entry in item.get("generation_lessons") or []
+                ],
+                "",
+            ])
         lines.extend([
             "**Prompt**",
             "",
@@ -478,6 +545,10 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         "--style-reference",
         help="Shared local style-key image attached unchanged to every generated shot.",
     )
+    parser.add_argument("--lesson-library", help="Approved generation_lessons.json to apply to generated-video prompts.")
+    parser.add_argument("--lesson-model", default="", help="Exact model scope; omitted applies provider-wide lessons only.")
+    parser.add_argument("--lesson-category", action="append", default=[], help="Lesson category filter; can repeat.")
+    parser.add_argument("--lesson-limit", type=int, default=3, help="Maximum approved lessons per generated shot (0-10).")
     parser.add_argument("--animate-stills", action="store_true", help="Turn codex_imagegen still routes into image-to-video prompts.")
     parser.add_argument("--approved", action="store_true", help="Mark generated-video provider credit use as already approved.")
     parser.add_argument("--default-duration", type=float, default=4.0, help="Fallback clip duration when a shot has no duration.")
@@ -486,6 +557,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     args = parser.parse_args(list(argv) if argv is not None else None)
 
     plan = load_plan(args.storyboard_plan)
+    lesson_library = load_library(args.lesson_library) if args.lesson_library else None
     pack = build_video_prompt_pack(
         plan,
         provider=args.provider,
@@ -496,6 +568,10 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         approved=args.approved,
         animate_stills=args.animate_stills,
         style_reference=args.style_reference,
+        lesson_library=lesson_library,
+        lesson_model=args.lesson_model,
+        lesson_categories=args.lesson_category,
+        lesson_limit=args.lesson_limit,
         default_duration=args.default_duration,
         max_duration=args.max_duration,
     )

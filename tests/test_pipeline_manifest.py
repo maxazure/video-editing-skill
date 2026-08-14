@@ -11,6 +11,7 @@ from edit_revision import APPROVAL_VERSION, apply_revision, audit_proposal, prep
 from edit_recipe import export_recipe  # noqa: E402
 import delivery_encode  # noqa: E402
 import generated_clip_review  # noqa: E402
+import generation_lessons  # noqa: E402
 import hdr_sdr  # noqa: E402
 import multimodal_dead_air  # noqa: E402
 from jump_cut import Segment  # noqa: E402
@@ -56,6 +57,32 @@ def test_missing_required_artifacts_block_publish_ready(tmp_path):
     assert manifest["status"] == "blocked"
     assert "master_video" in manifest["missing_required"]
     assert any("render_final.py" in action for action in manifest["next_actions"])
+
+
+def test_generation_lesson_library_is_live_verified_and_can_be_required(tmp_path):
+    _publish_ready_project(tmp_path)
+    library_path = tmp_path / "work" / "generation_lessons.json"
+    _write(library_path, generation_lessons.new_library())
+
+    current = build_manifest(str(tmp_path), target_stage="publish_ready")
+    gate = next(g for g in current["gates"] if g["category"] == "generation_lessons")
+    assert gate["status"] == "ready"
+
+    library = json.loads(library_path.read_text(encoding="utf-8"))
+    library["library_id"] = "0" * 64
+    _write(library_path, library)
+    stale = build_manifest(str(tmp_path), target_stage="publish_ready")
+    gate = next(g for g in stale["gates"] if g["category"] == "generation_lessons")
+    assert gate["status"] == "blocked"
+    assert "generation_lessons" in stale["blocked_gates"]
+
+    library_path.unlink()
+    required = build_manifest(
+        str(tmp_path),
+        target_stage="publish_ready",
+        required=["generation_lessons"],
+    )
+    assert "generation_lessons" in required["missing_required"]
 
 
 def test_multimodal_dead_air_plan_is_live_verified_and_can_be_required(tmp_path, monkeypatch):

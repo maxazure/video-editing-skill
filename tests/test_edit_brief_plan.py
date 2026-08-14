@@ -311,6 +311,25 @@ def test_generated_video_brief_routes_downloaded_clips_through_visual_review(tmp
     assert step["gate_category"] == "generated_clip_review"
 
 
+def test_generated_video_lesson_library_is_verified_before_prompt_reuse(tmp_path):
+    source = tmp_path / "talk.mp4"
+    source.write_text("fake video", encoding="utf-8")
+
+    plan = build_plan(
+        f"把 {source} 配上 Veo 生成视频并复用生成经验库",
+        project_dir=str(tmp_path),
+    )
+
+    ids = [step["id"] for step in plan["steps"]]
+    assert ids.index("generation_lessons") < ids.index("video_prompt_pack")
+    lesson_step = next(step for step in plan["steps"] if step["id"] == "generation_lessons")
+    prompt_step = next(step for step in plan["steps"] if step["id"] == "video_prompt_pack")
+    assert lesson_step["gate_category"] == "generation_lessons"
+    assert "generation_lessons.py verify" in lesson_step["command"]
+    assert "--provider dreamina_seedance" in prompt_step["command"]
+    assert "--lesson-library work/generation_lessons.json" in prompt_step["command"]
+
+
 def test_cli_writes_json_and_markdown(tmp_path):
     source = tmp_path / "talk.mp4"
     source.write_text("fake video", encoding="utf-8")

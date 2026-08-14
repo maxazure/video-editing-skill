@@ -118,6 +118,16 @@ SIGNAL_KEYWORDS: Mapping[str, Sequence[str]] = {
         "生成视频",
         "generated video",
     ),
+    "generation_lessons": (
+        "generation lessons",
+        "generation lesson",
+        "prompt lessons",
+        "prompt lesson library",
+        "生成经验库",
+        "生成经验",
+        "提示词经验",
+        "复用复盘经验",
+    ),
     "audio_design": ("bgm", "music", "配乐", "音效", "sfx", "sound design", "声音设计"),
     "video_stabilization": (
         "video stabilization",
@@ -252,6 +262,7 @@ SIGNAL_LABELS: Mapping[str, str] = {
     "source_receipts": "事实来源复核",
     "broll": "B-roll / stock 素材规划",
     "generated_assets": "生成式图片 / 视频素材",
+    "generation_lessons": "生成视频复核经验库",
     "audio_design": "BGM / SFX 声音设计",
     "video_stabilization": "手持素材稳定化 / 防抖",
     "speed_ramp": "局部 speed ramp / velocity edit",
@@ -867,8 +878,40 @@ def build_plan(
             ),
         )
 
+    if "generation_lessons" in ids:
+        _add_step(
+            steps,
+            seen,
+            _step(
+                "generation_lessons",
+                phase="assets",
+                script="generation_lessons.py",
+                label="Verify the approved generated-video lesson library",
+                reason="The brief asks to reuse or maintain prompt lessons distilled from source-bound clip reviews.",
+                command=shell([python_bin, "scripts/generation_lessons.py", "verify", "--library", "work/generation_lessons.json", "--strict"]),
+                outputs=["work/generation_lessons.json"],
+                gate_category="generation_lessons",
+                required=False,
+            ),
+        )
+
     if "generated_assets" in ids:
         notes.append(IMAGEGEN_ROUTING)
+        prompt_pack_command = [
+            python_bin,
+            "scripts/video_prompt_pack.py",
+            "--storyboard-plan",
+            "work/storyboard_plan.json",
+            "--provider",
+            "dreamina_seedance",
+            "--output",
+            "work/video_prompt_pack.json",
+            "--markdown",
+            "work/video_prompt_pack.md",
+            "--strict",
+        ]
+        if "generation_lessons" in ids:
+            prompt_pack_command.extend(["--lesson-library", "work/generation_lessons.json"])
         _add_step(
             steps,
             seen,
@@ -892,11 +935,12 @@ def build_plan(
                 script="video_prompt_pack.py",
                 label="Create provider prompt pack and paid-generation approval gate",
                 reason="Generated video providers need prompts, continuity anchors, and approval before credits are spent.",
-                command=shell([python_bin, "scripts/video_prompt_pack.py", "--storyboard-plan", "work/storyboard_plan.json", "--provider", "dreamina", "--output", "work/video_prompt_pack.json", "--markdown", "work/video_prompt_pack.md", "--strict"]),
+                command=shell(prompt_pack_command),
                 outputs=["work/video_prompt_pack.json", "work/video_prompt_pack.md"],
                 gate_category="video_prompt_pack",
             ),
         )
+
         _add_step(
             steps,
             seen,

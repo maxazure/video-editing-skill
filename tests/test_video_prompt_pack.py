@@ -7,6 +7,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(REPO, "scripts"))
 
 from storyboard_plan import ROUTING_SENTENCE, build_storyboard_plan  # noqa: E402
+import generation_lessons  # noqa: E402
 from video_prompt_pack import build_video_prompt_pack, emit_markdown  # noqa: E402
 
 
@@ -20,6 +21,34 @@ def _sample_transcript():
             {"id": 5, "start": 11.0, "end": 14.0, "text": "评论区告诉我你怎么看"},
         ]
     }
+
+
+def _lesson_library(*, provider="veo", model="*"):
+    entry = {
+        "version": generation_lessons.ENTRY_VERSION,
+        "created_at": "2026-08-15T00:00:00Z",
+        "scope": {"provider": provider, "model": model, "category": "hand_contact"},
+        "lesson": "For hand-to-prop contact, isolate one interaction and keep the hand visible through release.",
+        "prompt_fix": "Use one contact action in a dedicated shot.",
+        "evidence": "The hand crossed through a door before release in the reviewed clip.",
+        "supersedes": [],
+        "source": {
+            "report_id": "0" * 64,
+            "request_id": "1" * 64,
+            "clip_id": "shot_001",
+            "clip_sha256": "2" * 64,
+            "contact_sheet_sha256": "3" * 64,
+            "verdict": "fail",
+            "weighted_score": 100.0,
+            "hard_fail_codes": ["anatomy_or_physics_failure"],
+        },
+        "approval": {
+            "approved_by": "Jay",
+            "note": "Label only; not identity authentication or a digital signature.",
+        },
+    }
+    entry["lesson_id"] = generation_lessons._entry_id(entry)
+    return generation_lessons.add_entry(generation_lessons.new_library(), entry)
 
 
 def test_video_prompt_pack_auto_routes_and_blocks_paid_approval(tmp_path):
@@ -110,6 +139,42 @@ def test_shared_style_reference_is_attached_to_every_item(tmp_path):
         ("STYLE LOCK:" in item["prompt"]) == (item["provider"] in generated)
         for item in pack["items"]
     )
+
+
+def test_approved_generation_lessons_are_scoped_and_added_to_prompts():
+    plan = build_storyboard_plan(_sample_transcript(), max_shots=3)
+    library = _lesson_library(provider="veo")
+
+    pack = build_video_prompt_pack(
+        plan,
+        provider="veo",
+        approved=True,
+        lesson_library=library,
+    )
+
+    assert pack["global"]["lesson_library"]["library_id"] == library["library_id"]
+    assert pack["summary"]["generation_lessons_applied"] == 3
+    assert pack["summary"]["unique_generation_lessons"] == 1
+    assert all("LEARNED CONSTRAINTS:" in item["prompt"] for item in pack["items"])
+    assert all(len(item["generation_lessons"]) == 1 for item in pack["items"])
+    assert "Approved generation lessons" in emit_markdown(pack)
+
+
+def test_model_specific_lesson_requires_explicit_model_scope():
+    plan = build_storyboard_plan(_sample_transcript(), max_shots=1)
+    library = _lesson_library(provider="veo", model="veo-3.1")
+
+    provider_only = build_video_prompt_pack(plan, provider="veo", approved=True, lesson_library=library)
+    exact_model = build_video_prompt_pack(
+        plan,
+        provider="veo",
+        approved=True,
+        lesson_library=library,
+        lesson_model="veo-3.1",
+    )
+
+    assert provider_only["summary"]["generation_lessons_applied"] == 0
+    assert exact_model["summary"]["generation_lessons_applied"] == 1
 
 
 def test_cli_writes_prompt_pack_and_strict_fails_until_approved(tmp_path):

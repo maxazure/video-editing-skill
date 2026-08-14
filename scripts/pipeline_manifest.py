@@ -201,6 +201,13 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         blocks_when_present=True,
     ),
     ArtifactDef(
+        "generation_lessons",
+        "Generation Lessons",
+        ("**/generation_lessons.json", "**/*_generation_lessons.json"),
+        "Run generation_lessons.py verify and repair invalid or unapproved learned constraints before prompt reuse.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "reference_frame_preflight",
         "Reference Frame Preflight",
         ("**/reference_frame_preflight.json", "**/*_reference_frame_preflight.json"),
@@ -750,6 +757,32 @@ def evaluate_category(
             elif _int_at(verification, "summary", "warnings"):
                 status = "warn" if status != "blocked" else status
                 notes.append(f"generated clip review retains approved trim-only edits: {artifact.path}")
+        return {
+            "category": definition.category,
+            "label": definition.label,
+            "status": status,
+            "artifact_count": len(artifacts),
+            "latest_path": artifacts[0].path,
+            "notes": sorted(set(notes)),
+            "next_action": definition.next_action if status in {"missing", "blocked", "warn"} else "",
+        }
+
+    if definition.category == "generation_lessons":
+        from generation_lessons import verify_library
+
+        for artifact in artifacts:
+            data = _load_json(artifact.path)
+            if data is None:
+                status = "blocked"
+                notes.append(f"unreadable generation lesson library: {artifact.path}")
+                continue
+            verification = verify_library(data)
+            blocking = _int_at(verification, "summary", "blocking")
+            if blocking:
+                status = "blocked"
+                notes.append(
+                    f"invalid generation lesson library {artifact.path}: {blocking} blocking item(s)"
+                )
         return {
             "category": definition.category,
             "label": definition.label,

@@ -21,6 +21,7 @@
 - **上游剪辑配置可以安全撤销/重做**：`edit_revision.py` 把 `render_config` / `enrich_plan` 等文本 artifact 的完整改动绑定到基础和依赖 SHA-256；独立审批后成组写入，外部漂移时拒绝 undo/redo 并阻塞 manifest。
 - **已审时间线可以换素材复用**：`edit_recipe.py` 把 `render_config.json` 的全部本地文件路径替换成类型化槽位，生成 content-addressed 可移植配方；回放必须完整绑定新素材、记录 SHA-256 并重新通过 `edit_preflight.py`。
 - **生成式素材有明确审批和台账**：Codex `image_gen` / GPT Image 2 提示词、Dreamina/Veo/LTX/Wan/Sora 视频提示词、provider 决策、`submit_id` 轮询下载和本地落盘 gate 都先记录再执行。
+- **生成片段复核会反哺下一次提示词**：`generation_lessons.py` 只从 canonical clip review 提取人工明确批准的通用经验，绑定 source digests，并按 provider/model/category 精确筛选后交给 `video_prompt_pack.py`；不会把单片修复建议自动当成全局规则。
 - **适合交给强推理模型做长流程代理执行**：在 [GPT-5.6 Sol](https://developers.openai.com/api/docs/models/gpt-5.6-sol)（OpenAI 当前旗舰；API 别名 `gpt-5.6` 指向 Sol）和 [Claude Opus 4.8](https://docs.anthropic.com/en/docs/about-claude/models) 这类面向复杂专业任务、agent 工作流的模型下，本 skill 对 **口播类短视频** 至少可以替代 **80% 的常规视频剪辑工作**。
 
 这里的“80%”是按口播短视频生产来评估的：它已经覆盖素材整理、ASR、清稿、粗剪、字幕、B-roll/图像/生成视频规划、声音 cue、渲染前预检、渲染、质检、多平台导出和发布文案。剩下通常需要人工负责的是选题判断、最终审美取舍、品牌口吻、客户确认、复杂手工精修、调色混音和需要逐帧 keyframe 的高级特效。
@@ -193,6 +194,8 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    │                            submit_id / 轮询 / 下载 / 本地落盘 gate
    ├─→ generated_clip_review.py 下载后的生成视频片段复核
    │                            contact sheet / 常识物理 / 身份道具 / 裁切与重生 gate
+   ├─→ generation_lessons.py    canonical clip review → 人工批准经验库
+   │                            provider/model/category scope → 下一次 prompt pack
    │
    ├─→ storyboard_assets.py     shot cards → 素材任务清单 / ready 预检
    │                            imagegen / Dreamina / motion / broll 状态表
@@ -926,6 +929,51 @@ python3 scripts/generated_clip_review.py verify \
 ```
 
 `pass` 要求加权分至少 80、故事清晰、没有 hard fail 且无需删段；`pass_with_edits` 要求至少 65，并让 `keep_ranges` / `remove_ranges` 无缝覆盖整条片段；身份断裂、错误/缺失动作、肢体或物理失败、多余主体、关键道具消失、生成文字/水印、连续性矛盾、音画矛盾和 explicit must-avoid 都会越过高分直接 `fail`，要求 `regenerate=true + prompt_fix`。clip/contact sheet 漂移、漏审、区间重叠/缺口和报告派生状态篡改都会 fail closed；`pipeline_manifest.py --require generated_clip_review --strict` 可设为发布门禁。reviewer label 不是身份认证或数字签名，contact sheet 也不能替代完整播放。
+
+### 🧠 Generation Lessons — 生成视频复核经验闭环
+[`scripts/generation_lessons.py`](scripts/generation_lessons.py) · [详细文档](docs/prompts/90-generation-lessons.md)
+
+同类生成技能常把每次 QC 经验追加到一个自由文本文件，再要求下一次提示词读取。本项目把这条闭环收紧为显式 approval 和 scope：只有 canonical `generated_clip_review.json` 中结构有效的 clip 才能提供 evidence；operator 需另写一条可泛化 `lesson` 并给出 `approved_by` 标签。entry 会绑定 report/request/clip/contact-sheet 摘要、verdict、score、hard-fail codes 和原 `prompt_fix`，但 prompt pack 只自动复用人工批准的 `lesson`。
+
+```bash
+# 1. 从一条已审 clip 沉淀 provider/model scoped 经验
+python3 scripts/generation_lessons.py add \
+  --library work/generation_lessons.json \
+  --review work/generated_clip_review.json \
+  --clip-id shot_002 \
+  --category hand_contact \
+  --model seedance-2.0 \
+  --lesson "For hand-to-prop contact, isolate one interaction and keep the hand visible through release." \
+  --approved-by "<reviewer-label>" \
+  --markdown work/generation_lessons.md
+
+# 2. 每次复用前验证；也可 select 先看实际命中的规则
+python3 scripts/generation_lessons.py verify \
+  --library work/generation_lessons.json \
+  --strict
+python3 scripts/generation_lessons.py select \
+  --library work/generation_lessons.json \
+  --provider dreamina_seedance \
+  --model seedance-2.0 \
+  --limit 3 \
+  --output work/selected_generation_lessons.json \
+  --markdown work/selected_generation_lessons.md
+
+# 3. 显式注入下一次 provider prompt pack
+python3 scripts/video_prompt_pack.py \
+  --storyboard-plan work/storyboard_plan.json \
+  --provider dreamina_seedance \
+  --lesson-library work/generation_lessons.json \
+  --lesson-model seedance-2.0 \
+  --lesson-limit 3 \
+  --approved \
+  --output work/video_prompt_pack.json \
+  --markdown work/video_prompt_pack.md
+```
+
+未传 `--lesson-model` 时只会命中 provider-wide (`model=*`) 经验，避免模型专属行为外溢；provider 精确经验优先于 global 经验。新证据推翻旧规则时，用新 entry 的 `--supersedes <old-lesson-id>` 保留历史但停止选择旧规则；未知 id、自引用或重复 id 会阻断。`add` 允许“该失败片段需要重生”这一预期 blocker，以便从失败中学习，但 source/contact-sheet 漂移、非法 response、漏审或 stored audit 篡改仍会拒绝。经验库 SHA-256 用于发现漂移，不是签名；`approved_by` 也不是身份认证。脚本不会调用生成 provider、不会自动重生、不会消费 credits，且每个 shot 默认最多注入 3 条经验。`pipeline_manifest.py --require generation_lessons --strict` 可把库完整性设为项目门禁。
+
+生图优先使用 Codex 内置 `image_gen` 工具，即 OpenAI GPT Image 2（`gpt-image-2`）。
 
 ### 🗂️ Media Library Recommend — 本地 B-roll 候选推荐
 [`scripts/media_library.py`](scripts/media_library.py)
@@ -2623,6 +2671,7 @@ pytest tests/test_video_prompt_pack.py -v   # 视频生成提示词包 + 审批 
 pytest tests/test_reference_frame_preflight.py -v # 首帧/style key 尺寸/方向/透明背景 gate
 pytest tests/test_generation_task_log.py -v # 异步生成任务台账 + 下载 gate
 pytest tests/test_generated_clip_review.py -v # 生成视频 contact sheet / 评分 / 裁切 / 重生 / stale gate
+pytest tests/test_generation_lessons.py -v # 已审片段 → scoped prompt 经验库 / 选择 / stale gate
 pytest tests/test_video_understanding.py -v # 抽样帧 + 可选 YOLO 检测 artifact
 pytest tests/test_scene_boundaries.py -v # fixed/adaptive 场景检测 + cut evidence
 pytest tests/test_visual_dedupe.py -v # 跨来源重复场景检测 + 保留建议
@@ -2650,6 +2699,22 @@ pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 pytest tests/test_review_dashboard.py -v    # 静态人工复核面板 + gate queue
 pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 gate
 ```
+
+### 2026-08-15 自动化升级记录（Evidence-bound Generation Lessons）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`0xadvait/ai-video-skill` learning loop](https://github.com/0xadvait/ai-video-skill/blob/main/LESSONS.md) | 每次生成后用 contact sheet/QC 提炼 cause → effect 经验，下一次工作流先读 `LESSONS.md`；冲突时追加 superseding lesson 而非静默覆盖 | 采用 review → lesson → next prompt 闭环；不直接自由追加文本，而是绑定 canonical review 与 clip/contact-sheet digests，要求显式 approval，并用 scope + `supersedes` 保留历史、停止选择旧规则 |
+| [`Emily2040/seedance-2.0` retake protocol](https://github.com/Emily2040/seedance-2.0/blob/main/references/retake-protocol.md) | 对 keep / fix in post / edit / re-roll / rewrite 分流；同一轮只改一个变量并保留 shot log，避免多变量重试后无法判断哪项有效 | 保留原 review 的 verdict、score、hard-fail、evidence 和 clip-specific `prompt_fix` 作为学习来源；只有另行批准的通用 `lesson` 会进入未来提示词，不自动触发重生或多变量修复 |
+| [`DojoCodingLabs/remotion-superpowers` review loop](https://github.com/DojoCodingLabs/remotion-superpowers/blob/main/commands/review-video.md) | render → review → actionable priority → re-render 的循环清晰，把复核结果转成下一步可执行修正 | 把 actionable feedback 持久化成可筛选 artifact 并交给 `video_prompt_pack.py`；仍保留人工选择和 provider credit gate，不让反馈循环自行修改工程或付费生成 |
+
+新增/调整能力：新增 [`scripts/generation_lessons.py`](scripts/generation_lessons.py)、[`tests/test_generation_lessons.py`](tests/test_generation_lessons.py) 和 [`docs/prompts/90-generation-lessons.md`](docs/prompts/90-generation-lessons.md)。`add` 从 `generated_clip_review.json` 实时重算 canonical request/response：允许“该 clip 确实需要重生”这一预期 blocker，以便从失败学习，但拒绝 source/contact-sheet 漂移、非法 review、漏审、stored summary/report-id 篡改。每条 `generation_lesson.v1` 绑定 report/request/clip/contact-sheet SHA-256、verdict、score、hard-fail codes、evidence、原 `prompt_fix` 和 approval label，并生成 canonical lesson id；library 重新派生 summary/library id，限制 500 条，`verify` 发现 schema、重复/未知 supersedes id、自引用或内容漂移即阻断。`select` 按 provider/model/category 和 0–10 上限筛选，精确 provider/model 优先，并排除当前匹配 entry 显式 supersede 的旧规则；没有显式 model 时不会误用 model-specific 经验。`video_prompt_pack.py` 新增 `--lesson-library / --lesson-model / --lesson-category / --lesson-limit`，只把匹配的人工批准 `lesson` 追加为 `LEARNED CONSTRAINTS`，同时保留 source evidence；不自动拼入 clip-specific `prompt_fix`。`pipeline_manifest.py` 新增 `generation_lessons` live gate，`edit_brief_plan.py` 新增中英文经验库路由，并修正同一生成 runbook 的 provider 枚举为可执行的 `dreamina_seedance`。
+
+使用方式：完成 `generated_clip_review.py audit` 后，运行 `python3 scripts/generation_lessons.py add --library work/generation_lessons.json --review work/generated_clip_review.json --clip-id shot_002 --category hand_contact --model seedance-2.0 --lesson "For hand-to-prop contact, isolate one interaction and keep the hand visible through release." --approved-by "<reviewer-label>" --markdown work/generation_lessons.md`；复用前运行 `python3 scripts/generation_lessons.py verify --library work/generation_lessons.json --strict`，可用 `select --provider dreamina_seedance --model seedance-2.0 --limit 3 --output work/selected_generation_lessons.json --markdown work/selected_generation_lessons.md` 预览命中；下一次 prompt pack 加 `--lesson-library work/generation_lessons.json --lesson-model seedance-2.0 --lesson-limit 3`。provider-wide 经验使用 `--model '*'`，真正跨 provider 的规则才显式 `--global`。approval label 和 SHA-256 都不是身份认证或签名；脚本不调用 provider、不自动重生，也不消费 credits。
+
+验证结果：新增 11 项经验提取/源漂移/摘要篡改/scope 选择/supersedes/CLI/自然语言路由/manifest/prompt 注入回归；定向 `.venv/bin/python -m pytest tests/test_generation_lessons.py tests/test_video_prompt_pack.py tests/test_edit_brief_plan.py tests/test_pipeline_manifest.py -q` 通过 `113 passed in 1.45s`，最终全量 `.venv/bin/python -m pytest tests -q` 通过 `877 passed in 16.87s`。测试固定了失败 clip 的预期 regeneration blocker 可以供学习，但任何 source drift 必须拒绝；provider/model/category 精确筛选、model 未声明时不外溢、superseded 历史保留但不再选择、prompt pack 只注入批准 lesson、library id 篡改传播到 manifest、缺失 library 不得被当成空库 ready。`.venv/bin/python -m compileall -q scripts tests`、`generation_lessons.py` 三组 CLI help、`video_prompt_pack.py` lesson 参数、manifest category、Skill `quick_validate.py` 和 `git diff --check` 均通过。
 
 ### 2026-08-14 自动化升级记录（Source-bound Generated Clip Review）
 
@@ -3307,6 +3372,8 @@ scripts/
 ├── video_prompt_pack.py        多模型视频生成提示词包 + 审批 gate  [V3]
 ├── reference_frame_preflight.py 首帧/style key 画幅与背景预检 gate [V3]
 ├── generation_task_log.py      异步生成任务台账 + 下载 gate         [V3]
+├── generated_clip_review.py    source-bound 生成片段评分/裁切/重生 gate [V3]
+├── generation_lessons.py       已审片段 → scoped prompt 经验库 / 选择 / verify [V3]
 ├── storyboard_assets.py        分镜素材任务清单 + ready 预检       [V3]
 ├── stock_material_plan.py      远程 stock 搜索规划                 [V3]
 ├── screen_focus.py             录屏点击/热点聚焦计划              [V3]
