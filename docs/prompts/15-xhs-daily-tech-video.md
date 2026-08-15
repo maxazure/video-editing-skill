@@ -257,6 +257,18 @@
     # 完整看过 1×带声、0.25×、静音和 audio-only 后填 response，再运行 audit --strict / verify --strict。
     # hard fail 或需重生不能靠转场掩盖；详见 docs/prompts/89-generated-clip-review.md
 
+4h-2. # 有两条以上生成视频时，逐片通过后再复核每个相邻边界：
+    python3 scripts/generated_sequence_review.py prepare \
+      --project-dir . \
+      --clip-review work/generated_clip_review.json \
+      --storyboard-plan work/storyboard_plan.json \
+      --evidence-dir verify/generated_sequence \
+      --output work/generated_sequence_review_request.json \
+      --markdown work/generated_sequence_review_request.md \
+      --response-template work/generated_sequence_review_response.json
+    # 逐个看无声 1× boundary preview 和尾帧/首帧并排图，再填写六项 continuity checks。
+    # mismatch 必须 fail 并给 repair_action；详见 docs/prompts/91-generated-sequence-review.md
+
 4i. # 如果输入是完整口播视频、访谈或录屏，且停顿很多，可先生成去停顿 cut list：
     python3 scripts/jump_cut.py origin/<talking_video>.mp4 \
       --dry-run \
@@ -615,6 +627,9 @@ day<NN>/
 │   ├── generated_clip_review_request.json # 生成片段 source-bound 复核请求
 │   ├── generated_clip_review_response.json # reviewer 评分/裁切/重生决定
 │   ├── generated_clip_review.json # live-verified 生成片段 gate
+│   ├── generated_sequence_review_request.json # 相邻 clip 真实边界证据复核请求
+│   ├── generated_sequence_review_response.json # 身份/道具/空间/动作/机位/光色决定
+│   ├── generated_sequence_review.json # live-verified 组装前连续性 gate
 │   ├── jumpcut.json        # 可选：去停顿 cut list
 │   ├── multimodal_dead_air_plan.json # 可选：静音 AND 静帧 source-bound 死区计划
 │   ├── multimodal_dead_air_plan.md   # 可选：覆盖率/交集/切点复核表

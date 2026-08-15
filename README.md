@@ -194,6 +194,8 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    │                            submit_id / 轮询 / 下载 / 本地落盘 gate
    ├─→ generated_clip_review.py 下载后的生成视频片段复核
    │                            contact sheet / 常识物理 / 身份道具 / 裁切与重生 gate
+   ├─→ generated_sequence_review.py 已审生成片段 → 相邻边界连续性复核
+   │                            尾帧/首帧 / 无声预览 / 身份道具空间动作机位光色 gate
    ├─→ generation_lessons.py    canonical clip review → 人工批准经验库
    │                            provider/model/category scope → 下一次 prompt pack
    │
@@ -929,6 +931,38 @@ python3 scripts/generated_clip_review.py verify \
 ```
 
 `pass` 要求加权分至少 80、故事清晰、没有 hard fail 且无需删段；`pass_with_edits` 要求至少 65，并让 `keep_ranges` / `remove_ranges` 无缝覆盖整条片段；身份断裂、错误/缺失动作、肢体或物理失败、多余主体、关键道具消失、生成文字/水印、连续性矛盾、音画矛盾和 explicit must-avoid 都会越过高分直接 `fail`，要求 `regenerate=true + prompt_fix`。clip/contact sheet 漂移、漏审、区间重叠/缺口和报告派生状态篡改都会 fail closed；`pipeline_manifest.py --require generated_clip_review --strict` 可设为发布门禁。reviewer label 不是身份认证或数字签名，contact sheet 也不能替代完整播放。
+
+### 🎞️ Generated Sequence Review — 生成视频跨镜头连续性复核
+[`scripts/generated_sequence_review.py`](scripts/generated_sequence_review.py) · [详细文档](docs/prompts/91-generated-sequence-review.md)
+
+逐片 `pass` 不等于组装后连续。这个第二层 gate 读取 live-verifiable `generated_clip_review.json`，按 storyboard 顺序为每个相邻 clip 提取已批准范围的真实尾帧/首帧、并排 JPEG 和“上一镜尾部 + 下一镜头部”的无声 1× MP4；再把 identity/wardrobe、prop state、spatial orientation、action end state、camera framing、lighting/palette 六项决定绑定到 clip、上游 review、storyboard 和 evidence bytes。
+
+```bash
+# 1. 逐片 review 已通过后，生成相邻边界证据和 response 模板
+python3 scripts/generated_sequence_review.py prepare \
+  --project-dir . \
+  --clip-review work/generated_clip_review.json \
+  --storyboard-plan work/storyboard_plan.json \
+  --evidence-dir verify/generated_sequence \
+  --output work/generated_sequence_review_request.json \
+  --markdown work/generated_sequence_review_request.md \
+  --response-template work/generated_sequence_review_response.json
+
+# 2. 看完每个 preview + comparison 后填写 response，再审计
+python3 scripts/generated_sequence_review.py audit \
+  --request work/generated_sequence_review_request.json \
+  --response work/generated_sequence_review_response.json \
+  --output work/generated_sequence_review.json \
+  --markdown work/generated_sequence_review.md \
+  --strict
+
+# 3. 组装/发布前重算上游 review、clip、storyboard、evidence 和 canonical audit
+python3 scripts/generated_sequence_review.py verify \
+  --report work/generated_sequence_review.json \
+  --strict
+```
+
+每项只允许 `match` / `intentional_change` / `mismatch` / `not_applicable`；至少两项必须真实评估。`mismatch` 必须 `fail`，同时给 failure code 和可执行 `repair_action`，不能用高分或一句“转场可接受”掩盖漂移；storyboard 明确设计的换场/换装/景别变化可以 `intentional_change` 通过，但保留 warning。`pass_with_edits` 上游片段只用首个/最后一个批准 `keep_range` 建边界，不会重新引入拒绝区间。任何 clip、上游 report、storyboard、frame/comparison/preview 漂移都会 fail closed；`pipeline_manifest.py --require generated_sequence_review --strict` 可设为组装/发布门禁。预览无声，不能替代最终 master 的完整声画复核；reviewer label 和 SHA-256 也不是身份认证或签名。
 
 ### 🧠 Generation Lessons — 生成视频复核经验闭环
 [`scripts/generation_lessons.py`](scripts/generation_lessons.py) · [详细文档](docs/prompts/90-generation-lessons.md)
@@ -2671,6 +2705,7 @@ pytest tests/test_video_prompt_pack.py -v   # 视频生成提示词包 + 审批 
 pytest tests/test_reference_frame_preflight.py -v # 首帧/style key 尺寸/方向/透明背景 gate
 pytest tests/test_generation_task_log.py -v # 异步生成任务台账 + 下载 gate
 pytest tests/test_generated_clip_review.py -v # 生成视频 contact sheet / 评分 / 裁切 / 重生 / stale gate
+pytest tests/test_generated_sequence_review.py -v # 已审生成片段相邻边界证据 / 连续性 / stale gate
 pytest tests/test_generation_lessons.py -v # 已审片段 → scoped prompt 经验库 / 选择 / stale gate
 pytest tests/test_video_understanding.py -v # 抽样帧 + 可选 YOLO 检测 artifact
 pytest tests/test_scene_boundaries.py -v # fixed/adaptive 场景检测 + cut evidence
@@ -2699,6 +2734,23 @@ pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 pytest tests/test_review_dashboard.py -v    # 静态人工复核面板 + gate queue
 pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 gate
 ```
+
+### 2026-08-16 自动化升级记录（Source-bound Generated Sequence Continuity Review）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`livingghost/pov-series-director`](https://github.com/livingghost/pov-series-director/blob/main/SKILL.md) | 后一 clip 的动作和构图必须建立在“已接受成片”的真实 terminal frame 上；逐次记录身份变化、道具转移、机位断裂和 endpoint drift，不能用规划图冒充最终证据 | 新增逐片 review 之后的独立 sequence gate；从 live clip bytes 和批准 keep ranges 提取真实尾帧/首帧、并排图与边界 preview，并绑定上游 review/storyboard，而不是只读 prompt 或计划图 |
+| [`machina-exm/film-studio-skills` stress-test](https://github.com/machina-exm/film-studio-skills/blob/main/skills/stress-test/SKILL.md) | 角色、场景、道具和状态变体先以 canonical descriptor/reference 锁定；任何 identity drift 都是 miss，不能因为其他结果好看而平均掉 | 六项 boundary checks 用离散 `match / intentional_change / mismatch / not_applicable`，任何非预期 mismatch 必须 fail、带 failure code 和 repair action；不提供总分绕过通道 |
+| [`zysilm/ai-video-producer-skill`](https://github.com/zysilm/ai-video-producer-skill/blob/main/SKILL.md) | 明确指出人物镜头只沿用 extracted end frame 会累积身份和服装漂移，角色可见时要重新使用原始角色 reference；同时把 scene/segment transition 与 review 分开 | 复核 identity/wardrobe、prop state、spatial orientation、action end state、camera framing、lighting/palette，并保留 storyboard continuity anchors；本轮不引入本地 ComfyUI/provider 执行器，只负责 provider-neutral 组装前 gate |
+| [`lincwang123-bot/seedance-video-workflow`](https://github.com/lincwang123-bot/seedance-video-workflow/blob/main/skills/seedance-video-workflow/SKILL.md) | 先锁定每个镜头最佳候选，再做技术/语义 audit 和 assemble；重试只改失败相关字段，不整体重写已通过镜头 | `fail` 要求边界级 repair action，明确回到受影响 clip/动作/道具修复；脚本不自动重生、不消费 credits，也不修改已经通过的其他片段 |
+
+新增/调整能力：新增 [`scripts/generated_sequence_review.py`](scripts/generated_sequence_review.py)、[`tests/test_generated_sequence_review.py`](tests/test_generated_sequence_review.py) 和 [`docs/prompts/91-generated-sequence-review.md`](docs/prompts/91-generated-sequence-review.md)。`prepare` 只接受至少两条、且上游 `generated_clip_review.json` 现场验证无 blocker 的片段；可按 `storyboard_plan.json` 排序并继承 expected first/last frame、reuse link 和 continuity anchors。每个相邻边界自动提取安全可解码 outgoing frame、incoming frame、并排 JPEG 和两侧默认各 1 秒的无声 1× H.264 preview；容器音频 padding 可能超出末个视频 packet，因此 outgoing 证据退回两个视频帧。上游 `pass_with_edits` 只用批准首/尾 keep range，不恢复 remove ranges。`audit` 固定六项 continuity checks、九类 failure code、完整 response coverage 和明确 repair action；`verify` 重算上游 canonical clip review、clip/storyboard/evidence SHA-256 与大小、clip order、相邻 boundary coverage、source times、派生 summary/report id。`pipeline_manifest.py` 新增存在即 live verify、可 `--require generated_sequence_review` 的门禁；`edit_brief_plan.py` 只在明确出现多镜头/跨镜头/角色或道具连续性意图时，把该步骤排在逐片 review 后。README、SKILL、daily workflow、Edit Brief、提示词索引和本节均已同步。
+
+使用方式：先完成并验证逐片 `generated_clip_review.json`，再运行 `python3 scripts/generated_sequence_review.py prepare --project-dir . --clip-review work/generated_clip_review.json --storyboard-plan work/storyboard_plan.json --evidence-dir verify/generated_sequence --output work/generated_sequence_review_request.json --markdown work/generated_sequence_review_request.md --response-template work/generated_sequence_review_response.json`；逐个以 1× 查看无声 boundary preview 和全尺寸 comparison，填写 response 后运行 `audit --request ... --response ... --output work/generated_sequence_review.json --markdown work/generated_sequence_review.md --strict`，组装/发布前再 `verify --report work/generated_sequence_review.json --strict`。有意换场/换装/景别变化可标 `intentional_change`，但保留 warning；非预期 mismatch 必须 fail，修复或重生后重新 prepare，不能手改旧 hash。预览无声且 reviewer label/SHA-256 不是身份认证或签名，最终 master 仍需完整声画复核。
+
+验证结果：新增 8 项 sequence request/audit/source drift/evidence drift/intentional change/storyboard coverage/真实 CLI 测试，并扩展 edit-brief 与 pipeline-manifest 回归；定向 `.venv/bin/python -m pytest tests/test_generated_sequence_review.py tests/test_edit_brief_plan.py tests/test_pipeline_manifest.py -q` 通过 `108 passed in 2.00s`，含上游逐片链的最终定向组合通过 `116 passed in 2.27s`，最终全量 `.venv/bin/python -m pytest tests -q` 通过 `887 passed in 18.41s`。真实 FFmpeg smoke 用两条 0.7 秒、160×90、24fps、H.264/AAC 样片完成 `prepare → audit → verify` ready round trip，产出 320×90 尾帧/首帧并排图和 0.458333 秒、160×90、24fps、H.264 无声 preview；人工查看确认左右 evidence 顺序正确。`.venv/bin/python -m compileall -q scripts tests`、四组新 CLI help、edit-brief/pipeline-manifest help 和 `git diff --check` 已通过。
 
 ### 2026-08-15 自动化升级记录（Evidence-bound Generation Lessons）
 
@@ -3289,6 +3341,9 @@ pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 g
 | **86** | **[J-cut / L-cut Audio Transition](docs/prompts/86-audio-transition.md)** | **显式声音先行/延续边界、source handle/hash、单次编码与 1× 试听 gate** |
 | **87** | **[HDR → Rec.709 SDR Delivery](docs/prompts/87-hdr-sdr.md)** | **PQ/HLG source hash、Hable tone-map、BT.709 tags、完整解码和 live gate** |
 | **88** | **[Multimodal Dead-Air](docs/prompts/88-multimodal-dead-air.md)** | **只剪同时静音且画面静止的死区** |
+| **89** | **[Generated Clip Review](docs/prompts/89-generated-clip-review.md)** | **生成视频下载后做逐片物理、身份、裁切与重生 gate** |
+| **90** | **[Generation Lessons](docs/prompts/90-generation-lessons.md)** | **把已审片段经验按 provider/model scope 复用到下一次 prompt** |
+| **91** | **[Generated Sequence Review](docs/prompts/91-generated-sequence-review.md)** | **逐片通过后复核相邻尾帧/首帧与跨镜头连续性** |
 | **43** | **[Audio Cue Sheet](docs/prompts/43-audio-cue-sheet.md)** | **规划 BGM/SFX 和生成审批** |
 | **45** | **[Video Prompt Pack](docs/prompts/45-video-prompt-pack.md)** | **视频生成提示词包 + paid approval gate** |
 | **46** | **[Generation Task Log](docs/prompts/46-generation-task-log.md)** | **跟踪 submit_id、轮询、下载和本地落盘** |
@@ -3373,6 +3428,7 @@ scripts/
 ├── reference_frame_preflight.py 首帧/style key 画幅与背景预检 gate [V3]
 ├── generation_task_log.py      异步生成任务台账 + 下载 gate         [V3]
 ├── generated_clip_review.py    source-bound 生成片段评分/裁切/重生 gate [V3]
+├── generated_sequence_review.py 已审生成片段相邻尾帧/首帧/预览连续性 gate [V3]
 ├── generation_lessons.py       已审片段 → scoped prompt 经验库 / 选择 / verify [V3]
 ├── storyboard_assets.py        分镜素材任务清单 + ready 预检       [V3]
 ├── stock_material_plan.py      远程 stock 搜索规划                 [V3]

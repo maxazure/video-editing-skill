@@ -92,6 +92,7 @@
 | 88 | [Multimodal Dead-Air 静音 + 静帧保守剪辑](88-multimodal-dead-air.md) | silence AND freeze → 60% 覆盖、交集删段、20% 预算、source hash 与单次编码 gate |
 | 89 | [Generated Clip Review 生成视频片段复核](89-generated-clip-review.md) | 生成 clip → contact sheet、常识/物理/身份评分、裁切范围、重生建议和 live gate |
 | 90 | [Generation Lessons 生成视频复核经验闭环](90-generation-lessons.md) | generated clip review → 人工批准、provider/model scoped 经验库 → 下一次 prompt pack |
+| 91 | [Generated Sequence Review 跨镜头连续性复核](91-generated-sequence-review.md) | 已审生成 clips → 相邻尾帧/首帧、边界预览、身份/道具/空间/动作连续性 live gate |
 
 ## 快速上手
 
@@ -141,6 +142,7 @@
 | 分镜要交给 Dreamina/Veo/LTX/Wan/Sora 生成视频 | [45-Video Prompt Pack](45-video-prompt-pack.md) |
 | 已提交异步生成任务，要保存 submit_id 并跟踪下载 | [46-Generation Task Log](46-generation-task-log.md) |
 | 生成视频已经下载，想在组装前查物理、身份、道具和可用裁切范围 | [89-Generated Clip Review](89-generated-clip-review.md) |
+| 多条生成视频逐片都通过了，想在组装前检查跨镜头连续性 | [91-Generated Sequence Review](91-generated-sequence-review.md) |
 | 想识别视频里的人、屏幕、手机或动态主体 | [47-Video Understanding](47-video-understanding.md) |
 | 想统一成片色彩或加轻微质感 | [48-Color Grade](48-color-grade.md) |
 | 准备上传前想核对平台视频、文案和 gate | [49-Publish Package](49-publish-package.md) |

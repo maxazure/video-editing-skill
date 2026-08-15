@@ -128,6 +128,18 @@ SIGNAL_KEYWORDS: Mapping[str, Sequence[str]] = {
         "提示词经验",
         "复用复盘经验",
     ),
+    "sequence_continuity": (
+        "sequence continuity",
+        "cross-shot continuity",
+        "multi-shot continuity",
+        "adjacent clip continuity",
+        "跨镜头连续性",
+        "多镜头连续性",
+        "镜头衔接复核",
+        "角色连续性",
+        "道具连续性",
+        "组装前连续性",
+    ),
     "audio_design": ("bgm", "music", "配乐", "音效", "sfx", "sound design", "声音设计"),
     "video_stabilization": (
         "video stabilization",
@@ -263,6 +275,7 @@ SIGNAL_LABELS: Mapping[str, str] = {
     "broll": "B-roll / stock 素材规划",
     "generated_assets": "生成式图片 / 视频素材",
     "generation_lessons": "生成视频复核经验库",
+    "sequence_continuity": "生成视频跨镜头连续性复核",
     "audio_design": "BGM / SFX 声音设计",
     "video_stabilization": "手持素材稳定化 / 防抖",
     "speed_ramp": "局部 speed ramp / velocity edit",
@@ -973,6 +986,45 @@ def build_plan(
                 gate_category="generated_clip_review",
             ),
         )
+        if "sequence_continuity" in ids:
+            _add_step(
+                steps,
+                seen,
+                _step(
+                    "generated_sequence_review",
+                    phase="review",
+                    script="generated_sequence_review.py",
+                    label="Review adjacent generated clips as one visual sequence",
+                    reason="The brief asks to verify identity, prop, spatial, action, camera, and look continuity across generated shots.",
+                    command=shell(
+                        [
+                            python_bin,
+                            "scripts/generated_sequence_review.py",
+                            "prepare",
+                            "--project-dir",
+                            project_dir,
+                            "--clip-review",
+                            "work/generated_clip_review.json",
+                            "--storyboard-plan",
+                            "work/storyboard_plan.json",
+                            "--evidence-dir",
+                            "verify/generated_sequence",
+                            "--output",
+                            "work/generated_sequence_review_request.json",
+                            "--markdown",
+                            "work/generated_sequence_review_request.md",
+                            "--response-template",
+                            "work/generated_sequence_review_response.json",
+                        ]
+                    ),
+                    outputs=[
+                        "work/generated_sequence_review_request.json",
+                        "work/generated_sequence_review_response.json",
+                        "work/generated_sequence_review.json",
+                    ],
+                    gate_category="generated_sequence_review",
+                ),
+            )
 
     if "audio_design" in ids:
         _add_step(

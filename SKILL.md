@@ -1,6 +1,6 @@
 ---
 name: video-editing
-description: "Xiaohongshu/RED-tuned short-form video workflow for voice-over, talking-head, tutorials, interviews, podcasts, long videos, screen recordings, B-roll, captions, and generated assets. Covers edit routing, transcription, semantic transcript review, multi-take packs, audio sync, video stabilization, silence/freeze multimodal dead-air cleanup, highlights/shorts, hook/story rewrite, content/source gates, B-roll/enrich/gpt-image-2/video-generation planning, reference-frame/style-lock preflight, screen focus, PIP, color grade, speed ramps, J-cut/L-cut audio transitions, reversible edit revisions, portable edit-recipe replay, preflight/render/QA/audio master, source-time edit comparison, retention-rhythm, subtitle-readability, platform-safe-area and rendered-speech continuity QA, review proxies, subtitles, CapCut import, multi-platform and target-size exports, cover A/B variants, captions, publish packages, dashboards, resume packets, EDL/FCPXML/OTIO, and Remotion animation."
+description: "Xiaohongshu/RED-tuned short-form video workflow for voice-over, talking-head, tutorials, interviews, podcasts, long videos, screen recordings, B-roll, captions, and generated assets. Covers edit routing, transcription, semantic transcript review, multi-take packs, audio sync, video stabilization, silence/freeze dead-air cleanup, highlights/shorts, hook/story rewrite, content/source gates, B-roll/enrich/gpt-image-2/video-generation planning, reference-frame/style-lock preflight, per-clip and cross-shot generated-video review, screen focus, PIP, color grade, speed ramps, J-cut/L-cut audio transitions, reversible edit revisions, portable edit-recipe replay, preflight/render/QA/audio master, source-time edit comparison, retention-rhythm, subtitle-readability, platform-safe-area and rendered-speech continuity QA, review proxies, subtitles, CapCut import, multi-platform and target-size exports, cover A/B variants, captions, publish packages, dashboards, resume packets, EDL/FCPXML/OTIO, and Remotion animation."
 metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
 ---
 
@@ -48,6 +48,8 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    │                            首帧/style key 尺寸/方向/透明背景/画幅 gate
    ├─→ generation_task_log.py   异步生成任务台账 / submit_id / 下载 gate
    ├─→ generated_clip_review.py 生成片段 contact sheet / 常识物理 / 连续性 / 重生 gate
+   ├─→ generated_sequence_review.py
+   │                            已审片段相邻尾帧/首帧/预览 / 跨镜头连续性 gate
    ├─→ generation_lessons.py    已审片段 → provider/model scoped 提示词经验库
    ├─→ storyboard_assets.py     素材任务清单 / ready 预检 / paid 额度提醒
    │                            可选 media_library.py recommend 排名 B-roll 候选
@@ -137,6 +139,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `reference_frame_preflight.py` | video_prompt_pack → 首帧/style key 存在性、解码、尺寸、方向、画幅、透明背景 gate | `--prompt-pack` `--require-style-reference` `--reference shot_id=...` `--strict` |
 | `generation_task_log.py` | 异步生成任务台账：submit_id/task id、轮询、下载、本地落盘 gate | `add` `update` `import-provider-decision` `report --strict` |
 | `generated_clip_review.py` | 生成视频片段 source-bound 视觉复核：contact sheet、评分、裁切范围、重生建议 | `prepare --clip/--asset-manifest` `audit --request --response` `verify --report --strict` |
+| `generated_sequence_review.py` | 已审生成片段跨镜头连续性复核：真实尾帧/首帧、并排图、无声边界预览和 live gate | `prepare --clip-review [--storyboard-plan]` `audit --request --response` `verify --report --strict` |
 | `generation_lessons.py` | 从 canonical generated-clip review 提取经明确批准的 provider/model/category 经验，并供下一次 prompt pack 选择 | `add --review --clip-id --lesson --approved-by [--supersedes]` `verify --strict` `select --provider [--model]` |
 | `storyboard_assets.py` | storyboard_plan → 素材清单 + ready/paid 预检 | `--storyboard-plan` `--asset-root` `--output` `--strict` |
 | `screen_focus.py` | 录屏点击/热点 → 聚焦 zoom enrich plan | `--events` `--event` `--screen-width` `--output` |
@@ -1090,6 +1093,13 @@ python3 scripts/render_final.py --config script/render_config.json --output medi
 - `pass` 要求加权分 ≥80 且无删段；`pass_with_edits` 要求 ≥65，并由 keep/remove 精确覆盖全片；常识/物理、身份、道具、文字水印、连续性或音画 hard fail 无论总分多高都必须 `fail`
 - 填完 response 后运行 `generated_clip_review.py audit --request work/generated_clip_review_request.json --response work/generated_clip_review_response.json --output work/generated_clip_review.json --markdown work/generated_clip_review.md --strict`；任何 clip/contact sheet 漂移、缺审、非法区间或需重生都会阻塞
 - 组装/发布前再运行 `generated_clip_review.py verify --report work/generated_clip_review.json --strict`，也可用 `pipeline_manifest.py --require generated_clip_review --strict`。reviewer label 不是身份认证或数字签名
+
+**Generated Sequence Review 跨镜头连续性复核**（两条以上生成片段逐片通过后、组装前必跑）：
+- 运行 `generated_sequence_review.py prepare --project-dir . --clip-review work/generated_clip_review.json --storyboard-plan work/storyboard_plan.json --evidence-dir verify/generated_sequence --output work/generated_sequence_review_request.json --markdown work/generated_sequence_review_request.md --response-template work/generated_sequence_review_response.json`
+- 脚本按 storyboard 顺序，为每个相邻边界提取批准范围内的上一镜尾帧、下一镜首帧、并排图和“尾部 + 头部”无声 1× preview；如果上游是 `pass_with_edits`，只使用批准的首个/最后一个 keep range
+- 完整查看 preview 和 comparison 后，为 identity/wardrobe、prop state、spatial orientation、action end state、camera framing、lighting/palette 填 `match|intentional_change|mismatch|not_applicable`。至少两项必须真实评估；`mismatch` 必须 `fail`，给 failure code 和具体 `repair_action`
+- 运行 `generated_sequence_review.py audit --request work/generated_sequence_review_request.json --response work/generated_sequence_review_response.json --output work/generated_sequence_review.json --markdown work/generated_sequence_review.md --strict`，组装/发布前再 `verify --report work/generated_sequence_review.json --strict`；clip、上游 review、storyboard 或任一 evidence bytes 漂移都会阻塞
+- `pipeline_manifest.py --require generated_clip_review --require generated_sequence_review --strict` 可把逐片和跨镜头两层都设为门禁。preview 无声，不能替代最终 master 的完整声画复核；reviewer label 和 SHA-256 不是身份认证或签名
 
 **Generation Lessons 生成视频经验闭环**（可选；只沉淀可泛化且人工明确批准的经验）：
 - 从已完成的 `generated_clip_review.json` 选定一条 clip，运行 `generation_lessons.py add --library work/generation_lessons.json --review work/generated_clip_review.json --clip-id shot_002 --category hand_contact --lesson "For hand-to-prop contact, isolate one interaction and keep the hand visible through release." --approved-by "<reviewer-label>" --model seedance-2.0`

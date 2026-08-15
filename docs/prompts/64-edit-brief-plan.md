@@ -48,6 +48,7 @@ python3 scripts/edit_brief_plan.py \
 | B-roll、stock、补画面 | `stock_material_plan.py` + `auto_enrich.py` |
 | 生图、Dreamina/即梦、Veo/Sora/LTX/Wan | `storyboard_plan.py` + `video_prompt_pack.py` |
 | 生成经验库、prompt lessons、复用复盘经验 | `generation_lessons.py verify`；与生成视频同时出现时，在 prompt pack 前验证并注入 library |
+| 多镜头/跨镜头连续性、镜头衔接、角色/道具连续性 | 先 `generated_clip_review.py`，再 `generated_sequence_review.py` 提取相邻边界证据并审计 |
 | BGM、音效、声音设计 | `audio_cue_sheet.py` |
 | 手持抖动、画面抖动、视频防抖、stabilize | `video_stabilization.py plan` → `apply --comparison` → `confirm` |
 | 录屏、点击、热点 | `screen_focus.py` |

@@ -11,6 +11,7 @@ from edit_revision import APPROVAL_VERSION, apply_revision, audit_proposal, prep
 from edit_recipe import export_recipe  # noqa: E402
 import delivery_encode  # noqa: E402
 import generated_clip_review  # noqa: E402
+import generated_sequence_review  # noqa: E402
 import generation_lessons  # noqa: E402
 import hdr_sdr  # noqa: E402
 import multimodal_dead_air  # noqa: E402
@@ -249,6 +250,134 @@ def test_generated_clip_review_is_live_verified_and_can_be_required(tmp_path, mo
         required=["generated_clip_review"],
     )
     assert "generated_clip_review" in missing["missing_required"]
+
+
+def test_generated_sequence_review_is_live_verified_and_can_be_required(tmp_path, monkeypatch):
+    _publish_ready_project(tmp_path)
+    clips = []
+    for index in range(2):
+        clip = tmp_path / "work" / "generated_video" / f"shot_{index + 1:03d}.mp4"
+        clip.parent.mkdir(parents=True, exist_ok=True)
+        clip.write_bytes(f"generated-video-{index}".encode("utf-8"))
+        clips.append(clip)
+    media = {
+        "duration": 4.0,
+        "fps": 24.0,
+        "width": 640,
+        "height": 360,
+        "video_codec": "h264",
+        "pixel_format": "yuv420p",
+        "has_audio": True,
+        "audio_codec": "aac",
+        "sample_rate": 48000,
+        "channels": 2,
+    }
+    monkeypatch.setattr(generated_clip_review, "probe_media", lambda _path: dict(media))
+
+    def fake_sheet(_clip, output, **_kwargs):
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(b"contact-sheet")
+        return {
+            "sample_fps": 2.0,
+            "estimated_frames": 8,
+            "columns": 8,
+            "rows": 1,
+            "thumb_width": 320,
+        }
+
+    monkeypatch.setattr(generated_clip_review, "generate_contact_sheet", fake_sheet)
+    clip_request = generated_clip_review.prepare_request(
+        [
+            {"clip_id": "shot_001", "shot_id": "shot_001", "path": str(clips[0])},
+            {"clip_id": "shot_002", "shot_id": "shot_002", "path": str(clips[1])},
+        ],
+        project_dir=str(tmp_path),
+        contact_sheet_dir="verify/generated_clips",
+    )
+    clip_response = {
+        "version": generated_clip_review.RESPONSE_VERSION,
+        "request_id": clip_request["request_id"],
+        "reviewed_by": "clip-review-agent",
+        "reviews": [
+            {
+                "clip_id": clip_id,
+                "verdict": "pass",
+                "story_readability": "clear",
+                "scores": {key: 5 for key in generated_clip_review.SCORE_WEIGHTS},
+                "hard_fail_codes": [],
+                "keep_ranges": [],
+                "remove_ranges": [],
+                "regenerate": False,
+                "prompt_fix": "",
+                "notes": "Full-speed, slow, muted, and audio-only review passes are clean.",
+            }
+            for clip_id in ("shot_001", "shot_002")
+        ],
+    }
+    clip_report_path = tmp_path / "work" / "generated_clip_review.json"
+    _write(clip_report_path, generated_clip_review.build_report(clip_request, clip_response))
+
+    def fake_boundary(_from, _to, output_dir, *, boundary_id, **_kwargs):
+        output_dir.mkdir(parents=True, exist_ok=True)
+        result = {"canvas": {"width": 640, "height": 360, "fps": 24.0}}
+        for key, suffix in (
+            ("outgoing_frame", "outgoing.jpg"),
+            ("incoming_frame", "incoming.jpg"),
+            ("comparison", "comparison.jpg"),
+            ("preview", "preview.mp4"),
+        ):
+            path = output_dir / f"{boundary_id}_{suffix}"
+            path.write_bytes(f"{boundary_id}:{key}".encode("utf-8"))
+            result[key] = path
+        return result
+
+    monkeypatch.setattr(generated_sequence_review, "generate_boundary_evidence", fake_boundary)
+    request = generated_sequence_review.prepare_request(
+        str(clip_report_path),
+        project_dir=str(tmp_path),
+        evidence_dir="verify/generated_sequence",
+    )
+    response = {
+        "version": generated_sequence_review.RESPONSE_VERSION,
+        "request_id": request["request_id"],
+        "reviewed_by": "sequence-review-agent",
+        "reviews": [
+            {
+                "boundary_id": "shot_001__shot_002",
+                "verdict": "pass",
+                "checks": {key: "match" for key in generated_sequence_review.CHECK_KEYS},
+                "failure_codes": [],
+                "observed_transition": "The same subject and prop continue across the cut.",
+                "repair_action": "",
+                "notes": "Identity, prop state, direction, action, framing, and palette remain coherent.",
+            }
+        ],
+    }
+    report_path = tmp_path / "work" / "generated_sequence_review.json"
+    _write(report_path, generated_sequence_review.build_report(request, response))
+
+    ready = build_manifest(
+        str(tmp_path),
+        target_stage="publish_ready",
+        required=["generated_sequence_review"],
+    )
+    gate = next(g for g in ready["gates"] if g["category"] == "generated_sequence_review")
+    assert gate["status"] == "ready"
+
+    preview = tmp_path / request["boundaries"][0]["evidence"]["preview"]["path"]
+    preview.write_bytes(b"changed-preview")
+    stale = build_manifest(str(tmp_path), target_stage="publish_ready")
+    gate = next(g for g in stale["gates"] if g["category"] == "generated_sequence_review")
+    assert gate["status"] == "blocked"
+    assert "generated_sequence_review" in stale["blocked_gates"]
+
+    report_path.unlink()
+    missing = build_manifest(
+        str(tmp_path),
+        target_stage="publish_ready",
+        required=["generated_sequence_review"],
+    )
+    assert "generated_sequence_review" in missing["missing_required"]
 
 
 def test_current_approval_receipt_can_be_required_for_publish(tmp_path):

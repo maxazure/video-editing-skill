@@ -330,6 +330,24 @@ def test_generated_video_lesson_library_is_verified_before_prompt_reuse(tmp_path
     assert "--lesson-library work/generation_lessons.json" in prompt_step["command"]
 
 
+def test_generated_video_sequence_continuity_runs_after_per_clip_review(tmp_path):
+    source = tmp_path / "talk.mp4"
+    source.write_text("fake video", encoding="utf-8")
+
+    plan = build_plan(
+        f"把 {source} 配上 Seedance 多镜头生成视频并做跨镜头连续性复核",
+        project_dir=str(tmp_path),
+    )
+
+    ids = [step["id"] for step in plan["steps"]]
+    assert ids.index("generated_clip_review") < ids.index("generated_sequence_review")
+    step = next(step for step in plan["steps"] if step["id"] == "generated_sequence_review")
+    assert step["script"] == "generated_sequence_review.py"
+    assert "--clip-review work/generated_clip_review.json" in step["command"]
+    assert "--storyboard-plan work/storyboard_plan.json" in step["command"]
+    assert step["gate_category"] == "generated_sequence_review"
+
+
 def test_cli_writes_json_and_markdown(tmp_path):
     source = tmp_path / "talk.mp4"
     source.write_text("fake video", encoding="utf-8")

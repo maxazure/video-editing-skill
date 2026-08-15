@@ -236,6 +236,13 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         blocks_when_present=True,
     ),
     ArtifactDef(
+        "generated_sequence_review",
+        "Generated Sequence Continuity Review",
+        ("**/generated_sequence_review.json", "**/*_generated_sequence_review.json"),
+        "Run generated_sequence_review.py prepare/audit and repair failed adjacent clip boundaries before assembly.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "transition_bridge",
         "Transition Bridge",
         ("**/transition_bridge_plan.json", "**/*_transition_bridge*.json"),
@@ -757,6 +764,35 @@ def evaluate_category(
             elif _int_at(verification, "summary", "warnings"):
                 status = "warn" if status != "blocked" else status
                 notes.append(f"generated clip review retains approved trim-only edits: {artifact.path}")
+        return {
+            "category": definition.category,
+            "label": definition.label,
+            "status": status,
+            "artifact_count": len(artifacts),
+            "latest_path": artifacts[0].path,
+            "notes": sorted(set(notes)),
+            "next_action": definition.next_action if status in {"missing", "blocked", "warn"} else "",
+        }
+
+    if definition.category == "generated_sequence_review":
+        from generated_sequence_review import verify_report
+
+        for artifact in artifacts:
+            data = _load_json(artifact.path)
+            if data is None:
+                status = "blocked"
+                notes.append(f"unreadable generated sequence review: {artifact.path}")
+                continue
+            verification = verify_report(data)
+            blocking = _int_at(verification, "summary", "blocking")
+            if blocking:
+                status = "blocked"
+                notes.append(
+                    f"invalid generated sequence review {artifact.path}: {blocking} blocking item(s)"
+                )
+            elif _int_at(verification, "summary", "warnings"):
+                status = "warn" if status != "blocked" else status
+                notes.append(f"generated sequence review contains accepted intentional changes: {artifact.path}")
         return {
             "category": definition.category,
             "label": definition.label,
