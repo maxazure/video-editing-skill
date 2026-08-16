@@ -22,6 +22,7 @@
 - **已审时间线可以换素材复用**：`edit_recipe.py` 把 `render_config.json` 的全部本地文件路径替换成类型化槽位，生成 content-addressed 可移植配方；回放必须完整绑定新素材、记录 SHA-256 并重新通过 `edit_preflight.py`。
 - **生成式素材有明确审批和台账**：Codex `image_gen` / GPT Image 2 提示词、Dreamina/Veo/LTX/Wan/Sora 视频提示词、provider 决策、`submit_id` 轮询下载和本地落盘 gate 都先记录再执行。
 - **生成片段复核会反哺下一次提示词**：`generation_lessons.py` 只从 canonical clip review 提取人工明确批准的通用经验，绑定 source digests，并按 provider/model/category 精确筛选后交给 `video_prompt_pack.py`；不会把单片修复建议自动当成全局规则。
+- **参考片节奏先量化再借鉴**：`reference_edit_rhythm.py` 用同一套 hard-cut 检测比较参考片和成片的 cuts/minute、镜头时长、结尾 hold 与切点分布，同时绑定两条视频和 contact sheets；默认只提示差异，明确验收时才阻断。
 - **适合交给强推理模型做长流程代理执行**：在 [GPT-5.6 Sol](https://developers.openai.com/api/docs/models/gpt-5.6-sol)（OpenAI 当前旗舰；API 别名 `gpt-5.6` 指向 Sol）和 [Claude Opus 4.8](https://docs.anthropic.com/en/docs/about-claude/models) 这类面向复杂专业任务、agent 工作流的模型下，本 skill 对 **口播类短视频** 至少可以替代 **80% 的常规视频剪辑工作**。
 
 这里的“80%”是按口播短视频生产来评估的：它已经覆盖素材整理、ASR、清稿、粗剪、字幕、B-roll/图像/生成视频规划、声音 cue、渲染前预检、渲染、质检、多平台导出和发布文案。剩下通常需要人工负责的是选题判断、最终审美取舍、品牌口吻、客户确认、复杂手工精修、调色混音和需要逐帧 keyframe 的高级特效。
@@ -234,6 +235,7 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    ├─→ render_qa.py             渲染后黑屏/静帧/静音/尺寸质检 + review packet
    ├─→ shot_color_qa.py         成片镜头亮度/对比/色度/饱和度/broadcast-range + 切点跳变门禁
    ├─→ retention_rhythm_qa.py   成片 hook 活动 / 长镜头 / 注意力空窗 / 节奏门禁
+   ├─→ reference_edit_rhythm.py 参考片 vs 成片 hard-cut 结构 / contact sheets / live gate
    ├─→ speech_continuity_qa.py  成片二次 ASR → 切点复读 / 近重复 take / 句内口吃 gate
    ├─→ review_proxy.py          低码率完整审片 MP4 / 可见时间码 / faststart
    ├─→ audio_master_report.py   成片响度 / true peak / LRA / 长静音发布 gate
@@ -2160,6 +2162,28 @@ python3 scripts/retention_rhythm_qa.py output/day58_master.mp4 \
 
 默认检查前三秒 scene/subtitle attention event、6 秒以上视觉 hold、10 秒以上严重长镜头、scene + subtitle 的 combined attention gap、镜头时长 CV、0.35 秒以下快切 burst、4.5 秒以上字幕 hold 和 1.5 秒以上无字幕区间。`inactive_hook` 在没有 timed text 时只警告，避免把持续运镜/kinetic text 误判成硬失败；timed text 也无变化、视觉 hold 超过 10 秒或 combined attention gap 超过 10 秒时会进入 `summary.blocking`。这只是可观测的节奏风险，不预测真实留存率或“爆款概率”。报告存在且 blocking 非零时，`pipeline_manifest.py` 会阻塞；要强制具备报告可加 `--require retention_rhythm_qa`。
 
+### 🎞️ Reference Edit Rhythm — 参考片剪辑结构量化
+[`scripts/reference_edit_rhythm.py`](scripts/reference_edit_rhythm.py) · [详细文档](docs/prompts/92-reference-edit-rhythm.md)
+
+当客户给出参考广告/短片并说“照这个节奏”时，不再靠肉眼猜。脚本用同一套 FFmpeg hard scene detection 量化参考片和候选片，比较 cuts/minute、median shot、final-hold 比例、归一化 cut positions 与 opening/middle/closing cut share，并为两条视频生成 hash-bound contact sheets。
+
+```bash
+python3 scripts/reference_edit_rhythm.py analyze \
+  --project-dir . \
+  --reference origin/reference-ad.mp4 \
+  --candidate output/final.mp4 \
+  --evidence-dir verify/reference_edit_rhythm \
+  --output work/reference_edit_rhythm.json \
+  --markdown work/reference_edit_rhythm.md \
+  --strict
+
+python3 scripts/reference_edit_rhythm.py verify \
+  --report work/reference_edit_rhythm.json \
+  --strict
+```
+
+默认结构差异只 WARN，避免为了追数字机械加切点；明确把节奏匹配设为验收条件时才加 `--require-match`。`verify` 会现场检查参考片、候选片、两张 contact sheet、媒体契约、全部派生 metrics/comparison/summary 和 canonical report id。任何重编码、替换、证据变化或手改报告都会使旧结果失效。它只允许借鉴结构，不复制参考片 pixels/audio/branding/story；scene score 会漏掉部分 dissolve 与镜头内动作，两张 contact sheet 和 1× 完整播放都必须人工复核。`pipeline_manifest.py --require reference_edit_rhythm --strict` 可设为发布门禁。
+
 ### 🗣️ Speech Continuity QA — 成片复读 / 口吃门禁
 [`scripts/speech_continuity_qa.py`](scripts/speech_continuity_qa.py) · [详细文档](docs/prompts/67-speech-continuity-qa.md)
 
@@ -2681,6 +2705,7 @@ pytest tests/test_delivery_encode.py -v     # 硬大小上限 / 两遍编码 / �
 pytest tests/test_render_qa.py -v           # 渲染后质检
 pytest tests/test_shot_color_qa.py -v       # 成片镜头色彩 / 曝光 / broadcast-range 门禁
 pytest tests/test_retention_rhythm_qa.py -v # 成片 hook / 长镜头 / 节奏风险门禁
+pytest tests/test_reference_edit_rhythm.py -v # 参考片/成片 hard-cut 结构 / contact-sheet / stale gate
 pytest tests/test_subtitle_readability_qa.py -v # 最终字幕 CPS / 时长 / 重叠 / 越界门禁
 pytest tests/test_platform_safe_area_qa.py -v # 字幕 / PIP / CTA / marker 平台安全区门禁
 pytest tests/test_audio_master_report.py -v # 成片响度 / true peak / LRA 门禁
@@ -2734,6 +2759,22 @@ pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 pytest tests/test_review_dashboard.py -v    # 静态人工复核面板 + gate queue
 pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 gate
 ```
+
+### 2026-08-17 自动化升级记录（Source-bound Reference Edit Rhythm）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`krea-ai/skills` Cinematic Product Ad](https://github.com/krea-ai/skills/blob/main/krea-marketing/workflows/cinematic-product-ad.md) | 有参考广告时先用 FFmpeg scene detection + contact sheet 实测 shot list、per-beat duration 和交替结构，不靠肉眼猜；只复制结构，不复制竞品 pixels/assets | 新增参考片/候选片同参数 hard-cut 测量和双 contact sheet；报告明确禁止复制画面、音频、品牌和故事，并保留 soft transition/镜头内动作漏检的人工边界 |
+| [`allwavemedia/resolve-ai-toolkit` Pacing Analysis](https://github.com/allwavemedia/resolve-ai-toolkit#edit_pacing--pacing-analysis) | 把 shot durations、rhythm classification、energy/tempo 和 outliers 作为可读剪辑证据，并按内容风格提供 pacing 目标 | 不引入 Resolve/MCP 或静态风格模板；比较 cuts/minute、median shot、final hold、归一化切点和阶段 cut share，让参考片自身成为目标证据 |
+| [`cliprise/awesome-seedance-2-prompts` reference roles](https://github.com/cliprise/awesome-seedance-2-prompts#seedance-20-reference-role-system) | 明确声明 `@video3 = edit rhythm reference`，只借鉴 cut pacing/final hold，避免模型把多模态参考随机混合成内容复制 | 把 reference role 固定为 edit structure；默认偏差只 WARN，只有明确验收时 `--require-match` 才阻断，避免参考片从灵感误升级为隐含硬约束 |
+
+新增/调整能力：新增 [`scripts/reference_edit_rhythm.py`](scripts/reference_edit_rhythm.py)、[`tests/test_reference_edit_rhythm.py`](tests/test_reference_edit_rhythm.py) 和 [`docs/prompts/92-reference-edit-rhythm.md`](docs/prompts/92-reference-edit-rhythm.md)。`analyze` 要求参考片、候选片和证据都位于项目内，拒绝 symlink、同一源文件和 source/output/evidence 路径碰撞；对两片运行现有 `scene_boundaries.py` hard scene detection，生成并绑定 SHA-256/大小/媒体契约与双 contact sheet。报告记录逐镜头时长、cuts/minute、mean/median/p90/min/max、cadence CV、final-hold 秒数/比例、归一化切点和 opening/middle/closing cut share；comparison 检查 cut density、median shot、final hold、双向最近 cut-position distance 与阶段分布。默认差异为 review warning；`--require-match` 才变成 blocker。`verify` 现场重读 source/evidence bytes 和媒体契约，并从存储的原始 boundaries 重算全部 timeline metrics、comparison、summary 和 canonical report id，源/证据/派生字段漂移 fail closed。`pipeline_manifest.py` 新增存在即 live verify、可 `--require reference_edit_rhythm` 的 gate；`edit_brief_plan.py` 新增中英文“参考视频/广告节奏、复刻剪辑结构”路由，并把报告排在最终渲染后。
+
+使用方式：运行 `python3 scripts/reference_edit_rhythm.py analyze --project-dir . --reference origin/reference-ad.mp4 --candidate output/final.mp4 --evidence-dir verify/reference_edit_rhythm --output work/reference_edit_rhythm.json --markdown work/reference_edit_rhythm.md --strict`；完整看两条视频和两张 contact sheet。只有结构相似是明确验收条件时才加 `--require-match`。发布前运行 `python3 scripts/reference_edit_rhythm.py verify --report work/reference_edit_rhythm.json --strict`，需要强制存在时再运行 `pipeline_manifest.py --require reference_edit_rhythm --strict`。`--force` 只用于明确覆盖同一路径的旧报告/证据；SHA-256 不是签名或版权许可。
+
+验证结果：`.venv/bin/python -m pytest tests -q` 全量回归 **897 passed**，新增/关联模块定向回归 **110 passed**；`.venv/bin/python -m compileall -q scripts tests` 通过，`quick_validate.py .` 返回 `Skill is valid!`，`analyze/verify` CLI help 均可正常加载。真实 FFmpeg 冒烟用两条 1.8 秒三色 H.264 视频运行 `analyze → verify`，报告为 `ready`、双片各检测 1 个 hard cut / 2 个 shots、normalized boundary distance `0.0`，live verify 为 **0 blocker / 0 warning**，JSON、Markdown 与两张 contact sheet 均生成并完成 hash 校验；`git diff --check` 通过。
 
 ### 2026-08-16 自动化升级记录（Source-bound Generated Sequence Continuity Review）
 
@@ -3344,6 +3385,7 @@ pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 g
 | **89** | **[Generated Clip Review](docs/prompts/89-generated-clip-review.md)** | **生成视频下载后做逐片物理、身份、裁切与重生 gate** |
 | **90** | **[Generation Lessons](docs/prompts/90-generation-lessons.md)** | **把已审片段经验按 provider/model scope 复用到下一次 prompt** |
 | **91** | **[Generated Sequence Review](docs/prompts/91-generated-sequence-review.md)** | **逐片通过后复核相邻尾帧/首帧与跨镜头连续性** |
+| **92** | **[Reference Edit Rhythm](docs/prompts/92-reference-edit-rhythm.md)** | **量化参考片 hard-cut 结构并对照成片，绑定 contact sheets 与 live gate** |
 | **43** | **[Audio Cue Sheet](docs/prompts/43-audio-cue-sheet.md)** | **规划 BGM/SFX 和生成审批** |
 | **45** | **[Video Prompt Pack](docs/prompts/45-video-prompt-pack.md)** | **视频生成提示词包 + paid approval gate** |
 | **46** | **[Generation Task Log](docs/prompts/46-generation-task-log.md)** | **跟踪 submit_id、轮询、下载和本地落盘** |
@@ -3443,6 +3485,7 @@ scripts/
 ├── shot_color_qa.py            成片镜头色彩/曝光/broadcast-range gate [V3]
 ├── edit_compare.py             原片连续时钟 vs 最终像素双栏复核     [V3]
 ├── retention_rhythm_qa.py      成片 hook / 长镜头 / 注意力空窗门禁 [V3]
+├── reference_edit_rhythm.py    参考片 vs 成片 hard-cut 结构 / contact-sheet / live gate [V3]
 ├── speech_continuity_qa.py     成片二次 ASR 复读 / 口吃发布 gate  [V3]
 ├── audio_master_report.py      成片响度 / true peak / LRA 发布门禁 [V3]
 ├── timeline_view.py            源素材/成片切点 filmstrip+waveform  [V3]

@@ -348,6 +348,25 @@ def test_generated_video_sequence_continuity_runs_after_per_clip_review(tmp_path
     assert step["gate_category"] == "generated_sequence_review"
 
 
+def test_reference_rhythm_brief_routes_measurement_after_render(tmp_path):
+    source = tmp_path / "talk.mp4"
+    source.write_text("fake video", encoding="utf-8")
+
+    plan = build_plan(
+        f"把 {source} 按参考视频节奏剪辑，并对照参考广告节奏检查成片",
+        project_dir=str(tmp_path),
+    )
+
+    ids = [step["id"] for step in plan["steps"]]
+    assert ids.index("master_video") < ids.index("reference_edit_rhythm")
+    step = next(step for step in plan["steps"] if step["id"] == "reference_edit_rhythm")
+    assert step["script"] == "reference_edit_rhythm.py"
+    assert "--reference '<reference_video>'" in step["command"]
+    assert "--candidate output/final.mp4" in step["command"]
+    assert step["gate_category"] == "reference_edit_rhythm"
+    assert any("structure only" in note for note in plan["notes"])
+
+
 def test_cli_writes_json_and_markdown(tmp_path):
     source = tmp_path / "talk.mp4"
     source.write_text("fake video", encoding="utf-8")

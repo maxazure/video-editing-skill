@@ -70,6 +70,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ render_qa.py             渲染后黑屏/静帧/静音/尺寸质检 + review packet
    ├─→ shot_color_qa.py         成片镜头亮度/对比/色度/饱和度/broadcast-range + 切点跳变 gate
    ├─→ retention_rhythm_qa.py   成片 hook 活动 / 长镜头 / 注意力空窗 / 节奏 gate
+   ├─→ reference_edit_rhythm.py 参考片 vs 成片 hard-cut 结构 / contact sheets / live gate
    ├─→ speech_continuity_qa.py  成片二次 ASR → 切点复读 / 近重复 take / 句内口吃 gate
    ├─→ review_proxy.py          低码率完整审片 MP4 / 可见时间码 / faststart
    ├─→ timeline_view.py         源素材删除段 / 成片输出切点 filmstrip + waveform 复盘图
@@ -156,6 +157,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `render_qa.py` | 渲染后 QA：尺寸/音频/黑屏/静帧/静音 + review packet | `<video.mp4>` `--platform douyin` `--json qa.json` `--review-dir verify/qa` |
 | `shot_color_qa.py` | rendered master → 镜头亮度/对比/色度/饱和度/broadcast-range 与切点跳变 gate | `<video.mp4>` `--scene-boundaries` `--output shot_color_qa.json` `--markdown` `--strict` |
 | `retention_rhythm_qa.py` | 成片 hook 活动、长镜头、注意力空窗、等距/快切和字幕节奏风险 | `<video.mp4>` `--timed-text subtitles.json` `--output retention_rhythm_qa.json` `--strict` |
+| `reference_edit_rhythm.py` | 参考片 vs 成片 hard-cut 密度、镜头时长、结尾 hold、归一化切点与 contact-sheet source-bound 对照 | `analyze --reference --candidate --evidence-dir [--require-match]` / `verify --report --strict` |
 | `speech_continuity_qa.py` | 成片二次 transcript → 复读 / 近重复 take / 句内口吃 gate | `<final_transcript.json>` `--output speech_continuity_qa.json` `--markdown` `--strict` |
 | `review_proxy.py` | master/platform MP4 → 低码率 timecoded 审片视频 + JSON/Markdown | `<video.mp4>` `--output verify/review_proxy.mp4` `--dry-run` `--no-timecode` |
 | `audio_master_report.py` | 成片响度报告：LUFS / true peak / LRA / 长静音 gate | `<video.mp4>` `--output audio_master_report.json` `--markdown audio_master_report.md` `--strict` |
@@ -1497,6 +1499,24 @@ python3 scripts/retention_rhythm_qa.py final.mp4 \
 ```
 
 `retention_rhythm_qa.py` 在**已渲染成片**上复用 FFmpeg scene score，并可合并 output-aligned subtitle JSON，检查前三秒 scene/subtitle activity、长视觉 hold、scene + subtitle attention gap、机械等距节奏、过密快切和字幕长时间不刷新。没有 timed text 时，inactive hook 只警告，避免把持续运镜或轻微动效误判成硬失败；高置信严重长 hold / attention gap 会写入 `summary.blocking`。这是可观测节奏风险，不是平台留存率或爆款预测。命中后先看 Markdown 时间范围和 master，再回到源 timeline 重渲染。`pipeline_manifest.py --require retention_rhythm_qa --strict` 可把报告设为发布必需项。
+
+**6c.1. 参考视频剪辑节奏量化（用户明确给参考片时跑）**：
+```bash
+python3 scripts/reference_edit_rhythm.py analyze \
+  --project-dir . \
+  --reference origin/reference-ad.mp4 \
+  --candidate final.mp4 \
+  --evidence-dir verify/reference_edit_rhythm \
+  --output work/reference_edit_rhythm.json \
+  --markdown work/reference_edit_rhythm.md \
+  --strict
+
+python3 scripts/reference_edit_rhythm.py verify \
+  --report work/reference_edit_rhythm.json \
+  --strict
+```
+
+`reference_edit_rhythm.py` 对参考片和候选片运行同一套 hard scene detection，绑定两条视频和两张 contact sheet 的 SHA-256/媒体契约，并比较 cuts/minute、median shot、final-hold 比例、归一化切点位置及 opening/middle/closing cut share。默认偏差只 WARN；只有结构匹配是明确验收条件时才加 `--require-match`。完整看两条视频，只借鉴结构，不复制参考片的画面、音频、品牌或故事。scene score 会漏掉部分 dissolve 与镜头内动作，contact sheet 也不能替代 1× 播放。详见 [docs/prompts/92-reference-edit-rhythm.md](docs/prompts/92-reference-edit-rhythm.md)。
 
 **6d. 完整审片代理（需要分享整条视频或精确时间码反馈时跑）**：
 ```bash

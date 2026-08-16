@@ -774,6 +774,31 @@ def test_retention_rhythm_qa_can_be_required(tmp_path):
     assert "retention_rhythm_qa" in manifest["missing_required"]
 
 
+def test_reference_edit_rhythm_live_verification_blocks_invalid_report(tmp_path):
+    _write(tmp_path / "work" / "reference_edit_rhythm.json", {
+        "version": "reference_edit_rhythm.v1",
+        "project_dir": str(tmp_path),
+        "summary": {"status": "ready", "blocking": 0, "warnings": 0},
+    })
+
+    manifest = build_manifest(str(tmp_path), target_stage="analysis")
+
+    assert "reference_edit_rhythm" in manifest["blocked_gates"]
+    gate = next(g for g in manifest["gates"] if g["category"] == "reference_edit_rhythm")
+    assert gate["status"] == "blocked"
+    assert "blocking item(s)" in gate["notes"][0]
+
+
+def test_reference_edit_rhythm_can_be_required(tmp_path):
+    manifest = build_manifest(
+        str(tmp_path),
+        target_stage="analysis",
+        required=["reference_edit_rhythm"],
+    )
+
+    assert "reference_edit_rhythm" in manifest["missing_required"]
+
+
 def test_subtitle_readability_qa_blocks_when_timing_is_invalid(tmp_path):
     _write(tmp_path / "verify" / "subtitle_readability_qa.json", {
         "version": "subtitle_readability_qa.v1",

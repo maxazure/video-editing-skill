@@ -1,6 +1,6 @@
 # Edit Brief Plan 自然语言剪辑需求路由
 
-把用户的一句话剪辑需求转成当前 skill 的本地执行 runbook：匹配平台、素材类型、手持防抖、字幕、长视频拆条、B-roll、生成素材、音频、PIP、调色、QA 和发布包等信号，然后输出现有脚本的建议顺序、命令、产物和 manifest gate。
+把用户的一句话剪辑需求转成当前 skill 的本地执行 runbook：匹配平台、素材类型、手持防抖、字幕、长视频拆条、B-roll、生成素材、参考视频节奏、音频、PIP、调色、QA 和发布包等信号，然后输出现有脚本的建议顺序、命令、产物和 manifest gate。
 
 ## 适用场景
 
@@ -49,6 +49,7 @@ python3 scripts/edit_brief_plan.py \
 | 生图、Dreamina/即梦、Veo/Sora/LTX/Wan | `storyboard_plan.py` + `video_prompt_pack.py` |
 | 生成经验库、prompt lessons、复用复盘经验 | `generation_lessons.py verify`；与生成视频同时出现时，在 prompt pack 前验证并注入 library |
 | 多镜头/跨镜头连续性、镜头衔接、角色/道具连续性 | 先 `generated_clip_review.py`，再 `generated_sequence_review.py` 提取相邻边界证据并审计 |
+| 参考视频节奏、参考广告节奏、复刻剪辑结构 | 成片后用 `reference_edit_rhythm.py analyze` 量化 hard-cut 结构和 contact sheets；默认 WARN，明确验收时才加 `--require-match` |
 | BGM、音效、声音设计 | `audio_cue_sheet.py` |
 | 手持抖动、画面抖动、视频防抖、stabilize | `video_stabilization.py plan` → `apply --comparison` → `confirm` |
 | 录屏、点击、热点 | `screen_focus.py` |

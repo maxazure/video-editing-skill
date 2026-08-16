@@ -186,6 +186,18 @@ SIGNAL_KEYWORDS: Mapping[str, Sequence[str]] = {
     "color_grade": ("调色", "lut", "color grade", "cinematic", "色彩", "film look"),
     "render": ("render", "渲染", "导出", "输出", "成片", "final mp4"),
     "qa": ("qa", "质检", "黑屏", "静音", "静帧", "检查成片"),
+    "reference_edit_rhythm": (
+        "reference edit rhythm",
+        "edit rhythm reference",
+        "match edit rhythm",
+        "reference pacing",
+        "参考视频节奏",
+        "参考片节奏",
+        "剪辑节奏参考",
+        "照这个视频节奏",
+        "复刻剪辑结构",
+        "参考广告节奏",
+    ),
     "review_proxy": ("review proxy", "审片代理", "审片视频", "低码率审片", "时间码审片", "timecode review"),
     "multi_platform": ("三平台", "多平台", "multi platform", "多个平台", "xhs douyin", "小红书 抖音"),
     "hdr_sdr": (
@@ -286,6 +298,7 @@ SIGNAL_LABELS: Mapping[str, str] = {
     "color_grade": "调色计划",
     "render": "渲染成片",
     "qa": "成片质检",
+    "reference_edit_rhythm": "参考视频剪辑节奏量化 / 对照",
     "review_proxy": "低码率时间码审片视频",
     "multi_platform": "多平台导出",
     "hdr_sdr": "PQ/HLG HDR → Rec.709 SDR 交付",
@@ -454,7 +467,7 @@ def build_plan(
 
     if source_media and not Path(source_media).expanduser().exists():
         blockers.append(f"source media not found: {source_media}")
-    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy", "multimodal_dead_air", "video_stabilization", "speed_ramp", "hdr_sdr", "delivery_encode"}):
+    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy", "reference_edit_rhythm", "multimodal_dead_air", "video_stabilization", "speed_ramp", "hdr_sdr", "delivery_encode"}):
         warnings.append("source media was not provided; commands use <source_media> placeholders")
 
     if transcript and not Path(transcript).expanduser().exists():
@@ -484,7 +497,7 @@ def build_plan(
             }
         )
     )
-    wants_render = bool(ids.intersection({"render", "publish", "target_script", "long_to_short", "batch_shorts", "multimodal_dead_air", "cleanup_silence", "cleanup_words", "broll", "screen_focus", "pip", "color_grade", "edit_recipe_replay"}))
+    wants_render = bool(ids.intersection({"render", "publish", "target_script", "long_to_short", "batch_shorts", "reference_edit_rhythm", "multimodal_dead_air", "cleanup_silence", "cleanup_words", "broll", "screen_focus", "pip", "color_grade", "edit_recipe_replay"}))
     wants_clean_script = bool(
         ids.intersection({"story_rewrite", "hook", "content_guard", "source_receipts", "broll", "generated_assets", "publish"})
         and "target_script" not in ids
@@ -1400,6 +1413,49 @@ def build_plan(
                 gate_category="audio_master_report",
                 required=False,
             ),
+        )
+
+    if "reference_edit_rhythm" in ids:
+        _add_step(
+            steps,
+            seen,
+            _step(
+                "reference_edit_rhythm",
+                phase="qa",
+                script="reference_edit_rhythm.py",
+                label="Measure reference-video edit rhythm against the rendered candidate",
+                reason="The brief asks to use a reference video's cut pacing or broad edit structure.",
+                command=shell(
+                    [
+                        python_bin,
+                        "scripts/reference_edit_rhythm.py",
+                        "analyze",
+                        "--project-dir",
+                        project_dir,
+                        "--reference",
+                        "<reference_video>",
+                        "--candidate",
+                        "output/final.mp4",
+                        "--evidence-dir",
+                        "verify/reference_edit_rhythm",
+                        "--output",
+                        "work/reference_edit_rhythm.json",
+                        "--markdown",
+                        "work/reference_edit_rhythm.md",
+                        "--strict",
+                    ]
+                ),
+                outputs=[
+                    "work/reference_edit_rhythm.json",
+                    "work/reference_edit_rhythm.md",
+                    "verify/reference_edit_rhythm/",
+                ],
+                gate_category="reference_edit_rhythm",
+            ),
+        )
+        notes.append(
+            "Reference rhythm copies structure only, never pixels/audio/branding. Add --require-match only "
+            "when structural similarity is an explicit acceptance criterion, then verify the report before publish."
         )
 
     if "subtitle_sidecar" in ids:

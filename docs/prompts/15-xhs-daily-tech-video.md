@@ -426,6 +426,21 @@
        --markdown output/verify/day<NN>_retention_rhythm_qa.md \
        --strict
 
+7b.1. # 可选：用户给了参考广告/短片，并明确要参考它的剪辑节奏时。
+      python3 scripts/reference_edit_rhythm.py analyze \
+        --project-dir . \
+        --reference origin/<reference-video>.mp4 \
+        --candidate output/day<NN>_master.mp4 \
+        --evidence-dir output/verify/reference_edit_rhythm \
+        --output work/reference_edit_rhythm.json \
+        --markdown work/reference_edit_rhythm.md \
+        --strict
+      # 默认偏差只 WARN；明确把结构匹配设为验收条件时才加 --require-match。
+      # 完整看两条视频，只借鉴切点结构，禁止复制 pixels/audio/branding/story。
+      python3 scripts/reference_edit_rhythm.py verify \
+        --report work/reference_edit_rhythm.json \
+        --strict
+
 7c. python3 scripts/audio_master_report.py \
       output/day<NN>_master.mp4 \
       --output output/day<NN>_audio_master_report.json \
@@ -579,6 +594,7 @@
 - 如输入是 PQ/HLG HDR，给我 hdr_sdr_plan、BT.709 四项 color tag 和完整 SDR 审片结论
 - subtitle_readability_qa 的输出（BLOCK 必须修；WARN 要在正常速度看成片）
 - retention_rhythm_qa 的输出（BLOCK 必须修；WARN 要结合成片人工判断）
+- 如有参考视频，给我 reference_edit_rhythm 的 cut density / median shot / final hold / boundary distance、两张 contact sheet 和 live verify 状态
 - audio_master_report 的输出（必须 `summary.blocking == 0`）
 - 如用了 J-cut/L-cut，给我 audio_transition_plan / apply receipt，并说明每个改变边界的 1× 耳机 + 手机试听结论
 - 如用了 multimodal dead-air，给我 plan/verify 状态、源切点复盘路径和完整工作副本审片结论
@@ -596,6 +612,7 @@
 - shot_color_qa 的亮度/色度跳变是审片提示，不是审美分；不要为了清 WARN 把有意的日夜/图形切换调平
 - subtitle_readability_qa 的 CPS / 行长 WARN 是人工复核提示，不要为了清零机械拆句
 - retention_rhythm_qa 只是可观测节奏风险，不是留存率或爆款预测；不要为了消除 WARN 机械加切点
+- reference_edit_rhythm 只允许借鉴剪辑结构，不复制参考片画面、音频、品牌或故事；没有明确验收要求时不要加 `--require-match`
 - 如果 content_guard 拦截，先重写标题再继续，不要 --no-content-guard 绕过
 ```
 
@@ -660,7 +677,9 @@ day<NN>/
 │   ├── project_resume.json # 续跑上下文包
 │   ├── project_resume.md
 │   ├── review_dashboard.json # 人工复核面板
-│   └── review_dashboard.html
+│   ├── review_dashboard.html
+│   ├── reference_edit_rhythm.json # 可选：参考片 vs 成片结构 + source/evidence hash gate
+│   └── reference_edit_rhythm.md
 └── output/
     ├── verify/                         # timeline_view / review proxy 审片产物
     │   ├── day<NN>_review_proxy.mp4     # 低码率 timecoded 审片视频，不可发布
@@ -670,6 +689,7 @@ day<NN>/
     │   ├── day<NN>_subtitle_readability_qa.md   # cue 时间范围 + 修复建议
     │   ├── day<NN>_retention_rhythm_qa.json # 成片 hook / 长镜头 / 节奏风险门禁
     │   ├── day<NN>_retention_rhythm_qa.md   # 时间范围 + 修复建议
+    │   ├── reference_edit_rhythm/           # 可选：参考片/候选片 contact sheets
     │   ├── day<NN>_shot_color_qa.json       # 镜头色彩 / 曝光 / broadcast-range gate
     │   └── day<NN>_shot_color_qa.md         # 镜头指标 + 可疑切点复核命令
     ├── day<NN>_master.mp4              # 9:16 主版本

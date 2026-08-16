@@ -356,6 +356,16 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         blocks_when_present=True,
     ),
     ArtifactDef(
+        "reference_edit_rhythm",
+        "Reference Edit Rhythm",
+        (
+            "**/reference_edit_rhythm.json",
+            "**/*_reference_edit_rhythm.json",
+        ),
+        "Run reference_edit_rhythm.py verify; review structural differences and repair any required-match or source/evidence drift blocker.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "speech_continuity_qa",
         "Speech Continuity QA",
         (
@@ -735,6 +745,38 @@ def evaluate_category(
             elif _int_at(verification, "summary", "warnings"):
                 status = "warn" if status != "blocked" else status
                 notes.append(f"edit recipe source preflight had warnings: {artifact.path}")
+        return {
+            "category": definition.category,
+            "label": definition.label,
+            "status": status,
+            "artifact_count": len(artifacts),
+            "latest_path": artifacts[0].path,
+            "notes": sorted(set(notes)),
+            "next_action": definition.next_action if status in {"missing", "blocked", "warn"} else "",
+        }
+
+    if definition.category == "reference_edit_rhythm":
+        from reference_edit_rhythm import verify_report
+
+        for artifact in artifacts:
+            data = _load_json(artifact.path)
+            if data is None:
+                status = "blocked"
+                notes.append(f"unreadable reference edit rhythm report: {artifact.path}")
+                continue
+            verification = verify_report(data)
+            blocking = _int_at(verification, "summary", "blocking")
+            warnings = _int_at(verification, "summary", "warnings")
+            if blocking:
+                status = "blocked"
+                notes.append(
+                    f"invalid reference edit rhythm {artifact.path}: {blocking} blocking item(s)"
+                )
+            elif warnings:
+                status = "warn" if status != "blocked" else status
+                notes.append(
+                    f"reference edit rhythm needs review {artifact.path}: {warnings} warning(s)"
+                )
         return {
             "category": definition.category,
             "label": definition.label,
