@@ -2,7 +2,7 @@
 
 这是一个面向 **口播、教程、访谈、播客切片、录屏演示 / facecam demo** 的 AI 视频剪辑生产线：给它原始口播音频/视频、transcript、B-roll、摄像头小窗或素材目录，它可以把“还没整理的素材”推进到 **可发布的小红书 / 抖音 / 视频号短视频**。
 
-它不是一个单点 FFmpeg 脚本，而是一条完整工作流：**项目启动/素材导入 → 手持防抖 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 渲染前预检 → 单次编码渲染 → 质检 → 多平台导出 / 目标大小交付编码 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
+它不是一个单点 FFmpeg 脚本，而是一条完整工作流：**项目启动/素材导入 → 手持防抖 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 渲染前预检 → 单次编码渲染 → 质检 / 最终成片唇形复核 → 多平台导出 / 目标大小交付编码 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
 
 ## 适合做什么
 
@@ -22,6 +22,7 @@
 - **已审时间线可以换素材复用**：`edit_recipe.py` 把 `render_config.json` 的全部本地文件路径替换成类型化槽位，生成 content-addressed 可移植配方；回放必须完整绑定新素材、记录 SHA-256 并重新通过 `edit_preflight.py`。
 - **生成式素材有明确审批和台账**：Codex `image_gen` / GPT Image 2 提示词、Dreamina/Veo/LTX/Wan/Sora 视频提示词、provider 决策、`submit_id` 轮询下载和本地落盘 gate 都先记录再执行。
 - **生成片段复核会反哺下一次提示词**：`generation_lessons.py` 只从 canonical clip review 提取人工明确批准的通用经验，绑定 source digests，并按 provider/model/category 精确筛选后交给 `video_prompt_pack.py`；不会把单片修复建议自动当成全局规则。
+- **数字人口型必须在最终成片上重新举证**：`lip_sync_review.py` 从最终 master 的完整短语导出 1× 带声和 0.25× 静音 proof clips，逐条复核爆破音闭唇、元音提前/滞后、讲话时冻嘴、说话人和音频质量；任何剪切、变速、换音或重编码都会让旧报告失效。
 - **参考片节奏先量化再借鉴**：`reference_edit_rhythm.py` 用同一套 hard-cut 检测比较参考片和成片的 cuts/minute、镜头时长、结尾 hold 与切点分布，同时绑定两条视频和 contact sheets；默认只提示差异，明确验收时才阻断。
 - **适合交给强推理模型做长流程代理执行**：在 [GPT-5.6 Sol](https://developers.openai.com/api/docs/models/gpt-5.6-sol)（OpenAI 当前旗舰；API 别名 `gpt-5.6` 指向 Sol）和 [Claude Opus 4.8](https://docs.anthropic.com/en/docs/about-claude/models) 这类面向复杂专业任务、agent 工作流的模型下，本 skill 对 **口播类短视频** 至少可以替代 **80% 的常规视频剪辑工作**。
 
@@ -237,6 +238,7 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    ├─→ retention_rhythm_qa.py   成片 hook 活动 / 长镜头 / 注意力空窗 / 节奏门禁
    ├─→ reference_edit_rhythm.py 参考片 vs 成片 hard-cut 结构 / contact sheets / live gate
    ├─→ speech_continuity_qa.py  成片二次 ASR → 切点复读 / 近重复 take / 句内口吃 gate
+   ├─→ lip_sync_review.py       最终 master → 1×/0.25× 对口型证据 / 人工审计 / live gate
    ├─→ review_proxy.py          低码率完整审片 MP4 / 可见时间码 / faststart
    ├─→ audio_master_report.py   成片响度 / true peak / LRA / 长静音发布 gate
    │     └─→ timeline_view.py   QA 可疑区间可视化复盘
@@ -2201,6 +2203,38 @@ python3 scripts/speech_continuity_qa.py output/day58_master_transcript.json \
 
 命中项会写入精确成片时间范围、重复文本、segment evidence 和修复建议；`--strict` 返回 2。先试听 master 并用 `timeline_view.py --at <seconds>` 看切点，再回到源 `render_config` / cut list 重渲染，避免在成片上二次拼补。只要报告存在且 `summary.blocking > 0`，`pipeline_manifest.py` 会阻塞；发布流程要强制具备此报告时加 `--require speech_continuity_qa`。
 
+### 👄 Lip-sync Review — 最终成片口型同步证据门禁
+[`scripts/lip_sync_review.py`](scripts/lip_sync_review.py) · [详细文档](docs/prompts/93-lip-sync-review.md)
+
+数字人、AI 口播或短段对口型视频不能只审 provider 下载的原始 clip：最终剪切、变速、拼接或换音都可能重新制造声画偏移。`lip_sync_review.py` 从**最终交付候选**导出每个完整短语的 1× 带声 proof 和 0.25× 静音 proof，并绑定 master、proofs、媒体契约、人工决定和 canonical report id。
+
+```bash
+python3 scripts/lip_sync_review.py prepare \
+  --project-dir . \
+  --video output/final.mp4 \
+  --segment hook=2.40:6.10 \
+  --anchor hook="把品牌卖点说清楚" \
+  --speaker hook="avatar-a" \
+  --proof-dir verify/lip_sync \
+  --output work/lip_sync_review_request.json \
+  --markdown work/lip_sync_review_request.md \
+  --response-template work/lip_sync_review_response.json
+
+# 填完 response 后：
+python3 scripts/lip_sync_review.py audit \
+  --request work/lip_sync_review_request.json \
+  --response work/lip_sync_review_response.json \
+  --output work/lip_sync_review.json \
+  --markdown work/lip_sync_review.md \
+  --strict
+
+python3 scripts/lip_sync_review.py verify \
+  --report work/lip_sync_review.json \
+  --strict
+```
+
+每段必须在 1× 循环完整短语并用 0.25× 查嘴部运动；`pass` 要求爆破音闭唇 aligned、元音 timing aligned、讲话时无冻嘴、可见说话人正确、音频 clean 且 `repair_action=none`。`not_observable` 不会被当作通过；字幕挡嘴或证据不足时应重选 proof 或修复。脚本不做人脸追踪或自动音素对齐，只证明人工审的是哪一版 master 和哪组证据。`pipeline_manifest.py --require lip_sync_review --strict` 可设为发布门禁。
+
 ### 🎚️ Audio Master Report — 成片响度发布门禁
 [`scripts/audio_master_report.py`](scripts/audio_master_report.py) · [详细文档](docs/prompts/54-audio-master-report.md)
 
@@ -2589,6 +2623,18 @@ python3 $SKILL/scripts/audio_master_report.py \
   --markdown $WORK/output/day${DAY}_audio_master_report.md \
   --strict
 
+# 6f.1. 数字人/生成口播：从最终 master 导出完整短语的口型同步证据
+python3 $SKILL/scripts/lip_sync_review.py prepare \
+  --project-dir $WORK \
+  --video output/day${DAY}_master.mp4 \
+  --segment hook=2.40:6.10 \
+  --anchor hook="把品牌卖点说清楚" \
+  --proof-dir verify/lip_sync \
+  --output work/lip_sync_review_request.json \
+  --markdown work/lip_sync_review_request.md \
+  --response-template work/lip_sync_review_response.json
+# 看完 1× 带声与 0.25× 静音 proofs、填写 response 后，再执行 audit / verify。
+
 # 6g. 如果 QA 有 WARN/FAIL，先看 review packet；想抽查关键切点再生成可视化复盘图
 python3 $SKILL/scripts/timeline_view.py \
   $WORK/output/day${DAY}_master.mp4 --at 42.5 --radius 1.5 \
@@ -2706,6 +2752,7 @@ pytest tests/test_render_qa.py -v           # 渲染后质检
 pytest tests/test_shot_color_qa.py -v       # 成片镜头色彩 / 曝光 / broadcast-range 门禁
 pytest tests/test_retention_rhythm_qa.py -v # 成片 hook / 长镜头 / 节奏风险门禁
 pytest tests/test_reference_edit_rhythm.py -v # 参考片/成片 hard-cut 结构 / contact-sheet / stale gate
+pytest tests/test_lip_sync_review.py -v # 最终 master 口型 proofs / 人工 audit / source drift gate
 pytest tests/test_subtitle_readability_qa.py -v # 最终字幕 CPS / 时长 / 重叠 / 越界门禁
 pytest tests/test_platform_safe_area_qa.py -v # 字幕 / PIP / CTA / marker 平台安全区门禁
 pytest tests/test_audio_master_report.py -v # 成片响度 / true peak / LRA 门禁
@@ -2759,6 +2806,22 @@ pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 pytest tests/test_review_dashboard.py -v    # 静态人工复核面板 + gate queue
 pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 gate
 ```
+
+### 2026-08-18 自动化升级记录（Source-bound Final-master Lip-sync Review）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`calesthio/generative-media-skills` Hedra Character Video](https://github.com/calesthio/generative-media-skills/blob/main/skills/providers/avatar-video/hedra-character-video/SKILL.md#qa-checklist) | 交付前明确看爆破音闭唇、元音是否持续提前/滞后、讲话时是否长时间冻嘴，并把问题路由到裁切、重生或换模型 | 固定为逐短语 response schema；任何 `not_observable`、错位、冻嘴、错说话人或音频问题 fail closed，不用泛化“看起来不错”代替证据 |
+| [`huangserva/musical-mv-storyboard`](https://github.com/huangserva/musical-mv-storyboard#key-rules) | lip-sync 片段必须绑定完整 vocal phrase；交付前 proof 必须从最终成片本身导出，不能拿上游生成片代替 | `prepare` 只接受最终 master 内 1–10 秒完整短语，自动加前后 context，并同时导出 1× 带声与 0.25× 静音 proof |
+| [`ymh3753201/ai-creator-talking-head-video`](https://github.com/ymh3753201/ai-creator-talking-head-video/blob/main/ai-creator-talking-head-video/SKILL.md#bundled-model-compatibility) | 把具体 provider route、audio/lip-sync 能力和 runtime 证据当成精确 capability contract，不承诺未验证的 frame-accurate mouth matching | 不绑定或夸大任一生成 provider；本地 post-render gate 明确是人工审片合同，不冒充自动音素/人脸检测，也不能把 reviewer label 当身份认证 |
+
+新增/调整能力：新增 [`scripts/lip_sync_review.py`](scripts/lip_sync_review.py)、[`tests/test_lip_sync_review.py`](tests/test_lip_sync_review.py) 和 [`docs/prompts/93-lip-sync-review.md`](docs/prompts/93-lip-sync-review.md)。`prepare` 要求最终 master、proof 目录和请求产物都在项目内，拒绝 symlink、输入/输出碰撞、无音轨、越界、短于 1 秒或长于 10 秒的 phrase；每段生成 H.264/AAC 1× proof 和 H.264 无声 0.25× proof，并绑定 source/proof SHA-256、大小、媒体契约、source/proof timing 与 request id。`audit` 固定核对 plosive closure、vowel timing、frozen mouth、speaker assignment、audio quality 和 repair action；只有五项全过且无需修复才 ready。`verify` 现场重读 master/proofs、重算 request/audit/report 派生状态，任何换音、变速、剪切、重编码、证据或字段漂移 fail closed。`pipeline_manifest.py` 新增存在即 live verify、可 `--require lip_sync_review` 的 gate；`edit_brief_plan.py` 新增中英文 lip-sync / 对口型 / 口型同步路由。
+
+使用方式：运行 `python3 scripts/lip_sync_review.py prepare --project-dir . --video output/final.mp4 --segment hook=2.40:6.10 --anchor hook="把品牌卖点说清楚" --proof-dir verify/lip_sync --output work/lip_sync_review_request.json --markdown work/lip_sync_review_request.md --response-template work/lip_sync_review_response.json`；循环看 1× 带声 proof，再看 0.25× 静音 proof，填写 response。随后运行 `audit --strict` 和 `verify --strict`，发布前可再运行 `pipeline_manifest.py --require lip_sync_review --strict`。这不是自动唇形分数、身份认证或数字签名；字幕挡嘴、短语没有可见闭唇锚点或无法确认说话人时不得填 pass。
+
+验证结果：定向回归 `.venv/bin/python -m pytest tests/test_lip_sync_review.py tests/test_edit_brief_plan.py tests/test_pipeline_manifest.py -q` 通过 **111 passed in 1.49s**；最终全量 `.venv/bin/python -m pytest tests -q` 通过 **905 passed in 20.42s**。`.venv/bin/python -m compileall -q scripts tests`、四组 CLI help、manifest category smoke、Skill `quick_validate.py` 和 `git diff --check` 通过。真实 FFmpeg lifecycle smoke 用合成的 6 秒 320×180/24fps H.264/AAC master 完成 `prepare → audit → verify`：1× proof 为 3.708 秒 H.264/AAC，0.25× proof 为 14.708 秒 H.264 无声，最终 `ready / blocking=0 / warnings=0`，master/proofs/report hash 与媒体契约均现场复核通过；该 smoke 验证证据生命周期，不声称测试图案具有人类口型质量。
 
 ### 2026-08-17 自动化升级记录（Source-bound Reference Edit Rhythm）
 

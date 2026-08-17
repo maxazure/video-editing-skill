@@ -198,6 +198,18 @@ SIGNAL_KEYWORDS: Mapping[str, Sequence[str]] = {
         "复刻剪辑结构",
         "参考广告节奏",
     ),
+    "lip_sync_review": (
+        "lip sync",
+        "lip-sync",
+        "lipsync",
+        "mouth sync",
+        "lip synchronization",
+        "对口型",
+        "口型同步",
+        "唇形同步",
+        "唇音同步",
+        "数字人口型",
+    ),
     "review_proxy": ("review proxy", "审片代理", "审片视频", "低码率审片", "时间码审片", "timecode review"),
     "multi_platform": ("三平台", "多平台", "multi platform", "多个平台", "xhs douyin", "小红书 抖音"),
     "hdr_sdr": (
@@ -299,6 +311,7 @@ SIGNAL_LABELS: Mapping[str, str] = {
     "render": "渲染成片",
     "qa": "成片质检",
     "reference_edit_rhythm": "参考视频剪辑节奏量化 / 对照",
+    "lip_sync_review": "最终成片唇形 / 口型同步复核",
     "review_proxy": "低码率时间码审片视频",
     "multi_platform": "多平台导出",
     "hdr_sdr": "PQ/HLG HDR → Rec.709 SDR 交付",
@@ -467,7 +480,7 @@ def build_plan(
 
     if source_media and not Path(source_media).expanduser().exists():
         blockers.append(f"source media not found: {source_media}")
-    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy", "reference_edit_rhythm", "multimodal_dead_air", "video_stabilization", "speed_ramp", "hdr_sdr", "delivery_encode"}):
+    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy", "reference_edit_rhythm", "lip_sync_review", "multimodal_dead_air", "video_stabilization", "speed_ramp", "hdr_sdr", "delivery_encode"}):
         warnings.append("source media was not provided; commands use <source_media> placeholders")
 
     if transcript and not Path(transcript).expanduser().exists():
@@ -1456,6 +1469,53 @@ def build_plan(
         notes.append(
             "Reference rhythm copies structure only, never pixels/audio/branding. Add --require-match only "
             "when structural similarity is an explicit acceptance criterion, then verify the report before publish."
+        )
+
+    if "lip_sync_review" in ids:
+        lip_sync_video = "output/final.mp4" if ids.intersection({"render", "publish", "generated_assets"}) else source
+        _add_step(
+            steps,
+            seen,
+            _step(
+                "lip_sync_review",
+                phase="qa",
+                script="lip_sync_review.py",
+                label="Export and review final-master lip-sync proof clips",
+                reason="Digital-human or generated talking-head delivery needs phrase-level mouth/audio review after final editing and audio replacement.",
+                command=shell(
+                    [
+                        python_bin,
+                        "scripts/lip_sync_review.py",
+                        "prepare",
+                        "--project-dir",
+                        project_dir,
+                        "--video",
+                        lip_sync_video,
+                        "--segment",
+                        "<segment_id>=<start>:<end>",
+                        "--anchor",
+                        "<segment_id>=<visible_plosive_phrase>",
+                        "--proof-dir",
+                        "verify/lip_sync",
+                        "--output",
+                        "work/lip_sync_review_request.json",
+                        "--markdown",
+                        "work/lip_sync_review_request.md",
+                        "--response-template",
+                        "work/lip_sync_review_response.json",
+                    ]
+                ),
+                outputs=[
+                    "work/lip_sync_review_request.json",
+                    "work/lip_sync_review_response.json",
+                    "work/lip_sync_review.json",
+                    "verify/lip_sync/",
+                ],
+                gate_category="lip_sync_review",
+            ),
+        )
+        notes.append(
+            "After reviewing every 1x and 0.25x proof, run lip_sync_review.py audit, then verify the source-bound report before publish. Any unobservable mouth/audio check fails closed."
         )
 
     if "subtitle_sidecar" in ids:

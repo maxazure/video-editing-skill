@@ -104,6 +104,21 @@ def test_review_proxy_only_uses_supplied_render_without_rerendering(tmp_path):
     assert str(source) in proxy["command"]
 
 
+def test_final_master_lip_sync_brief_routes_proof_review(tmp_path):
+    source = tmp_path / "final.mp4"
+    source.write_text("fake master", encoding="utf-8")
+
+    plan = build_plan(f"检查 {source} 的数字人口型同步和 lip-sync", project_dir=str(tmp_path))
+
+    ids = [step["id"] for step in plan["steps"]]
+    assert "master_video" not in ids
+    step = next(step for step in plan["steps"] if step["id"] == "lip_sync_review")
+    assert step["script"] == "lip_sync_review.py"
+    assert str(source) in step["command"]
+    assert "<visible_plosive_phrase>" in step["command"]
+    assert step["gate_category"] == "lip_sync_review"
+
+
 def test_target_script_brief_routes_alignment_before_render(tmp_path):
     source = tmp_path / "talk.mp4"
     source.write_text("fake video", encoding="utf-8")

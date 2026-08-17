@@ -94,6 +94,7 @@
 | 90 | [Generation Lessons 生成视频复核经验闭环](90-generation-lessons.md) | generated clip review → 人工批准、provider/model scoped 经验库 → 下一次 prompt pack |
 | 91 | [Generated Sequence Review 跨镜头连续性复核](91-generated-sequence-review.md) | 已审生成 clips → 相邻尾帧/首帧、边界预览、身份/道具/空间/动作连续性 live gate |
 | 92 | [Reference Edit Rhythm 参考视频剪辑节奏量化](92-reference-edit-rhythm.md) | reference + candidate → hard-cut 结构、contact sheets、差异容差与 source-bound live gate |
+| 93 | [Lip-sync Review 最终成片口型同步证据](93-lip-sync-review.md) | final master → 完整短语 1×/0.25× proofs、人工 audit 与 source-bound live gate |
 
 ## 快速上手
 
@@ -167,6 +168,7 @@
 | 想给同一条视频生成多套封面并选一张发布 | [68-Cover Variants](68-cover-variants.md) |
 | 成片剪完后想检查前三秒、长镜头和节奏空窗 | [69-Retention Rhythm QA](69-retention-rhythm-qa.md) |
 | 有参考广告/短片，想量化它的切点结构再对照成片 | [92-Reference Edit Rhythm](92-reference-edit-rhythm.md) |
+| 数字人/生成口播成片要检查口型是否真的同步 | [93-Lip-sync Review](93-lip-sync-review.md) |
 | 发布前想检查字幕是否重叠、闪现或来不及读 | [70-Subtitle Readability QA](70-subtitle-readability-qa.md) |
 | 视频生成前想检查首帧和 style key 是否适配目标画幅 | [71-Reference Frame Preflight](71-reference-frame-preflight.md) |
 | 多机位、多 take 或 B-roll 里有重复镜头，想先去重候选 | [72-Visual Dedupe](72-visual-dedupe.md) |

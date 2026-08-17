@@ -1,6 +1,6 @@
 ---
 name: video-editing
-description: "Xiaohongshu/RED-tuned short-form video workflow for voice-over, talking-head, tutorials, interviews, podcasts, long videos, screen recordings, B-roll, captions, and generated assets. Covers edit routing, transcription, semantic transcript review, multi-take packs, audio sync, video stabilization, silence/freeze dead-air cleanup, highlights/shorts, hook/story rewrite, content/source gates, B-roll/enrich/gpt-image-2/video-generation planning, reference-frame/style-lock preflight, per-clip and cross-shot generated-video review, screen focus, PIP, color grade, speed ramps, J-cut/L-cut audio transitions, reversible edit revisions, portable edit-recipe replay, preflight/render/QA/audio master, source-time edit comparison, retention-rhythm, subtitle-readability, platform-safe-area and rendered-speech continuity QA, review proxies, subtitles, CapCut import, multi-platform and target-size exports, cover A/B variants, captions, publish packages, dashboards, resume packets, EDL/FCPXML/OTIO, and Remotion animation."
+description: "Xiaohongshu/RED-tuned short-form video workflow for voice-over, talking-head, tutorials, interviews, podcasts, screen recordings, B-roll, captions, and generated assets. Covers edit routing, transcription, semantic review, multi-take/audio sync/stabilization/dead-air cleanup, highlights/shorts, story and source gates, enrichment and video-generation planning, reference-frame preflight, generated clip/sequence review, color/speed/J-L cuts, reversible revisions and recipes, preflight/render/QA/audio master, edit comparison, retention/subtitle/safe-area/speech/lip-sync QA, subtitles, CapCut, platform/size exports, covers, captions, publish packages, dashboards, handoff formats, and Remotion."
 metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
 ---
 
@@ -72,6 +72,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ retention_rhythm_qa.py   成片 hook 活动 / 长镜头 / 注意力空窗 / 节奏 gate
    ├─→ reference_edit_rhythm.py 参考片 vs 成片 hard-cut 结构 / contact sheets / live gate
    ├─→ speech_continuity_qa.py  成片二次 ASR → 切点复读 / 近重复 take / 句内口吃 gate
+   ├─→ lip_sync_review.py       最终 master → 1×/0.25× 口型证据 / 人工 audit / live gate
    ├─→ review_proxy.py          低码率完整审片 MP4 / 可见时间码 / faststart
    ├─→ timeline_view.py         源素材删除段 / 成片输出切点 filmstrip + waveform 复盘图
    ├─→ edit_compare.py          原片连续时钟 vs 最终像素 / 删段置黑 / 映射验证
@@ -159,6 +160,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `retention_rhythm_qa.py` | 成片 hook 活动、长镜头、注意力空窗、等距/快切和字幕节奏风险 | `<video.mp4>` `--timed-text subtitles.json` `--output retention_rhythm_qa.json` `--strict` |
 | `reference_edit_rhythm.py` | 参考片 vs 成片 hard-cut 密度、镜头时长、结尾 hold、归一化切点与 contact-sheet source-bound 对照 | `analyze --reference --candidate --evidence-dir [--require-match]` / `verify --report --strict` |
 | `speech_continuity_qa.py` | 成片二次 transcript → 复读 / 近重复 take / 句内口吃 gate | `<final_transcript.json>` `--output speech_continuity_qa.json` `--markdown` `--strict` |
+| `lip_sync_review.py` | 最终 master → 完整短语 1× 带声 / 0.25× 静音 proof、口型人工 audit 与 source-bound live gate | `prepare --video --segment --anchor --proof-dir` / `audit --request --response --strict` / `verify --report --strict` |
 | `review_proxy.py` | master/platform MP4 → 低码率 timecoded 审片视频 + JSON/Markdown | `<video.mp4>` `--output verify/review_proxy.mp4` `--dry-run` `--no-timecode` |
 | `audio_master_report.py` | 成片响度报告：LUFS / true peak / LRA / 长静音 gate | `<video.mp4>` `--output audio_master_report.json` `--markdown audio_master_report.md` `--strict` |
 | `timeline_view.py` | 源素材删除段 / 成片输出切点可视化复盘图 | `<video.mp4>` `--at 42.5` `--output view.png` / `--rendered-cut-list cuts.json` `--output-dir verify/` |
@@ -1517,6 +1519,30 @@ python3 scripts/reference_edit_rhythm.py verify \
 ```
 
 `reference_edit_rhythm.py` 对参考片和候选片运行同一套 hard scene detection，绑定两条视频和两张 contact sheet 的 SHA-256/媒体契约，并比较 cuts/minute、median shot、final-hold 比例、归一化切点位置及 opening/middle/closing cut share。默认偏差只 WARN；只有结构匹配是明确验收条件时才加 `--require-match`。完整看两条视频，只借鉴结构，不复制参考片的画面、音频、品牌或故事。scene score 会漏掉部分 dissolve 与镜头内动作，contact sheet 也不能替代 1× 播放。详见 [docs/prompts/92-reference-edit-rhythm.md](docs/prompts/92-reference-edit-rhythm.md)。
+
+**6c.2. 最终成片 Lip-sync 复核（数字人 / 生成口播 / 对口型 close-up）**：
+```bash
+python3 scripts/lip_sync_review.py prepare \
+  --project-dir . \
+  --video final.mp4 \
+  --segment hook=2.40:6.10 \
+  --anchor hook="把品牌卖点说清楚" \
+  --proof-dir verify/lip_sync \
+  --output work/lip_sync_review_request.json \
+  --markdown work/lip_sync_review_request.md \
+  --response-template work/lip_sync_review_response.json
+
+# 看完 1× 带声和 0.25× 静音 proofs、填写 response 后：
+python3 scripts/lip_sync_review.py audit \
+  --request work/lip_sync_review_request.json \
+  --response work/lip_sync_review_response.json \
+  --output work/lip_sync_review.json \
+  --markdown work/lip_sync_review.md \
+  --strict
+python3 scripts/lip_sync_review.py verify --report work/lip_sync_review.json --strict
+```
+
+短语必须来自最终 master 且完整可见，长度 1–10 秒，优先包含 p/b/m 类闭唇锚点。`pass` 要求爆破音闭唇、元音 timing、讲话时嘴部运动、可见说话人和音频质量全部通过；`not_observable` fail closed。脚本只绑定人工审过的 master/proof bytes，不做人脸或自动音素识别。任何剪切、变速、换音、重编码或 evidence 漂移都要重新 `prepare → audit`。详见 [docs/prompts/93-lip-sync-review.md](docs/prompts/93-lip-sync-review.md)。
 
 **6d. 完整审片代理（需要分享整条视频或精确时间码反馈时跑）**：
 ```bash

@@ -376,6 +376,16 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         blocks_when_present=True,
     ),
     ArtifactDef(
+        "lip_sync_review",
+        "Final-master Lip-sync Review",
+        (
+            "**/lip_sync_review.json",
+            "**/*_lip_sync_review.json",
+        ),
+        "Run lip_sync_review.py verify; regenerate proofs and review again after any final-master, audio, timing, or evidence drift.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "review_proxy",
         "Review Proxy",
         (
@@ -777,6 +787,30 @@ def evaluate_category(
                 notes.append(
                     f"reference edit rhythm needs review {artifact.path}: {warnings} warning(s)"
                 )
+        return {
+            "category": definition.category,
+            "label": definition.label,
+            "status": status,
+            "artifact_count": len(artifacts),
+            "latest_path": artifacts[0].path,
+            "notes": sorted(set(notes)),
+            "next_action": definition.next_action if status in {"missing", "blocked", "warn"} else "",
+        }
+
+    if definition.category == "lip_sync_review":
+        from lip_sync_review import verify_report
+
+        for artifact in artifacts:
+            data = _load_json(artifact.path)
+            if data is None:
+                status = "blocked"
+                notes.append(f"unreadable lip-sync review: {artifact.path}")
+                continue
+            verification = verify_report(data)
+            blocking = _int_at(verification, "summary", "blocking")
+            if blocking:
+                status = "blocked"
+                notes.append(f"invalid lip-sync review {artifact.path}: {blocking} blocking item(s)")
         return {
             "category": definition.category,
             "label": definition.label,
