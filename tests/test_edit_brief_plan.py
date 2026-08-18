@@ -119,6 +119,24 @@ def test_final_master_lip_sync_brief_routes_proof_review(tmp_path):
     assert step["gate_category"] == "lip_sync_review"
 
 
+def test_subtitle_style_brief_routes_real_frame_preview_before_render(tmp_path):
+    source = tmp_path / "talk.mp4"
+    source.write_text("fake video", encoding="utf-8")
+
+    plan = build_plan(
+        f"给 {source} 的小红书成片先做三套真实画面字幕样式预览，选好字幕风格再渲染",
+        project_dir=str(tmp_path),
+    )
+
+    ids = [step["id"] for step in plan["steps"]]
+    assert ids.index("subtitle_style_preview") < ids.index("master_video")
+    step = next(step for step in plan["steps"] if step["id"] == "subtitle_style_preview")
+    assert step["script"] == "subtitle_style_preview.py"
+    assert "--require-selection" in step["command"]
+    assert "work/subtitle_style_preview.json" in step["outputs"]
+    assert step["gate_category"] == "subtitle_style_preview"
+
+
 def test_target_script_brief_routes_alignment_before_render(tmp_path):
     source = tmp_path / "talk.mp4"
     source.write_text("fake video", encoding="utf-8")

@@ -65,6 +65,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ edit_recipe.py           已审 render_config → typed-slot 可移植配方 / 新素材绑定回放
    ├─→ edit_preflight.py        render_config/enrich_plan/cut list 渲染前预检 gate
    ├─→ platform_safe_area_qa.py 字幕/PIP/CTA/marker → 平台 UI 安全区 gate + SVG guide
+   ├─→ subtitle_style_preview.py 真实源帧 → 最终 ASS 预设对比 JPEG / 选择 / live gate
    ├─→ render_final.py          单次编码渲染（可选口播降噪 + enrich_plan/focus_events/pip_overlays + Heavy 字幕 + 响度规范化 + BGM ducking）
    │                            可选 --versioned-output 防覆盖旧成片
    ├─→ render_qa.py             渲染后黑屏/静帧/静音/尺寸质检 + review packet
@@ -154,6 +155,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `edit_recipe.py` | 已审 render_config → typed-slot 无路径配方 / digest 验证 / 绑定新素材回放 | `export --config --name` / `verify --recipe` / `replay --bind SLOT=PATH --receipt --strict` |
 | `edit_preflight.py` | render_config/enrich_plan/cut list 渲染前预检 gate | `--config render_config.json` `--enrich-plan enrich_plan.json` `--output edit_preflight.json` `--strict` |
 | `platform_safe_area_qa.py` | 字幕、badge、PIP、CTA、章节卡、marker → 平台 UI 遮挡 gate + SVG guide | `--config` `--enrich-plan` `--elements` `--platform xhs|douyin|wxch` `--guide` `--strict` |
+| `subtitle_style_preview.py` | 真实源帧 → `render_final.py` 最终 ASS 样式对比 JPEG、人工选择与 source/font/style live gate | `create --video --platform --preview-dir --require-selection` / `select --report --style` / `verify --strict` |
 | `render_final.py` | 单次编码渲染 + 可选口播降噪 / J-cut/L-cut / enrich_plan / 旁白驱动 BGM ducking | `--config render_config.json` `--audio-transition-plan audio_transition_plan.json` `--speech-denoise light` `--enrich-plan enrich_plan.json` `--bgm-ducking` `--output final.mp4` |
 | `render_qa.py` | 渲染后 QA：尺寸/音频/黑屏/静帧/静音 + review packet | `<video.mp4>` `--platform douyin` `--json qa.json` `--review-dir verify/qa` |
 | `shot_color_qa.py` | rendered master → 镜头亮度/对比/色度/饱和度/broadcast-range 与切点跳变 gate | `<video.mp4>` `--scene-boundaries` `--output shot_color_qa.json` `--markdown` `--strict` |
@@ -1307,6 +1309,32 @@ python3 scripts/platform_safe_area_qa.py \
 抖音和视频号派生版分别改用 `--platform douyin` / `--platform wxch`。脚本按 `render_final.py` 的默认 ASS、PIP 和 focus-marker 几何规则估算 bbox；renderer 之外的 CTA/Logo 可以通过 `--elements custom_elements.json` 提供像素或 normalized bbox。平台 App UI 变化时用 `--safe-left` / `--safe-top` / `--safe-right` / `--safe-bottom` 覆盖实测边距。
 
 这是本地、可审计的 layout gate：不上传、不调用 LLM、不做 OCR，不推断生成图或封面内部的主体/文字位置。已有整图章节卡会标记 `uncheckable`，需要打开 SVG guide 或渲染帧人工复核。`summary.blocking > 0` 会让 `--strict` 返回 2；需要设为生产线必需项时用 `pipeline_manifest.py --require platform_safe_area_qa --strict`。
+
+### Phase 4.95: Subtitle Style Preview（真实画面字幕样式预览）
+
+最终编码前先把真实 ASS 预设渲染到源片早/中/晚代表帧：
+
+```bash
+python3 scripts/subtitle_style_preview.py create \
+  --project-dir . \
+  --video origin/talking.mp4 \
+  --platform xhs \
+  --text "这句字幕要覆盖中英文和数字 2026" \
+  --preview-dir verify/subtitle_styles \
+  --output work/subtitle_style_preview.json \
+  --markdown work/subtitle_style_preview.md \
+  --require-selection
+
+python3 scripts/subtitle_style_preview.py select \
+  --report work/subtitle_style_preview.json \
+  --style normal
+
+python3 scripts/subtitle_style_preview.py verify \
+  --report work/subtitle_style_preview.json \
+  --strict
+```
+
+默认比较 `normal` / `minimal` / `bold_pop`，并使用 `render_final.py` 的同一 ASS builder、字体、字号和目标画幅中心裁切。手机尺寸与全尺寸都要看；确认后把所选值传给 `render_final.py --subtitle-style`。源片、字体、样式定义或 JPEG bytes 变化会让旧选择失效。`karaoke` 预览只证明视觉样式，真实逐词节奏仍取决于词级时间戳；最终还要跑 safe-area、readability QA 和 1× 成片审片。详见 [docs/prompts/94-subtitle-style-preview.md](docs/prompts/94-subtitle-style-preview.md)。
 
 ### Phase 5: Single-Pass Render（单次渲染）
 

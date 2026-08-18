@@ -95,6 +95,7 @@
 | 91 | [Generated Sequence Review 跨镜头连续性复核](91-generated-sequence-review.md) | 已审生成 clips → 相邻尾帧/首帧、边界预览、身份/道具/空间/动作连续性 live gate |
 | 92 | [Reference Edit Rhythm 参考视频剪辑节奏量化](92-reference-edit-rhythm.md) | reference + candidate → hard-cut 结构、contact sheets、差异容差与 source-bound live gate |
 | 93 | [Lip-sync Review 最终成片口型同步证据](93-lip-sync-review.md) | final master → 完整短语 1×/0.25× proofs、人工 audit 与 source-bound live gate |
+| 94 | [Subtitle Style Preview 真实画面字幕样式预览](94-subtitle-style-preview.md) | source video → 最终 ASS 预设早/中/晚 JPEG、选择记录与 source/font/style live gate |
 
 ## 快速上手
 
@@ -166,6 +167,7 @@
 | 想把整条视频发给客户审片并精确引用时间码 | [66-Review Proxy](66-review-proxy.md) |
 | 成片剪完后想检查是否残留复读或口吃 | [67-Speech Continuity QA](67-speech-continuity-qa.md) |
 | 想给同一条视频生成多套封面并选一张发布 | [68-Cover Variants](68-cover-variants.md) |
+| 想在完整渲染前用真实画面比较三套字幕样式并选定一套 | [94-Subtitle Style Preview](94-subtitle-style-preview.md) |
 | 成片剪完后想检查前三秒、长镜头和节奏空窗 | [69-Retention Rhythm QA](69-retention-rhythm-qa.md) |
 | 有参考广告/短片，想量化它的切点结构再对照成片 | [92-Reference Edit Rhythm](92-reference-edit-rhythm.md) |
 | 数字人/生成口播成片要检查口型是否真的同步 | [93-Lip-sync Review](93-lip-sync-review.md) |

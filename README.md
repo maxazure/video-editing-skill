@@ -2,7 +2,7 @@
 
 这是一个面向 **口播、教程、访谈、播客切片、录屏演示 / facecam demo** 的 AI 视频剪辑生产线：给它原始口播音频/视频、transcript、B-roll、摄像头小窗或素材目录，它可以把“还没整理的素材”推进到 **可发布的小红书 / 抖音 / 视频号短视频**。
 
-它不是一个单点 FFmpeg 脚本，而是一条完整工作流：**项目启动/素材导入 → 手持防抖 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 渲染前预检 → 单次编码渲染 → 质检 / 最终成片唇形复核 → 多平台导出 / 目标大小交付编码 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
+它不是一个单点 FFmpeg 脚本，而是一条完整工作流：**项目启动/素材导入 → 手持防抖 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 渲染前预检 / 真实画面字幕样式选择 → 单次编码渲染 → 质检 / 最终成片唇形复核 → 多平台导出 / 目标大小交付编码 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
 
 ## 适合做什么
 
@@ -22,6 +22,7 @@
 - **已审时间线可以换素材复用**：`edit_recipe.py` 把 `render_config.json` 的全部本地文件路径替换成类型化槽位，生成 content-addressed 可移植配方；回放必须完整绑定新素材、记录 SHA-256 并重新通过 `edit_preflight.py`。
 - **生成式素材有明确审批和台账**：Codex `image_gen` / GPT Image 2 提示词、Dreamina/Veo/LTX/Wan/Sora 视频提示词、provider 决策、`submit_id` 轮询下载和本地落盘 gate 都先记录再执行。
 - **生成片段复核会反哺下一次提示词**：`generation_lessons.py` 只从 canonical clip review 提取人工明确批准的通用经验，绑定 source digests，并按 provider/model/category 精确筛选后交给 `video_prompt_pack.py`；不会把单片修复建议自动当成全局规则。
+- **字幕风格先在真实画面上选**：`subtitle_style_preview.py` 用最终 renderer 的同一 ASS builder、字体、字号和目标画幅，把 `normal / minimal / bold_pop` 渲染到源片早、中、晚代表帧；源片、字体、样式定义或 JPEG 漂移会让旧选择失效。
 - **数字人口型必须在最终成片上重新举证**：`lip_sync_review.py` 从最终 master 的完整短语导出 1× 带声和 0.25× 静音 proof clips，逐条复核爆破音闭唇、元音提前/滞后、讲话时冻嘴、说话人和音频质量；任何剪切、变速、换音或重编码都会让旧报告失效。
 - **参考片节奏先量化再借鉴**：`reference_edit_rhythm.py` 用同一套 hard-cut 检测比较参考片和成片的 cuts/minute、镜头时长、结尾 hold 与切点分布，同时绑定两条视频和 contact sheets；默认只提示差异，明确验收时才阻断。
 - **适合交给强推理模型做长流程代理执行**：在 [GPT-5.6 Sol](https://developers.openai.com/api/docs/models/gpt-5.6-sol)（OpenAI 当前旗舰；API 别名 `gpt-5.6` 指向 Sol）和 [Claude Opus 4.8](https://docs.anthropic.com/en/docs/about-claude/models) 这类面向复杂专业任务、agent 工作流的模型下，本 skill 对 **口播类短视频** 至少可以替代 **80% 的常规视频剪辑工作**。
@@ -228,6 +229,8 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    │                            缺文件、空剪辑、非法时间段、危险参数 gate
    ├─→ platform_safe_area_qa.py 字幕/PIP/CTA/marker 平台 UI 安全区 gate
    │                            JSON/Markdown/SVG 证据 + 多平台 profile
+   │
+   ├─→ subtitle_style_preview.py 真实源帧 → 最终 ASS 预设对比 JPEG / 选择 / live gate
    │
    ├─→ render_final.py          单次编码渲染 + enrich_plan 自动接入
    │     B-roll / 章节卡 / 贴纸 / 生成图 / 点击聚焦 / PIP camera + 可选口播降噪 + Heavy 字幕 + 响度规范化 + BGM ducking
@@ -2186,6 +2189,33 @@ python3 scripts/reference_edit_rhythm.py verify \
 
 默认结构差异只 WARN，避免为了追数字机械加切点；明确把节奏匹配设为验收条件时才加 `--require-match`。`verify` 会现场检查参考片、候选片、两张 contact sheet、媒体契约、全部派生 metrics/comparison/summary 和 canonical report id。任何重编码、替换、证据变化或手改报告都会使旧结果失效。它只允许借鉴结构，不复制参考片 pixels/audio/branding/story；scene score 会漏掉部分 dissolve 与镜头内动作，两张 contact sheet 和 1× 完整播放都必须人工复核。`pipeline_manifest.py --require reference_edit_rhythm --strict` 可设为发布门禁。
 
+### 💬 Subtitle Style Preview — 真实画面字幕样式选择
+[`scripts/subtitle_style_preview.py`](scripts/subtitle_style_preview.py) · [详细文档](docs/prompts/94-subtitle-style-preview.md)
+
+项目原本已有 6 种字幕预设和成片后的 CPS/readability QA，但在完整编码前只能靠预设名猜效果。现在可以先把最终 renderer 的真实 ASS 样式、字体、字号和目标画幅中心裁切应用到源片 15% / 50% / 85% 三个代表帧，默认对比 `normal / minimal / bold_pop` 三张 JPEG。
+
+```bash
+python3 scripts/subtitle_style_preview.py create \
+  --project-dir . \
+  --video origin/talking.mp4 \
+  --platform xhs \
+  --text "这句字幕要覆盖中英文和数字 2026" \
+  --preview-dir verify/subtitle_styles \
+  --output work/subtitle_style_preview.json \
+  --markdown work/subtitle_style_preview.md \
+  --require-selection
+
+# 手机尺寸和全尺寸看完三套 JPEG 后：
+python3 scripts/subtitle_style_preview.py select \
+  --report work/subtitle_style_preview.json \
+  --style bold_pop
+python3 scripts/subtitle_style_preview.py verify \
+  --report work/subtitle_style_preview.json \
+  --strict
+```
+
+报告绑定源视频、字体文件、ASS 内容、画布/字号/时间点和每张 JPEG 的 SHA-256；任何源片、字体、`render_final.py` 样式定义、预览文件或选择字段变化都会 fail closed。选定后把同一值传给 `render_final.py --subtitle-style`；`pipeline_manifest.py --require subtitle_style_preview --strict` 可设为渲染/发布必需项。代表帧不能覆盖整片背景，`karaoke` 示例也不证明真实词级节奏，最终仍需 safe-area、readability QA 和 1× 成片审片。
+
 ### 🗣️ Speech Continuity QA — 成片复读 / 口吃门禁
 [`scripts/speech_continuity_qa.py`](scripts/speech_continuity_qa.py) · [详细文档](docs/prompts/67-speech-continuity-qa.md)
 
@@ -2753,6 +2783,7 @@ pytest tests/test_shot_color_qa.py -v       # 成片镜头色彩 / 曝光 / broa
 pytest tests/test_retention_rhythm_qa.py -v # 成片 hook / 长镜头 / 节奏风险门禁
 pytest tests/test_reference_edit_rhythm.py -v # 参考片/成片 hard-cut 结构 / contact-sheet / stale gate
 pytest tests/test_lip_sync_review.py -v # 最终 master 口型 proofs / 人工 audit / source drift gate
+pytest tests/test_subtitle_style_preview.py -v # 真实源帧 ASS 样式 JPEG / 选择 / source-font-style drift gate
 pytest tests/test_subtitle_readability_qa.py -v # 最终字幕 CPS / 时长 / 重叠 / 越界门禁
 pytest tests/test_platform_safe_area_qa.py -v # 字幕 / PIP / CTA / marker 平台安全区门禁
 pytest tests/test_audio_master_report.py -v # 成片响度 / true peak / LRA 门禁
@@ -2806,6 +2837,22 @@ pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 pytest tests/test_review_dashboard.py -v    # 静态人工复核面板 + gate queue
 pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 gate
 ```
+
+### 2026-08-19 自动化升级记录（Source-bound Subtitle Style Preview）
+
+本次联网研究的 GitHub 参考：
+
+| 项目 | 值得吸收的优点 | 本项目取舍 |
+|---|---|---|
+| [`chang416/cutcraft` 的交互契约](https://github.com/chang416/cutcraft/blob/main/skills/cutcraft/SKILL.md) | 在真正剪辑前把推荐、clean/narrative、bold/social 三套字幕方案渲染到真实素材上；用户用选项或微调直接确认，避免完成整片后才发现字幕观感不合适 | 增加默认三方案与明确选择 gate；不复制它的完整 workspace/UI 约定，继续使用本项目现有 artifact 流程 |
+| [`chang416/cutcraft` 的 `subtitle_style_preview.py`](https://github.com/chang416/cutcraft/blob/main/skills/cutcraft/helpers/subtitle_style_preview.py) | 通过最终 libass 样式路径渲染早/中/晚代表帧，而不是用另一套 CSS/静态 mockup 猜最终效果 | 直接复用本项目 `render_final.py` 的 ASS builders、CJK 字体查找、字号缩放和目标画幅中心裁切；再增加 source/font/ASS/JPEG hash 绑定和 live verify |
+| [`HKUDS/CLI-Anything` VideoCaptioner skill](https://github.com/HKUDS/CLI-Anything/blob/main/skills/cli-anything-videocaptioner/SKILL.md) | 在硬字幕最终合成前提供单帧 preview/review 命令，并把 preview 与字幕/脚本一致性复核并列 | 吸收“先预览再 hard-burn”的轻量 CLI 边界；本轮不引入它的 ASR/翻译 backend，而是为现有 6 种预设提供多帧 A/B 选择 |
+
+新增/调整能力：新增 [`scripts/subtitle_style_preview.py`](scripts/subtitle_style_preview.py)、[`tests/test_subtitle_style_preview.py`](tests/test_subtitle_style_preview.py) 和 [`docs/prompts/94-subtitle-style-preview.md`](docs/prompts/94-subtitle-style-preview.md)。`create` 默认把 `normal / minimal / bold_pop` 经 `render_final.py` 同一 ASS builder、实际字体、字号和平台中心裁切渲染到源片 15% / 50% / 85% 三帧，输出每种风格一张横向 JPEG；也支持 `neon / yellow_pop / karaoke`、自定义时间、字体与画布。报告绑定项目内源视频 SHA-256/媒体契约、字体 bytes、样本文字、画布、时间点、ASS digest、预览 bytes 与 canonical report id；`select` 无需重渲染即可记录人工选择，`verify` 遇到 source/font/style/preview/selection 漂移 fail closed。`pipeline_manifest.py` 增加存在即 live verify、可 `--require subtitle_style_preview` 的 gate；`edit_brief_plan.py` 增加中英文字幕风格预览路由，并把选择安排在最终渲染前。
+
+使用方式：运行 `python3 scripts/subtitle_style_preview.py create --project-dir . --video origin/talking.mp4 --platform xhs --text "这句字幕要覆盖中英文和数字 2026" --preview-dir verify/subtitle_styles --output work/subtitle_style_preview.json --markdown work/subtitle_style_preview.md --require-selection`；手机尺寸与全尺寸看完 JPEG 后执行 `select --report work/subtitle_style_preview.json --style normal`，再执行 `verify --strict` 并把同一 style 传给 `render_final.py --subtitle-style`。首次 create 在要求选择但尚未选择时显示 blocker 是预期人工 gate；`karaoke` 预览只检查视觉样式，不证明真实 word timestamp 节奏。
+
+验证结果：新增/关联定向回归 `.venv/bin/python -m pytest tests/test_subtitle_style_preview.py tests/test_edit_brief_plan.py tests/test_pipeline_manifest.py -q` 通过 **115 passed in 1.75s**；覆盖最终 ASS 样式复用、选择门禁、source/font/ASS/JPEG 漂移、错误 project/canvas fail-closed，以及 `--force` 也不得用报告/Markdown 覆盖源片或预览。最终全量 `.venv/bin/python -m pytest tests -q` 通过 **916 passed in 19.63s**。真实 FFmpeg smoke 用 3 秒 640×360/24fps H.264/AAC 样片完成 `create → select → verify`，三种 style 各输出一张 1440×640、含 3 个代表帧的 JPEG，最终 `ready / blocking=0 / warnings=0`，并人工查看 `normal` / `bold_pop` 的裁切、中文字体、位置与描边。`.venv/bin/python -m compileall -q scripts tests`、三组新 CLI help、edit-brief help、manifest category、Skill `quick_validate.py` 和 `git diff --check` 均通过。
 
 ### 2026-08-18 自动化升级记录（Source-bound Final-master Lip-sync Review）
 

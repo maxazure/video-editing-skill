@@ -44,6 +44,18 @@ SIGNAL_KEYWORDS: Mapping[str, Sequence[str]] = {
         "directory",
     ),
     "transcript": ("transcript", "whisper", "转写", "转录", "字幕", "caption", "subtitles", "口播", "voiceover"),
+    "subtitle_style_preview": (
+        "subtitle style preview",
+        "caption style preview",
+        "preview subtitle styles",
+        "compare subtitle styles",
+        "字幕样式预览",
+        "字幕风格预览",
+        "预览字幕样式",
+        "对比字幕风格",
+        "三套字幕",
+        "选字幕风格",
+    ),
     "semantic_review": (
         "semantic transcript review",
         "context-aware transcript",
@@ -318,6 +330,7 @@ SIGNAL_LABELS: Mapping[str, str] = {
     "delivery_encode": "目标大小交付编码",
     "publish": "发布包 / 文案",
     "subtitle_sidecar": "字幕 sidecar",
+    "subtitle_style_preview": "真实画面字幕样式预览 / 选择",
     "nle_handoff": "NLE 交接",
     "review_dashboard": "人工复核面板",
     "edit_revision": "剪辑 artifact 可逆修订",
@@ -480,7 +493,7 @@ def build_plan(
 
     if source_media and not Path(source_media).expanduser().exists():
         blockers.append(f"source media not found: {source_media}")
-    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy", "reference_edit_rhythm", "lip_sync_review", "multimodal_dead_air", "video_stabilization", "speed_ramp", "hdr_sdr", "delivery_encode"}):
+    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy", "reference_edit_rhythm", "lip_sync_review", "subtitle_style_preview", "multimodal_dead_air", "video_stabilization", "speed_ramp", "hdr_sdr", "delivery_encode"}):
         warnings.append("source media was not provided; commands use <source_media> placeholders")
 
     if transcript and not Path(transcript).expanduser().exists():
@@ -510,7 +523,7 @@ def build_plan(
             }
         )
     )
-    wants_render = bool(ids.intersection({"render", "publish", "target_script", "long_to_short", "batch_shorts", "reference_edit_rhythm", "multimodal_dead_air", "cleanup_silence", "cleanup_words", "broll", "screen_focus", "pip", "color_grade", "edit_recipe_replay"}))
+    wants_render = bool(ids.intersection({"render", "publish", "target_script", "long_to_short", "batch_shorts", "reference_edit_rhythm", "subtitle_style_preview", "multimodal_dead_air", "cleanup_silence", "cleanup_words", "broll", "screen_focus", "pip", "color_grade", "edit_recipe_replay"}))
     wants_clean_script = bool(
         ids.intersection({"story_rewrite", "hook", "content_guard", "source_receipts", "broll", "generated_assets", "publish"})
         and "target_script" not in ids
@@ -1350,6 +1363,53 @@ def build_plan(
             ),
         )
 
+    if "subtitle_style_preview" in ids:
+        _add_step(
+            steps,
+            seen,
+            _step(
+                "subtitle_style_preview",
+                phase="review",
+                script="subtitle_style_preview.py",
+                label="Render and choose subtitle styles on real source frames",
+                reason="The brief asks to compare the final ASS presets on representative footage before encoding.",
+                command=shell(
+                    [
+                        python_bin,
+                        "scripts/subtitle_style_preview.py",
+                        "create",
+                        "--project-dir",
+                        project_dir,
+                        "--video",
+                        source,
+                        "--platform",
+                        primary_platform,
+                        "--text",
+                        "<approved_sample_caption>",
+                        "--preview-dir",
+                        "verify/subtitle_styles",
+                        "--output",
+                        "work/subtitle_style_preview.json",
+                        "--markdown",
+                        "work/subtitle_style_preview.md",
+                        "--require-selection",
+                        "--strict",
+                    ]
+                ),
+                outputs=[
+                    "work/subtitle_style_preview.json",
+                    "work/subtitle_style_preview.md",
+                    "verify/subtitle_styles/",
+                ],
+                gate_category="subtitle_style_preview",
+            ),
+        )
+        notes.append(
+            "Review every subtitle-style JPEG at phone size and full size, then run "
+            "subtitle_style_preview.py select. Pass the selected style to render_final.py; "
+            "any source, font, ASS preset, or preview-byte drift invalidates the old selection."
+        )
+
     if wants_render:
         preflight_command = [
             python_bin,
@@ -1382,6 +1442,8 @@ def build_plan(
             render_command.extend(["--color-grade", "work/color_grade.json"])
         if "audio_transition" in ids:
             render_command.extend(["--audio-transition-plan", "work/audio_transition_plan.json"])
+        if "subtitle_style_preview" in ids:
+            render_command.extend(["--subtitle-style", "<selected_style>"])
         _add_step(
             steps,
             seen,

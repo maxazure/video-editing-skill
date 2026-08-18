@@ -376,13 +376,35 @@
    （没有足够源音频 handle 会直接阻塞；先用 `--primary-speed 1.0 --audio-transition-plan ...`
    渲染 1× 审片版，耳机和手机逐边界确认无吞字/复读/click，再渲染最终速度。详见 docs/prompts/86-audio-transition.md。）
 
+5e. # 在完整编码前，用真实源片早/中/晚画面对比最终 ASS 字幕预设：
+     python3 scripts/subtitle_style_preview.py create \
+       --project-dir . \
+       --video origin/talking.mp4 \
+       --platform xhs \
+       --text "这句字幕要覆盖中英文和数字 2026" \
+       --preview-dir output/verify/subtitle_styles \
+       --output work/subtitle_style_preview.json \
+       --markdown work/subtitle_style_preview.md \
+       --require-selection
+
+     # 手机尺寸和全尺寸看完三套 JPEG 后：
+     python3 scripts/subtitle_style_preview.py select \
+       --report work/subtitle_style_preview.json \
+       --style <normal|minimal|bold_pop>
+     python3 scripts/subtitle_style_preview.py verify \
+       --report work/subtitle_style_preview.json \
+       --strict
+
+   （把选中的 style 传给第 6 步；源片、字体、ASS preset 或 JPEG 漂移都会使旧选择失效。
+   详见 docs/prompts/94-subtitle-style-preview.md。）
+
 6. python3 scripts/render_final.py \
      --config work/render_config.json \
      --enrich-plan work/enrich_plan.json \
      --profile tech_pro \
      --primary-speed 1.25 \
      --bgm-ducking \
-     --subtitle-style karaoke \
+     --subtitle-style <第 5e 步选中的 style> \
      --output output/day<NN>_master.mp4
 
    （如果 5d 生成了计划，渲染命令追加
@@ -662,6 +684,8 @@ day<NN>/
 │   ├── audio_transition_apply.json # 可选：单次编码输出 receipt
 │   ├── edit_preflight.json # 渲染前预检 gate
 │   ├── edit_preflight.md
+│   ├── subtitle_style_preview.json # 真实源帧 ASS 样式、字体/source hash 与最终选择 gate
+│   ├── subtitle_style_preview.md   # 三套 JPEG 路径、选择命令与复核说明
 │   ├── pipeline_manifest.json # 发布前 gate 汇总
 │   ├── pipeline_manifest.md
 │   ├── hdr_sdr_plan.json # 可选：PQ/HLG → BT.709 SDR / source + output hash gate

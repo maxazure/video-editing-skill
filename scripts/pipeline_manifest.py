@@ -101,6 +101,13 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         blocks_when_present=True,
     ),
     ArtifactDef(
+        "subtitle_style_preview",
+        "Subtitle Style Preview",
+        ("**/subtitle_style_preview.json", "**/*_subtitle_style_preview.json"),
+        "Run subtitle_style_preview.py verify; review real-frame JPEG variants and record the selected final-render style.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "rough_cut",
         "Rough / Jump Cut",
         ("**/rough_cut.json", "**/jump_cut.json", "**/*_cut_list.json"),
@@ -811,6 +818,39 @@ def evaluate_category(
             if blocking:
                 status = "blocked"
                 notes.append(f"invalid lip-sync review {artifact.path}: {blocking} blocking item(s)")
+        return {
+            "category": definition.category,
+            "label": definition.label,
+            "status": status,
+            "artifact_count": len(artifacts),
+            "latest_path": artifacts[0].path,
+            "notes": sorted(set(notes)),
+            "next_action": definition.next_action if status in {"missing", "blocked", "warn"} else "",
+        }
+
+    if definition.category == "subtitle_style_preview":
+        from subtitle_style_preview import verify_report
+
+        for artifact in artifacts:
+            data = _load_json(artifact.path)
+            if data is None:
+                status = "blocked"
+                notes.append(f"unreadable subtitle style preview: {artifact.path}")
+                continue
+            try:
+                verification = verify_report(data, str(project_dir) if project_dir is not None else None)
+            except Exception as exc:
+                status = "blocked"
+                notes.append(f"subtitle style preview verification failed {artifact.path}: {exc}")
+                continue
+            blocking = _int_at(verification, "summary", "blocking")
+            warnings = _int_at(verification, "summary", "warnings")
+            if blocking:
+                status = "blocked"
+                notes.append(f"invalid subtitle style preview {artifact.path}: {blocking} blocking item(s)")
+            elif warnings:
+                status = "warn" if status != "blocked" else status
+                notes.append(f"subtitle style preview needs review {artifact.path}: {warnings} warning(s)")
         return {
             "category": definition.category,
             "label": definition.label,

@@ -15,6 +15,7 @@ import generated_sequence_review  # noqa: E402
 import generation_lessons  # noqa: E402
 import hdr_sdr  # noqa: E402
 import multimodal_dead_air  # noqa: E402
+import subtitle_style_preview  # noqa: E402
 from jump_cut import Segment  # noqa: E402
 from speed_ramp import build_speed_ramp_plan, parse_hold  # noqa: E402
 from video_stabilization import build_plan as build_stabilization_plan  # noqa: E402
@@ -48,6 +49,77 @@ def test_publish_ready_manifest_passes_when_required_artifacts_exist(tmp_path):
     assert manifest["status"] == "ready"
     assert manifest["summary"]["required_ready"] == manifest["summary"]["required"]
     assert manifest["missing_required"] == []
+
+
+def test_subtitle_style_preview_is_live_verified_and_can_be_required(tmp_path, monkeypatch):
+    _publish_ready_project(tmp_path)
+    source = tmp_path / "origin" / "talk.mp4"
+    source.parent.mkdir(parents=True)
+    source.write_bytes(b"source-video")
+    font = tmp_path / "fonts" / "test.ttf"
+    font.parent.mkdir(parents=True)
+    font.write_bytes(b"font-bytes")
+    media = {
+        "duration": 10.0,
+        "fps": 30.0,
+        "width": 640,
+        "height": 360,
+        "video_codec": "h264",
+        "pixel_format": "yuv420p",
+        "has_audio": True,
+        "audio_codec": "aac",
+        "sample_rate": 48000,
+        "channels": 2,
+    }
+    monkeypatch.setattr(subtitle_style_preview, "probe_media", lambda _path: dict(media))
+    monkeypatch.setattr(
+        subtitle_style_preview,
+        "get_video_info",
+        lambda _path: (10.0, 640, 360, 30.0, 0),
+    )
+    monkeypatch.setattr(
+        subtitle_style_preview,
+        "find_chinese_font",
+        lambda _path=None: (str(font), "Test Sans"),
+    )
+
+    def fake_render(_source, destination, **kwargs):
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(kwargs["ass_content"].encode("utf-8"))
+        return {"width": 1080, "height": 480, "sample_frames": len(kwargs["times"])}
+
+    monkeypatch.setattr(subtitle_style_preview, "_render_variant", fake_render)
+    report = subtitle_style_preview.create_report(
+        str(source),
+        project_dir=str(tmp_path),
+        preview_dir="verify/subtitle_styles",
+        selected_style="normal",
+        require_selection=True,
+    )
+    _write(tmp_path / "work" / "subtitle_style_preview.json", report)
+
+    current = build_manifest(
+        str(tmp_path),
+        target_stage="publish_ready",
+        required=["subtitle_style_preview"],
+    )
+    gate = next(g for g in current["gates"] if g["category"] == "subtitle_style_preview")
+    assert gate["status"] == "ready"
+
+    preview_path = tmp_path / report["variants"][0]["preview"]["path"]
+    preview_path.write_bytes(b"changed-preview")
+    stale = build_manifest(str(tmp_path), target_stage="publish_ready")
+    gate = next(g for g in stale["gates"] if g["category"] == "subtitle_style_preview")
+    assert gate["status"] == "blocked"
+    assert "subtitle_style_preview" in stale["blocked_gates"]
+
+    (tmp_path / "work" / "subtitle_style_preview.json").unlink()
+    missing = build_manifest(
+        str(tmp_path),
+        target_stage="publish_ready",
+        required=["subtitle_style_preview"],
+    )
+    assert "subtitle_style_preview" in missing["missing_required"]
 
 
 def test_missing_required_artifacts_block_publish_ready(tmp_path):
