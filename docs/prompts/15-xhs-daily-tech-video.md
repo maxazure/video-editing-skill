@@ -519,6 +519,36 @@
       --output work/day<NN>_edit.otio \
       --fps 30
 
+9d. # 可选：多段生成视频先锁定视觉剪辑，再按最终 record timeline 重建声音：
+    # render_config 每个 clip 的 label 必须对应 storyboard shot id。
+    python3 scripts/export_edl.py \
+      --config work/render_config.json \
+      --output work/locked_visual.edl \
+      --manifest work/locked_visual.edl.json \
+      --fps 30
+    python3 scripts/final_audio_storyboard.py prepare \
+      --project-dir . \
+      --edl work/locked_visual.edl.json \
+      --storyboard work/storyboard_plan.json \
+      --output work/final_audio_storyboard_request.json \
+      --markdown work/final_audio_storyboard_request.md \
+      --response-template work/final_audio_storyboard_response.json \
+      --strict
+    # 填写 response：每个 retained section 的 voice/sound/music/stems，以及每个 omitted beat 的去向。
+    python3 scripts/final_audio_storyboard.py audit \
+      --project-dir . \
+      --request work/final_audio_storyboard_request.json \
+      --response work/final_audio_storyboard_response.json \
+      --output work/final_audio_storyboard.json \
+      --markdown work/final_audio_storyboard.md \
+      --strict
+    python3 scripts/final_audio_storyboard.py verify \
+      --project-dir . \
+      --report work/final_audio_storyboard.json \
+      --strict
+    # 不要把 JSON 直接提交给 provider；先改写成 timed cue sheet，付费生成前另行确认。
+    # 详见 docs/prompts/95-final-audio-storyboard.md。
+
 10. python3 scripts/render_qa.py \
      output/day<NN>_master_xhs.mp4 \
      --platform xhs \
@@ -678,6 +708,11 @@ day<NN>/
 │   ├── day<NN>_edit.fcpxml.json # 可选：FCPXML manifest
 │   ├── day<NN>_edit.otio   # 可选：OTIO handoff
 │   ├── day<NN>_edit.otio.json # 可选：OTIO manifest
+│   ├── locked_visual.edl.json # 可选：视觉剪辑锁定后的 final/source timeline facts
+│   ├── final_audio_storyboard_request.json # EDL/storyboard/source hash-bound 复核请求
+│   ├── final_audio_storyboard_response.json # final section / stems / omitted-story 人工决定
+│   ├── final_audio_storyboard.json # provider-neutral 最终声音分镜 + voice ledger live gate
+│   ├── final_audio_storyboard.md
 │   ├── render_config.json  # 喂给 render_final 的配置
 │   ├── audio_transition_plan.json # 可选：J-cut/L-cut source handle / hash / 时序 gate
 │   ├── audio_transition_plan.md   # 可选：逐边界 1× 试听清单

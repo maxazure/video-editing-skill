@@ -153,6 +153,20 @@ SIGNAL_KEYWORDS: Mapping[str, Sequence[str]] = {
         "组装前连续性",
     ),
     "audio_design": ("bgm", "music", "配乐", "音效", "sfx", "sound design", "声音设计"),
+    "final_audio_storyboard": (
+        "final audio storyboard",
+        "locked edl audio",
+        "locked visual edl audio",
+        "post-edl audio",
+        "rebuild audio after edit",
+        "最终声音分镜",
+        "最终音频分镜",
+        "锁定edl后做声音",
+        "锁定 edl 后做声音",
+        "锁定画面后做声音",
+        "视觉剪辑锁定后配音",
+        "按最终时间线重建声音",
+    ),
     "video_stabilization": (
         "video stabilization",
         "stabilize video",
@@ -313,6 +327,7 @@ SIGNAL_LABELS: Mapping[str, str] = {
     "generation_lessons": "生成视频复核经验库",
     "sequence_continuity": "生成视频跨镜头连续性复核",
     "audio_design": "BGM / SFX 声音设计",
+    "final_audio_storyboard": "锁定视觉 EDL 后重建最终声音分镜",
     "video_stabilization": "手持素材稳定化 / 防抖",
     "speed_ramp": "局部 speed ramp / velocity edit",
     "audio_transition": "J-cut / L-cut 声画错位转场",
@@ -1408,6 +1423,77 @@ def build_plan(
             "Review every subtitle-style JPEG at phone size and full size, then run "
             "subtitle_style_preview.py select. Pass the selected style to render_final.py; "
             "any source, font, ASS preset, or preview-byte drift invalidates the old selection."
+        )
+
+    if "final_audio_storyboard" in ids:
+        _add_step(
+            steps,
+            seen,
+            _step(
+                "locked_visual_edl",
+                phase="edit",
+                script="export_edl.py",
+                label="Export the locked visual EDL facts",
+                reason="Final audio timing must follow retained visual ranges and the final record timeline.",
+                command=shell(
+                    [
+                        python_bin,
+                        "scripts/export_edl.py",
+                        "--config",
+                        "work/render_config.json",
+                        "--output",
+                        "work/locked_visual.edl",
+                        "--manifest",
+                        "work/locked_visual.edl.json",
+                        "--fps",
+                        "30",
+                    ]
+                ),
+                outputs=["work/locked_visual.edl", "work/locked_visual.edl.json"],
+                gate_category="nle_handoff",
+            ),
+        )
+        _add_step(
+            steps,
+            seen,
+            _step(
+                "final_audio_storyboard",
+                phase="assets",
+                script="final_audio_storyboard.py",
+                label="Rebuild the audio storyboard on the locked final timeline",
+                reason="The brief asks to remove, compress, or rewrite audio decisions after visual trims and reordering are locked.",
+                command=shell(
+                    [
+                        python_bin,
+                        "scripts/final_audio_storyboard.py",
+                        "prepare",
+                        "--project-dir",
+                        project_dir,
+                        "--edl",
+                        "work/locked_visual.edl.json",
+                        "--storyboard",
+                        "work/storyboard_plan.json",
+                        "--output",
+                        "work/final_audio_storyboard_request.json",
+                        "--markdown",
+                        "work/final_audio_storyboard_request.md",
+                        "--response-template",
+                        "work/final_audio_storyboard_response.json",
+                        "--strict",
+                    ]
+                ),
+                outputs=[
+                    "work/final_audio_storyboard_request.json",
+                    "work/final_audio_storyboard_response.json",
+                    "work/final_audio_storyboard.json",
+                ],
+                gate_category="final_audio_storyboard",
+            ),
+        )
+        notes.append(
+            "Set each EDL event label to its storyboard shot id, fill every final-timeline section and omitted-story "
+            "decision, then run final_audio_storyboard.py audit and verify. The approved JSON is a provider-neutral "
+            "handoff, not a paid audio submission payload."
         )
 
     if wants_render:

@@ -137,6 +137,22 @@ def test_subtitle_style_brief_routes_real_frame_preview_before_render(tmp_path):
     assert step["gate_category"] == "subtitle_style_preview"
 
 
+def test_locked_edl_audio_brief_routes_final_timeline_storyboard(tmp_path):
+    plan = build_plan(
+        "视觉剪辑锁定后配音，按最终时间线重建声音，生成最终声音分镜",
+        project_dir=str(tmp_path),
+    )
+
+    ids = [step["id"] for step in plan["steps"]]
+    assert ids.index("locked_visual_edl") < ids.index("final_audio_storyboard")
+    step = next(step for step in plan["steps"] if step["id"] == "final_audio_storyboard")
+    assert step["script"] == "final_audio_storyboard.py"
+    assert "work/locked_visual.edl.json" in step["command"]
+    assert "work/storyboard_plan.json" in step["command"]
+    assert step["gate_category"] == "final_audio_storyboard"
+    assert any("provider-neutral" in note for note in plan["notes"])
+
+
 def test_target_script_brief_routes_alignment_before_render(tmp_path):
     source = tmp_path / "talk.mp4"
     source.write_text("fake video", encoding="utf-8")

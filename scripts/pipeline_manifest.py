@@ -492,6 +492,16 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         blocks_when_present=True,
     ),
     ArtifactDef(
+        "final_audio_storyboard",
+        "Locked-EDL Final Audio Storyboard",
+        (
+            "**/final_audio_storyboard.json",
+            "**/*_final_audio_storyboard.json",
+        ),
+        "Run final_audio_storyboard.py verify; rebuild the final-timeline audio plan after any EDL, storyboard, source, response, or report drift.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "audio_sync",
         "Audio Sync",
         (
@@ -793,6 +803,46 @@ def evaluate_category(
                 status = "warn" if status != "blocked" else status
                 notes.append(
                     f"reference edit rhythm needs review {artifact.path}: {warnings} warning(s)"
+                )
+        return {
+            "category": definition.category,
+            "label": definition.label,
+            "status": status,
+            "artifact_count": len(artifacts),
+            "latest_path": artifacts[0].path,
+            "notes": sorted(set(notes)),
+            "next_action": definition.next_action if status in {"missing", "blocked", "warn"} else "",
+        }
+
+    if definition.category == "final_audio_storyboard":
+        from final_audio_storyboard import verify_report
+
+        for artifact in artifacts:
+            data = _load_json(artifact.path)
+            if data is None:
+                status = "blocked"
+                notes.append(f"unreadable final audio storyboard: {artifact.path}")
+                continue
+            try:
+                verification = verify_report(
+                    artifact.path,
+                    project_dir=str(project_dir) if project_dir is not None else None,
+                )
+            except Exception as exc:
+                status = "blocked"
+                notes.append(f"final audio storyboard verification failed: {exc}")
+                continue
+            blocking = _int_at(verification, "summary", "blocking")
+            warnings = _int_at(verification, "summary", "warnings")
+            if blocking:
+                status = "blocked"
+                notes.append(
+                    f"invalid final audio storyboard {artifact.path}: {blocking} blocking item(s)"
+                )
+            elif warnings:
+                status = "warn" if status != "blocked" else status
+                notes.append(
+                    f"final audio storyboard needs review {artifact.path}: {warnings} warning(s)"
                 )
         return {
             "category": definition.category,

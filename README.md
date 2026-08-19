@@ -2,7 +2,7 @@
 
 这是一个面向 **口播、教程、访谈、播客切片、录屏演示 / facecam demo** 的 AI 视频剪辑生产线：给它原始口播音频/视频、transcript、B-roll、摄像头小窗或素材目录，它可以把“还没整理的素材”推进到 **可发布的小红书 / 抖音 / 视频号短视频**。
 
-它不是一个单点 FFmpeg 脚本，而是一条完整工作流：**项目启动/素材导入 → 手持防抖 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 渲染前预检 / 真实画面字幕样式选择 → 单次编码渲染 → 质检 / 最终成片唇形复核 → 多平台导出 / 目标大小交付编码 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
+它不是一个单点 FFmpeg 脚本，而是一条完整工作流：**项目启动/素材导入 → 手持防抖 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 锁定视觉 EDL 后重建最终声音分镜 → 渲染前预检 / 真实画面字幕样式选择 → 单次编码渲染 → 质检 / 最终成片唇形复核 → 多平台导出 / 目标大小交付编码 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
 
 ## 适合做什么
 
@@ -263,6 +263,8 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    ├─→ export_fcpxml.py         render_config / cut list → FCPXML + manifest
    ├─→ export_otio.py           render_config / cut list → OTIO + manifest
    │                            交给 Premiere / Final Cut Pro / Resolve
+   ├─→ final_audio_storyboard.py
+   │                            锁定 EDL + 原 storyboard → 最终时间线声音分镜 / voice ledger / live gate
    │
    ├─→ multi_export.py          小红书 3:4 / 抖音 9:16 / 视频号 ≤60s
    ├─→ delivery_encode.py       硬大小上限 / 两遍 H.264 / 完整解码验证
@@ -793,6 +795,37 @@ python3 scripts/audio_cue_sheet.py \
 ```
 
 也可给 `render_final.py` 加 `--bgm-ducking` 临时启用。它会用最终旁白轨触发 FFmpeg `sidechaincompress`，在说话时动态压低 BGM，在封面、停顿和片尾无旁白时恢复；默认 threshold `0.03`、ratio `8`、attack `20ms`、release `500ms`。旧配置默认关闭以保持兼容，配置已开启时可用 `--no-bgm-ducking` 覆盖。详细参数与试听检查见 [背景音乐、旁白 Ducking 和片尾](docs/prompts/09-bgm-endcard.md)。
+
+### 🎚️ Final Audio Storyboard — 锁定视觉 EDL 后重建声音
+[`scripts/final_audio_storyboard.py`](scripts/final_audio_storyboard.py) · [详细文档](docs/prompts/95-final-audio-storyboard.md)
+
+`audio_cue_sheet.py` 适合剪辑前从 transcript 规划音乐与 SFX；视觉选段被删短或重排后，最终声音必须改用 EDL 的 `record_start / record_end`。新脚本把 `export_edl.py` JSON manifest 与原 `storyboard_plan.v1` 绑定，要求每个 event label 映射到 storyboard shot，并对所有保留段与完全删除的 story beat 做明确声音决定。
+
+```bash
+python3 scripts/final_audio_storyboard.py prepare \
+  --project-dir . \
+  --edl work/locked_visual.edl.json \
+  --storyboard work/storyboard_plan.json \
+  --output work/final_audio_storyboard_request.json \
+  --markdown work/final_audio_storyboard_request.md \
+  --response-template work/final_audio_storyboard_response.json \
+  --strict
+
+# 填完 response：
+python3 scripts/final_audio_storyboard.py audit \
+  --project-dir . \
+  --request work/final_audio_storyboard_request.json \
+  --response work/final_audio_storyboard_response.json \
+  --output work/final_audio_storyboard.json \
+  --markdown work/final_audio_storyboard.md \
+  --strict
+python3 scripts/final_audio_storyboard.py verify \
+  --project-dir . \
+  --report work/final_audio_storyboard.json \
+  --strict
+```
+
+response 固定 `single_track / sectioned_tracks / stems` 策略、跨段 tone、最终时间线 section、voice ledger、stem 类型和原生声音保留理由。每个删掉的 beat 必须标成 `remove / rewrite_into_adjacent / offscreen_bridge`；重复 voiced line、漏填段落、时间字段手改、EDL/storyboard/source/response/report 漂移都会 fail closed。脚本不生成音频、不消费 credits，也不把 JSON 冒充 provider prompt；批准后仍应按目标音频工具的规则改写成 timed cue sheet。`pipeline_manifest.py --require final_audio_storyboard --strict` 可设为发布门禁。
 
 ### 🎞️ Storyboard Plan — 分镜与生成路由
 [`scripts/storyboard_plan.py`](scripts/storyboard_plan.py) · [`scripts/video_prompt_pack.py`](scripts/video_prompt_pack.py) · [`scripts/storyboard_assets.py`](scripts/storyboard_assets.py) · [分镜文档](docs/prompts/24-storyboard-plan.md) · [视频提示词包文档](docs/prompts/45-video-prompt-pack.md) · [素材清单文档](docs/prompts/25-storyboard-assets.md)
@@ -2822,6 +2855,7 @@ pytest tests/test_subtitle_pack.py -v       # SRT/VTT/ASS/JSON 字幕交付包
 pytest tests/test_srt_edit_plan.py -v       # SRT 编辑指令转 render_config/cut list
 pytest tests/test_script_alignment.py -v    # 目标稿 → 多 take 原话匹配 / choices / render_config
 pytest tests/test_audio_cue_sheet.py -v     # BGM/SFX 音频设计清单
+pytest tests/test_final_audio_storyboard.py -v # 锁定 EDL → 最终声音分镜 / voice ledger / live gate
 pytest tests/test_multicam_sync.py -v       # 多机位 offset / 最响音轨 / pairwise / 真实预览
 pytest tests/test_speech_denoise.py -v      # 口播降噪 preset / 顺序 / 真实 FFmpeg SNR smoke
 pytest tests/test_bgm_ducking.py -v         # 旁白驱动 BGM sidechain + 真实 FFmpeg smoke
@@ -2837,6 +2871,22 @@ pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 pytest tests/test_review_dashboard.py -v    # 静态人工复核面板 + gate queue
 pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 gate
 ```
+
+### 2026-08-20 自动化升级记录（Locked-EDL Final Audio Storyboard）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`a86582751/doubao-seedance-video-skill`](https://github.com/a86582751/doubao-seedance-video-skill/blob/main/SKILL.md) | 多段生成片先锁视觉 EDL，再把 retained/omitted ranges 与原 storyboard 对照，重建使用最终时间而非 source time 的声音分镜；禁止把剪辑前整片声音原样套回删短画面 | 新增 provider-neutral `prepare → audit → verify`；绑定现有 `export_edl.py` manifest 与 `storyboard_plan.v1`，不接入其特定 Seed Audio/provider 命令 |
+| [`Arch-Dog/video-prompt-engineer`](https://github.com/Arch-Dog/video-prompt-engineer/blob/main/SKILL.md) | 用 audio ledger 把每句 dialogue/voiceover 当硬时序约束，并要求每句只出现一次 | 审计时重建 final-timeline voice ledger，完全相同的 voiced line 跨 section 重复会阻塞 |
+| [`filipenevola/fable-video-edit`](https://github.com/filipenevola/fable-video-edit/blob/main/SKILL.md) | 把 EDL、cue sheet 和生产记录当可读、可 diff、可重渲染 artifact；graphics/audio cue 落在最终成片时间线上 | 延续 JSON/Markdown artifact 与 live manifest gate；不引入其 Remotion 工程或多代理 take selection |
+
+新增/调整能力：新增 [`scripts/final_audio_storyboard.py`](scripts/final_audio_storyboard.py)、[`tests/test_final_audio_storyboard.py`](tests/test_final_audio_storyboard.py) 和 [`docs/prompts/95-final-audio-storyboard.md`](docs/prompts/95-final-audio-storyboard.md)。`prepare` 要求项目内 EDL manifest、storyboard 和源片，检查最终 record timeline 连续性、event/story 映射、声明时长、删短 warning，并绑定 SHA-256/大小；`audit` 固定 final/source times，要求 strategy/shared tone、逐段 visual/voice/sound/music/stems、原生声音理由和全部 omitted story 去向，生成无重复 voice ledger；`verify` 现场重读 request/response/EDL/storyboard/source，重算派生状态与 report id。`pipeline_manifest.py` 新增存在即 live verify、可 `--require final_audio_storyboard` 的门禁；`edit_brief_plan.py` 新增“最终声音分镜 / 锁定画面后做声音 / post-EDL audio”路由。
+
+使用方式：先用 `export_edl.py --config work/render_config.json --output work/locked_visual.edl --manifest work/locked_visual.edl.json` 锁定视觉 edit facts，确保 event label 对应 storyboard shot id；运行 `prepare` 后逐段填写 response，明确 `single_track / sectioned_tracks / stems`、每个 stem 与删掉剧情的 `remove / rewrite_into_adjacent / offscreen_bridge` 决定；再依次运行 `audit --strict`、`verify --strict` 和 `pipeline_manifest.py --require final_audio_storyboard --strict`。最终 JSON 只作为叙事/时间合同，提交任何付费音频生成前仍需改写成 provider timed cue sheet 并单独确认。
+
+验证结果：新增/关联定向回归 `.venv/bin/python -m pytest tests/test_final_audio_storyboard.py tests/test_edit_brief_plan.py tests/test_pipeline_manifest.py -q` 通过 **115 passed in 1.84s**；覆盖 ready lifecycle、final timeline/voice ledger、未映射 event、gap、项目外源片、重复 voiced line、immutable time、omitted coverage、source/report drift、CLI round trip、manifest live gate 和 brief 路由。最终全量 `.venv/bin/python -m pytest tests -q` 通过 **925 passed in 23.92s**；`.venv/bin/python -m compileall -q scripts tests`、四组新 CLI help、edit-brief help、manifest category、Skill `quick_validate.py` 和 `git diff --check` 均通过。新脚本只处理 JSON/文件绑定，不解码媒体；真实命令生命周期由 CLI round-trip 测试覆盖，FFmpeg 编解码行为未被本轮修改。
 
 ### 2026-08-19 自动化升级记录（Source-bound Subtitle Style Preview）
 
@@ -3496,6 +3546,7 @@ pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 g
 | **90** | **[Generation Lessons](docs/prompts/90-generation-lessons.md)** | **把已审片段经验按 provider/model scope 复用到下一次 prompt** |
 | **91** | **[Generated Sequence Review](docs/prompts/91-generated-sequence-review.md)** | **逐片通过后复核相邻尾帧/首帧与跨镜头连续性** |
 | **92** | **[Reference Edit Rhythm](docs/prompts/92-reference-edit-rhythm.md)** | **量化参考片 hard-cut 结构并对照成片，绑定 contact sheets 与 live gate** |
+| **95** | **[Final Audio Storyboard](docs/prompts/95-final-audio-storyboard.md)** | **视觉 EDL 锁定后按最终时间线重建声音分镜、voice ledger 和 live gate** |
 | **43** | **[Audio Cue Sheet](docs/prompts/43-audio-cue-sheet.md)** | **规划 BGM/SFX 和生成审批** |
 | **45** | **[Video Prompt Pack](docs/prompts/45-video-prompt-pack.md)** | **视频生成提示词包 + paid approval gate** |
 | **46** | **[Generation Task Log](docs/prompts/46-generation-task-log.md)** | **跟踪 submit_id、轮询、下载和本地落盘** |
@@ -3614,6 +3665,7 @@ scripts/
 ├── export_edl.py               NLE handoff EDL + manifest          [V3]
 ├── export_fcpxml.py            NLE handoff FCPXML + manifest       [V3]
 ├── export_otio.py              NLE handoff OTIO + manifest         [V3]
+├── final_audio_storyboard.py   锁定 EDL → 最终声音分镜 + voice ledger/live gate [V3]
 ├── generate_standup_timeline.py Remotion timeline
 ├── multi_export.py             三平台导出                       [V3]
 ├── hdr_sdr.py                  PQ/HLG → source-bound Rec.709 SDR / full-decode gate [V3]

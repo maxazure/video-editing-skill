@@ -1,6 +1,6 @@
 ---
 name: video-editing
-description: "Xiaohongshu/RED-tuned short-form video workflow for voice-over, talking-head, tutorials, interviews, podcasts, screen recordings, B-roll, captions, and generated assets. Covers edit routing, transcription, semantic review, multi-take/audio sync/stabilization/dead-air cleanup, highlights/shorts, story and source gates, enrichment and video-generation planning, reference-frame preflight, generated clip/sequence review, color/speed/J-L cuts, reversible revisions and recipes, preflight/render/QA/audio master, edit comparison, retention/subtitle/safe-area/speech/lip-sync QA, subtitles, CapCut, platform/size exports, covers, captions, publish packages, dashboards, handoff formats, and Remotion."
+description: "Xiaohongshu/RED-tuned short-form video workflow for voice-over, talking-head, tutorials, interviews, podcasts, screen recordings, B-roll, captions, and generated assets. Covers edit routing, transcription, semantic review, multi-take/audio sync/stabilization/dead-air cleanup, highlights/shorts, story and source gates, enrichment and video-generation planning, generated clip/sequence review, locked-EDL final audio storyboards, color/speed/J-L cuts, reversible revisions and recipes, preflight/render/QA, subtitles, CapCut, platform/size exports, covers, captions, publish packages, dashboards, handoff formats, and Remotion."
 metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
 ---
 
@@ -50,6 +50,8 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ generated_clip_review.py 生成片段 contact sheet / 常识物理 / 连续性 / 重生 gate
    ├─→ generated_sequence_review.py
    │                            已审片段相邻尾帧/首帧/预览 / 跨镜头连续性 gate
+   ├─→ final_audio_storyboard.py
+   │                            锁定视觉 EDL + 原 storyboard → 最终声音分镜 / voice ledger / live gate
    ├─→ generation_lessons.py    已审片段 → provider/model scoped 提示词经验库
    ├─→ storyboard_assets.py     素材任务清单 / ready 预检 / paid 额度提醒
    │                            可选 media_library.py recommend 排名 B-roll 候选
@@ -137,6 +139,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `auto_enrich.py` | 编排 B-roll / 贴纸 / 强调点 / 章节卡 / imagegen cues | `--transcript` `--clean-script` `--bgm` `--output` |
 | `imagegen_hint.py` | 检测抽象概念 → 产 gpt-image-2 提示词 | `--transcript` `--clean-script` `--codex-md` |
 | `audio_cue_sheet.py` | transcript → BGM/SFX cue、生成审批和音频门禁 | `--transcript` `--asset-root` `--require-local-music` `--require-local-sfx` `--strict` |
+| `final_audio_storyboard.py` | locked visual EDL + storyboard → 最终时间线声音分镜、voice ledger、omitted-story 决定和 live gate | `prepare --edl --storyboard` `audit --request --response` `verify --report --strict` |
 | `storyboard_plan.py` | transcript/clean_script → 分镜 shot cards + 生成路由 | `--transcript` `--clean-script` `--output` `--markdown` |
 | `video_prompt_pack.py` | storyboard_plan → 多 provider 视频生成提示词包 + 角色/品牌/style lock + paid approval gate | `--storyboard-plan` `--style-reference` `--provider` `--animate-stills` `--approved` `--strict` |
 | `reference_frame_preflight.py` | video_prompt_pack → 首帧/style key 存在性、解码、尺寸、方向、画幅、透明背景 gate | `--prompt-pack` `--require-style-reference` `--reference shot_id=...` `--strict` |
@@ -1486,6 +1489,42 @@ python3 scripts/export_otio.py --cut-list work/rough_cut.json --output work/roug
 ```
 
 `export_edl.py` / `export_fcpxml.py` / `export_otio.py` 都会同时写 `<output>.json` manifest，保留绝对源路径、精确秒数、record/source timecode 和事件清单。`export_otio.py` 默认写 V1 + A1 两条 track，可用 `--no-audio-track` 只交接视频；复杂字幕、overlay、章节卡、B-roll 仍以 `render_final.py` / `export_capcut.py` 为准；NLE handoff 只负责轻量选段时间线。
+
+### Phase 5d: Final Audio Storyboard（视觉 EDL 锁定后重建声音）
+
+多段生成视频或连续短片先锁定视觉 EDL，再按最终 record timeline 重建旁白、对白、环境声、Foley 与音乐；不要把剪辑前整片 audio plan 原样套回删短画面。EDL 每个 event 的 label 应对应 `storyboard_plan.json` 的 shot id：
+
+```bash
+python3 scripts/export_edl.py \
+  --config work/render_config.json \
+  --output work/locked_visual.edl \
+  --manifest work/locked_visual.edl.json \
+  --fps 30
+
+python3 scripts/final_audio_storyboard.py prepare \
+  --project-dir . \
+  --edl work/locked_visual.edl.json \
+  --storyboard work/storyboard_plan.json \
+  --output work/final_audio_storyboard_request.json \
+  --markdown work/final_audio_storyboard_request.md \
+  --response-template work/final_audio_storyboard_response.json \
+  --strict
+
+# 填完 response 后：
+python3 scripts/final_audio_storyboard.py audit \
+  --project-dir . \
+  --request work/final_audio_storyboard_request.json \
+  --response work/final_audio_storyboard_response.json \
+  --output work/final_audio_storyboard.json \
+  --markdown work/final_audio_storyboard.md \
+  --strict
+python3 scripts/final_audio_storyboard.py verify \
+  --project-dir . \
+  --report work/final_audio_storyboard.json \
+  --strict
+```
+
+每个 final section 必须明确 `single_track / sectioned_tracks / stems`、shared tone、voice、sound、music、stems 与原生声音保留理由；每个完全删除的 story beat 必须选择 `remove / rewrite_into_adjacent / offscreen_bridge`。重复 voiced line、漏审、时间映射或输入/response/report 漂移 fail closed。脚本不生成音频、不提交 provider、不消耗 credits；批准 JSON 仍要按实际音频工具改写成 timed cue sheet，付费生成前另行确认。详见 [docs/prompts/95-final-audio-storyboard.md](docs/prompts/95-final-audio-storyboard.md)。
 
 ### Phase 6: Post-render Validation（渲染后验证）
 
