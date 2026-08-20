@@ -12,6 +12,7 @@
 - 需要把同一张 style key 绑定到所有生成 shot，减少跨镜头风格漂移。
 - 想在执行 paid video generation 前，用 `--strict` 拦住未审批任务。
 - 已经有经人工批准的 `generation_lessons.json`，想按 provider/model/category 把少量复盘经验带回下一次提示词。
+- 需要用带日期的 `provider_capabilities.json` 约束当前 UI/API 的 mode、时长、画幅、分辨率和参考上限。
 
 ## 命令
 
@@ -27,7 +28,7 @@ python3 scripts/video_prompt_pack.py \
   --strict
 ```
 
-`--strict` 会在任何视频生成 provider 还没有 `--approved` 时返回退出码 `2`。这适合放在生成前和发布前检查，避免 agent 直接批量提交 paid jobs。
+`--strict` 会在视频生成 provider 还没有 `--approved`，或 capability profile 仍有 blocker 时返回退出码 `2`。这适合放在生成前和发布前检查，避免 agent 直接批量提交 paid jobs 或使用未核验设置。
 
 审批后再导出可执行包：
 
@@ -36,6 +37,9 @@ python3 scripts/video_prompt_pack.py \
   --storyboard-plan work/storyboard_plan.json \
   --asset-root work \
   --provider dreamina_seedance \
+  --capability-profile work/provider_capabilities.json \
+  --require-capability-profile \
+  --resolution 720p \
   --lesson-library work/generation_lessons.json \
   --lesson-model seedance-2.0 \
   --lesson-limit 3 \
@@ -69,7 +73,12 @@ python3 scripts/video_prompt_pack.py \
 - `items[].reference.expected_path/resolved_path`：默认查找 `work/imagegen/<shot_id>.png`，供 image-to-video 使用。
 - `items[].negative_prompt`：统一避免字幕、水印、UI、畸形手、闪烁等问题。
 - `items[].approval_status`：`needs_approval` / `approved` / `not_required`。
-- `summary.blocking`：未审批 paid video generation 数量；`pipeline_manifest.py` 会读取它作为 gate。
+- `items[].surface/model/resolution` 与 `items[].capability_profile`：匹配的具体执行入口、模型、分辨率、核验日期和 canonical profile id。
+- `items[].capability_issues`：未找到 profile、profile 过期、mode/画幅/时长/分辨率不支持或参考图超限等 blocker。
+- `summary.capability_blocking`：capability blockers 数量。
+- `summary.blocking`：未审批 paid video generation + capability blockers；`pipeline_manifest.py` 会读取它作为 gate。
+
+`pipeline_manifest.py` 还会用当前 `provider_capabilities.json` 重算 bundle/profile id 与每个 shot 的 capability issues；替换 profile 内容后必须重新生成 prompt pack，不能只手改旧 summary。
 
 ## 推荐流程
 
@@ -92,6 +101,10 @@ python3 scripts/video_prompt_pack.py \
 #    注意：Dreamina/即梦等视频生成可能消耗 credits，提交前先确认。
 
 # 4. 确认后再生成可执行视频提示词包，并锁定共享 style key
+python3 scripts/provider_capability.py verify \
+  --bundle work/provider_capabilities.json \
+  --max-age-days 30 \
+  --strict
 python3 scripts/generation_lessons.py verify \
   --library work/generation_lessons.json \
   --strict
@@ -99,6 +112,9 @@ python3 scripts/video_prompt_pack.py \
   --storyboard-plan work/storyboard_plan.json \
   --asset-root work \
   --style-reference work/imagegen/style-key.png \
+  --capability-profile work/provider_capabilities.json \
+  --require-capability-profile \
+  --resolution 720p \
   --lesson-library work/generation_lessons.json \
   --lesson-model seedance-2.0 \
   --lesson-limit 3 \
@@ -131,4 +147,5 @@ python3 scripts/storyboard_assets.py \
 - 先用 Codex `image_gen` 做角色/风格/首帧参考，再进入 image-to-video，减少人物和品牌漂移。
 - 共享 style key 必须在所有生成 shot 中保持同一路径；提交前用 `reference_frame_preflight.py` 检查画幅和背景。
 - 经验库必须先经 `generation_lessons.py verify`；未传 `--lesson-model` 时只用 provider-wide 经验，默认每个 shot 最多 3 条，避免历史规则淹没当前创意意图。
+- provider 能力必须绑定 exact surface/model 和核验日期；profile 默认超过 30 天即失效，不能把一个 UI/API 的限制搬到另一个入口。完整 schema 与边界见 [96-Provider Capability Profile](96-provider-capability.md)。
 - 生成视频仍要经过 `storyboard_assets.py`、`asset_provenance.py`、`render_qa.py` 和必要的 `timeline_view.py`。

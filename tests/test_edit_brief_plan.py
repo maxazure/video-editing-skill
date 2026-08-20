@@ -379,6 +379,27 @@ def test_generated_video_lesson_library_is_verified_before_prompt_reuse(tmp_path
     assert "--lesson-library work/generation_lessons.json" in prompt_step["command"]
 
 
+def test_provider_capabilities_are_verified_before_prompt_pack(tmp_path):
+    source = tmp_path / "talk.mp4"
+    source.write_text("fake video", encoding="utf-8")
+
+    plan = build_plan(
+        f"把 {source} 配上即梦生成视频，先做 provider capability 和界面参数核验",
+        project_dir=str(tmp_path),
+    )
+
+    ids = [step["id"] for step in plan["steps"]]
+    assert ids.index("provider_capabilities") < ids.index("video_prompt_pack")
+    capability_step = next(step for step in plan["steps"] if step["id"] == "provider_capabilities")
+    prompt_step = next(step for step in plan["steps"] if step["id"] == "video_prompt_pack")
+    assert capability_step["script"] == "provider_capability.py"
+    assert "provider_capability.py verify" in capability_step["command"]
+    assert capability_step["gate_category"] == "provider_capabilities"
+    assert "--capability-profile work/provider_capabilities.json" in prompt_step["command"]
+    assert "--require-capability-profile" in prompt_step["command"]
+    assert "--resolution '<verified_resolution>'" in prompt_step["command"]
+
+
 def test_generated_video_sequence_continuity_runs_after_per_clip_review(tmp_path):
     source = tmp_path / "talk.mp4"
     source.write_text("fake video", encoding="utf-8")

@@ -2,13 +2,14 @@ import json
 import os
 import subprocess
 import sys
+from datetime import datetime, timezone
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(REPO, "scripts"))
 
 from storyboard_plan import ROUTING_SENTENCE, build_storyboard_plan  # noqa: E402
 import generation_lessons  # noqa: E402
-from video_prompt_pack import build_video_prompt_pack, emit_markdown  # noqa: E402
+from video_prompt_pack import build_video_prompt_pack, emit_markdown, verify_prompt_pack  # noqa: E402
 
 
 def _sample_transcript():
@@ -49,6 +50,34 @@ def _lesson_library(*, provider="veo", model="*"):
     }
     entry["lesson_id"] = generation_lessons._entry_id(entry)
     return generation_lessons.add_entry(generation_lessons.new_library(), entry)
+
+
+def _capability_bundle():
+    return {
+        "version": "video_provider_capabilities.v1",
+        "profiles": [
+            {
+                "provider": "dreamina_seedance",
+                "surface": "Dreamina web",
+                "model": "Seedance verified test model",
+                "verified_at": datetime.now(timezone.utc).date().isoformat(),
+                "sources": [
+                    {
+                        "source_type": "official_documentation",
+                        "url": "https://example.com/provider-docs",
+                    }
+                ],
+                "capabilities": {
+                    "modes": ["text_to_video", "image_to_video"],
+                    "aspect_ratios": ["9:16", "16:9"],
+                    "resolutions": ["720p"],
+                    "duration": {"kind": "range", "min_seconds": 2, "max_seconds": 8},
+                    "reference_limits": {"images": 2, "videos": 0, "audio": 1},
+                    "audio": {"generate": True, "reference": True, "preserve_source": "unknown"},
+                },
+            }
+        ],
+    }
 
 
 def test_video_prompt_pack_auto_routes_and_blocks_paid_approval(tmp_path):
@@ -104,7 +133,7 @@ def test_emit_markdown_includes_prompt_table_and_character_sheet(tmp_path):
     md = emit_markdown(pack)
 
     assert "# Video Prompt Pack" in md
-    assert "| shot | provider | mode | approval | reference |" in md
+    assert "| shot | provider | surface/model | mode | resolution | approval | capability | reference |" in md
     assert "## Character / Style Reference" in md
     assert ROUTING_SENTENCE in md
 
@@ -175,6 +204,72 @@ def test_model_specific_lesson_requires_explicit_model_scope():
 
     assert provider_only["summary"]["generation_lessons_applied"] == 0
     assert exact_model["summary"]["generation_lessons_applied"] == 1
+
+
+def test_required_capability_profile_validates_surface_settings(tmp_path):
+    plan = build_storyboard_plan(_sample_transcript(), max_shots=3)
+    pack = build_video_prompt_pack(
+        plan,
+        provider="dreamina_seedance",
+        approved=True,
+        capability_bundles=[_capability_bundle()],
+        require_capability_profile=True,
+        resolution="720p",
+    )
+
+    assert pack["summary"]["capability_profiles"] == 1
+    assert pack["summary"]["capability_blocking"] == 0
+    assert pack["summary"]["blocking"] == 0
+    assert all(item["surface"] == "Dreamina web" for item in pack["items"])
+    assert all(item["model"] == "Seedance verified test model" for item in pack["items"])
+    assert all(not item["capability_issues"] for item in pack["items"])
+
+
+def test_required_capability_profile_blocks_missing_or_unsupported_settings():
+    plan = build_storyboard_plan(_sample_transcript(), max_shots=1)
+
+    missing = build_video_prompt_pack(
+        plan,
+        provider="veo",
+        approved=True,
+        require_capability_profile=True,
+        resolution="720p",
+    )
+    unsupported = build_video_prompt_pack(
+        plan,
+        provider="dreamina_seedance",
+        approved=True,
+        capability_bundles=[_capability_bundle()],
+        require_capability_profile=True,
+        resolution="1080p",
+    )
+
+    assert missing["items"][0]["capability_issues"] == ["missing_capability_profile"]
+    assert missing["summary"]["blocking"] == 1
+    assert unsupported["items"][0]["capability_issues"] == ["unsupported_resolution:1080p"]
+    assert unsupported["summary"]["blocking"] == 1
+
+
+def test_prompt_pack_live_verify_detects_capability_profile_drift():
+    plan = build_storyboard_plan(_sample_transcript(), max_shots=1)
+    bundle = _capability_bundle()
+    pack = build_video_prompt_pack(
+        plan,
+        provider="dreamina_seedance",
+        approved=True,
+        capability_bundles=[bundle],
+        require_capability_profile=True,
+        resolution="720p",
+    )
+
+    current = verify_prompt_pack(pack, capability_bundles=[bundle])
+    bundle["profiles"][0]["model"] = "Changed model"
+    stale = verify_prompt_pack(pack, capability_bundles=[bundle])
+
+    assert current["status"] == "ready"
+    assert stale["status"] == "blocked"
+    assert "capability_bundle_ids_drift" in stale["blockers"]
+    assert "capability_profile_id_drift:shot_001" in stale["blockers"]
 
 
 def test_cli_writes_prompt_pack_and_strict_fails_until_approved(tmp_path):

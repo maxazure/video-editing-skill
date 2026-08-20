@@ -97,6 +97,7 @@
 | 93 | [Lip-sync Review 最终成片口型同步证据](93-lip-sync-review.md) | final master → 完整短语 1×/0.25× proofs、人工 audit 与 source-bound live gate |
 | 94 | [Subtitle Style Preview 真实画面字幕样式预览](94-subtitle-style-preview.md) | source video → 最终 ASS 预设早/中/晚 JPEG、选择记录与 source/font/style live gate |
 | 95 | [Final Audio Storyboard 锁定 EDL 后重建声音分镜](95-final-audio-storyboard.md) | locked visual EDL + storyboard → final timeline sections、voice ledger、omitted-story decisions 与 live gate |
+| 96 | [Provider Capability Profile 生成供应商能力契约](96-provider-capability.md) | exact provider/surface/model → dated modes、画幅、时长、分辨率、参考上限与 prompt gate |
 
 ## 快速上手
 
@@ -170,6 +171,7 @@
 | 想给同一条视频生成多套封面并选一张发布 | [68-Cover Variants](68-cover-variants.md) |
 | 想在完整渲染前用真实画面比较三套字幕样式并选定一套 | [94-Subtitle Style Preview](94-subtitle-style-preview.md) |
 | 多段生成片视觉 EDL 已锁定，想按最终时间线重建旁白、环境声、Foley 和音乐 | [95-Final Audio Storyboard](95-final-audio-storyboard.md) |
+| 视频生成前想确认当前 UI/API 真正支持哪些 mode、时长、分辨率和参考上限 | [96-Provider Capability Profile](96-provider-capability.md) |
 | 成片剪完后想检查前三秒、长镜头和节奏空窗 | [69-Retention Rhythm QA](69-retention-rhythm-qa.md) |
 | 有参考广告/短片，想量化它的切点结构再对照成片 | [92-Reference Edit Rhythm](92-reference-edit-rhythm.md) |
 | 数字人/生成口播成片要检查口型是否真的同步 | [93-Lip-sync Review](93-lip-sync-review.md) |

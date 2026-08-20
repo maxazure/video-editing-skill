@@ -130,6 +130,21 @@ SIGNAL_KEYWORDS: Mapping[str, Sequence[str]] = {
         "生成视频",
         "generated video",
     ),
+    "provider_capabilities": (
+        "provider capability",
+        "provider capabilities",
+        "surface profile",
+        "provider limits",
+        "generation controls",
+        "ui controls",
+        "api controls",
+        "供应商能力",
+        "生成能力核验",
+        "模型能力核验",
+        "界面参数核验",
+        "生成参数上限",
+        "参考素材上限",
+    ),
     "generation_lessons": (
         "generation lessons",
         "generation lesson",
@@ -324,6 +339,7 @@ SIGNAL_LABELS: Mapping[str, str] = {
     "source_receipts": "事实来源复核",
     "broll": "B-roll / stock 素材规划",
     "generated_assets": "生成式图片 / 视频素材",
+    "provider_capabilities": "生成 provider / UI / API 能力核验",
     "generation_lessons": "生成视频复核经验库",
     "sequence_continuity": "生成视频跨镜头连续性复核",
     "audio_design": "BGM / SFX 声音设计",
@@ -962,6 +978,41 @@ def build_plan(
             ),
         )
 
+    if "provider_capabilities" in ids:
+        _add_step(
+            steps,
+            seen,
+            _step(
+                "provider_capabilities",
+                phase="assets",
+                script="provider_capability.py",
+                label="Verify dated capabilities for the exact generation surface",
+                reason="The brief asks to verify provider/UI/API modes, limits, or controls before generation.",
+                command=shell(
+                    [
+                        python_bin,
+                        "scripts/provider_capability.py",
+                        "verify",
+                        "--bundle",
+                        "work/provider_capabilities.json",
+                        "--max-age-days",
+                        "30",
+                        "--output",
+                        "work/provider_capabilities_verification.json",
+                        "--markdown",
+                        "work/provider_capabilities_verification.md",
+                        "--strict",
+                    ]
+                ),
+                outputs=[
+                    "work/provider_capabilities.json",
+                    "work/provider_capabilities_verification.json",
+                    "work/provider_capabilities_verification.md",
+                ],
+                gate_category="provider_capabilities",
+            ),
+        )
+
     if "generated_assets" in ids:
         notes.append(IMAGEGEN_ROUTING)
         prompt_pack_command = [
@@ -979,6 +1030,19 @@ def build_plan(
         ]
         if "generation_lessons" in ids:
             prompt_pack_command.extend(["--lesson-library", "work/generation_lessons.json"])
+        if "provider_capabilities" in ids:
+            prompt_pack_command.extend(
+                [
+                    "--capability-profile",
+                    "work/provider_capabilities.json",
+                    "--require-capability-profile",
+                    "--resolution",
+                    "<verified_resolution>",
+                ]
+            )
+            notes.append(
+                "Provider capability profiles are surface-specific and expire after 30 days; refresh the named UI/API evidence instead of carrying limits across providers."
+            )
         _add_step(
             steps,
             seen,

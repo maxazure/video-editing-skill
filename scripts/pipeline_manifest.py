@@ -208,6 +208,13 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         blocks_when_present=True,
     ),
     ArtifactDef(
+        "provider_capabilities",
+        "Video Provider Capabilities",
+        ("**/provider_capabilities.json", "**/*_provider_capabilities.json"),
+        "Run provider_capability.py verify; refresh stale UI/API capability evidence before generation.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "generation_lessons",
         "Generation Lessons",
         ("**/generation_lessons.json", "**/*_generation_lessons.json"),
@@ -985,6 +992,82 @@ def evaluate_category(
                 notes.append(
                     f"invalid generation lesson library {artifact.path}: {blocking} blocking item(s)"
                 )
+        return {
+            "category": definition.category,
+            "label": definition.label,
+            "status": status,
+            "artifact_count": len(artifacts),
+            "latest_path": artifacts[0].path,
+            "notes": sorted(set(notes)),
+            "next_action": definition.next_action if status in {"missing", "blocked", "warn"} else "",
+        }
+
+    if definition.category == "provider_capabilities":
+        from provider_capability import verify_bundle
+
+        for artifact in artifacts:
+            data = _load_json(artifact.path)
+            if data is None:
+                status = "blocked"
+                notes.append(f"unreadable provider capability bundle: {artifact.path}")
+                continue
+            verification = verify_bundle(data, max_age_days=30, require_fresh=True)
+            blocking = _int_at(verification, "summary", "blocking")
+            warnings = _int_at(verification, "summary", "warnings")
+            if blocking:
+                status = "blocked"
+                notes.append(
+                    f"invalid or stale provider capabilities {artifact.path}: {blocking} blocking item(s)"
+                )
+            elif warnings:
+                status = "warn" if status != "blocked" else status
+                notes.append(
+                    f"provider capabilities need source review {artifact.path}: {warnings} warning(s)"
+                )
+        return {
+            "category": definition.category,
+            "label": definition.label,
+            "status": status,
+            "artifact_count": len(artifacts),
+            "latest_path": artifacts[0].path,
+            "notes": sorted(set(notes)),
+            "next_action": definition.next_action if status in {"missing", "blocked", "warn"} else "",
+        }
+
+    if definition.category == "video_prompt_pack":
+        from video_prompt_pack import verify_prompt_pack
+
+        for artifact in artifacts:
+            data = _load_json(artifact.path)
+            if data is None:
+                status = "blocked"
+                notes.append(f"unreadable video prompt pack: {artifact.path}")
+                continue
+            policy = data.get("global", {}).get("capability_policy") or {}
+            bundles: List[Mapping[str, Any]] = []
+            if policy.get("required") or policy.get("bundle_ids"):
+                if project_dir is None:
+                    status = "blocked"
+                    notes.append("project root unavailable for provider capability live verification")
+                    continue
+                capability_artifacts = find_artifacts(
+                    project_dir,
+                    ARTIFACT_BY_CATEGORY["provider_capabilities"],
+                )
+                bundles = [
+                    bundle
+                    for record in capability_artifacts
+                    if (bundle := _load_json(record.path)) is not None
+                ]
+            verification = verify_prompt_pack(data, capability_bundles=bundles)
+            blocking = _int_at(verification, "summary", "blocking")
+            warnings = _int_at(verification, "summary", "warnings")
+            if blocking:
+                status = "blocked"
+                notes.append(f"invalid video prompt pack {artifact.path}: {blocking} blocking item(s)")
+            elif warnings:
+                status = "warn" if status != "blocked" else status
+                notes.append(f"video prompt pack capability evidence needs review: {warnings} warning(s)")
         return {
             "category": definition.category,
             "label": definition.label,

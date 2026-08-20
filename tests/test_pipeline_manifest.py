@@ -2,6 +2,7 @@ import json
 import os
 import subprocess
 import sys
+from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts"))
 
@@ -18,6 +19,7 @@ import multimodal_dead_air  # noqa: E402
 import subtitle_style_preview  # noqa: E402
 from jump_cut import Segment  # noqa: E402
 from speed_ramp import build_speed_ramp_plan, parse_hold  # noqa: E402
+from video_prompt_pack import build_video_prompt_pack  # noqa: E402
 from video_stabilization import build_plan as build_stabilization_plan  # noqa: E402
 
 
@@ -156,6 +158,88 @@ def test_generation_lesson_library_is_live_verified_and_can_be_required(tmp_path
         required=["generation_lessons"],
     )
     assert "generation_lessons" in required["missing_required"]
+
+
+def test_provider_capabilities_are_live_verified_and_can_be_required(tmp_path):
+    _publish_ready_project(tmp_path)
+    profile_path = tmp_path / "work" / "provider_capabilities.json"
+    bundle = {
+        "version": "video_provider_capabilities.v1",
+        "profiles": [
+            {
+                "provider": "dreamina_seedance",
+                "surface": "Dreamina web",
+                "model": "Verified model",
+                "verified_at": datetime.now(timezone.utc).date().isoformat(),
+                "sources": [
+                    {
+                        "source_type": "official_documentation",
+                        "url": "https://example.com/provider-docs",
+                    }
+                ],
+                "capabilities": {
+                    "modes": ["text_to_video", "image_to_video"],
+                    "aspect_ratios": ["9:16"],
+                    "resolutions": ["720p"],
+                    "duration": {"kind": "range", "min_seconds": 2, "max_seconds": 8},
+                    "reference_limits": {"images": 2, "videos": 0, "audio": 1},
+                    "audio": {"generate": True, "reference": True, "preserve_source": "unknown"},
+                },
+            }
+        ],
+    }
+    _write(profile_path, bundle)
+    prompt_pack = build_video_prompt_pack(
+        {
+            "version": "storyboard_plan.v1",
+            "target": {"aspect": "9:16"},
+            "shots": [
+                {
+                    "id": "shot_001",
+                    "duration": 4,
+                    "narration": "A verified generation shot.",
+                    "generation_route": {"primary": "dreamina_video"},
+                }
+            ],
+        },
+        provider="dreamina_seedance",
+        approved=True,
+        capability_bundles=[bundle],
+        require_capability_profile=True,
+        resolution="720p",
+    )
+    _write(tmp_path / "work" / "video_prompt_pack.json", prompt_pack)
+
+    current = build_manifest(
+        str(tmp_path),
+        target_stage="publish_ready",
+        required=["provider_capabilities"],
+    )
+    gate = next(g for g in current["gates"] if g["category"] == "provider_capabilities")
+    assert gate["status"] == "ready"
+    prompt_gate = next(g for g in current["gates"] if g["category"] == "video_prompt_pack")
+    assert prompt_gate["status"] == "ready"
+
+    bundle["profiles"][0]["model"] = "Changed model"
+    _write(profile_path, bundle)
+    drifted = build_manifest(str(tmp_path), target_stage="publish_ready")
+    prompt_gate = next(g for g in drifted["gates"] if g["category"] == "video_prompt_pack")
+    assert prompt_gate["status"] == "blocked"
+
+    bundle["profiles"][0]["verified_at"] = "2020-01-01"
+    _write(profile_path, bundle)
+    stale = build_manifest(str(tmp_path), target_stage="publish_ready")
+    gate = next(g for g in stale["gates"] if g["category"] == "provider_capabilities")
+    assert gate["status"] == "blocked"
+    assert "provider_capabilities" in stale["blocked_gates"]
+
+    profile_path.unlink()
+    missing = build_manifest(
+        str(tmp_path),
+        target_stage="publish_ready",
+        required=["provider_capabilities"],
+    )
+    assert "provider_capabilities" in missing["missing_required"]
 
 
 def test_multimodal_dead_air_plan_is_live_verified_and_can_be_required(tmp_path, monkeypatch):
@@ -1519,7 +1603,7 @@ def test_optional_video_prompt_pack_blocks_when_unapproved(tmp_path):
     assert manifest["status"] == "blocked"
     assert "video_prompt_pack" in manifest["blocked_gates"]
     gate = next(g for g in manifest["gates"] if g["category"] == "video_prompt_pack")
-    assert "1 blocking item(s) in summary.blocking" in gate["notes"]
+    assert "invalid video prompt pack" in gate["notes"][0]
 
 
 def test_reference_frame_preflight_can_be_required(tmp_path):

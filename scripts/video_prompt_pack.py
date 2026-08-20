@@ -15,6 +15,12 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
 
 from generation_lessons import load_library, select_lessons, verify_library
+from provider_capability import (
+    load_bundle as load_capability_bundle,
+    profile_index,
+    profile_support_issues,
+    verify_bundle as verify_capability_bundle,
+)
 from storyboard_plan import ROUTING_SENTENCE
 
 
@@ -258,13 +264,20 @@ def build_video_prompt_pack(
     lesson_model: str = "",
     lesson_categories: Optional[Sequence[str]] = None,
     lesson_limit: int = 3,
+    capability_bundles: Optional[Sequence[Mapping[str, Any]]] = None,
+    require_capability_profile: bool = False,
+    capability_max_age_days: int = 30,
+    resolution: str = "",
     default_duration: float = 4.0,
     max_duration: float = 8.0,
 ) -> Dict[str, Any]:
     if lesson_limit < 0 or lesson_limit > 10:
         raise ValueError("lesson_limit must be between 0 and 10")
+    if capability_max_age_days < 0:
+        raise ValueError("capability_max_age_days must be non-negative")
     characters = list(characters or [])
     brand_anchors = list(brand_anchors or [])
+    capability_bundles = list(capability_bundles or [])
     target = plan.get("target") if isinstance(plan.get("target"), Mapping) else {}
     aspect = str(target.get("aspect") or "9:16")
     shared_style_reference = _explicit_reference(style_reference)
@@ -278,11 +291,31 @@ def build_video_prompt_pack(
             )
         lesson_library_id = str(lesson_library.get("library_id") or "")
 
+    capability_reports = [
+        verify_capability_bundle(
+            bundle,
+            max_age_days=capability_max_age_days,
+            require_fresh=True,
+        )
+        for bundle in capability_bundles
+    ]
+    capabilities_by_provider = profile_index(
+        capability_bundles,
+        max_age_days=capability_max_age_days,
+        require_fresh=True,
+    )
+    bundle_capability_issues = sorted({
+        issue
+        for report in capability_reports
+        for issue in report.get("blockers") or []
+    })
+
     items: List[Dict[str, Any]] = []
     provider_counts: Dict[str, int] = {}
     approval_required = 0
     applied_lesson_ids = set()
     applied_lesson_count = 0
+    item_capability_blocking = 0
 
     for pos, shot in enumerate(plan.get("shots") or []):
         if not isinstance(shot, Mapping):
@@ -341,6 +374,44 @@ def build_video_prompt_pack(
             prompt = f"{prompt} LEARNED CONSTRAINTS: {constraints}"
             applied_lesson_count += len(matched_lessons)
             applied_lesson_ids.update(str(entry.get("lesson_id") or "") for entry in matched_lessons)
+
+        profile_entry = capabilities_by_provider.get(selected_provider)
+        capability_issues: List[str] = []
+        capability_profile: Dict[str, Any] = {}
+        if selected_provider in GENERATED_VIDEO_PROVIDERS:
+            if profile_entry is None:
+                if require_capability_profile:
+                    capability_issues.append("missing_capability_profile")
+            else:
+                verification = profile_entry.get("verification") or {}
+                profile = profile_entry.get("profile") or {}
+                capability_profile = {
+                    "profile_id": verification.get("profile_id", ""),
+                    "provider": verification.get("provider", ""),
+                    "surface": verification.get("surface", ""),
+                    "model": verification.get("model", ""),
+                    "verified_at": verification.get("verified_at", ""),
+                    "age_days": verification.get("age_days"),
+                    "status": verification.get("status", ""),
+                }
+                if (verification.get("summary") or {}).get("blocking"):
+                    capability_issues.append("invalid_or_stale_capability_profile")
+                else:
+                    image_references = int(bool(reference.get("expected_path"))) + int(
+                        bool(shared_style_reference.get("expected_path"))
+                    )
+                    capability_issues.extend(
+                        profile_support_issues(
+                            profile,
+                            provider=selected_provider,
+                            mode=selected_mode,
+                            aspect=aspect,
+                            duration_seconds=duration,
+                            resolution=resolution,
+                            image_references=image_references,
+                        )
+                    )
+        item_capability_blocking += len(set(capability_issues))
         items.append({
             "shot_id": shot_id,
             "section": shot.get("section"),
@@ -353,7 +424,10 @@ def build_video_prompt_pack(
             "provider": selected_provider,
             "provider_label": PROVIDER_LABELS.get(selected_provider, selected_provider),
             "mode": selected_mode,
+            "surface": capability_profile.get("surface", ""),
+            "model": capability_profile.get("model", ""),
             "aspect": aspect,
+            "resolution": resolution,
             "duration_seconds": duration,
             "reference": reference,
             "style_reference": dict(shared_style_reference),
@@ -369,6 +443,8 @@ def build_video_prompt_pack(
                 }
                 for entry in matched_lessons
             ],
+            "capability_profile": capability_profile,
+            "capability_issues": sorted(set(capability_issues)),
             "continuity_anchors": continuity,
             "approval_required": requires_approval,
             "approval_status": "approved" if (requires_approval and approved) else ("needs_approval" if requires_approval else "not_required"),
@@ -408,13 +484,22 @@ def build_video_prompt_pack(
                 "categories": list(lesson_categories or []),
                 "limit_per_shot": lesson_limit,
             },
+            "capability_policy": {
+                "required": require_capability_profile,
+                "max_age_days": capability_max_age_days,
+                "resolution": resolution,
+                "bundle_ids": [report.get("bundle_id", "") for report in capability_reports],
+                "bundle_blockers": bundle_capability_issues,
+            },
             "character_sheet_prompt": _character_sheet_prompt(characters, brand_anchors, aspect),
             "negative_prompt": DEFAULT_NEGATIVE_PROMPT,
         },
         "summary": {
             "items": len(items),
             "approval_required": approval_required,
-            "blocking": approval_required,
+            "blocking": approval_required + item_capability_blocking + len(bundle_capability_issues),
+            "capability_blocking": item_capability_blocking + len(bundle_capability_issues),
+            "capability_profiles": len(capabilities_by_provider),
             "style_reference_ready": int(bool(shared_style_reference["resolved_path"])),
             "generation_lessons_applied": applied_lesson_count,
             "unique_generation_lessons": len(applied_lesson_ids),
@@ -424,6 +509,7 @@ def build_video_prompt_pack(
         "next_steps": [
             "Review prompts and reference paths before submitting any generated-video job.",
             "Verify the generation lesson library and review every learned constraint before reusing it.",
+            "Verify dated provider capability profiles against the exact UI/API surface before selecting model settings.",
             "Use Codex image_gen first for still references and character sheets.",
             "Run reference_frame_preflight.py to verify first-frame and shared style-reference geometry.",
             "Confirm provider credits before running Dreamina/即梦, Veo, LTX, Wan, or Sora jobs.",
@@ -445,6 +531,120 @@ def _submit_hint(provider: str) -> str:
     return "Search/link a local B-roll candidate before final assembly."
 
 
+def verify_prompt_pack(
+    pack: Mapping[str, Any],
+    *,
+    capability_bundles: Optional[Sequence[Mapping[str, Any]]] = None,
+) -> Dict[str, Any]:
+    blockers: List[str] = []
+    warnings: List[str] = []
+    if pack.get("version") != "video_prompt_pack.v1":
+        blockers.append("invalid_prompt_pack_version")
+
+    capability_bundles = list(capability_bundles or [])
+    policy = pack.get("global", {}).get("capability_policy") or {}
+    max_age_days = int(policy.get("max_age_days") or 30)
+    required = bool(policy.get("required"))
+    reports = [
+        verify_capability_bundle(bundle, max_age_days=max_age_days, require_fresh=True)
+        for bundle in capability_bundles
+    ]
+    bundle_issues = sorted({
+        issue
+        for report in reports
+        for issue in report.get("blockers") or []
+    })
+    blockers.extend(f"capability_bundle:{issue}" for issue in bundle_issues)
+    warnings.extend(
+        f"capability_bundle:{issue}"
+        for report in reports
+        for issue in report.get("warnings") or []
+    )
+
+    expected_bundle_ids = sorted(str(item) for item in policy.get("bundle_ids") or [])
+    current_bundle_ids = sorted(str(report.get("bundle_id") or "") for report in reports)
+    if expected_bundle_ids != current_bundle_ids:
+        blockers.append("capability_bundle_ids_drift")
+
+    capabilities_by_provider = profile_index(
+        capability_bundles,
+        max_age_days=max_age_days,
+        require_fresh=True,
+    )
+    approval_blocking = 0
+    item_capability_blocking = 0
+    for position, item in enumerate(pack.get("items") or [], start=1):
+        if not isinstance(item, Mapping):
+            blockers.append(f"item_{position}_not_object")
+            continue
+        shot_id = str(item.get("shot_id") or position)
+        if item.get("approval_required") and item.get("approval_status") != "approved":
+            approval_blocking += 1
+
+        provider = str(item.get("provider") or "")
+        current_issues: List[str] = []
+        current_profile_id = ""
+        if provider in GENERATED_VIDEO_PROVIDERS:
+            entry = capabilities_by_provider.get(provider)
+            if entry is None:
+                if required:
+                    current_issues.append("missing_capability_profile")
+            else:
+                verification = entry.get("verification") or {}
+                current_profile_id = str(verification.get("profile_id") or "")
+                if (verification.get("summary") or {}).get("blocking"):
+                    current_issues.append("invalid_or_stale_capability_profile")
+                else:
+                    reference = item.get("reference") or {}
+                    style_reference = item.get("style_reference") or {}
+                    image_references = int(bool(reference.get("expected_path"))) + int(
+                        bool(style_reference.get("expected_path"))
+                    )
+                    current_issues.extend(
+                        profile_support_issues(
+                            entry.get("profile") or {},
+                            provider=provider,
+                            mode=str(item.get("mode") or ""),
+                            aspect=str(item.get("aspect") or ""),
+                            duration_seconds=float(item.get("duration_seconds") or 0),
+                            resolution=str(item.get("resolution") or ""),
+                            image_references=image_references,
+                        )
+                    )
+
+        current_issues = sorted(set(current_issues))
+        item_capability_blocking += len(current_issues)
+        stored_issues = sorted(str(issue) for issue in item.get("capability_issues") or [])
+        if stored_issues != current_issues:
+            blockers.append(f"capability_issues_drift:{shot_id}")
+        stored_profile_id = str((item.get("capability_profile") or {}).get("profile_id") or "")
+        if stored_profile_id != current_profile_id:
+            blockers.append(f"capability_profile_id_drift:{shot_id}")
+
+    expected_capability_blocking = len(bundle_issues) + item_capability_blocking
+    stored_summary = pack.get("summary") or {}
+    if int(stored_summary.get("capability_blocking") or 0) != expected_capability_blocking:
+        blockers.append("capability_summary_drift")
+    if int(stored_summary.get("blocking") or 0) != approval_blocking + expected_capability_blocking:
+        blockers.append("blocking_summary_drift")
+    if approval_blocking:
+        blockers.append(f"approval_pending:{approval_blocking}")
+    if expected_capability_blocking:
+        blockers.append(f"capability_blockers:{expected_capability_blocking}")
+
+    return {
+        "status": "blocked" if blockers else ("review" if warnings else "ready"),
+        "summary": {
+            "blocking": len(set(blockers)),
+            "warnings": len(set(warnings)),
+            "approval_blocking": approval_blocking,
+            "capability_blocking": expected_capability_blocking,
+        },
+        "blockers": sorted(set(blockers)),
+        "warnings": sorted(set(warnings)),
+    }
+
+
 def emit_markdown(pack: Mapping[str, Any]) -> str:
     style_reference = pack.get("global", {}).get("style_reference") or {}
     style_reference_path = (
@@ -461,6 +661,7 @@ def emit_markdown(pack: Mapping[str, Any]) -> str:
         f"- Approval required: {pack.get('summary', {}).get('approval_required', 0)}",
         f"- Blocking: {pack.get('summary', {}).get('blocking', 0)}",
         f"- Learned constraints applied: {pack.get('summary', {}).get('generation_lessons_applied', 0)}",
+        f"- Capability blockers: {pack.get('summary', {}).get('capability_blocking', 0)}",
         f"- Shared style reference: `{style_reference_path}`",
         "",
         "## Character / Style Reference",
@@ -469,18 +670,22 @@ def emit_markdown(pack: Mapping[str, Any]) -> str:
         str(pack.get("global", {}).get("character_sheet_prompt") or ""),
         "```",
         "",
-        "| shot | provider | mode | approval | reference |",
-        "|---|---|---|---|---|",
+        "| shot | provider | surface/model | mode | resolution | approval | capability | reference |",
+        "|---|---|---|---|---|---|---|---|",
     ]
     for item in pack.get("items") or []:
         reference = item.get("reference") or {}
         ref = reference.get("resolved_path") or reference.get("expected_path") or "-"
         lines.append(
-            "| {shot} | {provider} | {mode} | {approval} | `{ref}` |".format(
+            "| {shot} | {provider} | {surface} / {model} | {mode} | {resolution} | {approval} | {capability} | `{ref}` |".format(
                 shot=item.get("shot_id", ""),
                 provider=item.get("provider", ""),
+                surface=item.get("surface") or "-",
+                model=item.get("model") or "-",
                 mode=item.get("mode", ""),
+                resolution=item.get("resolution") or "-",
                 approval=item.get("approval_status", ""),
+                capability="ready" if not item.get("capability_issues") else ", ".join(item.get("capability_issues") or []),
                 ref=ref,
             )
         )
@@ -501,6 +706,13 @@ def emit_markdown(pack: Mapping[str, Any]) -> str:
                     f"- `{str(entry.get('lesson_id') or '')[:12]}` [{(entry.get('scope') or {}).get('category', '')}] {entry.get('lesson', '')}"
                     for entry in item.get("generation_lessons") or []
                 ],
+                "",
+            ])
+        if item.get("capability_issues"):
+            lines.extend([
+                "**Capability blockers**",
+                "",
+                *[f"- `{issue}`" for issue in item.get("capability_issues") or []],
                 "",
             ])
         lines.extend([
@@ -549,6 +761,24 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     parser.add_argument("--lesson-model", default="", help="Exact model scope; omitted applies provider-wide lessons only.")
     parser.add_argument("--lesson-category", action="append", default=[], help="Lesson category filter; can repeat.")
     parser.add_argument("--lesson-limit", type=int, default=3, help="Maximum approved lessons per generated shot (0-10).")
+    parser.add_argument(
+        "--capability-profile",
+        action="append",
+        default=[],
+        help="Dated provider_capabilities.json bundle; can repeat.",
+    )
+    parser.add_argument(
+        "--require-capability-profile",
+        action="store_true",
+        help="Block every generated-video item without a matching verified provider profile.",
+    )
+    parser.add_argument(
+        "--capability-max-age-days",
+        type=int,
+        default=30,
+        help="Maximum accepted capability-profile age.",
+    )
+    parser.add_argument("--resolution", default="", help="Requested provider output resolution, e.g. 720p.")
     parser.add_argument("--animate-stills", action="store_true", help="Turn codex_imagegen still routes into image-to-video prompts.")
     parser.add_argument("--approved", action="store_true", help="Mark generated-video provider credit use as already approved.")
     parser.add_argument("--default-duration", type=float, default=4.0, help="Fallback clip duration when a shot has no duration.")
@@ -558,6 +788,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
 
     plan = load_plan(args.storyboard_plan)
     lesson_library = load_library(args.lesson_library) if args.lesson_library else None
+    capability_bundles = [load_capability_bundle(path) for path in args.capability_profile]
     pack = build_video_prompt_pack(
         plan,
         provider=args.provider,
@@ -572,6 +803,10 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         lesson_model=args.lesson_model,
         lesson_categories=args.lesson_category,
         lesson_limit=args.lesson_limit,
+        capability_bundles=capability_bundles,
+        require_capability_profile=args.require_capability_profile,
+        capability_max_age_days=args.capability_max_age_days,
+        resolution=args.resolution,
         default_duration=args.default_duration,
         max_duration=args.max_duration,
     )
@@ -593,7 +828,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     if args.markdown:
         print(f"Wrote video prompt markdown: {args.markdown}")
     if args.strict and summary["blocking"]:
-        print("Video prompt pack strict check failed: generated-video approvals are pending.")
+        print("Video prompt pack strict check failed: approval or capability blockers remain.")
         return 2
     return 0
 

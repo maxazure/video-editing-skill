@@ -202,11 +202,24 @@
     # codex_imagegen 用 Codex 内置 image_gen；dreamina_video 只是建议，提交 Dreamina/即梦前先确认 credits。
     # 详见 docs/prompts/24-storyboard-plan.md
 
+4c-2. # 如果要用生成视频 provider，先核验具体 UI/API surface 的当前能力：
+    python3 scripts/provider_capability.py verify \
+      --bundle work/provider_capabilities.json \
+      --max-age-days 30 \
+      --output work/provider_capabilities_verification.json \
+      --markdown work/provider_capabilities_verification.md \
+      --strict
+    # profile 要记录 exact provider/surface/model、verified_at、来源、modes、画幅、时长、分辨率和参考上限。
+    # 不要把一个入口的参数带到另一个入口；详见 docs/prompts/96-provider-capability.md。
+
 4d. # 可选：把分镜转成 Dreamina/Veo/LTX/Wan/Sora 视频生成提示词包：
     python3 scripts/video_prompt_pack.py \
       --storyboard-plan work/storyboard_plan.json \
       --asset-root work \
       --style-reference work/imagegen/style-key.png \
+      --capability-profile work/provider_capabilities.json \
+      --require-capability-profile \
+      --resolution 720p \
       --output work/video_prompt_pack.json \
       --markdown work/video_prompt_pack.md \
       --strict
@@ -687,6 +700,7 @@ day<NN>/
 │   ├── storyboard_plan.md   # 人工 review 版分镜卡
 │   ├── video_prompt_pack.json # 视频生成提示词包 + paid approval gate
 │   ├── video_prompt_pack.md   # 人工 review 版 provider prompts
+│   ├── provider_capabilities.json # 带日期的 provider/surface/model 能力合同
 │   ├── reference_frame_preflight.json # 首帧/style key 画幅与背景 gate
 │   ├── reference_frame_preflight.md   # 人工 review 版参考帧检查
 │   ├── generation_tasks.json # 异步生成任务 submit_id / 下载 gate

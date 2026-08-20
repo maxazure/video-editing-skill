@@ -21,6 +21,7 @@
 - **上游剪辑配置可以安全撤销/重做**：`edit_revision.py` 把 `render_config` / `enrich_plan` 等文本 artifact 的完整改动绑定到基础和依赖 SHA-256；独立审批后成组写入，外部漂移时拒绝 undo/redo 并阻塞 manifest。
 - **已审时间线可以换素材复用**：`edit_recipe.py` 把 `render_config.json` 的全部本地文件路径替换成类型化槽位，生成 content-addressed 可移植配方；回放必须完整绑定新素材、记录 SHA-256 并重新通过 `edit_preflight.py`。
 - **生成式素材有明确审批和台账**：Codex `image_gen` / GPT Image 2 提示词、Dreamina/Veo/LTX/Wan/Sora 视频提示词、provider 决策、`submit_id` 轮询下载和本地落盘 gate 都先记录再执行。
+- **生成 provider 参数先绑定具体入口再使用**：`provider_capability.py` 把 provider、UI/API surface、model、核验日期、证据和 mode/画幅/时长/分辨率/参考上限落成 profile；`video_prompt_pack.py` 会拒绝缺失、过期或设置越界的 profile。
 - **生成片段复核会反哺下一次提示词**：`generation_lessons.py` 只从 canonical clip review 提取人工明确批准的通用经验，绑定 source digests，并按 provider/model/category 精确筛选后交给 `video_prompt_pack.py`；不会把单片修复建议自动当成全局规则。
 - **字幕风格先在真实画面上选**：`subtitle_style_preview.py` 用最终 renderer 的同一 ASS builder、字体、字号和目标画幅，把 `normal / minimal / bold_pop` 渲染到源片早、中、晚代表帧；源片、字体、样式定义或 JPEG 漂移会让旧选择失效。
 - **数字人口型必须在最终成片上重新举证**：`lip_sync_review.py` 从最终 master 的完整短语导出 1× 带声和 0.25× 静音 proof clips，逐条复核爆破音闭唇、元音提前/滞后、讲话时冻嘴、说话人和音频质量；任何剪切、变速、换音或重编码都会让旧报告失效。
@@ -188,8 +189,10 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    ├─→ storyboard_plan.py       transcript/clean_script → shot cards
    │                            生成路由 / 连续性锚点 / Dreamina 额度提醒
    │
+   ├─→ provider_capability.py   exact provider/surface/model 能力合同
+   │                            核验日期 / sources / modes / limits / live gate
    ├─→ video_prompt_pack.py     Dreamina/Veo/LTX/Wan/Sora 提示词包
-   │                            角色/品牌/style lock / image-to-video / paid approval gate
+   │                            角色/品牌/style lock / paid approval + capability gate
    ├─→ reference_frame_preflight.py
    │                            首帧/style key 尺寸/方向/画幅/透明背景 gate
    │
@@ -862,6 +865,22 @@ python3 scripts/storyboard_assets.py \
 
 路由规则：抽象概念优先 `codex_imagegen`；数字/指标优先 `remotion_hyperframes`；动作/场景变化推荐 `dreamina_video` 但只标记为需确认，因为 Dreamina/即梦生成可能消耗 credits；其他先走本地素材库 B-roll。传 `--media-library <project_dir>` 时，`storyboard_assets.py` 会从 `media_index.json` / `media_index.db` 里按标签、文件名、时长和画幅推荐候选，并在 Markdown 表里显示分数。`storyboard_assets.py --strict` 会在素材未 ready 时返回退出码 2，适合渲染前拦截。生图优先使用 Codex 内置 `image_gen` 工具，即 OpenAI GPT Image 2（`gpt-image-2`）。
 
+### 🧭 Provider Capability Profile — 生成供应商能力契约
+[`scripts/provider_capability.py`](scripts/provider_capability.py) · [详细文档](docs/prompts/96-provider-capability.md)
+
+同一模型在不同网页、App、API 或第三方入口的 mode、时长、画幅、分辨率和参考素材上限可能不同。先把 exact `provider + surface + model`、核验日期和来源写入 `work/provider_capabilities.json`，再验证：
+
+```bash
+python3 scripts/provider_capability.py verify \
+  --bundle work/provider_capabilities.json \
+  --max-age-days 30 \
+  --output work/provider_capabilities_verification.json \
+  --markdown work/provider_capabilities_verification.md \
+  --strict
+```
+
+默认超过 30 天、未来日期、非法来源、重复 provider、无效 mode/duration/reference limit 都会阻塞；只有 community 来源时保留 warning，不冒充官方能力。脚本不联网、不访问 provider、不提交任务。`pipeline_manifest.py --require provider_capabilities --strict` 会现场重新验证 freshness。
+
 ### 🎥 Video Prompt Pack — 视频生成提示词包
 [`scripts/video_prompt_pack.py`](scripts/video_prompt_pack.py) · [详细文档](docs/prompts/45-video-prompt-pack.md)
 
@@ -883,13 +902,16 @@ python3 scripts/video_prompt_pack.py \
   --storyboard-plan work/storyboard_plan.json \
   --asset-root work \
   --provider dreamina_seedance \
+  --capability-profile work/provider_capabilities.json \
+  --require-capability-profile \
+  --resolution 720p \
   --animate-stills \
   --approved \
   --output work/video_prompt_pack.json \
   --markdown work/video_prompt_pack.md
 ```
 
-输出 `global.character_sheet_prompt`、`global.style_reference`、`items[].prompt`、`items[].negative_prompt`、`items[].reference.expected_path/resolved_path`、`items[].approval_status` 和 `summary.blocking`。`--style-reference` 会把同一 style key 绑定到每个生成 shot，并给 provider prompt 追加统一 `STYLE LOCK`。`--strict` 会在 generated-video provider 还没有 `--approved` 时返回 2；`pipeline_manifest.py` 会自动识别 `video_prompt_pack.json` 并把未清零的 `summary.blocking` 列为 blocking gate。Dreamina/即梦、Veo、LTX、Wan、Sora 等视频生成可能消耗 credits，提交前先确认并保持小批量。
+输出 `global.character_sheet_prompt`、`global.style_reference`、`items[].prompt`、`items[].negative_prompt`、`items[].surface/model/resolution`、`items[].capability_profile`、`items[].capability_issues`、`items[].approval_status` 和 `summary.blocking`。`--style-reference` 会把同一 style key 绑定到每个生成 shot，并给 provider prompt 追加统一 `STYLE LOCK`。启用 `--require-capability-profile` 后，缺 profile、profile 过期、mode/画幅/时长/分辨率不支持或参考图超限都会进入 `summary.capability_blocking`；`--strict` 同时要求 capability 和 paid approval blocker 清零。Dreamina/即梦、Veo、LTX、Wan、Sora 等视频生成可能消耗 credits，提交前先确认并保持小批量。
 
 ### 🖼️ Reference Frame Preflight — 生成参考帧预检
 [`scripts/reference_frame_preflight.py`](scripts/reference_frame_preflight.py) · [详细文档](docs/prompts/71-reference-frame-preflight.md)
@@ -2558,10 +2580,17 @@ python3 $SKILL/scripts/storyboard_plan.py \
   --target-aspect 9:16
 
 # 3c. 可选：把分镜转成 Dreamina/Veo/LTX/Wan/Sora 视频生成提示词包
+python3 $SKILL/scripts/provider_capability.py verify \
+  --bundle $WORK/work/provider_capabilities.json \
+  --max-age-days 30 \
+  --strict
 python3 $SKILL/scripts/video_prompt_pack.py \
   --storyboard-plan $WORK/work/storyboard_plan.json \
   --asset-root $WORK/work \
   --style-reference $WORK/work/imagegen/style-key.png \
+  --capability-profile $WORK/work/provider_capabilities.json \
+  --require-capability-profile \
+  --resolution 720p \
   --output $WORK/work/video_prompt_pack.json \
   --markdown $WORK/work/video_prompt_pack.md \
   --strict
@@ -2838,6 +2867,7 @@ pytest tests/test_cover_variants.py -v      # 多套封面 + 小图预览 + 发�
 pytest tests/test_imagegen_hint.py -v       # gpt-image-2 提示词检测
 pytest tests/test_storyboard_plan.py -v     # 分镜 shot cards + 生成路由
 pytest tests/test_video_prompt_pack.py -v   # 视频生成提示词包 + 审批 gate
+pytest tests/test_provider_capability.py -v # provider/surface/model 能力、freshness 和设置上限 gate
 pytest tests/test_reference_frame_preflight.py -v # 首帧/style key 尺寸/方向/透明背景 gate
 pytest tests/test_generation_task_log.py -v # 异步生成任务台账 + 下载 gate
 pytest tests/test_generated_clip_review.py -v # 生成视频 contact sheet / 评分 / 裁切 / 重生 / stale gate
@@ -2871,6 +2901,23 @@ pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 pytest tests/test_review_dashboard.py -v    # 静态人工复核面板 + gate queue
 pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 gate
 ```
+
+### 2026-08-21 自动化升级记录（Dated Provider Capability Profiles）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`lukasersil/seedance-25`](https://github.com/lukasersil/seedance-25/blob/main/SKILL.md) | 强制先识别具体 surface；不同 UI/API 的 tag、参考上限、分辨率、时长与功能不能互相搬用，未核验数字要显式标记 | 新增 exact `provider + surface + model` profile 和 30 天 freshness gate；不复制其中任何瞬时 Seedance 参数作为本项目默认值 |
+| [`mqrox/seedance-2.0-prompt-skill`](https://github.com/mqrox/seedance-2.0-prompt-skill/blob/main/build-seedance2-prompts/SKILL.md) | 区分 first frame、普通 reference、edit/extension 和 preserve-source-audio；surface 没有明确 control 时不能猜 | profile 把 mode、参考上限与 audio controls 分开；`true/false/unknown` 明确保留未知边界，prompt pack 只接受已声明能力 |
+| [`Standed/Seedance2.5`](https://github.com/Standed/Seedance2.5/blob/main/SKILL.md) | 把当前 UI/API 视为 duration、aspect、audio、editing 和 reference controls 的最终事实来源 | capability contract 强制记录入口名称与核验日期；脚本不联网、不替 operator 声称当前界面支持某能力 |
+| [`calesthio/generative-media-skills`](https://github.com/calesthio/generative-media-skills/blob/main/METHODOLOGY.md) | model id、supported inputs、duration、pricing、regional/API behavior 等易变事实必须带核验日期，并区分官方与社区证据 | 新 schema 要求 sources 与 `verified_at`；官方 source types 单独计数，community-only 保留 warning，不冒充官方结论 |
+
+新增/调整能力：新增 [`scripts/provider_capability.py`](scripts/provider_capability.py)、[`tests/test_provider_capability.py`](tests/test_provider_capability.py) 和 [`docs/prompts/96-provider-capability.md`](docs/prompts/96-provider-capability.md)。`provider_capabilities.json` 可同时记录多个 provider，但每个 provider 只能有一份明确的 surface/model profile；验证 modes、画幅、分辨率、连续/固定时长、图片/视频/音频参考上限、音频生成/引用/保留源音控制、URL/source type、未来日期和 30 天 freshness。`video_prompt_pack.py` 新增 `--capability-profile / --require-capability-profile / --capability-max-age-days / --resolution`，为每个 generated-video item 写入 surface/model/profile id 和 capability issues，并把缺 profile、过期 profile、不支持的 mode/aspect/duration/resolution 及图片引用超限计入 `summary.capability_blocking`；live verify 会把当前 bundle/profile id、逐 shot capability issues 和 summary 与旧 pack 重算对照，profile 换内容后旧 pack 不能继续放行。`pipeline_manifest.py` 新增存在即 live verify、可 `--require provider_capabilities` 的 gate，并对使用 profile 的 `video_prompt_pack.json` 做交叉校验；`edit_brief_plan.py` 新增 provider/UI/API 能力核验路由。SKILL、daily workflow、Video Prompt Pack 文档和提示词索引已同步。
+
+使用方式：依据当前官方文档/UI 或明确标注的第一方测试填写 `work/provider_capabilities.json`，先运行 `python3 scripts/provider_capability.py verify --bundle work/provider_capabilities.json --max-age-days 30 --output work/provider_capabilities_verification.json --markdown work/provider_capabilities_verification.md --strict`；再运行 `video_prompt_pack.py ... --provider dreamina_seedance --capability-profile work/provider_capabilities.json --require-capability-profile --resolution 720p --strict`。示例数字只展示 schema，不能当作 provider 当前规格；Dreamina/即梦或其他视频生成仍可能消耗 credits，必须在 profile/approval blocker 都清零后另行确认并保持小批量。
+
+验证结果：新增/关联定向回归 `.venv/bin/python -m pytest tests/test_provider_capability.py tests/test_video_prompt_pack.py tests/test_edit_brief_plan.py tests/test_pipeline_manifest.py -q` 通过 **126 passed in 1.77s**；最终全量 `.venv/bin/python -m pytest tests -q` 通过 **936 passed in 19.30s**。覆盖 valid/stale/community-only profile、range/fixed capability schema、unsupported mode/aspect/duration/resolution、reference overflow、missing profile、bundle/profile id 漂移、CLI JSON/Markdown、自然语言路由和 manifest live gate；`.venv/bin/python -m compileall -q scripts tests`、5 组 CLI/help/category smoke、Skill `quick_validate.py` 与 `git diff --check` 均通过。本轮没有调用任何生成 provider、没有消耗 credits，也没有修改 FFmpeg 渲染链。
 
 ### 2026-08-20 自动化升级记录（Locked-EDL Final Audio Storyboard）
 
@@ -3547,6 +3594,7 @@ pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 g
 | **91** | **[Generated Sequence Review](docs/prompts/91-generated-sequence-review.md)** | **逐片通过后复核相邻尾帧/首帧与跨镜头连续性** |
 | **92** | **[Reference Edit Rhythm](docs/prompts/92-reference-edit-rhythm.md)** | **量化参考片 hard-cut 结构并对照成片，绑定 contact sheets 与 live gate** |
 | **95** | **[Final Audio Storyboard](docs/prompts/95-final-audio-storyboard.md)** | **视觉 EDL 锁定后按最终时间线重建声音分镜、voice ledger 和 live gate** |
+| **96** | **[Provider Capability Profile](docs/prompts/96-provider-capability.md)** | **带日期核验 provider/surface/model 的 mode、画幅、时长、分辨率和参考上限** |
 | **43** | **[Audio Cue Sheet](docs/prompts/43-audio-cue-sheet.md)** | **规划 BGM/SFX 和生成审批** |
 | **45** | **[Video Prompt Pack](docs/prompts/45-video-prompt-pack.md)** | **视频生成提示词包 + paid approval gate** |
 | **46** | **[Generation Task Log](docs/prompts/46-generation-task-log.md)** | **跟踪 submit_id、轮询、下载和本地落盘** |
