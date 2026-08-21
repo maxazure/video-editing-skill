@@ -38,7 +38,32 @@
      --platform xhs
    # 详见 docs/prompts/64-edit-brief-plan.md
 
-0a. # 可选：如果同一访谈/播客/活动由两台以上设备录制，转写和选片前先统一时间线：
+0a. # 条件 gate：涉及外部上传、重排/删除、付费生成、声音克隆、真人/未成年人/公众人物/品牌/IP 或发布时，先授权：
+    # 先按 docs/prompts/97-production-authorization.md 写 work/production_authorization_scope.json，
+    # 命名确切素材、动作、用途、provider/surface、cost/quota 和 rights subject。
+    python3 scripts/production_authorization.py prepare \
+      --project-dir . \
+      --scope work/production_authorization_scope.json \
+      --output work/production_authorization_request.json \
+      --markdown work/production_authorization_request.md \
+      --response-template work/production_authorization_response.json \
+      --strict
+    # 实际复核者逐项填写 approve/reject、note、rights basis 和 evidence_note 后：
+    python3 scripts/production_authorization.py audit \
+      --project-dir . \
+      --request work/production_authorization_request.json \
+      --response work/production_authorization_response.json \
+      --output work/production_authorization.json \
+      --markdown work/production_authorization.md \
+      --strict
+    python3 scripts/production_authorization.py verify \
+      --project-dir . \
+      --report work/production_authorization.json \
+      --strict
+    # status 不是 ready 就停止；聊天里的沉默、文件路径或一次旧同意不能代替 exact response。
+    # 该 JSON 是本地自报记录，不是身份认证、数字签名、真实授权文件或法律意见。
+
+0b. # 可选：如果同一访谈/播客/活动由两台以上设备录制，转写和选片前先统一时间线：
     python3 scripts/multicam_sync.py \
       --reference-media origin/<cam-a>.mp4 \
       --angle origin/<cam-b>.mp4 \
@@ -52,7 +77,7 @@
     # 原片不改；30 分钟以上还要复核头/中/尾，因为 V1 不测相机 clock drift。
     # 详见 docs/prompts/76-multicam-sync.md
 
-0b. # 可选：手持素材有不想要的抖动时，先保留原片并生成稳定工作副本：
+0c. # 可选：手持素材有不想要的抖动时，先保留原片并生成稳定工作副本：
     python3 scripts/video_stabilization.py doctor
     python3 scripts/video_stabilization.py plan origin/<handheld>.mp4 \
       --decision stabilize \
@@ -651,6 +676,7 @@
 - project_resume.md 里的 status / phase / recommended_first_action（方便下次续跑）
 - review_proxy.mp4 路径；审片反馈要引用画面可见时间码，不能把它当发布成片
 - review_dashboard.html 路径，以及 review_dashboard.json 的 review_state / review_items 数量
+- 如触发了高影响动作，给我 production_authorization.json 的 `status`、exact scope 摘要与最新 live verify 状态
 - 如果跑了 source_receipts，给我 source_receipts.html 路径和 `summary.blocking` 数量
 - enrich_plan.json 里 broll/sticker/chapter 总数（确认丰富度足够）
 - content_guard 的输出（必须 ✅ 无违规）
@@ -671,6 +697,7 @@
 - 1.25x 之后必须做响度规范化（render_final 默认会做，不要 --no-loudnorm）
 - `--speech-denoise` 默认关闭；只处理稳态底噪，先用 10–20 秒样片比较 off/light，不能用它代替咳嗽、敲击、混响或多人多麦修复
 - 多机位素材先跑 `multicam_sync.py`；不能只看起点 offset，长片还要检查头/中/尾是否逐渐漂移
+- 外部上传、侵入性重排/删除、付费生成、声音克隆、真人/IP 使用或发布前，production authorization 必须 live verify 为 `ready`；scope 或源字节变化后重做
 - 音乐主导内容可先跑 `beat_sync.py --generate-plan`；固定 BPM fallback 只能作为复核草稿，不能冒充真实节拍检测
 - 有 BGM 的口播成片用 `--bgm-ducking`，并在正常速度试听旁白入口、停顿恢复和片尾；音乐主导视频可不启用
 - 发布前用 audio_master_report 确认 LUFS / true peak / 长静音，不要只凭耳朵判断
@@ -689,6 +716,10 @@
 day<NN>/
 ├── origin/                 # 你提供的原始素材
 ├── work/
+│   ├── production_authorization_scope.json # 确切素材/动作/provider/权利范围
+│   ├── production_authorization_request.json # source hash-bound 复核请求
+│   ├── production_authorization_response.json # 逐 action/right 人工决定
+│   ├── production_authorization.json # live-verified 本地授权 gate
 │   ├── transcript.json
 │   ├── llm_prompt.md       # 喂给 LLM 的 prompt
 │   ├── llm.json            # LLM 返回的 JSON

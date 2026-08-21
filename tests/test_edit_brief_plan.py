@@ -40,6 +40,27 @@ def test_batch_short_brief_routes_highlights_before_batch(tmp_path):
     assert "work/audio_boundary_plan.json" in batch["command"]
 
 
+def test_consent_sensitive_brief_routes_production_authorization_before_upload(tmp_path):
+    source = tmp_path / "origin" / "host.mp4"
+    source.parent.mkdir(parents=True)
+    source.write_text("fake video", encoding="utf-8")
+
+    plan = build_plan(
+        f"先为 {source} 做外部上传授权和声音克隆 consent gate，再上传转写",
+        project_dir=str(tmp_path),
+    )
+
+    ids = [step["id"] for step in plan["steps"]]
+    assert "production_authorization" in ids
+    assert ids.index("production_authorization") < ids.index("transcript")
+    step = next(step for step in plan["steps"] if step["id"] == "production_authorization")
+    assert step["script"] == "production_authorization.py"
+    assert "production_authorization.py prepare" in step["command"]
+    assert "work/production_authorization_scope.json" in step["command"]
+    assert step["gate_category"] == "production_authorization"
+    assert any("self-attested" in note for note in plan["notes"])
+
+
 def test_multimodal_dead_air_brief_prefers_source_bound_and_gate(tmp_path):
     source = tmp_path / "origin" / "talk.mp4"
     source.parent.mkdir(parents=True)

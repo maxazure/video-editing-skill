@@ -56,6 +56,13 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         blocks_when_present=True,
     ),
     ArtifactDef(
+        "production_authorization",
+        "Production Authorization",
+        ("**/production_authorization.json", "**/*_production_authorization.json"),
+        "Run production_authorization.py prepare/audit, then live-verify the exact assets, actions, providers, and rights basis before acting.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "transcript",
         "Transcript",
         ("**/transcript.json", "**/*_transcript.json"),
@@ -712,6 +719,47 @@ def evaluate_category(
 
     status = "ready"
     notes: List[str] = []
+
+    if definition.category == "production_authorization":
+        from production_authorization import verify_report
+
+        for artifact in artifacts:
+            data = _load_json(artifact.path)
+            if data is None:
+                status = "blocked"
+                notes.append(f"unreadable production authorization: {artifact.path}")
+                continue
+            if project_dir is None:
+                status = "blocked"
+                notes.append("project root unavailable for live production authorization verification")
+                continue
+            try:
+                verification = verify_report(artifact.path, project_dir=str(project_dir))
+            except Exception as exc:
+                status = "blocked"
+                notes.append(f"production authorization verification failed: {exc}")
+                continue
+            blocking = _int_at(verification, "summary", "blocking")
+            warnings = _int_at(verification, "summary", "warnings")
+            if blocking:
+                status = "blocked"
+                notes.append(
+                    f"invalid or stale production authorization {artifact.path}: {blocking} blocking item(s)"
+                )
+            elif warnings:
+                status = "warn" if status != "blocked" else status
+                notes.append(
+                    f"production authorization needs review {artifact.path}: {warnings} warning(s)"
+                )
+        return {
+            "category": definition.category,
+            "label": definition.label,
+            "status": status,
+            "artifact_count": len(artifacts),
+            "latest_path": artifacts[0].path,
+            "notes": sorted(set(notes)),
+            "next_action": definition.next_action if status in {"missing", "blocked", "warn"} else "",
+        }
 
     if definition.category in {"approval_receipt", "edit_revision_history"}:
         latest = artifacts[0]

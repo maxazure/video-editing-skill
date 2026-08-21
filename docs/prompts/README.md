@@ -98,6 +98,7 @@
 | 94 | [Subtitle Style Preview 真实画面字幕样式预览](94-subtitle-style-preview.md) | source video → 最终 ASS 预设早/中/晚 JPEG、选择记录与 source/font/style live gate |
 | 95 | [Final Audio Storyboard 锁定 EDL 后重建声音分镜](95-final-audio-storyboard.md) | locked visual EDL + storyboard → final timeline sections、voice ledger、omitted-story decisions 与 live gate |
 | 96 | [Provider Capability Profile 生成供应商能力契约](96-provider-capability.md) | exact provider/surface/model → dated modes、画幅、时长、分辨率、参考上限与 prompt gate |
+| 97 | [Production Authorization 生产授权合同](97-production-authorization.md) | source-bound 外部上传、侵入性剪辑、付费生成、声音克隆、真人/品牌/IP 权利依据与 live gate |
 
 ## 快速上手
 

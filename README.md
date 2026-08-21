@@ -2,7 +2,7 @@
 
 这是一个面向 **口播、教程、访谈、播客切片、录屏演示 / facecam demo** 的 AI 视频剪辑生产线：给它原始口播音频/视频、transcript、B-roll、摄像头小窗或素材目录，它可以把“还没整理的素材”推进到 **可发布的小红书 / 抖音 / 视频号短视频**。
 
-它不是一个单点 FFmpeg 脚本，而是一条完整工作流：**项目启动/素材导入 → 手持防抖 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 锁定视觉 EDL 后重建最终声音分镜 → 渲染前预检 / 真实画面字幕样式选择 → 单次编码渲染 → 质检 / 最终成片唇形复核 → 多平台导出 / 目标大小交付编码 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
+它不是一个单点 FFmpeg 脚本，而是一条完整工作流：**项目启动/素材导入 → 生产授权 → 手持防抖 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 锁定视觉 EDL 后重建最终声音分镜 → 渲染前预检 / 真实画面字幕样式选择 → 单次编码渲染 → 质检 / 最终成片唇形复核 → 多平台导出 / 目标大小交付编码 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
 
 ## 适合做什么
 
@@ -16,6 +16,7 @@
 - **上传大小限制变成硬门禁**：`delivery_encode.py` 依据源片时长计算两遍 H.264/AAC 码率，绑定源与输出 SHA-256；完整解码、音视频契约或硬大小上限任一失败都不会提升成交付件。
 - **专业声画错位不再靠手写 FFmpeg**：`audio_transition.py` 对明确边界规划 J-cut/L-cut，验证真实音频 handle、config/transcript/source hash 和 compiled timing；`render_final.py` 在同一次编码中完成画面硬切、音频 pre-lap/overhang、字幕、overlay 与 BGM。
 - **事实型内容有 proof deck**：新闻、数据、产品事实或来源页截图可用 `source_receipts.py` 生成 URL/截图复核包，作为发布前 gate。
+- **高影响动作先绑定确切授权范围**：`production_authorization.py` 把外部上传、侵入性重排/删除、付费生成、声音克隆、真人/未成年人/公众人物/品牌/IP 权利和发布决定绑定到具体素材 SHA-256、用途与 provider/surface；scope 或源字节变化会让旧授权失效。
 - **最终审批绑定到具体文件字节**：`approval_receipt.py` 为人工看过的视频、封面、文案、字幕和 QA 报告记录 SHA-256；任何重渲染、替换、删除或 symlink 漂移都会让旧审批过期并阻塞发布。
 - **ASR 语义校稿不再只看单句**：`semantic_transcript_review.py` 为每条字幕附带全篇前后文，验证完整覆盖、源 transcript hash 和最小字符补丁；模型只能提建议，独立人工 choices 才能写 reviewed transcript。
 - **上游剪辑配置可以安全撤销/重做**：`edit_revision.py` 把 `render_config` / `enrich_plan` 等文本 artifact 的完整改动绑定到基础和依赖 SHA-256；独立审批后成组写入，外部漂移时拒绝 undo/redo 并阻塞 manifest。
@@ -127,6 +128,8 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    │
    ├─→ project_bootstrap.py     原始素材目录 → origin/work/output/verify/edit + source inventory
    ├─→ edit_brief_plan.py       用户一句话需求 → 本地脚本 runbook / commands / gates
+   ├─→ production_authorization.py
+   │                            确切素材/动作/provider/权利依据 → 显式授权 + live gate
    ├─→ transcribe.py            转写 + 词级时间戳 + 口误标记
    │                            (mlx-whisper / faster-whisper / openai-whisper)
    ├─→ semantic_transcript_review.py
@@ -570,6 +573,37 @@ python3 scripts/edit_brief_plan.py \
 ```
 
 它会识别 `origin/interview.mp4` 这类源素材路径、目标平台、手持防抖、目标脚本对齐、多 take、长视频拆条、批量短视频、字幕、B-roll、BGM、去停顿、J-cut/L-cut、生成素材、PIP、调色、QA、发布包等信号，并把它们映射到已有脚本，例如 `video_stabilization.py`、`script_alignment.py`、`highlight_picker.py`、`shorts_batch.py`、`jump_cut.py`、`audio_transition.py`、`auto_enrich.py`、`render_final.py`、`render_qa.py` 和 `publish_package.py`。`pipeline_manifest.py` 会发现 `edit_brief_plan.json`；当 `summary.blocking > 0`（例如 brief 为空或显式 source 缺失）时会作为 blocker，也可以用 `--require edit_brief_plan` 把需求路由作为 analysis gate。
+
+### 🛂 Production Authorization — 确切范围生产授权
+[`scripts/production_authorization.py`](scripts/production_authorization.py) · [详细文档](docs/prompts/97-production-authorization.md)
+
+涉及外部上传、改变原始叙事顺序/删除内容、付费生成、声音克隆、真人/未成年人/公众人物/品牌/IP 或直接发布时，先把动作写成 `production_authorization_scope.v1`。每项包含具体项目内素材、用途、exact provider/surface、潜在 cost/quota 和权利对象；脚本不会从聊天、公开素材或含糊的“继续”推断同意。
+
+```bash
+python3 scripts/production_authorization.py prepare \
+  --project-dir . \
+  --scope work/production_authorization_scope.json \
+  --output work/production_authorization_request.json \
+  --markdown work/production_authorization_request.md \
+  --response-template work/production_authorization_response.json \
+  --strict
+
+# 逐项填写 response 的 approve/reject、note、rights basis 和 evidence_note 后：
+python3 scripts/production_authorization.py audit \
+  --project-dir . \
+  --request work/production_authorization_request.json \
+  --response work/production_authorization_response.json \
+  --output work/production_authorization.json \
+  --markdown work/production_authorization.md \
+  --strict
+
+python3 scripts/production_authorization.py verify \
+  --project-dir . \
+  --report work/production_authorization.json \
+  --strict
+```
+
+`prepare` 绑定 scope 与源素材的路径、大小、SHA-256；`audit` 要求所有 action/right 完整决定，reject 或缺决定都会阻塞；`verify` 重读 scope、源素材、request、response 并重算报告。`pipeline_manifest.py --require production_authorization --strict` 可把它变成正式 gate。它只保存本地、自报的复核记录，不执行任何获批动作，也不是身份认证、数字签名、法律意见或真实授权文件的替代品。
 
 ### 👁️ Video Understanding — 抽样帧 + 可选 YOLO 检测
 [`scripts/video_understanding.py`](scripts/video_understanding.py) · [详细文档](docs/prompts/47-video-understanding.md)
@@ -2857,6 +2891,7 @@ pytest tests/test_project_bootstrap.py -v   # 项目启动与 source inventory
 pytest tests/test_transcript_review.py -v  # 文本/HTML 同步视频 transcript 校稿回路
 pytest tests/test_semantic_transcript_review.py -v # 全篇上下文审校 / 最小补丁 / choices gate
 pytest tests/test_edit_brief_plan.py -v     # 自然语言剪辑需求 → 本地 runbook
+pytest tests/test_production_authorization.py -v # source-bound 动作/provider/权利授权 + live gate
 pytest tests/test_hook_variants.py -v       # 前三秒 hook 批量角度 + 风险检查
 pytest tests/test_rough_cut.py -v           # ASR 粗剪：口头禅/重复句 cut list
 pytest tests/test_multimodal_dead_air.py -v # 静音 AND 静帧死区计划 / 安全渲染 / live verify
@@ -2901,6 +2936,22 @@ pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 pytest tests/test_review_dashboard.py -v    # 静态人工复核面板 + gate queue
 pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 gate
 ```
+
+### 2026-08-22 自动化升级记录（Source-bound Production Authorization）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`CYYTW/short-video-editing-skills`](https://github.com/CYYTW/short-video-editing-skills/blob/main/skills/safe-short-video-editor/SKILL.md) 及其 [`security-and-verification.md`](https://github.com/CYYTW/short-video-editing-skills/blob/main/skills/safe-video-editing-setup/references/security-and-verification.md) | 外部上传按文件和 provider 单独确认；B-roll、音乐、重排等改变先审策略；声音克隆要求说话人本人或明确许可，不能把一次同意扩散成后续同意 | 用单一 source-bound scope 覆盖确切 action/provider/purpose/assets/cost/right；不接入其交互式编辑器或任何云上传 |
+| [`darrenli6/JJKoubo`](https://github.com/darrenli6/JJKoubo/blob/main/kbcut/SKILL.md) | hook 重排前要明确授权，空回复、文件路径或沉默不能算同意；开始执行前给出确定的 kickoff scope | response 必须逐 action `approve/reject + note`；缺行、空决定或 reject 均 fail closed，聊天上下文不会自动填充授权 |
+| [`cablate/ai-video-generation-skills`](https://github.com/cablate/ai-video-generation-skills/blob/main/skills/video-generation/SKILL.md) 及其 [`studio-production-workflow.md`](https://github.com/cablate/ai-video-generation-skills/blob/main/skills/video-generation/references/studio-production-workflow.md) | 真人、未成年人、公众人物、品牌/IP、来源和发布权是相互独立的决策；素材 provenance 不等于许可，创意拆解前先收集 rights/restrictions/approval owner | rights item 与 action decision 分开，限制 basis 集合并要求 evidence note；明确本地记录不是身份认证、数字签名或法律结论 |
+
+新增/调整能力：新增 [`scripts/production_authorization.py`](scripts/production_authorization.py)、[`tests/test_production_authorization.py`](tests/test_production_authorization.py) 和 [`docs/prompts/97-production-authorization.md`](docs/prompts/97-production-authorization.md)，提供 `prepare → audit → verify`。`production_authorization_scope.v1` 支持 `external_upload / editorial_reorder / content_removal / creative_addition / paid_generation / voice_clone / publish` 七类动作，以及真人、未成年人、公众人物、声音克隆、品牌/商标和受保护角色六类 rights item；provider 动作必须命名 exact surface，可能消耗额度的动作必须说明 cost/quota，声音克隆必须另有 voice rights。request 绑定项目内 regular file 的相对路径、大小与 SHA-256；最终 report 绑定 scope/source/request/response 和完整逐项决定，任何字节、用途、provider、rights subject、response 或派生状态漂移都会在 live verify 中阻塞。`pipeline_manifest.py` 新增存在即 live verify、可 `--require production_authorization` 的 gate；`edit_brief_plan.py` 会从授权、外部上传、声音克隆、真人/未成年人/公众人物/品牌/IP 等 brief 信号在转写前路由该步骤。SKILL、daily workflow、提示词索引和 README 使用说明已同步。
+
+使用方式：先按 [Production Authorization 文档](docs/prompts/97-production-authorization.md) 写 `work/production_authorization_scope.json`；运行 `prepare` 生成 request 与 response template；由实际复核者逐项填写 `approve/reject`、action note、rights basis 和 evidence note；依次执行 `audit --strict`、`verify --strict`，并在高影响动作前运行 `pipeline_manifest.py --require production_authorization --strict`。scope/provider/用途/素材或权利场景改变后必须重新 prepare，不能复用旧报告。
+
+验证结果：定向 `.venv/bin/python -m pytest tests/test_production_authorization.py tests/test_edit_brief_plan.py tests/test_pipeline_manifest.py -q` 通过 **120 passed in 1.86s**；最终全量 `.venv/bin/python -m pytest tests -q` 通过 **947 passed in 19.08s**。覆盖 ready lifecycle、exact provider/destination、未知素材、声音克隆权利、未成年人 basis/evidence、reject/缺决定、scope/source/response/report drift、禁止 `--force` 通过原路径或 hard link 覆盖 bound source、CLI round trip、自然语言路由与 manifest live gate；`.venv/bin/python -m compileall -q scripts tests`、四组新 CLI help、edit-brief help、manifest category、Skill `quick_validate.py` 与 `git diff --check` 均通过。本轮没有上传任何素材、调用生成/声音 provider、消耗 credits、改动媒体字节或执行发布。
 
 ### 2026-08-21 自动化升级记录（Dated Provider Capability Profiles）
 
@@ -3595,6 +3646,7 @@ pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 g
 | **92** | **[Reference Edit Rhythm](docs/prompts/92-reference-edit-rhythm.md)** | **量化参考片 hard-cut 结构并对照成片，绑定 contact sheets 与 live gate** |
 | **95** | **[Final Audio Storyboard](docs/prompts/95-final-audio-storyboard.md)** | **视觉 EDL 锁定后按最终时间线重建声音分镜、voice ledger 和 live gate** |
 | **96** | **[Provider Capability Profile](docs/prompts/96-provider-capability.md)** | **带日期核验 provider/surface/model 的 mode、画幅、时长、分辨率和参考上限** |
+| **97** | **[Production Authorization](docs/prompts/97-production-authorization.md)** | **把外部上传、侵入性剪辑、付费生成、声音克隆、真人/IP 与发布授权绑定到确切 scope** |
 | **43** | **[Audio Cue Sheet](docs/prompts/43-audio-cue-sheet.md)** | **规划 BGM/SFX 和生成审批** |
 | **45** | **[Video Prompt Pack](docs/prompts/45-video-prompt-pack.md)** | **视频生成提示词包 + paid approval gate** |
 | **46** | **[Generation Task Log](docs/prompts/46-generation-task-log.md)** | **跟踪 submit_id、轮询、下载和本地落盘** |
@@ -3643,6 +3695,7 @@ scripts/
 ├── utils.py                    平台/字体/编码器自检
 ├── project_bootstrap.py        项目启动 + source inventory             [V3]
 ├── edit_brief_plan.py          自然语言剪辑需求 → 本地 runbook          [V3]
+├── production_authorization.py 确切动作/provider/素材/权利依据授权 gate  [V3]
 ├── _internal_text_guard.py     内部 token 拦截器
 ├── transcribe.py               Whisper 转写
 ├── semantic_transcript_review.py 全篇上下文语义审校 / 人工 choices gate [V3]

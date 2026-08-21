@@ -43,6 +43,39 @@ SIGNAL_KEYWORDS: Mapping[str, Sequence[str]] = {
         "folder",
         "directory",
     ),
+    "production_authorization": (
+        "production authorization",
+        "consent gate",
+        "upload consent",
+        "external upload approval",
+        "editorial reorder approval",
+        "content removal approval",
+        "paid generation approval",
+        "direct publish approval",
+        "voice clone",
+        "voice cloning",
+        "real person consent",
+        "minor consent",
+        "public figure permission",
+        "brand permission",
+        "ip permission",
+        "生产授权",
+        "授权合同",
+        "生成前授权",
+        "外部上传授权",
+        "重排授权",
+        "删减授权",
+        "付费生成授权",
+        "直接发布授权",
+        "声音克隆",
+        "克隆声音",
+        "真人授权",
+        "肖像授权",
+        "未成年人授权",
+        "公众人物授权",
+        "品牌授权",
+        "角色版权授权",
+    ),
     "transcript": ("transcript", "whisper", "转写", "转录", "字幕", "caption", "subtitles", "口播", "voiceover"),
     "subtitle_style_preview": (
         "subtitle style preview",
@@ -324,6 +357,7 @@ SIGNAL_KEYWORDS: Mapping[str, Sequence[str]] = {
 
 SIGNAL_LABELS: Mapping[str, str] = {
     "source_ingest": "素材导入 / 项目启动",
+    "production_authorization": "外部上传 / 侵入性剪辑 / 生成 / 真人与 IP 生产授权",
     "transcript": "转写 / 字幕时间码",
     "semantic_review": "全篇上下文语义校稿",
     "multi_take": "多 take 阅读视图",
@@ -585,6 +619,47 @@ def build_plan(
                 gate_category="source_inventory",
                 required=False,
             ),
+        )
+
+    if "production_authorization" in ids:
+        _add_step(
+            steps,
+            seen,
+            _step(
+                "production_authorization",
+                phase="ingest",
+                script="production_authorization.py",
+                label="Bind explicit production scope and permissions before acting",
+                reason="The brief mentions external upload, invasive editorial changes, paid generation, voice cloning, publishing, or real-person/brand/IP permission.",
+                command=shell(
+                    [
+                        python_bin,
+                        "scripts/production_authorization.py",
+                        "prepare",
+                        "--project-dir",
+                        project_dir,
+                        "--scope",
+                        "work/production_authorization_scope.json",
+                        "--output",
+                        "work/production_authorization_request.json",
+                        "--markdown",
+                        "work/production_authorization_request.md",
+                        "--response-template",
+                        "work/production_authorization_response.json",
+                        "--strict",
+                    ]
+                ),
+                outputs=[
+                    "work/production_authorization_request.json",
+                    "work/production_authorization_response.json",
+                    "work/production_authorization.json",
+                ],
+                gate_category="production_authorization",
+            ),
+        )
+        notes.append(
+            "Write production_authorization_scope.json with exact assets/actions/providers/purposes/cost notes and rights subjects first. "
+            "After explicit decisions, run production_authorization.py audit and verify; labels and notes are self-attested, not legal proof."
         )
 
     if needs_transcript:

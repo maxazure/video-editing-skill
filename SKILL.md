@@ -15,6 +15,8 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    │
    ├─→ project_bootstrap.py     原始素材目录 → source inventory / project.md
    ├─→ edit_brief_plan.py       用户一句话需求 → 本地脚本 runbook / gates
+   ├─→ production_authorization.py
+   │                            确切素材/动作/provider/权利依据 → 显式授权 + live gate
    ├─→ transcribe.py            转写 + 词级时间戳 + 口误标记
    ├─→ semantic_transcript_review.py
    │                            全篇前后文审校包 / 最小补丁验证 / 人工 choices gate
@@ -110,6 +112,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 |---|---|---|
 | `project_bootstrap.py` | 原始素材目录 → 项目结构 / source inventory / project.md | `--source raw_dir` `--project-dir work/day61` `--mode copy|hardlink` `--strict` |
 | `edit_brief_plan.py` | 自然语言剪辑需求 → 本地脚本 runbook / 命令 / manifest gate | `--brief` `--brief-file` `--source-media` `--platform` `--markdown` `--strict` |
+| `production_authorization.py` | 外部上传、侵入性剪辑、付费生成、声音克隆、真人/IP 和发布 → source-bound 授权 gate | `prepare --scope --response-template` / `audit --request --response --strict` / `verify --report --strict` |
 | `transcript_review.py` | transcript → 文本或本地同步媒体 HTML 校稿 → reviewed transcript | `export` / `html --video --max-cps` / `apply --review --output` |
 | `semantic_transcript_review.py` | transcript → 前后文审校包 / 最小补丁审计 / 人工 choices / reviewed transcript | `prepare` / `audit --strict` / `apply --choices` |
 | `_internal_text_guard.py` | 拦截内部 token 进画面 | 内部模块，render_final 自动调 |
@@ -444,6 +447,36 @@ python3 scripts/pipeline_manifest.py \
   --require source_inventory \
   --strict
 ```
+
+### Phase 0b: Production Authorization（按确切范围授权）
+
+当流程涉及把素材交给外部服务、改变原始叙事顺序/删减范围、消耗生成额度、克隆真人声音、使用真人/未成年人/公众人物/品牌/IP，或直接发布时，在动作发生前先写 `production_authorization_scope.v1`。scope 必须命名项目内素材、具体动作、用途、exact provider/surface、可能的 cost/quota，以及适用的 rights subject；完整 schema 见 [Production Authorization](./docs/prompts/97-production-authorization.md)。
+
+```bash
+python3 scripts/production_authorization.py prepare \
+  --project-dir . \
+  --scope work/production_authorization_scope.json \
+  --output work/production_authorization_request.json \
+  --markdown work/production_authorization_request.md \
+  --response-template work/production_authorization_response.json \
+  --strict
+
+# 逐项填写 approve/reject、note、rights basis 与 evidence_note 后：
+python3 scripts/production_authorization.py audit \
+  --project-dir . \
+  --request work/production_authorization_request.json \
+  --response work/production_authorization_response.json \
+  --output work/production_authorization.json \
+  --markdown work/production_authorization.md \
+  --strict
+
+python3 scripts/production_authorization.py verify \
+  --project-dir . \
+  --report work/production_authorization.json \
+  --strict
+```
+
+`prepare` 绑定 scope 与每个 source asset 的相对路径、大小和 SHA-256；`audit` 要求动作与权利项完整逐项决定；`verify` 现场重读 scope、素材、request、response 并重算 report。任一 provider、用途、成本说明、权利对象、素材字节或决定变化都会让旧报告失效。该 artifact 只记录本地、自报的复核范围，不执行上传/剪辑/生成/发布，也不替代身份认证、数字签名、真实授权文件或法律意见。
 
 ### Phase 0: Media Library Setup（素材库初始化）
 
