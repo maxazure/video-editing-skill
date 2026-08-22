@@ -38,6 +38,22 @@
      --platform xhs
    # 详见 docs/prompts/64-edit-brief-plan.md
 
+0s. # 可选：同一个人/品牌需要跨项目维持风格时，先建可移植剪辑风格档案：
+    python3 scripts/edit_style_profile.py template \
+      --output work/edit_style_profile_spec.json
+    # 把占位值改成已确认的创意方向、节奏、渲染/文案默认值和 approval basis 后：
+    python3 scripts/edit_style_profile.py create \
+      --spec work/edit_style_profile_spec.json \
+      --output work/edit_style_profile.json \
+      --markdown work/edit_style_profile.md \
+      --strict
+    python3 scripts/edit_style_profile.py verify \
+      --profile work/edit_style_profile.json \
+      --strict
+    # 下方第 6/12 步仅在生成了该文件时传 --style-profile。
+    # 它只填充缺失默认值，不覆盖项目 config/CLI；digest 不是签名或权利证明。
+    # 详见 docs/prompts/98-edit-style-profile.md
+
 0a. # 条件 gate：涉及外部上传、重排/删除、付费生成、声音克隆、真人/未成年人/公众人物/品牌/IP 或发布时，先授权：
     # 先按 docs/prompts/97-production-authorization.md 写 work/production_authorization_scope.json，
     # 命名确切素材、动作、用途、provider/surface、cost/quota 和 rights subject。
@@ -438,6 +454,7 @@
 
 6. python3 scripts/render_final.py \
      --config work/render_config.json \
+     --style-profile work/edit_style_profile.json \
      --enrich-plan work/enrich_plan.json \
      --profile tech_pro \
      --primary-speed 1.25 \
@@ -600,6 +617,7 @@
 12. python3 scripts/generate_caption.py \
      --script work/clean_script.md \
      --profile tech_pro \
+     --style-profile work/edit_style_profile.json \
      --output output/day<NN>_caption.json
 
 12b. # 为同一条视频生成 3 套封面并先看 feed-size 预览：
@@ -608,6 +626,7 @@
        --title "<4-8字封面文字>" \
        --subtitle "<可选副标题>" \
        --caption output/day<NN>_caption.json \
+       --style-profile work/edit_style_profile.json \
        --platform xhs \
        --output-dir output/covers \
        --render \
@@ -698,6 +717,7 @@
 - `--speech-denoise` 默认关闭；只处理稳态底噪，先用 10–20 秒样片比较 off/light，不能用它代替咳嗽、敲击、混响或多人多麦修复
 - 多机位素材先跑 `multicam_sync.py`；不能只看起点 offset，长片还要检查头/中/尾是否逐渐漂移
 - 外部上传、侵入性重排/删除、付费生成、声音克隆、真人/IP 使用或发布前，production authorization 必须 live verify 为 `ready`；scope 或源字节变化后重做
+- 剪辑风格档案是跨项目默认值，不是项目 brief 或时间线 recipe；只在文件存在且 `verify --strict` 通过时传 `--style-profile`
 - 音乐主导内容可先跑 `beat_sync.py --generate-plan`；固定 BPM fallback 只能作为复核草稿，不能冒充真实节拍检测
 - 有 BGM 的口播成片用 `--bgm-ducking`，并在正常速度试听旁白入口、停顿恢复和片尾；音乐主导视频可不启用
 - 发布前用 audio_master_report 确认 LUFS / true peak / 长静音，不要只凭耳朵判断
@@ -720,6 +740,8 @@ day<NN>/
 │   ├── production_authorization_request.json # source hash-bound 复核请求
 │   ├── production_authorization_response.json # 逐 action/right 人工决定
 │   ├── production_authorization.json # live-verified 本地授权 gate
+│   ├── edit_style_profile_spec.json # 可选：个人/品牌剪辑风格草案
+│   ├── edit_style_profile.json # 可选：无本地路径的已验证风格档案
 │   ├── transcript.json
 │   ├── llm_prompt.md       # 喂给 LLM 的 prompt
 │   ├── llm.json            # LLM 返回的 JSON

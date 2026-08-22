@@ -251,6 +251,30 @@ def test_portable_recipe_briefs_route_export_and_replay(tmp_path):
     assert any("human preview" in note for note in replay_plan["notes"])
 
 
+def test_creator_edit_style_profile_routes_before_render_and_caption(tmp_path):
+    source = tmp_path / "talk.mp4"
+    source.write_text("fake video", encoding="utf-8")
+
+    plan = build_plan(
+        f"按我的个人剪辑风格处理 {source}，建立剪辑风格档案，渲染后生成发布文案",
+        project_dir=str(tmp_path),
+    )
+
+    ids = [step["id"] for step in plan["steps"]]
+    assert ids.index("edit_style_profile_template") < ids.index("edit_style_profile")
+    assert ids.index("edit_style_profile") < ids.index("master_video")
+    template_step = next(step for step in plan["steps"] if step["id"] == "edit_style_profile_template")
+    assert "edit_style_profile.py template" in template_step["command"]
+    style_step = next(step for step in plan["steps"] if step["id"] == "edit_style_profile")
+    assert "edit_style_profile.py create" in style_step["command"]
+    assert style_step["gate_category"] == "edit_style_profile"
+    render = next(step for step in plan["steps"] if step["id"] == "master_video")
+    caption = next(step for step in plan["steps"] if step["id"] == "caption")
+    assert "--style-profile work/edit_style_profile.json" in render["command"]
+    assert "--style-profile work/edit_style_profile.json" in caption["command"]
+    assert any("only fills missing defaults" in note for note in plan["notes"])
+
+
 def test_speed_ramp_brief_routes_source_bound_plan(tmp_path):
     source = tmp_path / "action.mp4"
     source.write_text("fake video", encoding="utf-8")

@@ -333,6 +333,18 @@ SIGNAL_KEYWORDS: Mapping[str, Sequence[str]] = {
         "回退剪辑",
         "可逆修改",
     ),
+    "edit_style_profile": (
+        "edit style profile",
+        "editing taste profile",
+        "creator taste",
+        "match my editing style",
+        "personal editing style",
+        "剪辑风格档案",
+        "个人剪辑风格",
+        "创作者剪辑风格",
+        "品牌剪辑风格",
+        "按我的风格剪",
+    ),
     "edit_recipe_export": (
         "export edit recipe",
         "save edit as template",
@@ -399,6 +411,7 @@ SIGNAL_LABELS: Mapping[str, str] = {
     "nle_handoff": "NLE 交接",
     "review_dashboard": "人工复核面板",
     "edit_revision": "剪辑 artifact 可逆修订",
+    "edit_style_profile": "创作者自有剪辑风格档案",
     "edit_recipe_export": "导出可移植剪辑配方",
     "edit_recipe_replay": "绑定新素材并回放剪辑配方",
 }
@@ -558,7 +571,7 @@ def build_plan(
 
     if source_media and not Path(source_media).expanduser().exists():
         blockers.append(f"source media not found: {source_media}")
-    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy", "reference_edit_rhythm", "lip_sync_review", "subtitle_style_preview", "multimodal_dead_air", "video_stabilization", "speed_ramp", "hdr_sdr", "delivery_encode"}):
+    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy", "reference_edit_rhythm", "lip_sync_review", "subtitle_style_preview", "multimodal_dead_air", "video_stabilization", "speed_ramp", "hdr_sdr", "delivery_encode", "edit_style_profile"}):
         warnings.append("source media was not provided; commands use <source_media> placeholders")
 
     if transcript and not Path(transcript).expanduser().exists():
@@ -588,7 +601,7 @@ def build_plan(
             }
         )
     )
-    wants_render = bool(ids.intersection({"render", "publish", "target_script", "long_to_short", "batch_shorts", "reference_edit_rhythm", "subtitle_style_preview", "multimodal_dead_air", "cleanup_silence", "cleanup_words", "broll", "screen_focus", "pip", "color_grade", "edit_recipe_replay"}))
+    wants_render = bool(ids.intersection({"render", "publish", "target_script", "long_to_short", "batch_shorts", "reference_edit_rhythm", "subtitle_style_preview", "multimodal_dead_air", "cleanup_silence", "cleanup_words", "broll", "screen_focus", "pip", "color_grade", "edit_recipe_replay", "edit_style_profile"}))
     wants_clean_script = bool(
         ids.intersection({"story_rewrite", "hook", "content_guard", "source_receipts", "broll", "generated_assets", "publish"})
         and "target_script" not in ids
@@ -1428,6 +1441,63 @@ def build_plan(
             "Use undo/redo only while status reports current."
         )
 
+    if "edit_style_profile" in ids:
+        _add_step(
+            steps,
+            seen,
+            _step(
+                "edit_style_profile_template",
+                phase="plan",
+                script="edit_style_profile.py",
+                label="Scaffold the creator-owned edit style spec",
+                reason="The reusable profile needs an explicit, editable creative-direction source before it can be validated.",
+                command=shell(
+                    [
+                        python_bin,
+                        "scripts/edit_style_profile.py",
+                        "template",
+                        "--output",
+                        "work/edit_style_profile_spec.json",
+                    ]
+                ),
+                outputs=["work/edit_style_profile_spec.json"],
+            ),
+        )
+        _add_step(
+            steps,
+            seen,
+            _step(
+                "edit_style_profile",
+                phase="plan",
+                script="edit_style_profile.py",
+                label="Create and verify a creator-owned edit style profile",
+                reason="The brief asks for a reusable creative direction and default editing grammar across projects.",
+                command=shell(
+                    [
+                        python_bin,
+                        "scripts/edit_style_profile.py",
+                        "create",
+                        "--spec",
+                        "work/edit_style_profile_spec.json",
+                        "--output",
+                        "work/edit_style_profile.json",
+                        "--markdown",
+                        "work/edit_style_profile.md",
+                        "--strict",
+                    ]
+                ),
+                outputs=[
+                    "work/edit_style_profile.json",
+                    "work/edit_style_profile.md",
+                ],
+                gate_category="edit_style_profile",
+            ),
+        )
+        notes.append(
+            "Start with edit_style_profile.py template, then replace the example direction with the creator's actual decisions. "
+            "The profile only fills missing defaults; project config and CLI flags remain authoritative."
+        )
+
     if "edit_recipe_export" in ids:
         _add_step(
             steps,
@@ -1669,6 +1739,8 @@ def build_plan(
             render_command.extend(["--audio-transition-plan", "work/audio_transition_plan.json"])
         if "subtitle_style_preview" in ids:
             render_command.extend(["--subtitle-style", "<selected_style>"])
+        if "edit_style_profile" in ids:
+            render_command.extend(["--style-profile", "work/edit_style_profile.json"])
         _add_step(
             steps,
             seen,
@@ -1982,7 +2054,23 @@ def build_plan(
                 script="generate_caption.py",
                 label="Generate title, body copy, tags, and post timing",
                 reason="The brief asks for publish copy, title, tags, or upload package.",
-                command=shell([python_bin, "scripts/generate_caption.py", "--script", clean_script, "--profile", "tech_pro", "--output", "work/caption.json"]),
+                command=shell(
+                    [
+                        python_bin,
+                        "scripts/generate_caption.py",
+                        "--script",
+                        clean_script,
+                        "--profile",
+                        "tech_pro",
+                        *(
+                            ["--style-profile", "work/edit_style_profile.json"]
+                            if "edit_style_profile" in ids
+                            else []
+                        ),
+                        "--output",
+                        "work/caption.json",
+                    ]
+                ),
                 outputs=["work/caption.json"],
                 gate_category="caption",
             ),

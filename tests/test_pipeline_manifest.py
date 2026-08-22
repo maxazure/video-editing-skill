@@ -10,6 +10,7 @@ from pipeline_manifest import build_manifest, emit_markdown  # noqa: E402
 from approval_receipt import create_receipt  # noqa: E402
 from edit_revision import APPROVAL_VERSION, apply_revision, audit_proposal, prepare_proposal  # noqa: E402
 from edit_recipe import export_recipe  # noqa: E402
+from edit_style_profile import create_profile, template_spec  # noqa: E402
 import delivery_encode  # noqa: E402
 import generated_clip_review  # noqa: E402
 import generated_sequence_review  # noqa: E402
@@ -599,6 +600,41 @@ def test_edit_recipe_is_live_verified_when_present(tmp_path):
 
     gate = next(g for g in manifest["gates"] if g["category"] == "edit_recipe")
     assert gate["status"] == "ready"
+
+
+def test_edit_style_profile_is_live_verified_and_can_be_required(tmp_path):
+    _publish_ready_project(tmp_path)
+    spec = template_spec()
+    spec["name"] = "jay-tech"
+    spec["approval"]["approved_by"] = "Jay"
+    spec["approval"]["approved_at"] = datetime.now(timezone.utc).date().isoformat()
+    profile_path = tmp_path / "work" / "edit_style_profile.json"
+    _write(profile_path, create_profile(spec))
+
+    current = build_manifest(
+        str(tmp_path),
+        target_stage="publish_ready",
+        required=["edit_style_profile"],
+    )
+    gate = next(g for g in current["gates"] if g["category"] == "edit_style_profile")
+    assert gate["status"] == "ready"
+    assert gate["required"] is True
+
+    profile = json.loads(profile_path.read_text(encoding="utf-8"))
+    profile["render_defaults"]["subtitle_style"] = "neon"
+    _write(profile_path, profile)
+    stale = build_manifest(str(tmp_path), target_stage="publish_ready")
+    gate = next(g for g in stale["gates"] if g["category"] == "edit_style_profile")
+    assert gate["status"] == "blocked"
+    assert "edit_style_profile" in stale["blocked_gates"]
+
+    profile_path.unlink()
+    missing = build_manifest(
+        str(tmp_path),
+        target_stage="publish_ready",
+        required=["edit_style_profile"],
+    )
+    assert "edit_style_profile" in missing["missing_required"]
 
 
 def test_tampered_edit_recipe_blocks_manifest_even_if_summary_is_ready(tmp_path):

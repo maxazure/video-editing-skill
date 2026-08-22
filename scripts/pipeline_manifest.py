@@ -298,6 +298,13 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         "Create render_config.json or export one from highlight_picker.py.",
     ),
     ArtifactDef(
+        "edit_style_profile",
+        "Edit Style Profile",
+        ("**/edit_style_profile.json", "**/*_edit_style_profile.json"),
+        "Run edit_style_profile.py verify; repair schema, approval, evidence, or canonical profile-id drift before reuse.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "edit_recipe",
         "Portable Edit Recipe",
         ("**/edit_recipe.json", "**/*_edit_recipe.json"),
@@ -806,6 +813,38 @@ def evaluate_category(
             "status": status,
             "artifact_count": len(artifacts),
             "latest_path": latest.path,
+            "notes": sorted(set(notes)),
+            "next_action": definition.next_action if status in {"missing", "blocked", "warn"} else "",
+        }
+
+    if definition.category == "edit_style_profile":
+        from edit_style_profile import verify_profile
+
+        for artifact in artifacts:
+            data = _load_json(artifact.path)
+            if data is None:
+                status = "blocked"
+                notes.append(f"unreadable edit style profile: {artifact.path}")
+                continue
+            verification = verify_profile(data)
+            blocking = _int_at(verification, "summary", "blocking")
+            warnings = _int_at(verification, "summary", "warnings")
+            if blocking:
+                status = "blocked"
+                notes.append(
+                    f"invalid edit style profile {artifact.path}: {blocking} blocking item(s)"
+                )
+            elif warnings:
+                status = "warn" if status != "blocked" else status
+                notes.append(
+                    f"edit style profile needs review {artifact.path}: {warnings} warning(s)"
+                )
+        return {
+            "category": definition.category,
+            "label": definition.label,
+            "status": status,
+            "artifact_count": len(artifacts),
+            "latest_path": artifacts[0].path,
             "notes": sorted(set(notes)),
             "next_action": definition.next_action if status in {"missing", "blocked", "warn"} else "",
         }

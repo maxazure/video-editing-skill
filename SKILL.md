@@ -1,6 +1,6 @@
 ---
 name: video-editing
-description: "Xiaohongshu/RED-tuned short-form video workflow for voice-over, talking-head, tutorials, interviews, podcasts, screen recordings, B-roll, captions, and generated assets. Covers edit routing, transcription, semantic review, multi-take/audio sync/stabilization/dead-air cleanup, highlights/shorts, story and source gates, enrichment and video-generation planning, generated clip/sequence review, locked-EDL final audio storyboards, color/speed/J-L cuts, reversible revisions and recipes, preflight/render/QA, subtitles, CapCut, platform/size exports, covers, captions, publish packages, dashboards, handoff formats, and Remotion."
+description: "Xiaohongshu/RED-tuned short-form video workflow for voice-over, talking-head, tutorials, interviews, podcasts, screen recordings, B-roll, captions, and generated assets. Covers edit routing, creator-owned edit-style profiles, transcription, semantic review, multi-take/audio sync/stabilization/dead-air cleanup, highlights/shorts, story and source gates, enrichment and video-generation planning, generated clip/sequence review, locked-EDL final audio storyboards, color/speed/J-L cuts, reversible revisions and recipes, preflight/render/QA, subtitles, CapCut, platform/size exports, covers, captions, publish packages, dashboards, handoff formats, and Remotion."
 metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
 ---
 
@@ -15,6 +15,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    │
    ├─→ project_bootstrap.py     原始素材目录 → source inventory / project.md
    ├─→ edit_brief_plan.py       用户一句话需求 → 本地脚本 runbook / gates
+   ├─→ edit_style_profile.py    个人/品牌创意方向、节奏与渲染/文案默认值 → 可移植 profile
    ├─→ production_authorization.py
    │                            确切素材/动作/provider/权利依据 → 显式授权 + live gate
    ├─→ transcribe.py            转写 + 词级时间戳 + 口误标记
@@ -112,6 +113,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 |---|---|---|
 | `project_bootstrap.py` | 原始素材目录 → 项目结构 / source inventory / project.md | `--source raw_dir` `--project-dir work/day61` `--mode copy|hardlink` `--strict` |
 | `edit_brief_plan.py` | 自然语言剪辑需求 → 本地脚本 runbook / 命令 / manifest gate | `--brief` `--brief-file` `--source-media` `--platform` `--markdown` `--strict` |
+| `edit_style_profile.py` | 个人/品牌创意方向、剪辑节奏、渲染/文案默认值 → 无路径可移植 profile / digest 验证 / defaults-only 合并 | `template` / `create --spec` / `verify --profile --strict` / `apply --config --receipt` |
 | `production_authorization.py` | 外部上传、侵入性剪辑、付费生成、声音克隆、真人/IP 和发布 → source-bound 授权 gate | `prepare --scope --response-template` / `audit --request --response --strict` / `verify --report --strict` |
 | `transcript_review.py` | transcript → 文本或本地同步媒体 HTML 校稿 → reviewed transcript | `export` / `html --video --max-cps` / `apply --review --output` |
 | `semantic_transcript_review.py` | transcript → 前后文审校包 / 最小补丁审计 / 人工 choices / reviewed transcript | `prepare` / `audit --strict` / `apply --choices` |
@@ -164,7 +166,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `edit_preflight.py` | render_config/enrich_plan/cut list 渲染前预检 gate | `--config render_config.json` `--enrich-plan enrich_plan.json` `--output edit_preflight.json` `--strict` |
 | `platform_safe_area_qa.py` | 字幕、badge、PIP、CTA、章节卡、marker → 平台 UI 遮挡 gate + SVG guide | `--config` `--enrich-plan` `--elements` `--platform xhs|douyin|wxch` `--guide` `--strict` |
 | `subtitle_style_preview.py` | 真实源帧 → `render_final.py` 最终 ASS 样式对比 JPEG、人工选择与 source/font/style live gate | `create --video --platform --preview-dir --require-selection` / `select --report --style` / `verify --strict` |
-| `render_final.py` | 单次编码渲染 + 可选口播降噪 / J-cut/L-cut / enrich_plan / 旁白驱动 BGM ducking | `--config render_config.json` `--audio-transition-plan audio_transition_plan.json` `--speech-denoise light` `--enrich-plan enrich_plan.json` `--bgm-ducking` `--output final.mp4` |
+| `render_final.py` | 单次编码渲染 + 可选个人风格默认值 / 口播降噪 / J-cut/L-cut / enrich_plan / 旁白驱动 BGM ducking | `--config render_config.json` `--style-profile work/edit_style_profile.json` `--audio-transition-plan audio_transition_plan.json` `--speech-denoise light` `--enrich-plan enrich_plan.json` `--bgm-ducking` `--output final.mp4` |
 | `render_qa.py` | 渲染后 QA：尺寸/音频/黑屏/静帧/静音 + review packet | `<video.mp4>` `--platform douyin` `--json qa.json` `--review-dir verify/qa` |
 | `shot_color_qa.py` | rendered master → 镜头亮度/对比/色度/饱和度/broadcast-range 与切点跳变 gate | `<video.mp4>` `--scene-boundaries` `--output shot_color_qa.json` `--markdown` `--strict` |
 | `retention_rhythm_qa.py` | 成片 hook 活动、长镜头、注意力空窗、等距/快切和字幕节奏风险 | `<video.mp4>` `--timed-text subtitles.json` `--output retention_rhythm_qa.json` `--strict` |
@@ -188,7 +190,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `hdr_sdr.py` | PQ/HLG master → source-bound Hable tone-map / BT.709 limited tags / 完整解码 gate | `plan --delivery` / `apply` / `verify --strict` |
 | `delivery_encode.py` | master → 目标大小 H.264/AAC MP4 / source hash / 两遍码率 / 完整解码 gate | `plan --delivery --max-size-mib` / `apply` / `verify --strict` |
 | `generate_caption.py` | 标题/正文/tag | `--script` `--profile` `--output` |
-| `cover_variants.py` | 多套封面 A/B 方案、feed-size 预览、标题协同和最终选择 | `<video>` `--title` `--caption` `--platform` `--render` `--select cover-c` `--strict` |
+| `cover_variants.py` | 多套封面 A/B 方案、个人风格默认值、feed-size 预览、标题协同和最终选择 | `<video>` `--title` `--style-profile` `--caption` `--platform` `--render` `--select cover-c` `--strict` |
 | `approval_receipt.py` | 已复核视频/封面/文案/字幕/QA → SHA-256 收据和过期审批门禁 | `create --artifact ... --approved-by` / `verify --strict` |
 | `publish_package.py` | 发布上传包：平台视频、封面、字幕、章节、文案和 gate 状态 | `--project-dir` `--platforms` `--video xhs=...` `--strict` |
 | `profiles/__init__.py` | 受众档位加载 | `load_profile("tech_pro")` |
@@ -198,6 +200,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | 标志 | 默认 | 说明 |
 |---|---|---|
 | `--profile tech_pro` | 关 | 加载 [scripts/profiles/tech_pro.yaml](scripts/profiles/tech_pro.yaml) 的节奏/字幕/BGM 默认值 |
+| `--style-profile work/edit_style_profile.json` | 关 | 验证个人/品牌剪辑风格档案，仅填充 config 中缺失或 `null` 的受控字段 |
 | `--primary-speed 1.25` | 1.0 | 主输出速度。`--speed` 仍可加额外变种 |
 | `--no-loudnorm` | 不传 = 开启响度规范化 | 关闭 `dynaudnorm + acompressor + loudnorm` |
 | `--speech-denoise light|medium|strong` | off | 80 Hz 高通 + 6/9/12 dB `afftdn`，在变速/响度/BGM ducking 前清理稳态底噪；`--no-speech-denoise` 覆盖 config |
@@ -572,6 +575,28 @@ python3 scripts/media_library.py annotate media/broll/downloaded.mp4 \
 ```
 
 登记后的 `provider`、`source_url`、`creator`、`license` 会进入 `media_index.json/db`，后续由 `asset_provenance.py` 做发布门禁。
+
+### Phase 0.25: Creator-owned Edit Style Profile（个人/品牌剪辑风格，可选）
+
+当用户希望多个项目保持同一套创意方向、剪辑节奏、字幕/封面/调色/BGM 习惯和标题拼写时，先生成并人工编辑 spec，再创建可移植 profile：
+
+```bash
+python3 scripts/edit_style_profile.py template \
+  --output work/edit_style_profile_spec.json
+
+# 编辑 spec 中的真实偏好和 approval basis 后：
+python3 scripts/edit_style_profile.py create \
+  --spec work/edit_style_profile_spec.json \
+  --output work/edit_style_profile.json \
+  --markdown work/edit_style_profile.md \
+  --strict
+
+python3 scripts/edit_style_profile.py verify \
+  --profile work/edit_style_profile.json \
+  --strict
+```
+
+渲染时加 `render_final.py --style-profile work/edit_style_profile.json`；生成标题文案和封面时，分别给 `generate_caption.py` 和 `cover_variants.py` 加同一参数。Profile 只填充 config 中缺失或 `null` 的受控字段；项目 config 和显式 CLI（包括封面 `--style`）始终优先。它描述“通常怎么剪”，而 `edit_recipe.py` 保存“这条时间线怎么复刻”，两者不互相替代。Profile 的 digest 只能发现文件漂移，不是签名、身份认证或权利证明。完整用法见 [docs/prompts/98-edit-style-profile.md](docs/prompts/98-edit-style-profile.md)。
 
 ### Phase 0.5: Source Receipts（事实来源 proof deck，可选但推荐）
 
@@ -1381,7 +1406,9 @@ python3 scripts/subtitle_style_preview.py verify \
 使用 [render_final.py](./scripts/render_final.py) 从原始视频**一次编码**生成最终视频：
 
 ```bash
+# 如没有在 Phase 0.25 生成 profile，删去 --style-profile。
 python3 scripts/render_final.py --config render_config.json \
+  --style-profile work/edit_style_profile.json \
   --enrich-plan work/enrich_plan.json \
   --output final.mp4 --speed 1.25 1.5
 ```
@@ -1394,6 +1421,7 @@ python3 scripts/render_final.py --config render_config.json \
 
 参数说明：
 - `--config`：渲染配置 JSON 路径
+- `--style-profile`：可选，验证后仅填充 config 中缺失的个人/品牌风格默认值
 - `--enrich-plan`：可选，读取 `auto_enrich.py` 输出的 JSON，把 B-roll / 章节卡 / 贴纸 / 强调点 / 已生成图片 cue 自动接回渲染
 - `--output`：输出文件路径
 - `--speed 1.25 1.5`：同时输出变速版本（每个变速版本也是从原始视频直接编码，不是从已编码视频二次压缩）

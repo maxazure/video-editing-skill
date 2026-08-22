@@ -1247,6 +1247,11 @@ def main():
                         help="Disable the Xiaohongshu/RED platform-rule lint (not recommended)")
     parser.add_argument("--profile", default=None,
                         help="Audience profile (tech_pro, lifestyle, ...). Sets sensible defaults for cut/subtitle/audio.")
+    parser.add_argument(
+        "--style-profile",
+        default=None,
+        help="Verified edit_style_profile.v1 JSON. Fills missing render-config defaults; config and CLI values win.",
+    )
     parser.add_argument("--speed", nargs="*", type=float, default=[],
                         help="Additional speed variants to render (e.g. --speed 1.25 1.5)")
     parser.add_argument("--primary-speed", type=float, default=1.0,
@@ -1313,6 +1318,23 @@ def main():
                 f"[enrich] advisory imagegen cues without generated files: "
                 f"{stats['advisory_imagegen']}"
             )
+
+    if args.style_profile:
+        try:
+            from edit_style_profile import apply_profile, load_profile
+
+            style_profile = load_profile(args.style_profile)
+            style_result = apply_profile(style_profile, config)
+            config = style_result["config"]
+        except (OSError, ValueError) as exc:
+            print(f"Error: invalid edit style profile: {exc}", file=sys.stderr)
+            sys.exit(2)
+        print(
+            f"[style-profile] {style_profile.get('name', '')} "
+            f"({style_profile.get('profile_id', '')}) applied="
+            f"{','.join(sorted(style_result['applied'])) or 'none'} "
+            f"preserved={','.join(sorted(style_result['preserved'])) or 'none'}"
+        )
 
     if args.color_grade:
         config["color_grade"] = args.color_grade

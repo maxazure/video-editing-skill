@@ -2,7 +2,7 @@
 
 这是一个面向 **口播、教程、访谈、播客切片、录屏演示 / facecam demo** 的 AI 视频剪辑生产线：给它原始口播音频/视频、transcript、B-roll、摄像头小窗或素材目录，它可以把“还没整理的素材”推进到 **可发布的小红书 / 抖音 / 视频号短视频**。
 
-它不是一个单点 FFmpeg 脚本，而是一条完整工作流：**项目启动/素材导入 → 生产授权 → 手持防抖 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 锁定视觉 EDL 后重建最终声音分镜 → 渲染前预检 / 真实画面字幕样式选择 → 单次编码渲染 → 质检 / 最终成片唇形复核 → 多平台导出 / 目标大小交付编码 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
+它不是一个单点 FFmpeg 脚本，而是一条完整工作流：**项目启动/素材导入 → 个人/品牌剪辑风格 → 生产授权 → 手持防抖 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 锁定视觉 EDL 后重建最终声音分镜 → 渲染前预检 / 真实画面字幕样式选择 → 单次编码渲染 → 质检 / 最终成片唇形复核 → 多平台导出 / 目标大小交付编码 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
 
 ## 适合做什么
 
@@ -21,6 +21,7 @@
 - **ASR 语义校稿不再只看单句**：`semantic_transcript_review.py` 为每条字幕附带全篇前后文，验证完整覆盖、源 transcript hash 和最小字符补丁；模型只能提建议，独立人工 choices 才能写 reviewed transcript。
 - **上游剪辑配置可以安全撤销/重做**：`edit_revision.py` 把 `render_config` / `enrich_plan` 等文本 artifact 的完整改动绑定到基础和依赖 SHA-256；独立审批后成组写入，外部漂移时拒绝 undo/redo 并阻塞 manifest。
 - **已审时间线可以换素材复用**：`edit_recipe.py` 把 `render_config.json` 的全部本地文件路径替换成类型化槽位，生成 content-addressed 可移植配方；回放必须完整绑定新素材、记录 SHA-256 并重新通过 `edit_preflight.py`。
+- **个人/品牌剪辑偏好可跨项目复用**：`edit_style_profile.py` 把创意方向、节奏、受控渲染默认值、封面风格、标题拼写与发布时段存成无本地路径的 profile；`render_final.py` / `generate_caption.py` / `cover_variants.py` 直接消费它，项目 config 和 CLI 始终优先。
 - **生成式素材有明确审批和台账**：Codex `image_gen` / GPT Image 2 提示词、Dreamina/Veo/LTX/Wan/Sora 视频提示词、provider 决策、`submit_id` 轮询下载和本地落盘 gate 都先记录再执行。
 - **生成 provider 参数先绑定具体入口再使用**：`provider_capability.py` 把 provider、UI/API surface、model、核验日期、证据和 mode/画幅/时长/分辨率/参考上限落成 profile；`video_prompt_pack.py` 会拒绝缺失、过期或设置越界的 profile。
 - **生成片段复核会反哺下一次提示词**：`generation_lessons.py` 只从 canonical clip review 提取人工明确批准的通用经验，绑定 source digests，并按 provider/model/category 精确筛选后交给 `video_prompt_pack.py`；不会把单片修复建议自动当成全局规则。
@@ -128,6 +129,7 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    │
    ├─→ project_bootstrap.py     原始素材目录 → origin/work/output/verify/edit + source inventory
    ├─→ edit_brief_plan.py       用户一句话需求 → 本地脚本 runbook / commands / gates
+   ├─→ edit_style_profile.py    个人/品牌创意方向、节奏与渲染/文案默认值 → 可移植 profile
    ├─→ production_authorization.py
    │                            确切素材/动作/provider/权利依据 → 显式授权 + live gate
    ├─→ transcribe.py            转写 + 词级时间戳 + 口误标记
@@ -2552,6 +2554,16 @@ DAY=NN
 WORK=~/Movies/xiaohongshu/day$DAY
 SKILL=~/projects/video-editing-skill
 
+# 0s. 可选：建立个人/品牌剪辑风格档案；先改完 spec 里的真实偏好再 create
+python3 $SKILL/scripts/edit_style_profile.py template \
+  --output $WORK/work/edit_style_profile_spec.json
+python3 $SKILL/scripts/edit_style_profile.py create \
+  --spec $WORK/work/edit_style_profile_spec.json \
+  --output $WORK/work/edit_style_profile.json \
+  --markdown $WORK/work/edit_style_profile.md \
+  --strict
+# 如跳过 0s，后面渲染/文案/封面命令也删去 --style-profile。
+
 # 0b. 可选：手持素材防抖；只写 working copy，完整 A/B 确认前 manifest 会阻塞
 python3 $SKILL/scripts/video_stabilization.py plan $WORK/origin/handheld.mp4 \
   --decision stabilize \
@@ -2698,6 +2710,7 @@ python3 $SKILL/scripts/edit_preflight.py \
 #    --color-grade $WORK/work/color_grade.json
 python3 $SKILL/scripts/render_final.py \
   --config $WORK/work/render_config.json \
+  --style-profile $WORK/work/edit_style_profile.json \
   --enrich-plan $WORK/work/enrich_plan.json \
   --profile tech_pro \
   --primary-speed 1.25 \
@@ -2808,6 +2821,7 @@ python3 $SKILL/scripts/render_qa.py \
 # 9. 文案
 python3 $SKILL/scripts/generate_caption.py \
   --script $WORK/work/clean_script.md --profile tech_pro \
+  --style-profile $WORK/work/edit_style_profile.json \
   --output $WORK/output/day${DAY}_caption.json
 
 # 9b. 生成 3 套封面并在小图里选最终发布版
@@ -2815,6 +2829,7 @@ python3 $SKILL/scripts/cover_variants.py \
   $WORK/output/day${DAY}_xhs.mp4 \
   --title "<4-8字封面文字>" \
   --caption $WORK/output/day${DAY}_caption.json \
+  --style-profile $WORK/work/edit_style_profile.json \
   --platform xhs \
   --output-dir $WORK/output/covers \
   --render \
@@ -2891,6 +2906,7 @@ pytest tests/test_project_bootstrap.py -v   # 项目启动与 source inventory
 pytest tests/test_transcript_review.py -v  # 文本/HTML 同步视频 transcript 校稿回路
 pytest tests/test_semantic_transcript_review.py -v # 全篇上下文审校 / 最小补丁 / choices gate
 pytest tests/test_edit_brief_plan.py -v     # 自然语言剪辑需求 → 本地 runbook
+pytest tests/test_edit_style_profile.py -v  # 个人/品牌风格 profile / defaults-only 合并 / drift gate
 pytest tests/test_production_authorization.py -v # source-bound 动作/provider/权利授权 + live gate
 pytest tests/test_hook_variants.py -v       # 前三秒 hook 批量角度 + 风险检查
 pytest tests/test_rough_cut.py -v           # ASR 粗剪：口头禅/重复句 cut list
@@ -2936,6 +2952,23 @@ pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 pytest tests/test_review_dashboard.py -v    # 静态人工复核面板 + gate queue
 pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 gate
 ```
+
+### 2026-08-23 自动化升级记录（Creator-owned Edit Style Profile）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`EverythingAI-Pro/ai-video-editor` 的 `taste.yaml`](https://github.com/EverythingAI-Pro/ai-video-editor/blob/main/taste.yaml) | 把 captions、cut aggressiveness、color、brand/end card、B-roll、shorts 和 output 收拢到 creator-owned taste file，每个脚本消费同一风格事实源 | 新增可移植 `edit_style_profile.v1`，但只允许受控默认字段，不保存本地路径，也不把一个项目的时间线冒充永久偏好 |
+| [`affaan-m/ECC` Taste skill](https://github.com/affaan-m/ECC/blob/main/skills/taste/SKILL.md) | 生成前先确定命名的创意方向，用它约束色彩、节奏和系统一致性，coherence 优先于单次新奇 | profile 必须声明 `creative_direction.primary`、principles 和 avoid，并记录这套方向来自人工决定、已批产物还是参考研究 |
+| [`browser-use/video-use`](https://github.com/browser-use/video-use/blob/main/SKILL.md) | 把 production correctness 硬规则与艺术自由分开，持久化已选决策，但不把示例当成强制美学 | style 只是 defaults-only 输入；项目 config 与显式 CLI 始终优先，manifest 只对已存在但无效/漂移的 profile fail closed |
+| [`heygen-com/skills` HeyGen Video](https://github.com/heygen-com/skills/blob/master/heygen-video/SKILL.md) | 用一个选定 style 同时统一 layout、transitions、pacing 和 aesthetic，从 mood 而非技术参数开始 | 用创意方向统领 pacing/render/caption defaults；不引入云端 provider、不消耗 credits，仍由本地单次编码流水线执行 |
+
+新增/调整能力：新增 [`scripts/edit_style_profile.py`](scripts/edit_style_profile.py)、[`tests/test_edit_style_profile.py`](tests/test_edit_style_profile.py) 和 [`docs/prompts/98-edit-style-profile.md`](docs/prompts/98-edit-style-profile.md)，提供 `template → create → verify → apply`。Profile 包含 creative direction、pacing、受控 render defaults、caption 首选时段/强制拼写、approval basis 与可选 evidence digest，以 canonical `profile_id` 检测结构或内容漂移。`render_final.py --style-profile` 仅填充缺失或 `null` 的字幕、BGM/ducking、降噪、调色与 versioned-output 默认值；`generate_caption.py --style-profile` 应用创作者术语拼写和发布时段；`cover_variants.py --style-profile` 在没有显式 `--style` 时采用 creator cover style，并在 review artifact 里记录来源 profile id。`edit_brief_plan.py` 新增个人/品牌风格信号与 runbook 步骤，`pipeline_manifest.py` 对已存在的无效 profile 阻断渲染/发布。Profile 不是 timeline recipe、签名、身份认证或权利证明。
+
+使用方式：先运行 `python3 scripts/edit_style_profile.py template --output work/edit_style_profile_spec.json`，把占位值改成已确认的个人/品牌方向；再运行 `create --spec ... --output work/edit_style_profile.json --markdown work/edit_style_profile.md --strict` 与 `verify --profile ... --strict`。渲染、文案和封面分别传 `render_final.py --style-profile work/edit_style_profile.json`、`generate_caption.py --style-profile work/edit_style_profile.json` 与 `cover_variants.py --style-profile work/edit_style_profile.json`。如需在渲染前查看实际合并结果，用 `apply --profile ... --config ... --output ... --receipt ...`；它不覆盖 config 中的显式项目决定。
+
+验证结果：新增 12 项回归（新测试文件 10 项，brief 路由和 manifest live gate 各 1 项）；定向 `python -m pytest tests/test_edit_style_profile.py tests/test_edit_brief_plan.py tests/test_pipeline_manifest.py tests/test_generate_caption.py tests/test_cover_variants.py -q` 通过 **139 passed in 2.46s**，最终全量 `python -m pytest tests -q` 通过 **959 passed in 19.69s**。覆盖 canonical profile/id、tamper drift、未知/路径字段拒绝、evidence 要求、defaults-only 合并优先级、caption 拼写/时段、cover style 默认/显式覆盖、CLI round trip、禁止覆盖输入/hard link、brief 路由与 manifest stale gate；`python -m compileall -q scripts tests`、四组 CLI help、manifest category smoke、Skill `quick_validate.py` 与 `git diff --check` 均通过。全量过程中旧有随机白噪声 SNR smoke 曾出现一次 2.7 dB / 3.0 dB 边界波动；该项独立连续复跑两次均通过，随后全量也通过，未为此改动无关降噪代码。本轮没有生成媒体、调用付费 provider、消耗 credits、上传素材或发布内容。
 
 ### 2026-08-22 自动化升级记录（Source-bound Production Authorization）
 
@@ -3739,6 +3772,7 @@ scripts/
 ├── screen_focus.py             录屏点击/热点聚焦计划              [V3]
 ├── color_grade.py              bounded 调色计划 + FFmpeg filter    [V3]
 ├── edit_revision.py            文本剪辑 artifact 可逆修订 + stale gate [V3]
+├── edit_style_profile.py        个人/品牌风格档案 + defaults-only 合并 [V3]
 ├── edit_recipe.py              可移植 render-config recipe + replay preflight [V3]
 ├── edit_preflight.py           渲染前结构/路径/参数预检 gate       [V3]
 ├── platform_safe_area_qa.py    字幕/PIP/CTA/marker 平台安全区 gate [V3]

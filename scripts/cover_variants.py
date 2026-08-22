@@ -22,6 +22,7 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from content_guard import ViolationLevel, scan_text  # noqa: E402
+from edit_style_profile import load_profile as load_style_profile, verify_profile as verify_style_profile  # noqa: E402
 from generate_cover_image import STYLES, generate_cover  # noqa: E402
 
 
@@ -247,6 +248,7 @@ def build_plan(
     platform: str = "xhs",
     count: int = 3,
     style: Optional[str] = None,
+    style_profile: Optional[Mapping[str, Any]] = None,
     frame_timestamp: Optional[str] = None,
     output_dir: Optional[str] = None,
     selected: Optional[str] = None,
@@ -271,7 +273,19 @@ def build_plan(
         else (video.parent / "cover_variants").resolve()
     )
     preset = PLATFORMS[platform]
-    primary_style = _choose_primary_style(title, subtitle, style)
+    profile_style = None
+    profile_metadata = None
+    if style_profile:
+        verification = verify_style_profile(style_profile)
+        if verification["summary"]["blocking"]:
+            raise ValueError("style profile is blocked: " + "; ".join(verification["blockers"]))
+        profile_style = (style_profile.get("render_defaults") or {}).get("cover_style")
+        profile_metadata = {
+            "name": style_profile.get("name"),
+            "profile_id": style_profile.get("profile_id"),
+        }
+    resolved_style = style or profile_style
+    primary_style = _choose_primary_style(title, subtitle, resolved_style)
     specs = _variant_specs(primary_style, subtitle, count)
 
     variants: List[Dict[str, Any]] = []
@@ -336,9 +350,11 @@ def build_plan(
             "post_title": post_title,
             "cover_text": title,
             "subtitle": subtitle,
-            "requested_style": style,
+            "requested_style": resolved_style,
+            "style_source": "cli" if style else ("style_profile" if profile_style else "heuristic"),
             "frame_timestamp": frame_timestamp,
         },
+        "style_profile": profile_metadata,
         "synergy": synergy,
         "variants": variants,
         "selected_variant": selected,
@@ -534,6 +550,10 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--platform", default="xhs", choices=sorted(PLATFORMS))
     parser.add_argument("--count", type=int, default=3, choices=(2, 3, 4))
     parser.add_argument("--style", choices=STYLES, help="Override the primary cover style.")
+    parser.add_argument(
+        "--style-profile",
+        help="Verified edit_style_profile.v1 JSON; its cover style is used when --style is omitted.",
+    )
     parser.add_argument("--frame-timestamp", help="Frame timestamp for evidence variants.")
     parser.add_argument("--output-dir", help="Directory for rendered covers and previews.")
     parser.add_argument("--select", help="Record one selected variant id, such as cover-a.")
@@ -554,6 +574,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parse_args(argv)
     try:
         caption = _load_json(args.caption)
+        style_profile = load_style_profile(args.style_profile) if args.style_profile else None
         post_title = args.post_title or _compact(caption.get("title"))
         plan = build_plan(
             args.video,
@@ -563,6 +584,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             platform=args.platform,
             count=args.count,
             style=args.style,
+            style_profile=style_profile,
             frame_timestamp=args.frame_timestamp,
             output_dir=args.output_dir,
             selected=args.select,

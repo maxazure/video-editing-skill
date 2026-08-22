@@ -25,6 +25,13 @@ from typing import Iterable, List, Optional
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from content_guard import enforce as enforce_platform_rules, HardBlock  # noqa: E402
+from edit_style_profile import (  # noqa: E402
+    StyleProfileError,
+    apply_force_spelling,
+    load_profile as load_style_profile,
+    preferred_windows as style_preferred_windows,
+    verify_profile as verify_style_profile,
+)
 
 
 EMOJI_PALETTE = ["📌", "✨", "💡", "🔥", "👇", "✅", "🚀", "📈"]
@@ -134,7 +141,11 @@ def synthesize_tags(keywords: List[str], *, max_tags: int = 6,
     return tags[:max_tags]
 
 
-def publish_time_hint(profile: Optional[dict]) -> str:
+def publish_time_hint(profile: Optional[dict], style_profile: Optional[dict] = None) -> str:
+    if style_profile:
+        windows = style_preferred_windows(style_profile)
+        if windows:
+            return windows[0]
     if not profile:
         return "weekday 21:00-22:30"
     windows = profile.get("publishing", {}).get("preferred_windows") or []
@@ -146,7 +157,17 @@ def publish_time_hint(profile: Optional[dict]) -> str:
 def generate_caption(script_text: str, *,
                      hook_text: Optional[str] = None,
                      profile_name: Optional[str] = None,
+                     style_profile: Optional[dict] = None,
                      strict: bool = True) -> dict:
+    if style_profile:
+        verification = verify_style_profile(style_profile)
+        if verification["summary"]["blocking"]:
+            raise StyleProfileError(
+                "style profile is blocked: " + "; ".join(verification["blockers"])
+            )
+        script_text = apply_force_spelling(script_text, style_profile)
+        if hook_text:
+            hook_text = apply_force_spelling(hook_text, style_profile)
     keywords = extract_keywords(script_text)
     title = synthesize_title(hook_text, keywords)
     body = synthesize_body(script_text, keywords)
@@ -164,7 +185,7 @@ def generate_caption(script_text: str, *,
         "title": title,
         "caption_body": body,
         "tags": tags,
-        "publish_time_hint": publish_time_hint(profile),
+        "publish_time_hint": publish_time_hint(profile, style_profile),
     }
 
     if strict:
@@ -181,6 +202,11 @@ def main() -> int:
     p.add_argument("--script", required=True, help="Path to clean_script.md")
     p.add_argument("--hook", default=None, help="Override hook text used as title")
     p.add_argument("--profile", default=None, help="Audience profile (tech_pro, lifestyle)")
+    p.add_argument(
+        "--style-profile",
+        default=None,
+        help="Verified edit_style_profile.v1 JSON for creator spelling and publishing defaults",
+    )
     p.add_argument("--output", default=None, help="JSON output path; stdout if omitted")
     p.add_argument("--no-strict", action="store_true",
                    help="Skip content-guard rejection (warnings still emitted to stderr)")
@@ -200,12 +226,19 @@ def main() -> int:
             hook_text = m.group(1).strip()
 
     try:
+        style_profile = load_style_profile(args.style_profile) if args.style_profile else None
         payload = generate_caption(
-            script_text, hook_text=hook_text,
-            profile_name=args.profile, strict=not args.no_strict,
+            script_text,
+            hook_text=hook_text,
+            profile_name=args.profile,
+            style_profile=style_profile,
+            strict=not args.no_strict,
         )
     except HardBlock as exc:
         print(f"🚫 Caption rejected by content guard: {exc}", file=sys.stderr)
+        return 2
+    except (OSError, StyleProfileError, ValueError) as exc:
+        print(f"edit style profile error: {exc}", file=sys.stderr)
         return 2
 
     out_text = json.dumps(payload, ensure_ascii=False, indent=2)
