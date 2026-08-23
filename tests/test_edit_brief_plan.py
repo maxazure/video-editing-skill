@@ -330,6 +330,26 @@ def test_shaky_footage_brief_routes_stabilization_review(tmp_path):
     assert any("full-length --comparison" in note for note in plan["notes"])
 
 
+def test_green_screen_brief_routes_reviewed_chroma_key(tmp_path):
+    source = tmp_path / "origin" / "presenter.mp4"
+    source.parent.mkdir(parents=True)
+    source.write_text("fake video", encoding="utf-8")
+
+    plan = build_plan(
+        f"把 {source} 做绿幕抠像并换成工作室背景",
+        project_dir=str(tmp_path),
+    )
+
+    step = next(step for step in plan["steps"] if step["id"] == "chroma_key")
+    assert step["script"] == "chroma_key.py"
+    assert "chroma_key.py prepare" in step["command"]
+    assert "--background '<background_media>'" in step["command"]
+    assert "work/chroma_key.json" in step["outputs"]
+    assert "output/chroma_key_composite.mp4" in step["outputs"]
+    assert step["gate_category"] == "chroma_key"
+    assert any("all four checks" in note for note in plan["notes"])
+
+
 def test_file_size_brief_routes_target_size_delivery(tmp_path):
     source = tmp_path / "master.mp4"
     source.write_text("fake video", encoding="utf-8")

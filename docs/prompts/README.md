@@ -99,6 +99,8 @@
 | 95 | [Final Audio Storyboard 锁定 EDL 后重建声音分镜](95-final-audio-storyboard.md) | locked visual EDL + storyboard → final timeline sections、voice ledger、omitted-story decisions 与 live gate |
 | 96 | [Provider Capability Profile 生成供应商能力契约](96-provider-capability.md) | exact provider/surface/model → dated modes、画幅、时长、分辨率、参考上限与 prompt gate |
 | 97 | [Production Authorization 生产授权合同](97-production-authorization.md) | source-bound 外部上传、侵入性剪辑、付费生成、声音克隆、真人/品牌/IP 权利依据与 live gate |
+| 98 | [Creator-owned Edit Style Profile 创作者剪辑风格档案](98-edit-style-profile.md) | creator-owned 创意方向、节奏和受控渲染/文案默认值 → 可移植 profile |
+| 99 | [Chroma Key 绿幕 / 蓝幕抠像与换背景](99-chroma-key.md) | foreground + background → composite/matte 预览、四项人工复核、完整渲染与 source-bound live gate |
 
 ## 快速上手
 
@@ -189,6 +191,7 @@
 | 成片混了多机位/B-roll，想查曝光、偏色或切点色彩跳变 | [81-Shot Color QA](81-shot-color-qa.md) |
 | 想把已审 render_config 存成模板，换一批素材继续复用 | [82-Portable Edit Recipe](82-edit-recipe.md) |
 | 想把个人/品牌剪辑风格保存成可移植默认值，并让渲染和文案直接复用 | [98-Creator-owned Edit Style Profile](98-edit-style-profile.md) |
+| 有绿幕/蓝幕素材，想先看 matte 再换成图片或视频背景 | [99-Chroma Key](99-chroma-key.md) |
 | 想给动作 / 产品 reveal 的 impact moment 做局部慢动作或 velocity edit | [83-Speed Ramp](83-speed-ramp.md) |
 | 手持素材有不想要的抖动，想保留原片并对照防抖结果 | [84-Video Stabilization](84-video-stabilization.md) |
 | 客户或平台要求视频必须小于指定 MB | [85-Target-size Delivery Encode](85-delivery-encode.md) |

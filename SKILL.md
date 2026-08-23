@@ -1,6 +1,6 @@
 ---
 name: video-editing
-description: "Xiaohongshu/RED-tuned short-form video workflow for voice-over, talking-head, tutorials, interviews, podcasts, screen recordings, B-roll, captions, and generated assets. Covers edit routing, creator-owned edit-style profiles, transcription, semantic review, multi-take/audio sync/stabilization/dead-air cleanup, highlights/shorts, story and source gates, enrichment and video-generation planning, generated clip/sequence review, locked-EDL final audio storyboards, color/speed/J-L cuts, reversible revisions and recipes, preflight/render/QA, subtitles, CapCut, platform/size exports, covers, captions, publish packages, dashboards, handoff formats, and Remotion."
+description: "Xiaohongshu/RED-tuned short-form video workflow for voice-over, talking-head, tutorials, interviews, podcasts, screen recordings, green/blue-screen compositing, B-roll, captions, and generated assets. Covers edit routing, creator-owned edit-style profiles, transcription, semantic review, multi-take/audio sync/stabilization/dead-air cleanup, highlights/shorts, story and source gates, enrichment and video-generation planning, generated clip/sequence review, locked-EDL final audio storyboards, color/speed/J-L cuts, reversible revisions and recipes, preflight/render/QA, subtitles, CapCut, platform/size exports, covers, captions, publish packages, dashboards, handoff formats, and Remotion."
 metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
 ---
 
@@ -32,6 +32,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ visual_dedupe.py         多来源场景 → 感知哈希重复组 / 保留建议 / review gate
    ├─→ video_understanding.py   抽样帧 + 可选 YOLO 检测 / tracks / scene_tags
    ├─→ video_stabilization.py   手持素材 → source-bound 后端计划 / 工作副本 / 全长 A/B gate
+   ├─→ chroma_key.py            绿幕/蓝幕 → composite + matte 代表帧 / 人工 review / 完整渲染 gate
    ├─→ highlight_picker.py      长视频精华候选 / brief-query 定向找片段
    ├─→ audio_boundary_snap.py   已选片段 → 词/句末/静音边界校正
    ├─→ shorts_batch.py          精华候选 → per-short render_config / render + QA job sheet
@@ -129,6 +130,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `visual_dedupe.py` | 多来源场景三点感知哈希 → 重复组 / 保留建议 / review gate | `--manifest` / `<videos...>` `--hamming-threshold` `--include-same-source` `--strict` |
 | `video_understanding.py` | 抽样帧 + 可选 YOLO 物体检测 + 轻量 tracklets | `--detector yolo` `--scene-boundaries` `--external-detections` `--strict` |
 | `video_stabilization.py` | 源视频 → exact FFmpeg backend / source hash / 稳定工作副本 / 全长 A/B 复核 gate | `doctor` / `plan --decision` / `apply --comparison` / `confirm` / `verify --strict` |
+| `chroma_key.py` | 绿幕/蓝幕前景 + 图片/视频背景 → composite/matte 预览、四项人工 review、source-bound 完整渲染 gate | `prepare --foreground --background --output-video` / `review` / `apply` / `verify --strict` |
 | `highlight_picker.py` | 长视频精华候选 + brief/query 定向找片段 | `--transcript` `--brief`/`--query` `--scene-boundaries` `--render-config` |
 | `audio_boundary_snap.py` | selected highlights → 词级、句末和静音边界校正 + blocker | `--candidates` `--transcript` `--media` `--markdown` `--strict` |
 | `shorts_batch.py` | highlight_candidates → 多条短视频 render_config / render + QA job sheet | `--highlights` `--video` `--render-config-dir` `--output-dir` `--strict` |
@@ -1105,6 +1107,13 @@ python3 scripts/render_final.py --config script/render_config.json --output medi
 - 原片看过后，用 `plan origin/handheld.mp4 --decision stabilize --reviewed-by editor --output work/video_stabilization_plan.json --markdown work/video_stabilization_plan.md` 记录源 SHA-256、profile 和人工决定；有意手持 / pan 应改用 `--decision keep`
 - `apply ... --output work/handheld-stabilized.mp4 --comparison verify/handheld-stabilization-compare.mp4` 只写新工作副本与全长左/右 A/B；随后必须 1× 看完整 comparison，再运行 `confirm --reviewed-by ... --note ...`
 - `pipeline_manifest.py` 会实时检查源片、稳定版、comparison 的 hash 与复核状态。稳定化不能修复滚动快门、运动模糊或失焦；后续用工作副本，不覆盖 `origin/`。详见 `docs/prompts/84-video-stabilization.md`
+
+**Chroma Key 绿幕 / 蓝幕抠像与换背景**（仅用于明确纯色幕布）：
+- 先运行 `chroma_key.py prepare --project-dir . --foreground origin/presenter-green.mp4 --background origin/studio.png --output-video output/presenter-studio.mp4 --preview-dir verify/chroma_key --report work/chroma_key.json --markdown work/chroma_key.md`
+- `prepare` 在默认 15%/50%/85% 时间点各生成 composite 与黑白 matte；检查头发/手/衣物边缘、主体缺口、绿/蓝溢色和背景透视/光色，必要时只改一项 `--similarity / --blend / --despill` 后重新预览
+- 四项均确认后运行 `review --edge-quality pass --subject-integrity pass --spill-control pass --background-fit pass --reviewer ... --note ...`，再运行 `apply --strict` 和 `verify --strict`
+- 图片背景保持，视频背景从第一帧循环且忽略其音轨；最终声音只沿用前景。源/背景/预览/filter/output 任一漂移都会让 live gate 失效
+- 这不是无幕布 AI matting 或逐帧 roto；复杂透明物、反光、幕布皱褶或主体同色应重拍或交给专业 keyer。完整说明见 `docs/prompts/99-chroma-key.md`
 
 **PIP Overlay 录屏摄像头小窗**（录屏教程可选）：
 - 运行 `pip_overlay.py --camera origin/facecam.mp4 --segment "0,18,bottom_right" --segment "18,42,top_right" --sync-offset 0.18 --output work/pip_overlay_plan.json --markdown work/pip_overlay_plan.md`

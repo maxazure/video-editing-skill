@@ -112,6 +112,32 @@
       --markdown work/video_stabilization_plan.md
     # 后续用 work/<handheld>-stabilized.mp4，不覆盖 origin；详见 docs/prompts/84-video-stabilization.md
 
+0d. # 可选：素材在绿幕/蓝幕前拍摄，先看代表帧和 matte，再完整换背景：
+    python3 scripts/chroma_key.py prepare \
+      --project-dir . \
+      --foreground origin/<presenter-green>.mp4 \
+      --background origin/<background>.png \
+      --output-video output/<presenter-composite>.mp4 \
+      --preview-dir verify/chroma_key \
+      --report work/chroma_key.json \
+      --markdown work/chroma_key.md
+    # 打开早/中/晚 composite + matte；只改一项 similarity/blend/despill 后再预览。
+    python3 scripts/chroma_key.py review \
+      --report work/chroma_key.json \
+      --reviewer "<reviewer-label>" \
+      --note "头发、手、衣物、主体缺口、溢色和背景匹配已逐帧复核" \
+      --edge-quality pass \
+      --subject-integrity pass \
+      --spill-control pass \
+      --background-fit pass \
+      --markdown work/chroma_key.md
+    python3 scripts/chroma_key.py apply \
+      --report work/chroma_key.json \
+      --markdown work/chroma_key.md \
+      --strict
+    python3 scripts/chroma_key.py verify --project-dir . --report work/chroma_key.json --strict
+    # 后续把 output/<presenter-composite>.mp4 当新 source；完整 1× 看完。详见 docs/prompts/99-chroma-key.md
+
 1. python3 scripts/transcribe.py origin/<voice>.mp3 \
      --engine auto --model auto --language zh --word-timestamps --detect-fillers \
      > work/transcript.json

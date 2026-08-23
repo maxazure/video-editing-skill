@@ -226,6 +226,22 @@ SIGNAL_KEYWORDS: Mapping[str, Sequence[str]] = {
         "稳定画面",
         "稳定视频",
     ),
+    "chroma_key": (
+        "chroma key",
+        "chroma-key",
+        "green screen",
+        "blue screen",
+        "greenscreen",
+        "bluescreen",
+        "key out background",
+        "绿幕",
+        "蓝幕",
+        "色键抠像",
+        "绿幕抠像",
+        "蓝幕抠像",
+        "绿幕换背景",
+        "蓝幕换背景",
+    ),
     "speed_ramp": (
         "speed ramp",
         "speed-ramp",
@@ -391,6 +407,7 @@ SIGNAL_LABELS: Mapping[str, str] = {
     "audio_design": "BGM / SFX 声音设计",
     "final_audio_storyboard": "锁定视觉 EDL 后重建最终声音分镜",
     "video_stabilization": "手持素材稳定化 / 防抖",
+    "chroma_key": "绿幕 / 蓝幕抠像与换背景",
     "speed_ramp": "局部 speed ramp / velocity edit",
     "audio_transition": "J-cut / L-cut 声画错位转场",
     "audio_sync": "外录音频对齐",
@@ -571,7 +588,7 @@ def build_plan(
 
     if source_media and not Path(source_media).expanduser().exists():
         blockers.append(f"source media not found: {source_media}")
-    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy", "reference_edit_rhythm", "lip_sync_review", "subtitle_style_preview", "multimodal_dead_air", "video_stabilization", "speed_ramp", "hdr_sdr", "delivery_encode", "edit_style_profile"}):
+    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy", "reference_edit_rhythm", "lip_sync_review", "subtitle_style_preview", "multimodal_dead_air", "video_stabilization", "chroma_key", "speed_ramp", "hdr_sdr", "delivery_encode", "edit_style_profile"}):
         warnings.append("source media was not provided; commands use <source_media> placeholders")
 
     if transcript and not Path(transcript).expanduser().exists():
@@ -1279,6 +1296,51 @@ def build_plan(
         notes.append(
             "After deciding to stabilize, regenerate the plan with --decision stabilize --reviewed-by, "
             "run apply with a full-length --comparison, watch it at 1x, then run confirm."
+        )
+
+    if "chroma_key" in ids:
+        _add_step(
+            steps,
+            seen,
+            _step(
+                "chroma_key",
+                phase="source",
+                script="chroma_key.py",
+                label="Preview, review, and apply a source-bound chroma key",
+                reason="The brief asks to remove a green/blue screen and composite a replacement background.",
+                command=shell(
+                    [
+                        python_bin,
+                        "scripts/chroma_key.py",
+                        "prepare",
+                        "--project-dir",
+                        project_dir,
+                        "--foreground",
+                        source,
+                        "--background",
+                        "<background_media>",
+                        "--output-video",
+                        "output/chroma_key_composite.mp4",
+                        "--preview-dir",
+                        "verify/chroma_key",
+                        "--report",
+                        "work/chroma_key.json",
+                        "--markdown",
+                        "work/chroma_key.md",
+                    ]
+                ),
+                outputs=[
+                    "work/chroma_key.json",
+                    "work/chroma_key.md",
+                    "verify/chroma_key/",
+                    "output/chroma_key_composite.mp4",
+                ],
+                gate_category="chroma_key",
+            ),
+        )
+        notes.append(
+            "Review every composite/matte pair, run chroma_key.py review with all four checks, then apply and verify. "
+            "Use output/chroma_key_composite.mp4 as the downstream source and watch the full result at 1x."
         )
 
     if "speed_ramp" in ids:

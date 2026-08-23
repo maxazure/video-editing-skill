@@ -278,6 +278,13 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         blocks_when_present=True,
     ),
     ArtifactDef(
+        "chroma_key",
+        "Chroma-key Composite",
+        ("**/chroma_key.json", "**/*_chroma_key.json"),
+        "Run chroma_key.py review/apply/verify; approve representative composite and matte frames before the full render.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "speed_ramp_plan",
         "Speed Ramp Plan",
         ("**/speed_ramp_plan.json", "**/*_speed_ramp_plan.json"),
@@ -1155,6 +1162,41 @@ def evaluate_category(
             elif warnings:
                 status = "warn" if status != "blocked" else status
                 notes.append(f"video prompt pack capability evidence needs review: {warnings} warning(s)")
+        return {
+            "category": definition.category,
+            "label": definition.label,
+            "status": status,
+            "artifact_count": len(artifacts),
+            "latest_path": artifacts[0].path,
+            "notes": sorted(set(notes)),
+            "next_action": definition.next_action if status in {"missing", "blocked", "warn"} else "",
+        }
+
+    if definition.category == "chroma_key":
+        from chroma_key import verify_report
+
+        for artifact in artifacts:
+            data = _load_json(artifact.path)
+            if data is None:
+                status = "blocked"
+                notes.append(f"unreadable chroma-key report: {artifact.path}")
+                continue
+            try:
+                verification = verify_report(
+                    data, str(project_dir) if project_dir is not None else None
+                )
+            except Exception as exc:
+                status = "blocked"
+                notes.append(f"chroma-key verification failed {artifact.path}: {exc}")
+                continue
+            blocking = _int_at(verification, "summary", "blocking")
+            warnings = _int_at(verification, "summary", "warnings")
+            if blocking:
+                status = "blocked"
+                notes.append(f"invalid chroma-key report {artifact.path}: {blocking} blocking item(s)")
+            elif warnings:
+                status = "warn" if status != "blocked" else status
+                notes.append(f"chroma-key composite retains {warnings} review warning(s): {artifact.path}")
         return {
             "category": definition.category,
             "label": definition.label,

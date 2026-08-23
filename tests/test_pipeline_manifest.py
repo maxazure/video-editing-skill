@@ -8,6 +8,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(
 
 from pipeline_manifest import build_manifest, emit_markdown  # noqa: E402
 from approval_receipt import create_receipt  # noqa: E402
+import chroma_key  # noqa: E402
 from edit_revision import APPROVAL_VERSION, apply_revision, audit_proposal, prepare_proposal  # noqa: E402
 from edit_recipe import export_recipe  # noqa: E402
 from edit_style_profile import create_profile, template_spec  # noqa: E402
@@ -1883,6 +1884,92 @@ def test_video_stabilization_plan_can_be_required(tmp_path):
     )
 
     assert "video_stabilization_plan" in manifest["missing_required"]
+
+
+def test_chroma_key_is_live_verified_and_can_be_required(tmp_path, monkeypatch):
+    _publish_ready_project(tmp_path)
+    foreground = tmp_path / "origin" / "presenter.mp4"
+    background = tmp_path / "origin" / "studio.png"
+    _write(foreground, "foreground")
+    _write(background, "background")
+    media = {
+        "duration": 4.0,
+        "fps": 24.0,
+        "width": 320,
+        "height": 180,
+        "video_codec": "h264",
+        "pixel_format": "yuv420p",
+        "has_audio": True,
+        "audio_codec": "aac",
+        "sample_rate": 48000,
+        "channels": 2,
+    }
+    background_media = {
+        "kind": "image",
+        "duration": 0.0,
+        "fps": 0.0,
+        "width": 640,
+        "height": 360,
+        "video_codec": "png",
+        "pixel_format": "rgb24",
+        "has_audio": False,
+        "audio_codec": "",
+        "sample_rate": 0,
+        "channels": 0,
+    }
+    monkeypatch.setattr(chroma_key, "probe_media", lambda _path: dict(media))
+    monkeypatch.setattr(chroma_key, "probe_background", lambda _path: dict(background_media))
+    monkeypatch.setattr(
+        chroma_key,
+        "_available_filters",
+        lambda: {"alphaextract", "chromakey", "despill", "overlay"},
+    )
+
+    def fake_preview(_foreground, _background, **kwargs):
+        kwargs["composite_path"].write_bytes(b"composite")
+        kwargs["matte_path"].write_bytes(b"matte")
+
+    monkeypatch.setattr(chroma_key, "_render_preview_pair", fake_preview)
+    report = chroma_key.prepare_report(
+        str(foreground),
+        str(background),
+        project_dir=str(tmp_path),
+        output_video="output/chroma_key_composite.mp4",
+    )
+    report = chroma_key.record_review(
+        report,
+        reviewer="Jay",
+        note="All preview pairs checked.",
+        edge_quality="pass",
+        subject_integrity="pass",
+        spill_control="pass",
+        background_fit="pass",
+    )
+
+    def fake_render(_foreground, _background, destination, **_kwargs):
+        destination.write_bytes(b"composite video")
+
+    monkeypatch.setattr(chroma_key, "_render_composite", fake_render)
+    report = chroma_key.apply_report(report)
+    _write(tmp_path / "work" / "chroma_key.json", report)
+
+    current = build_manifest(
+        str(tmp_path), target_stage="publish_ready", required=["chroma_key"]
+    )
+    gate = next(g for g in current["gates"] if g["category"] == "chroma_key")
+    assert gate["status"] == "ready"
+
+    background.write_text("changed background", encoding="utf-8")
+    stale = build_manifest(str(tmp_path), target_stage="publish_ready")
+    gate = next(g for g in stale["gates"] if g["category"] == "chroma_key")
+    assert gate["status"] == "blocked"
+    assert "chroma_key" in stale["blocked_gates"]
+
+    (tmp_path / "work" / "chroma_key.json").unlink()
+    missing = build_manifest(
+        str(tmp_path), target_stage="publish_ready", required=["chroma_key"]
+    )
+    assert "chroma_key" in missing["missing_required"]
 
 
 def test_markdown_contains_gate_table_and_next_actions(tmp_path):

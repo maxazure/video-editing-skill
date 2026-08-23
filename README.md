@@ -2,7 +2,7 @@
 
 这是一个面向 **口播、教程、访谈、播客切片、录屏演示 / facecam demo** 的 AI 视频剪辑生产线：给它原始口播音频/视频、transcript、B-roll、摄像头小窗或素材目录，它可以把“还没整理的素材”推进到 **可发布的小红书 / 抖音 / 视频号短视频**。
 
-它不是一个单点 FFmpeg 脚本，而是一条完整工作流：**项目启动/素材导入 → 个人/品牌剪辑风格 → 生产授权 → 手持防抖 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 锁定视觉 EDL 后重建最终声音分镜 → 渲染前预检 / 真实画面字幕样式选择 → 单次编码渲染 → 质检 / 最终成片唇形复核 → 多平台导出 / 目标大小交付编码 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
+它不是一个单点 FFmpeg 脚本，而是一条完整工作流：**项目启动/素材导入 → 个人/品牌剪辑风格 → 生产授权 → 手持防抖 / 绿蓝幕换背景 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 锁定视觉 EDL 后重建最终声音分镜 → 渲染前预检 / 真实画面字幕样式选择 → 单次编码渲染 → 质检 / 最终成片唇形复核 → 多平台导出 / 目标大小交付编码 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
 
 ## 适合做什么
 
@@ -12,6 +12,7 @@
 - **停顿删段可同时看声音和画面**：`multimodal_dead_air.py` 只有在静帧覆盖静音达到门槛时才提出候选，实际只删二者交集；源 hash、20% 删除预算、切点复盘、单次编码和完整解码都进入 gate。
 - **多机位先同步再剪辑**：`multicam_sync.py` 把两台以上相机/手机/录音设备对齐到同一参考时间线，记录每路 offset、置信度、有效音轨、公共重叠区间，并可用多窗口 probe 测量长片时钟漂移；原片不改、不重编码。
 - **手持防抖保留原片和 A/B 证据**：`video_stabilization.py` 把源 SHA-256、确切 FFmpeg 后端和人工决定写进计划；apply 只生成新工作副本与全长左右对照，完整 1× 复核并 confirm 后 manifest 才放行。
+- **绿幕/蓝幕换背景先看 matte 再渲染**：`chroma_key.py` 在前景早/中/晚生成 composite 与黑白 matte，人工逐项确认边缘、主体完整性、溢色和背景匹配后才允许完整 H.264/AAC 输出；源、背景、预览、filter 或成片漂移都会让旧 review 失效。
 - **局部慢动作先计划再渲染**：`speed_ramp.py` 把显式 impact frame 周围的 `snap/ease/s_curve`、hold 和可选 FFmpeg 插帧编译成 source-bound 计划；源 hash 或 piece 时间映射漂移会阻塞，apply 采用同目录临时文件事务式落盘。
 - **上传大小限制变成硬门禁**：`delivery_encode.py` 依据源片时长计算两遍 H.264/AAC 码率，绑定源与输出 SHA-256；完整解码、音视频契约或硬大小上限任一失败都不会提升成交付件。
 - **专业声画错位不再靠手写 FFmpeg**：`audio_transition.py` 对明确边界规划 J-cut/L-cut，验证真实音频 handle、config/transcript/source hash 和 compiled timing；`render_final.py` 在同一次编码中完成画面硬切、音频 pre-lap/overhang、字幕、overlay 与 BGM。
@@ -153,6 +154,8 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    │                            frames / detections / tracks / scene_tags
    ├─→ video_stabilization.py   手持素材 → source-bound 后端/决定/稳定工作副本
    │                            全长原片-vs-稳定版 A/B + confirm gate
+   ├─→ chroma_key.py            绿幕/蓝幕前景 + 图片/视频背景 → composite/matte 代表帧
+   │                            四项人工 review / 完整渲染 / source-bound live gate
    │
    ├─→ highlight_picker.py      长视频精华候选 / brief-query 定向找片段
    │                            输出 score / hook / reason / render_config
@@ -446,6 +449,7 @@ python3 scripts/transcript_review.py apply \
 | [`beat_sync.py`](scripts/beat_sync.py) | BGM → `beat_edit_plan.v1` 时间槽 / Markdown review，或把已有切点做 ±200ms snap；缺 `librosa` 时显式标记固定网格 fallback |
 | [`speed_ramp.py`](scripts/speed_ramp.py) | 显式 impact ranges → `speed_ramp_plan.v1` / digest 验证 / 可选插帧 / 音频同步 / 事务式 FFmpeg apply |
 | [`video_stabilization.py`](scripts/video_stabilization.py) | 源 hash + exact FFmpeg backend → 稳定工作副本 / 全长 A/B 对照 / 人工确认 gate |
+| [`chroma_key.py`](scripts/chroma_key.py) | 绿幕/蓝幕前景 + 图片/视频背景 → composite/matte 预览 / 四项人工复核 / 完整渲染 gate |
 | [`auto_stickers.py`](scripts/auto_stickers.py) | 情绪关键词→emoji 池（excited 🚀✨🔥 / doubt 🤔 / data 📈 等） |
 | [`auto_emphasis.py`](scripts/auto_emphasis.py) | 问句 / 数字 claim / 转折 / 结论 / 风险提醒 / 停顿恢复 → `emphasis_cues[]` |
 | [`auto_enrich.py`](scripts/auto_enrich.py) | 编排上面模块，输出综合 plan JSON（含 emphasis 和 imagegen cues） |
@@ -490,6 +494,34 @@ python3 scripts/video_stabilization.py apply work/video_stabilization_plan.json 
 `--backend auto` 创建计划时优先两遍 `vidstabdetect + vidstabtransform`；本机缺少它们时才选择 FFmpeg 内置单遍 `deshake`，并把 fallback warning 永久保存在 artifact 中。apply 不会临场换算法，原片永不覆盖，输出还会验证 duration、尺寸和音频存在性。
 
 用 1× 看完整左原片 / 右稳定版，检查人物、直线、画面四角、镜像边缘和有意 pan；可接受后运行 `confirm ... --reviewed-by "editor" --note "完整 A/B 已看..."`。确认前 `pipeline_manifest.py` 会阻塞，确认后仍实时验证源片、稳定版和 comparison 的 SHA-256。它不能修复滚动快门、运动模糊或失焦；稳定版只作为下游 working copy。
+
+### 🟩 Chroma Key — source-bound 绿幕 / 蓝幕换背景
+[`scripts/chroma_key.py`](scripts/chroma_key.py) · [详细文档](docs/prompts/99-chroma-key.md)
+
+绿幕、蓝幕或已知纯色幕布素材不再直接套一条 `chromakey` 命令。先绑定前景/背景和参数，并在代表时间点生成合成图与黑白 matte：
+
+```bash
+python3 scripts/chroma_key.py prepare \
+  --project-dir . \
+  --foreground origin/presenter-green.mp4 \
+  --background origin/studio.png \
+  --output-video output/presenter-studio.mp4 \
+  --preview-dir verify/chroma_key \
+  --report work/chroma_key.json \
+  --markdown work/chroma_key.md
+
+python3 scripts/chroma_key.py review \
+  --report work/chroma_key.json \
+  --reviewer "editor" \
+  --note "早中晚 composite/matte 已看；头发、手、衣物、溢色和背景匹配可接受" \
+  --edge-quality pass --subject-integrity pass \
+  --spill-control pass --background-fit pass
+
+python3 scripts/chroma_key.py apply --report work/chroma_key.json --strict
+python3 scripts/chroma_key.py verify --project-dir . --report work/chroma_key.json --strict
+```
+
+默认 `similarity=0.10 / blend=0.08 / despill=0.50`，每次只改一项后重新 `prepare --force`。图片背景保持整段；视频背景从第一帧循环，音轨被忽略，最终声音只沿用前景。`pipeline_manifest.py --require chroma_key --strict` 可把它设为强制 gate。完整渲染后仍要 1× 看完快速动作、头发/手、同色衣物和背景循环接缝；这不是无幕布 AI matting 或逐帧 roto。
 
 ### ⚡ Speed Ramp — source-bound 局部慢动作 / velocity edit
 [`scripts/speed_ramp.py`](scripts/speed_ramp.py) · [详细文档](docs/prompts/83-speed-ramp.md)
@@ -574,7 +606,7 @@ python3 scripts/edit_brief_plan.py \
   --strict
 ```
 
-它会识别 `origin/interview.mp4` 这类源素材路径、目标平台、手持防抖、目标脚本对齐、多 take、长视频拆条、批量短视频、字幕、B-roll、BGM、去停顿、J-cut/L-cut、生成素材、PIP、调色、QA、发布包等信号，并把它们映射到已有脚本，例如 `video_stabilization.py`、`script_alignment.py`、`highlight_picker.py`、`shorts_batch.py`、`jump_cut.py`、`audio_transition.py`、`auto_enrich.py`、`render_final.py`、`render_qa.py` 和 `publish_package.py`。`pipeline_manifest.py` 会发现 `edit_brief_plan.json`；当 `summary.blocking > 0`（例如 brief 为空或显式 source 缺失）时会作为 blocker，也可以用 `--require edit_brief_plan` 把需求路由作为 analysis gate。
+它会识别 `origin/interview.mp4` 这类源素材路径、目标平台、手持防抖、绿幕/蓝幕换背景、目标脚本对齐、多 take、长视频拆条、批量短视频、字幕、B-roll、BGM、去停顿、J-cut/L-cut、生成素材、PIP、调色、QA、发布包等信号，并把它们映射到已有脚本，例如 `video_stabilization.py`、`chroma_key.py`、`script_alignment.py`、`highlight_picker.py`、`shorts_batch.py`、`jump_cut.py`、`audio_transition.py`、`auto_enrich.py`、`render_final.py`、`render_qa.py` 和 `publish_package.py`。`pipeline_manifest.py` 会发现 `edit_brief_plan.json`；当 `summary.blocking > 0`（例如 brief 为空或显式 source 缺失）时会作为 blocker，也可以用 `--require edit_brief_plan` 把需求路由作为 analysis gate。
 
 ### 🛂 Production Authorization — 确切范围生产授权
 [`scripts/production_authorization.py`](scripts/production_authorization.py) · [详细文档](docs/prompts/97-production-authorization.md)
@@ -2946,12 +2978,31 @@ pytest tests/test_edit_preflight.py -v      # 渲染前结构/路径/参数预�
 pytest tests/test_edit_revision.py -v       # 文本剪辑 artifact source-bound revision / undo / redo
 pytest tests/test_edit_recipe.py -v         # 可移植 render-config recipe / typed binding / replay preflight
 pytest tests/test_video_stabilization.py -v # source-bound 后端计划 / 工作副本 / 全长 A/B / confirm gate
+pytest tests/test_chroma_key.py -v          # 绿幕/蓝幕 composite+matte / review / render / live gate
 pytest tests/test_approval_receipt.py -v    # 最终交付件 SHA-256 审批收据 + stale gate
 pytest tests/test_publish_package.py -v     # 最终上传包 + gate 状态汇总
 pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 pytest tests/test_review_dashboard.py -v    # 静态人工复核面板 + gate queue
 pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 gate
 ```
+
+### 2026-08-24 自动化升级记录（Source-bound Chroma-key Preview / Review / Render）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`RSamaium/greenscreen` 的 `greenscreen-video` skill](https://github.com/RSamaium/greenscreen/blob/master/skills/greenscreen-video/SKILL.md) | 完整渲染前先生成代表帧、checker/matte 证据，按主体缺口、溢色、硬边和背景融合逐项调参；最终还要确认音轨 | 采用“先 composite + matte、再人工 review”的核心闭环；不引入 Rust/WGPU/GPU CLI，继续使用项目现有本地 FFmpeg/Python 环境 |
+| [`bryanwhl/ffmpeg-video-editor` Chroma Key](https://github.com/bryanwhl/ffmpeg-video-editor/blob/main/SKILL.md#chroma-key--green-screen) | 把 `chromakey(color, similarity, blend)` 与背景 overlay 作为视频编辑 skill 的基础组合能力，并保留 green/blue/custom color 路由 | 新增确定性 filter contract，但补上源/背景/参数/预览/输出绑定、背景 scale+center-crop、前景音频策略和 live verify，避免一条裸命令直接交付 |
+| [`AEmotionStudio/ComfyUI-FFMPEGA`](https://github.com/AEmotionStudio/ComfyUI-FFMPEGA#green-screen-removal) | 绿幕去除不仅做 chromakey，还强调 despill、快速低分辨率 preview 和正式渲染分层 | 接入 FFmpeg `despill`，默认 `0.50` 且允许关闭/调节；不引入 ComfyUI、模型下载、LLM effect builder 或与本项目无关的 200+ 特效面板 |
+| [`MastroMimmo/ffmpeg-skill`](https://github.com/MastroMimmo/ffmpeg-skill#advanced-raw-ffmpeg) | 把绿幕 compositing 视为高频高级操作，但保持 helper script 零额外 Python 依赖、结构化命令可重复执行 | 保持 Python 标准库 + FFmpeg；将操作提升为 `prepare → review → apply → verify` artifact，而不是只在文档里保留 raw FFmpeg recipe |
+| [`lilingm963/removevideobg-skill`](https://github.com/lilingm963/removevideobg-skill) | 明确区分有幕布色键、无幕布 AI matting、透明 alpha 交付和换/模糊背景，并提醒 MP4/H.264 不承载 alpha | 本轮只实现明确绿/蓝/自定义纯色幕布的 H.264 composite；不调用外部按秒计费服务、不上传素材，也不把本功能包装成无幕布人像分割或透明视频导出 |
+
+新增/调整能力：新增 [`scripts/chroma_key.py`](scripts/chroma_key.py)、[`tests/test_chroma_key.py`](tests/test_chroma_key.py) 和 [`docs/prompts/99-chroma-key.md`](docs/prompts/99-chroma-key.md)，提供 `prepare → review → apply → verify`。`prepare` 绑定项目内前景/背景 SHA-256、媒体契约、key color、similarity、blend、despill 和 FFmpeg filter digest，默认在前景 15%/50%/85% 时间点各生成 composite 与黑白 matte。`review` 固定检查 `edge_quality / subject_integrity / spill_control / background_fit`，四项全部 `pass` 且 reviewer/note 非空后才批准；`apply` 用同目录临时 MP4 完整渲染，保持前景尺寸/帧率/时长与音轨，图片背景保持、视频背景循环且忽略背景声音。`verify` 现场重读源、背景、预览、当前 FFmpeg filters 和输出，任何字节、参数、媒体或派生状态漂移都 fail closed。`pipeline_manifest.py` 新增存在即 live verify、可 `--require chroma_key` 的 gate；`edit_brief_plan.py` 新增中英文绿幕/蓝幕/色键换背景路由。SKILL、daily workflow、提示词索引和 README 已同步。
+
+使用方式：先运行 `python3 scripts/chroma_key.py prepare --project-dir . --foreground origin/presenter-green.mp4 --background origin/studio.png --output-video output/presenter-studio.mp4 --preview-dir verify/chroma_key --report work/chroma_key.json --markdown work/chroma_key.md`。逐组查看 composite/matte，只改一个 `--similarity / --blend / --despill` 后重新 `prepare --force`；确认边缘、主体、溢色和背景匹配后运行 `review --edge-quality pass --subject-integrity pass --spill-control pass --background-fit pass --reviewer "<label>" --note "<evidence>"`，再执行 `apply --strict` 与 `verify --strict`。最终必须 1× 看完整输出；复杂透明物、反光、幕布皱褶或主体同色应重拍或交给专业 keyer/rotoscope。reviewer label 与 SHA-256 不是身份认证、数字签名或自动审美证明。
+
+验证结果：新增 11 项 chroma-key 单元/安全/lifecycle 测试，并扩展 edit-brief 与 pipeline-manifest 各 1 项；定向 `.venv/bin/python -m pytest tests/test_chroma_key.py tests/test_edit_brief_plan.py tests/test_pipeline_manifest.py -q` 通过 **125 passed in 2.08s**，最终全量 `.venv/bin/python -m pytest tests -q` 通过 **972 passed in 21.29s**。真实 FFmpeg smoke 用 3 秒、320×180、24fps 的绿幕红色移动主体、静态测试背景和 48 kHz 音频完成 `prepare → review → apply → verify`：生成 6 张 composite/matte PNG，人工查看中间帧确认背景替换和黑底白主体 matte，最终 H.264/AAC 为 `3.000s / 24fps / 320×180 / audio=true`，live verify 为 `blocking=0 / warnings=0`。smoke 同时发现并修复 FFmpeg 8.1 两字符 filter flags 解析和 macOS `/tmp` ↔ `/private/tmp` 等价路径问题，均已加回归测试；样片目录已移入废纸篓。`.venv/bin/python -m compileall -q scripts tests`、四组 CLI help、manifest category、Skill `quick_validate.py` 和 `git diff --check` 全部通过。
 
 ### 2026-08-23 自动化升级记录（Creator-owned Edit Style Profile）
 
@@ -3753,6 +3804,7 @@ scripts/
 ├── auto_chapter_cards.py       章节卡渲染                       [V3]
 ├── beat_sync.py                BGM beat edit slots / 切点吸附   [V3]
 ├── video_stabilization.py      source-bound 手持防抖 / 全长 A/B confirm gate [V3]
+├── chroma_key.py               绿幕/蓝幕 composite+matte / review / full render gate [V3]
 ├── speed_ramp.py               source-bound 局部变速计划 / 验证 / apply [V3]
 ├── audio_transition.py         J-cut/L-cut source handle / 单次编码 / receipt [V3]
 ├── audio_cue_sheet.py          BGM/SFX 音频设计清单               [V3]
