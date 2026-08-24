@@ -101,6 +101,7 @@
 | 97 | [Production Authorization 生产授权合同](97-production-authorization.md) | source-bound 外部上传、侵入性剪辑、付费生成、声音克隆、真人/品牌/IP 权利依据与 live gate |
 | 98 | [Creator-owned Edit Style Profile 创作者剪辑风格档案](98-edit-style-profile.md) | creator-owned 创意方向、节奏和受控渲染/文案默认值 → 可移植 profile |
 | 99 | [Chroma Key 绿幕 / 蓝幕抠像与换背景](99-chroma-key.md) | foreground + background → composite/matte 预览、四项人工复核、完整渲染与 source-bound live gate |
+| 100 | [Scoped Video Edit Review 局部 AI 视频编辑范围复核](100-scoped-video-edit-review.md) | source + edited → change-only / preserve invariants、同时间点 A/B 证据与 live gate |
 
 ## 快速上手
 
@@ -151,6 +152,7 @@
 | 已提交异步生成任务，要保存 submit_id 并跟踪下载 | [46-Generation Task Log](46-generation-task-log.md) |
 | 生成视频已经下载，想在组装前查物理、身份、道具和可用裁切范围 | [89-Generated Clip Review](89-generated-clip-review.md) |
 | 多条生成视频逐片都通过了，想在组装前检查跨镜头连续性 | [91-Generated Sequence Review](91-generated-sequence-review.md) |
+| 用 AI 只换了背景/服装/包装或局部元素，想确认其他内容没有漂移 | [100-Scoped Video Edit Review](100-scoped-video-edit-review.md) |
 | 想识别视频里的人、屏幕、手机或动态主体 | [47-Video Understanding](47-video-understanding.md) |
 | 想统一成片色彩或加轻微质感 | [48-Color Grade](48-color-grade.md) |
 | 准备上传前想核对平台视频、文案和 gate | [49-Publish Package](49-publish-package.md) |

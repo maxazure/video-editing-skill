@@ -257,6 +257,13 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         blocks_when_present=True,
     ),
     ArtifactDef(
+        "scoped_video_edit_review",
+        "Scoped AI Video Edit Review",
+        ("**/scoped_video_edit_review.json", "**/*_scoped_video_edit_review.json"),
+        "Run scoped_video_edit_review.py prepare/audit; confirm the exact target changed and every named invariant survived before assembly.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "generated_sequence_review",
         "Generated Sequence Continuity Review",
         ("**/generated_sequence_review.json", "**/*_generated_sequence_review.json"),
@@ -1060,6 +1067,35 @@ def evaluate_category(
             elif _int_at(verification, "summary", "warnings"):
                 status = "warn" if status != "blocked" else status
                 notes.append(f"generated sequence review contains accepted intentional changes: {artifact.path}")
+        return {
+            "category": definition.category,
+            "label": definition.label,
+            "status": status,
+            "artifact_count": len(artifacts),
+            "latest_path": artifacts[0].path,
+            "notes": sorted(set(notes)),
+            "next_action": definition.next_action if status in {"missing", "blocked", "warn"} else "",
+        }
+
+    if definition.category == "scoped_video_edit_review":
+        from scoped_video_edit_review import verify_report
+
+        for artifact in artifacts:
+            data = _load_json(artifact.path)
+            if data is None:
+                status = "blocked"
+                notes.append(f"unreadable scoped video edit review: {artifact.path}")
+                continue
+            verification = verify_report(data)
+            blocking = _int_at(verification, "summary", "blocking")
+            if blocking:
+                status = "blocked"
+                notes.append(
+                    f"invalid scoped video edit review {artifact.path}: {blocking} blocking item(s)"
+                )
+            elif _int_at(verification, "summary", "warnings"):
+                status = "warn" if status != "blocked" else status
+                notes.append(f"scoped video edit review retains warning(s): {artifact.path}")
         return {
             "category": definition.category,
             "label": definition.label,

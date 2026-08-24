@@ -242,6 +242,26 @@ SIGNAL_KEYWORDS: Mapping[str, Sequence[str]] = {
         "绿幕换背景",
         "蓝幕换背景",
     ),
+    "scoped_video_edit": (
+        "scoped video edit",
+        "precise video edit",
+        "change only the background",
+        "change only the outfit",
+        "change only the packaging",
+        "keep everything else unchanged",
+        "preserve everything else",
+        "局部视频编辑",
+        "局部修改视频",
+        "局部重绘视频",
+        "只改背景",
+        "只改衣服",
+        "只改服装",
+        "只替换包装",
+        "其余不变",
+        "其他保持不变",
+        "视频换装",
+        "替换包装设计",
+    ),
     "speed_ramp": (
         "speed ramp",
         "speed-ramp",
@@ -408,6 +428,7 @@ SIGNAL_LABELS: Mapping[str, str] = {
     "final_audio_storyboard": "锁定视觉 EDL 后重建最终声音分镜",
     "video_stabilization": "手持素材稳定化 / 防抖",
     "chroma_key": "绿幕 / 蓝幕抠像与换背景",
+    "scoped_video_edit": "局部 AI 视频编辑变更/保护范围复核",
     "speed_ramp": "局部 speed ramp / velocity edit",
     "audio_transition": "J-cut / L-cut 声画错位转场",
     "audio_sync": "外录音频对齐",
@@ -588,7 +609,7 @@ def build_plan(
 
     if source_media and not Path(source_media).expanduser().exists():
         blockers.append(f"source media not found: {source_media}")
-    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy", "reference_edit_rhythm", "lip_sync_review", "subtitle_style_preview", "multimodal_dead_air", "video_stabilization", "chroma_key", "speed_ramp", "hdr_sdr", "delivery_encode", "edit_style_profile"}):
+    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy", "reference_edit_rhythm", "lip_sync_review", "subtitle_style_preview", "multimodal_dead_air", "video_stabilization", "chroma_key", "scoped_video_edit", "speed_ramp", "hdr_sdr", "delivery_encode", "edit_style_profile"}):
         warnings.append("source media was not provided; commands use <source_media> placeholders")
 
     if transcript and not Path(transcript).expanduser().exists():
@@ -1341,6 +1362,63 @@ def build_plan(
         notes.append(
             "Review every composite/matte pair, run chroma_key.py review with all four checks, then apply and verify. "
             "Use output/chroma_key_composite.mp4 as the downstream source and watch the full result at 1x."
+        )
+
+    if "scoped_video_edit" in ids:
+        _add_step(
+            steps,
+            seen,
+            _step(
+                "scoped_video_edit_review",
+                phase="review",
+                script="scoped_video_edit_review.py",
+                label="Verify that a scoped AI video edit changed only its declared target",
+                reason="The brief asks for a localized video edit while preserving all named non-target layers.",
+                command=shell(
+                    [
+                        python_bin,
+                        "scripts/scoped_video_edit_review.py",
+                        "prepare",
+                        "--project-dir",
+                        project_dir,
+                        "--source",
+                        source,
+                        "--edited",
+                        "work/scoped_video_edit.mp4",
+                        "--change-category",
+                        "other",
+                        "--change",
+                        "<one_exact_change>",
+                        "--preserve",
+                        "subject_identity",
+                        "--preserve",
+                        "performance_motion",
+                        "--preserve",
+                        "camera_motion",
+                        "--preserve",
+                        "source_audio",
+                        "--evidence-dir",
+                        "verify/scoped_video_edit",
+                        "--output",
+                        "work/scoped_video_edit_review_request.json",
+                        "--markdown",
+                        "work/scoped_video_edit_review_request.md",
+                        "--response-template",
+                        "work/scoped_video_edit_review_response.json",
+                    ]
+                ),
+                outputs=[
+                    "work/scoped_video_edit_review_request.json",
+                    "work/scoped_video_edit_review_response.json",
+                    "work/scoped_video_edit_review.json",
+                    "verify/scoped_video_edit/",
+                ],
+                gate_category="scoped_video_edit_review",
+            ),
+        )
+        notes.append(
+            "Use one change direction per provider call. After download, watch source and edited files in full at 1x, "
+            "review every same-time pair and both comparison audio tracks, then audit and live-verify the report."
         )
 
     if "speed_ramp" in ids:

@@ -82,6 +82,27 @@ def test_multimodal_dead_air_brief_prefers_source_bound_and_gate(tmp_path):
     assert any("timeline_view.py" in note for note in plan["notes"])
 
 
+def test_scoped_ai_video_edit_routes_change_preservation_review(tmp_path):
+    source = tmp_path / "origin" / "presenter.mp4"
+    source.parent.mkdir(parents=True)
+    source.write_text("fake video", encoding="utf-8")
+
+    plan = build_plan(
+        f"用即梦对 {source} 做局部视频编辑：只改衣服颜色，人物动作、机位和原声其余不变",
+        project_dir=str(tmp_path),
+    )
+
+    ids = [step["id"] for step in plan["steps"]]
+    assert "scoped_video_edit_review" in ids
+    step = next(step for step in plan["steps"] if step["id"] == "scoped_video_edit_review")
+    assert step["script"] == "scoped_video_edit_review.py"
+    assert "scoped_video_edit_review.py prepare" in step["command"]
+    assert "--preserve subject_identity" in step["command"]
+    assert "--preserve source_audio" in step["command"]
+    assert step["gate_category"] == "scoped_video_edit_review"
+    assert any("one change direction" in note for note in plan["notes"])
+
+
 def test_generated_assets_note_and_prompt_pack_steps(tmp_path):
     source = tmp_path / "talk.mp4"
     source.write_text("fake video", encoding="utf-8")

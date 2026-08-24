@@ -208,6 +208,8 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    │                            submit_id / 轮询 / 下载 / 本地落盘 gate
    ├─→ generated_clip_review.py 下载后的生成视频片段复核
    │                            contact sheet / 常识物理 / 身份道具 / 裁切与重生 gate
+   ├─→ scoped_video_edit_review.py 原片 vs 局部 AI 编辑结果
+   │                            change-only / preserve invariants / 同时间点 A-B + 双音轨 gate
    ├─→ generated_sequence_review.py 已审生成片段 → 相邻边界连续性复核
    │                            尾帧/首帧 / 无声预览 / 身份道具空间动作机位光色 gate
    ├─→ generation_lessons.py    canonical clip review → 人工批准经验库
@@ -1062,6 +1064,42 @@ python3 scripts/generated_clip_review.py verify \
 
 `pass` 要求加权分至少 80、故事清晰、没有 hard fail 且无需删段；`pass_with_edits` 要求至少 65，并让 `keep_ranges` / `remove_ranges` 无缝覆盖整条片段；身份断裂、错误/缺失动作、肢体或物理失败、多余主体、关键道具消失、生成文字/水印、连续性矛盾、音画矛盾和 explicit must-avoid 都会越过高分直接 `fail`，要求 `regenerate=true + prompt_fix`。clip/contact sheet 漂移、漏审、区间重叠/缺口和报告派生状态篡改都会 fail closed；`pipeline_manifest.py --require generated_clip_review --strict` 可设为发布门禁。reviewer label 不是身份认证或数字签名，contact sheet 也不能替代完整播放。
 
+### 🎯 Scoped Video Edit Review — 局部 AI 视频编辑范围复核
+[`scripts/scoped_video_edit_review.py`](scripts/scoped_video_edit_review.py) · [详细文档](docs/prompts/100-scoped-video-edit-review.md)
+
+换背景、换装、换包装、局部 VFX 等 provider edit mode 需要回答“只改了目标，还是顺手把脸、动作、机位、构图、节奏或原声也改了”。这个 gate 把一个 `change only` 和至少两个 `preserve invariants` 绑定到 source/edited bytes，在同时间点生成三张左右并排 JPEG 和完整范围 A/B preview；两边有音轨时保留为两个独立 audio tracks。
+
+```bash
+python3 scripts/scoped_video_edit_review.py prepare \
+  --project-dir . \
+  --source origin/presenter.mp4 \
+  --edited work/presenter-red-jacket.mp4 \
+  --change-category wardrobe \
+  --change "change only the jacket from blue to red" \
+  --preserve subject_identity \
+  --preserve performance_motion \
+  --preserve camera_motion \
+  --preserve framing_composition \
+  --preserve source_audio \
+  --evidence-dir verify/scoped_video_edit \
+  --output work/scoped_video_edit_review_request.json \
+  --markdown work/scoped_video_edit_review_request.md \
+  --response-template work/scoped_video_edit_review_response.json
+
+# 分别完整看 source / edited / comparison，切换两条音轨并填写 response 后：
+python3 scripts/scoped_video_edit_review.py audit \
+  --request work/scoped_video_edit_review_request.json \
+  --response work/scoped_video_edit_review_response.json \
+  --output work/scoped_video_edit_review.json \
+  --markdown work/scoped_video_edit_review.md \
+  --strict
+python3 scripts/scoped_video_edit_review.py verify \
+  --report work/scoped_video_edit_review.json \
+  --strict
+```
+
+目标和每个保护项必须给 `pass|fail|not_observable + evidence`；任何 fail/不可观察、播放确认缺失、时长/尺寸/帧率或 bytes 漂移都会阻塞，失败必须写 `repair_action`。`pipeline_manifest.py --require scoped_video_edit_review --strict` 可设为组装/发布门禁。脚本不调用 provider、不上传、不消耗 credits；suggested prompt 只是 provider-neutral 范围合同。
+
 ### 🎞️ Generated Sequence Review — 生成视频跨镜头连续性复核
 [`scripts/generated_sequence_review.py`](scripts/generated_sequence_review.py) · [详细文档](docs/prompts/91-generated-sequence-review.md)
 
@@ -1639,7 +1677,7 @@ python3 scripts/export_otio.py \
 
 ### 2026-07-19 自动化升级记录（Subtitle Readability QA）
 
-本次联网研究的 GitHub 参考：
+本次联网研究的 GitHub 参考（检索时间：2026-08-25）：
 
 | 来源 | 值得借鉴的优点 | 本项目处理 |
 |---|---|---|
@@ -2954,6 +2992,7 @@ pytest tests/test_provider_capability.py -v # provider/surface/model 能力、fr
 pytest tests/test_reference_frame_preflight.py -v # 首帧/style key 尺寸/方向/透明背景 gate
 pytest tests/test_generation_task_log.py -v # 异步生成任务台账 + 下载 gate
 pytest tests/test_generated_clip_review.py -v # 生成视频 contact sheet / 评分 / 裁切 / 重生 / stale gate
+pytest tests/test_scoped_video_edit_review.py -v # 局部 AI edit change/preserve A-B 证据 / live gate
 pytest tests/test_generated_sequence_review.py -v # 已审生成片段相邻边界证据 / 连续性 / stale gate
 pytest tests/test_generation_lessons.py -v # 已审片段 → scoped prompt 经验库 / 选择 / stale gate
 pytest tests/test_video_understanding.py -v # 抽样帧 + 可选 YOLO 检测 artifact
@@ -2985,6 +3024,24 @@ pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 pytest tests/test_review_dashboard.py -v    # 静态人工复核面板 + gate queue
 pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 gate
 ```
+
+### 2026-08-25 自动化升级记录（Scoped AI Video Edit Change/Preserve Review）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`jeurtr/seedance-skill` 的 Edit mode 与 Retake Protocol](https://github.com/jeurtr/seedance-skill/blob/main/SKILL.md) | 明确区分普通 reference 与“修改一个 layer、保留 source”，并要求先考虑 fix in post / targeted Edit、单次只改一个变量，不重写整个镜头 | 新增 provider-neutral `change only + preserve invariants` 合同；不调用 Seedance、不提交任务，也不照搬其易变 surface 规格 |
+| [`mqrox/seedance-2.0-prompt-skill`](https://github.com/mqrox/seedance-2.0-prompt-skill/blob/main/build-seedance2-prompts/SKILL.md) | edit 必须直接指向 source video，add/remove/replace 一个具体元素并命名不变量；保留 source audio 必须依赖真实 surface control，不能猜 | suggested prompt 直接声明唯一 editing master、确切时间范围、目标和保护项；把 capability 边界写进文档，音频复核不能靠 prompt 自证 |
+| [`liyue-aigc/seedance-2-5-video-director`](https://github.com/liyue-aigc/seedance-2-5-video-director/blob/main/SKILL.md) | 局部 edit 使用 location/annotation + exact target + action + effective time，并逐项列出必须不变的内容 | request 固定 `category/change/start/end` 和受控 protection keys；本轮不加入 provider-specific 标注框或 UI 参数 |
+| [`prime-skills/runcomfy-agent-skills` video-edit](https://github.com/prime-skills/runcomfy-agent-skills/blob/main/video-edit/SKILL.md) | preservation goals 先于 change、每次只做一个 edit direction；talking-head 特别保护脸、pose、lip movement、camera motion 和原声 | `prepare` 至少要求两个明确保护项，目标/每项保护都必须给可观察 evidence；compound edit 应拆成多次 provider call 与多份 report |
+| [`smixs/visual-skills` Seedance 2.5 video edit](https://github.com/smixs/visual-skills/blob/main/video/references/seedance-25.md#12-video-editing-partial-re-render) | 把原片视为唯一 master，保护人物、动作、构图、机位、遮挡、声音和事件顺序，并建议 source/edited 对照检查 | 新增同时间点早/中/晚左右并排 JPEG 和完整范围 A/B preview；source/edited 两条音轨均存在时作为独立 audio tracks 保留供切换试听 |
+
+新增/调整能力：新增 [`scripts/scoped_video_edit_review.py`](scripts/scoped_video_edit_review.py)、[`tests/test_scoped_video_edit_review.py`](tests/test_scoped_video_edit_review.py) 和 [`docs/prompts/100-scoped-video-edit-review.md`](docs/prompts/100-scoped-video-edit-review.md)，提供 `prepare → audit → verify`。`prepare` 绑定项目内 source/edited SHA-256、大小、媒体契约、唯一变更描述、精确时间范围和至少两个受控 protection keys；默认在范围 15%/50%/85% 生成 source-left / edited-right 同时间点 JPEG，并生成完整范围 H.264 A/B preview。两边有声音时保留 source/edited 两条独立 AAC track；reviewer 必须分别完整 1× 播放原片、编辑结果和 comparison，再对 target 与每个 protection 填 `pass|fail|not_observable + evidence`。目标或保护项不通过/不可观察、播放确认缺失、时长/尺寸/帧率漂移、源/结果/证据/派生状态漂移都会 fail closed；失败必须写 `repair_action`。`pipeline_manifest.py` 新增存在即 live verify、可 `--require scoped_video_edit_review` 的 gate；`edit_brief_plan.py` 新增中英文局部 edit / change-only / 其余不变路由。SKILL、daily workflow 和提示词索引已同步。
+
+使用方式：生成式局部 edit 下载为 `work/presenter-red-jacket.mp4` 后，运行 `python3 scripts/scoped_video_edit_review.py prepare --project-dir . --source origin/presenter.mp4 --edited work/presenter-red-jacket.mp4 --change-category wardrobe --change "change only the jacket from blue to red" --preserve subject_identity --preserve performance_motion --preserve camera_motion --preserve framing_composition --preserve source_audio --evidence-dir verify/scoped_video_edit --output work/scoped_video_edit_review_request.json --markdown work/scoped_video_edit_review_request.md --response-template work/scoped_video_edit_review_response.json`。完整观看 source/edited/comparison 并切换两条音轨，填完 response 后运行 `audit --strict` 与 `verify --strict`；发布前可运行 `pipeline_manifest.py --require scoped_video_edit_review --strict`。脚本不调用 provider、不上传素材、不消耗 credits；suggested prompt 只是 provider-neutral scope contract，不能代替当前 UI/API capability 与上传/付费/权利授权核验。
+
+验证结果：新增 10 项 scoped-edit request/audit/安全/硬链接/漂移/畸形输入/CLI 测试，并扩展 edit-brief 与 pipeline-manifest 各 1 项；定向 `.venv/bin/python -m pytest tests/test_scoped_video_edit_review.py tests/test_edit_brief_plan.py tests/test_pipeline_manifest.py -q` 通过 **126 passed in 1.95s**，最终全量 `.venv/bin/python -m pytest tests -q` 通过 **984 passed in 19.15s**。真实 FFmpeg lifecycle smoke 用 3 秒、320×180、24fps、H.264/AAC 原片与“只把蓝背景换成绿背景”的编辑结果生成 3 张 640×180 同时间点 A/B JPEG；人工查看中间帧确认左右红色主体位置/大小一致且只有背景改变。完整 comparison 为 `3.000s / 640×180 / 24fps / H.264`，包含两条 `48kHz AAC mono` source/edited 音轨；`audit/verify` 为 `ready / blocking=0 / warnings=0`。把 edited 文件替换为另一份字节后，live verify 以退出码 2 阻断，恢复原文件后重新 ready。`.venv/bin/python -m compileall -q scripts tests`、三组新 CLI help、manifest category、自然语言路由、Skill `quick_validate.py` 与 `git diff --check` 均通过。
 
 ### 2026-08-24 自动化升级记录（Source-bound Chroma-key Preview / Review / Render）
 
@@ -3817,6 +3874,7 @@ scripts/
 ├── reference_frame_preflight.py 首帧/style key 画幅与背景预检 gate [V3]
 ├── generation_task_log.py      异步生成任务台账 + 下载 gate         [V3]
 ├── generated_clip_review.py    source-bound 生成片段评分/裁切/重生 gate [V3]
+├── scoped_video_edit_review.py 原片/局部 AI edit 同时间点 A-B / preserve gate [V3]
 ├── generated_sequence_review.py 已审生成片段相邻尾帧/首帧/预览连续性 gate [V3]
 ├── generation_lessons.py       已审片段 → scoped prompt 经验库 / 选择 / verify [V3]
 ├── storyboard_assets.py        分镜素材任务清单 + ready 预检       [V3]

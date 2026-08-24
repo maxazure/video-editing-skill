@@ -337,6 +337,26 @@
     # 完整看过 1×带声、0.25×、静音和 audio-only 后填 response，再运行 audit --strict / verify --strict。
     # hard fail 或需重生不能靠转场掩盖；详见 docs/prompts/89-generated-clip-review.md
 
+4h-1. # 如果 provider 对已有视频执行了“只换背景/服装/包装/局部 VFX”等 edit mode，做前后范围复核：
+    python3 scripts/scoped_video_edit_review.py prepare \
+      --project-dir . \
+      --source origin/<source>.mp4 \
+      --edited work/<scoped-edit>.mp4 \
+      --change-category wardrobe \
+      --change "change only the jacket from blue to red" \
+      --preserve subject_identity \
+      --preserve performance_motion \
+      --preserve camera_motion \
+      --preserve framing_composition \
+      --preserve source_audio \
+      --evidence-dir verify/scoped_video_edit \
+      --output work/scoped_video_edit_review_request.json \
+      --markdown work/scoped_video_edit_review_request.md \
+      --response-template work/scoped_video_edit_review_response.json
+    # 分别完整 1× 看 source/edited，再看左右并排 preview 并切换两条音轨；逐项填 target/protections。
+    # audit --strict 与 verify --strict 都通过后才组装；失败需写 scoped repair_action。
+    # 每次 provider call 只改一个方向；脚本不提交 provider、不上传、不消耗 credits。详见 docs/prompts/100-scoped-video-edit-review.md
+
 4h-2. # 有两条以上生成视频时，逐片通过后再复核每个相邻边界：
     python3 scripts/generated_sequence_review.py prepare \
       --project-dir . \

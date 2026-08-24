@@ -15,6 +15,7 @@ from edit_style_profile import create_profile, template_spec  # noqa: E402
 import delivery_encode  # noqa: E402
 import generated_clip_review  # noqa: E402
 import generated_sequence_review  # noqa: E402
+import scoped_video_edit_review  # noqa: E402
 import generation_lessons  # noqa: E402
 import hdr_sdr  # noqa: E402
 import multimodal_dead_air  # noqa: E402
@@ -536,6 +537,91 @@ def test_generated_sequence_review_is_live_verified_and_can_be_required(tmp_path
         required=["generated_sequence_review"],
     )
     assert "generated_sequence_review" in missing["missing_required"]
+
+
+def test_scoped_video_edit_review_is_live_verified_and_can_be_required(tmp_path, monkeypatch):
+    _publish_ready_project(tmp_path)
+    source = tmp_path / "origin" / "source.mp4"
+    edited = tmp_path / "work" / "edited.mp4"
+    _write(source, "source-video")
+    _write(edited, "edited-video")
+    media = {
+        "duration": 4.0,
+        "fps": 24.0,
+        "width": 640,
+        "height": 360,
+        "video_codec": "h264",
+        "pixel_format": "yuv420p",
+        "has_audio": True,
+        "audio_codec": "aac",
+        "sample_rate": 48000,
+        "channels": 2,
+    }
+    monkeypatch.setattr(scoped_video_edit_review, "probe_media", lambda _path: dict(media))
+
+    def fake_evidence(_source, _edited, output_dir, **_kwargs):
+        output_dir.mkdir(parents=True, exist_ok=True)
+        frames = []
+        for index in range(1, 4):
+            path = output_dir / f"comparison_{index:02d}.jpg"
+            path.write_bytes(f"comparison-{index}".encode("utf-8"))
+            frames.append(path)
+        preview = output_dir / "comparison_preview.mp4"
+        preview.write_bytes(b"comparison-preview")
+        return {
+            "canvas": {"width": 1280, "height": 360, "fps": 24.0},
+            "frames": frames,
+            "preview": preview,
+        }
+
+    monkeypatch.setattr(scoped_video_edit_review, "generate_comparison_evidence", fake_evidence)
+    request = scoped_video_edit_review.prepare_request(
+        str(source),
+        str(edited),
+        project_dir=str(tmp_path),
+        evidence_dir="verify/scoped_video_edit",
+        change_category="background",
+        change="replace only the background",
+        protections=["subject_identity", "performance_motion", "camera_motion", "source_audio"],
+    )
+    response = {
+        "version": scoped_video_edit_review.RESPONSE_VERSION,
+        "request_id": request["request_id"],
+        "reviewed_by": "review-agent",
+        "playback": {
+            "source_full_1x": True,
+            "edited_full_1x": True,
+            "comparison_scope_1x": True,
+        },
+        "target_change": {"status": "pass", "evidence": "Background replacement is complete."},
+        "protections": [
+            {"key": key, "status": "pass", "evidence": f"Preserved {key}."}
+            for key in request["protections"]
+        ],
+        "verdict": "pass",
+        "repair_action": "",
+        "notes": "Full source, edit, paired frames, and both audio tracks reviewed.",
+    }
+    report_path = tmp_path / "work" / "scoped_video_edit_review.json"
+    _write(report_path, scoped_video_edit_review.build_report(request, response))
+
+    ready = build_manifest(
+        str(tmp_path), target_stage="publish_ready", required=["scoped_video_edit_review"]
+    )
+    gate = next(g for g in ready["gates"] if g["category"] == "scoped_video_edit_review")
+    assert gate["status"] == "ready"
+
+    edited.write_text("changed edit", encoding="utf-8")
+    stale = build_manifest(str(tmp_path), target_stage="publish_ready")
+    gate = next(g for g in stale["gates"] if g["category"] == "scoped_video_edit_review")
+    assert gate["status"] == "blocked"
+    assert "scoped_video_edit_review" in stale["blocked_gates"]
+
+    report_path.unlink()
+    missing = build_manifest(
+        str(tmp_path), target_stage="publish_ready", required=["scoped_video_edit_review"]
+    )
+    assert "scoped_video_edit_review" in missing["missing_required"]
 
 
 def test_current_approval_receipt_can_be_required_for_publish(tmp_path):

@@ -1,6 +1,6 @@
 ---
 name: video-editing
-description: "Xiaohongshu/RED-tuned short-form video workflow for voice-over, talking-head, tutorials, interviews, podcasts, screen recordings, green/blue-screen compositing, B-roll, captions, and generated assets. Covers edit routing, creator-owned edit-style profiles, transcription, semantic review, multi-take/audio sync/stabilization/dead-air cleanup, highlights/shorts, story and source gates, enrichment and video-generation planning, generated clip/sequence review, locked-EDL final audio storyboards, color/speed/J-L cuts, reversible revisions and recipes, preflight/render/QA, subtitles, CapCut, platform/size exports, covers, captions, publish packages, dashboards, handoff formats, and Remotion."
+description: "Xiaohongshu/RED-tuned short-form video workflow for voice-over, talking-head, tutorials, interviews, podcasts, screen recordings, green/blue-screen compositing, B-roll, captions, and generated assets. Covers edit routing, creator-owned edit-style profiles, transcription, semantic review, multi-take/audio sync/stabilization/dead-air cleanup, highlights/shorts, story and source gates, enrichment and video-generation planning, generated clip/sequence and scoped AI video-edit review, locked-EDL final audio storyboards, color/speed/J-L cuts, reversible revisions and recipes, preflight/render/QA, subtitles, CapCut, platform/size exports, covers, captions, publish packages, dashboards, handoff formats, and Remotion."
 metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
 ---
 
@@ -53,6 +53,8 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    │                            首帧/style key 尺寸/方向/透明背景/画幅 gate
    ├─→ generation_task_log.py   异步生成任务台账 / submit_id / 下载 gate
    ├─→ generated_clip_review.py 生成片段 contact sheet / 常识物理 / 连续性 / 重生 gate
+   ├─→ scoped_video_edit_review.py
+   │                            原片 vs 局部 AI 编辑结果 / change-only + preserve invariants / A-B gate
    ├─→ generated_sequence_review.py
    │                            已审片段相邻尾帧/首帧/预览 / 跨镜头连续性 gate
    ├─→ final_audio_storyboard.py
@@ -154,6 +156,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `reference_frame_preflight.py` | video_prompt_pack → 首帧/style key 存在性、解码、尺寸、方向、画幅、透明背景 gate | `--prompt-pack` `--require-style-reference` `--reference shot_id=...` `--strict` |
 | `generation_task_log.py` | 异步生成任务台账：submit_id/task id、轮询、下载、本地落盘 gate | `add` `update` `import-provider-decision` `report --strict` |
 | `generated_clip_review.py` | 生成视频片段 source-bound 视觉复核：contact sheet、评分、裁切范围、重生建议 | `prepare --clip/--asset-manifest` `audit --request --response` `verify --report --strict` |
+| `scoped_video_edit_review.py` | 原片 + 局部 AI 编辑结果 → 同时间点 A/B 证据、唯一变更目标、保护项逐项复核和 live gate | `prepare --source --edited --change --preserve` `audit --request --response` `verify --report --strict` |
 | `generated_sequence_review.py` | 已审生成片段跨镜头连续性复核：真实尾帧/首帧、并排图、无声边界预览和 live gate | `prepare --clip-review [--storyboard-plan]` `audit --request --response` `verify --report --strict` |
 | `generation_lessons.py` | 从 canonical generated-clip review 提取经明确批准的 provider/model/category 经验，并供下一次 prompt pack 选择 | `add --review --clip-id --lesson --approved-by [--supersedes]` `verify --strict` `select --provider [--model]` |
 | `storyboard_assets.py` | storyboard_plan → 素材清单 + ready/paid 预检 | `--storyboard-plan` `--asset-root` `--output` `--strict` |
@@ -1173,6 +1176,13 @@ python3 scripts/render_final.py --config script/render_config.json --output medi
 - `pass` 要求加权分 ≥80 且无删段；`pass_with_edits` 要求 ≥65，并由 keep/remove 精确覆盖全片；常识/物理、身份、道具、文字水印、连续性或音画 hard fail 无论总分多高都必须 `fail`
 - 填完 response 后运行 `generated_clip_review.py audit --request work/generated_clip_review_request.json --response work/generated_clip_review_response.json --output work/generated_clip_review.json --markdown work/generated_clip_review.md --strict`；任何 clip/contact sheet 漂移、缺审、非法区间或需重生都会阻塞
 - 组装/发布前再运行 `generated_clip_review.py verify --report work/generated_clip_review.json --strict`，也可用 `pipeline_manifest.py --require generated_clip_review --strict`。reviewer label 不是身份认证或数字签名
+
+**Scoped Video Edit Review 局部 AI 视频编辑范围复核**（换装/换背景/换包装/局部 VFX 等 edit mode 后必跑）：
+- 每次 provider call 只声明一个确切变化；运行 `scoped_video_edit_review.py prepare --project-dir . --source origin/source.mp4 --edited work/scoped_video_edit.mp4 --change-category wardrobe --change "change only the jacket from blue to red" --preserve subject_identity --preserve performance_motion --preserve camera_motion --preserve framing_composition --preserve source_audio --evidence-dir verify/scoped_video_edit --output work/scoped_video_edit_review_request.json --markdown work/scoped_video_edit_review_request.md --response-template work/scoped_video_edit_review_response.json`
+- `prepare` 绑定原片/编辑结果 SHA-256 与媒体契约，生成范围内 15%/50%/85% 同时间点左右并排 JPEG，以及完整左右并排 H.264 preview；两条输入音轨存在时，preview 把 source/edited 分别保留为独立音轨
+- reviewer 必须分别以 1×、带声完整看原片与编辑结果，再看完整 A/B scope preview；目标变化和每个 `--preserve` 只允许 `pass|fail|not_observable`，不能看不清仍猜 pass
+- `audit --strict` 只在目标确实完成、全部保护项通过、三遍播放确认齐全、时长/尺寸/帧率未漂移时 ready；失败必须写具体 `repair_action`
+- 组装/发布前运行 `verify --report work/scoped_video_edit_review.json --strict`，或 `pipeline_manifest.py --require scoped_video_edit_review --strict`。脚本不调用 provider、不上传素材、不消耗 credits；建议 prompt 是 provider-neutral contract，不能替代当前 surface 的 capability 核验。详见 `docs/prompts/100-scoped-video-edit-review.md`
 
 **Generated Sequence Review 跨镜头连续性复核**（两条以上生成片段逐片通过后、组装前必跑）：
 - 运行 `generated_sequence_review.py prepare --project-dir . --clip-review work/generated_clip_review.json --storyboard-plan work/storyboard_plan.json --evidence-dir verify/generated_sequence --output work/generated_sequence_review_request.json --markdown work/generated_sequence_review_request.md --response-template work/generated_sequence_review_response.json`
