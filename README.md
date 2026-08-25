@@ -2,7 +2,7 @@
 
 这是一个面向 **口播、教程、访谈、播客切片、录屏演示 / facecam demo** 的 AI 视频剪辑生产线：给它原始口播音频/视频、transcript、B-roll、摄像头小窗或素材目录，它可以把“还没整理的素材”推进到 **可发布的小红书 / 抖音 / 视频号短视频**。
 
-它不是一个单点 FFmpeg 脚本，而是一条完整工作流：**项目启动/素材导入 → 个人/品牌剪辑风格 → 生产授权 → 手持防抖 / 绿蓝幕换背景 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 锁定视觉 EDL 后重建最终声音分镜 → 渲染前预检 / 真实画面字幕样式选择 → 单次编码渲染 → 质检 / 最终成片唇形复核 → 多平台导出 / 目标大小交付编码 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
+它不是一个单点 FFmpeg 脚本，而是一条完整工作流：**项目启动/素材导入 → 个人/品牌剪辑风格 → 生产授权 → 手持防抖 / 绿蓝幕换背景 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp / 关键帧 freeze-punch / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 锁定视觉 EDL 后重建最终声音分镜 → 渲染前预检 / 真实画面字幕样式选择 → 单次编码渲染 → 质检 / 最终成片唇形复核 → 多平台导出 / 目标大小交付编码 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
 
 ## 适合做什么
 
@@ -14,6 +14,7 @@
 - **手持防抖保留原片和 A/B 证据**：`video_stabilization.py` 把源 SHA-256、确切 FFmpeg 后端和人工决定写进计划；apply 只生成新工作副本与全长左右对照，完整 1× 复核并 confirm 后 manifest 才放行。
 - **绿幕/蓝幕换背景先看 matte 再渲染**：`chroma_key.py` 在前景早/中/晚生成 composite 与黑白 matte，人工逐项确认边缘、主体完整性、溢色和背景匹配后才允许完整 H.264/AAC 输出；源、背景、预览、filter 或成片漂移都会让旧 review 失效。
 - **局部慢动作先计划再渲染**：`speed_ramp.py` 把显式 impact frame 周围的 `snap/ease/s_curve`、hold 和可选 FFmpeg 插帧编译成 source-bound 计划；源 hash 或 piece 时间映射漂移会阻塞，apply 采用同目录临时文件事务式落盘。
+- **动作落点可以定格并轻推近**：`freeze_punch.py` 用第一帧替换指定 source-time 窗口，保持总时长和原音频时间线不变；计划绑定源片、事件和输出字节，完整解码、成片漂移或尚未 apply 都会阻塞 manifest。
 - **上传大小限制变成硬门禁**：`delivery_encode.py` 依据源片时长计算两遍 H.264/AAC 码率，绑定源与输出 SHA-256；完整解码、音视频契约或硬大小上限任一失败都不会提升成交付件。
 - **专业声画错位不再靠手写 FFmpeg**：`audio_transition.py` 对明确边界规划 J-cut/L-cut，验证真实音频 handle、config/transcript/source hash 和 compiled timing；`render_final.py` 在同一次编码中完成画面硬切、音频 pre-lap/overhang、字幕、overlay 与 BGM。
 - **事实型内容有 proof deck**：新闻、数据、产品事实或来源页截图可用 `source_receipts.py` 生成 URL/截图复核包，作为发布前 gate。
@@ -183,6 +184,8 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    │                            或把已有切点吸附到附近 beat
    ├─→ speed_ramp.py            局部慢动作 / velocity edit → source-bound 计划
    │                            snap/ease/s-curve / 可选插帧 / 音频同步 / 事务式 apply
+   ├─→ freeze_punch.py          impact frame → 定格替换窗口 / 轻微 punch crop
+   │                            总时长与原音频不变 / source-bound apply + live gate
    │
    ├─→ auto_enrich.py           调度 B-roll / 章节卡 / 贴纸 / 强调点 / BGM 卡点
    │     │ transition / entity match / emphasis cue / silence boundary / beat snap
@@ -450,6 +453,7 @@ python3 scripts/transcript_review.py apply \
 | [`auto_chapter_cards.py`](scripts/auto_chapter_cards.py) | `## ` 章节标题 / 静音 ≥1.5s 边界 / Pillow PNG 渲染 |
 | [`beat_sync.py`](scripts/beat_sync.py) | BGM → `beat_edit_plan.v1` 时间槽 / Markdown review，或把已有切点做 ±200ms snap；缺 `librosa` 时显式标记固定网格 fallback |
 | [`speed_ramp.py`](scripts/speed_ramp.py) | 显式 impact ranges → `speed_ramp_plan.v1` / digest 验证 / 可选插帧 / 音频同步 / 事务式 FFmpeg apply |
+| [`freeze_punch.py`](scripts/freeze_punch.py) | impact frame → `freeze_punch_plan.v1` / 定格替换窗口 / anchor crop / 原音频时间线不变 / 事务式 apply + live gate |
 | [`video_stabilization.py`](scripts/video_stabilization.py) | 源 hash + exact FFmpeg backend → 稳定工作副本 / 全长 A/B 对照 / 人工确认 gate |
 | [`chroma_key.py`](scripts/chroma_key.py) | 绿幕/蓝幕前景 + 图片/视频背景 → composite/matte 预览 / 四项人工复核 / 完整渲染 gate |
 | [`auto_stickers.py`](scripts/auto_stickers.py) | 情绪关键词→emoji 池（excited 🚀✨🔥 / doubt 🤔 / data 📈 等） |
@@ -548,6 +552,29 @@ python3 scripts/speed_ramp.py apply work/speed_ramp_plan.json \
 计划把 `linear/ease/s_curve/snap` ramp 与 constant hold 编译成连续 source/output pieces，绑定源文件 SHA-256、fps、duration 和 canonical plan id；完整 coverage、速度范围、`source_duration / speed` 和 review contract 都会现场验证。低帧率极慢段会给出 native unique-fps warning；`--interpolate-fps` 使用 FFmpeg motion interpolation，不冒充 AI 生成补帧，也可能产生肢体 / 边缘伪影。apply 先写同目录临时 MP4，成功后才替换目标；默认拒绝覆盖、symlink 和原片自覆盖。
 
 必须用 1×、带声音播放最终文件，检查 impact frame、曲线手感、插值伪影和极慢音频。局部变速会改变下游时间线：如果已有字幕、章节、cue 或 approval receipt，必须重新生成 / 审批；`pipeline_manifest.py --require speed_ramp_plan --strict` 可把 plan 设为显式 gate。
+
+### 🥊 Freeze-Punch — source-bound 关键帧定格强调
+[`scripts/freeze_punch.py`](scripts/freeze_punch.py) · [详细文档](docs/prompts/101-freeze-punch.md)
+
+表情峰值、动作落点、产品揭晓或节拍重音需要“定一下再继续”时，先逐帧找准 source-time。一个 `--freeze` 依次写 `起点秒数,持续秒数,缩放[,横向锚点,纵向锚点]`；可重复指定多个不重叠事件：
+
+```bash
+python3 scripts/freeze_punch.py plan origin/reaction.mp4 \
+  --freeze 4.80,0.80,1.08,0.50,0.42 \
+  --freeze 9.25,0.45,1.04 \
+  --delivery work/reaction-freeze-punched.mp4 \
+  --output work/freeze_punch_plan.json \
+  --markdown work/freeze_punch_plan.md
+
+python3 scripts/freeze_punch.py apply work/freeze_punch_plan.json
+python3 scripts/freeze_punch.py verify work/freeze_punch_plan.json --strict
+python3 scripts/pipeline_manifest.py . \
+  --require freeze_punch_plan --strict
+```
+
+每个窗口都用窗口第一帧替换原画面，可选 `1.00–1.50×` anchor crop；它不会延长时间线，原音频连续播放，因此现有 source-time 字幕和 cue 不会因这一动作平移。计划创建后在 apply 前保持阻塞；apply 使用同目录临时 MP4、完整解码并原子提升交付件，再把输出 hash 和媒体契约写回同一个计划。源片、计划或交付件字节漂移都会让 live gate 失效。
+
+必须用 1×、带声音逐个检查 freeze 入口/出口、动作跳跃、主体裁切、放大软化和可见说话人“冻嘴”。正在说话的正脸、需要保留动作连续性的镜头或需要改变总时长的 stylized hold 不应使用；后两类分别改用 speed ramp 或重新设计时间线。渲染后旧的成片 QA、approval receipt 和 publish package 必须重做。
 
 ### 🎧 J-cut / L-cut — source-bound 声画错位转场
 [`scripts/audio_transition.py`](scripts/audio_transition.py) · [详细文档](docs/prompts/86-audio-transition.md)
@@ -2971,6 +2998,7 @@ pytest tests/test_audio_master_report.py -v # 成片响度 / true peak / LRA 门
 pytest tests/test_render_enrich_plan.py -v  # enrich_plan 自动接入渲染
 pytest tests/test_auto_emphasis.py -v      # 问句/数字/转折/结论 emphasis cues
 pytest tests/test_beat_sync.py -v          # BGM → beat edit slots / fallback review / cut snap
+pytest tests/test_freeze_punch.py -v       # source-bound 定格替换 / punch crop / unchanged audio / live gate
 pytest tests/test_takes_pack.py -v          # 多 take phrase-level 阅读视图
 pytest tests/test_project_bootstrap.py -v   # 项目启动与 source inventory
 pytest tests/test_transcript_review.py -v  # 文本/HTML 同步视频 transcript 校稿回路
@@ -3024,6 +3052,44 @@ pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 pytest tests/test_review_dashboard.py -v    # 静态人工复核面板 + gate queue
 pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 gate
 ```
+
+### 2026-08-26 自动化升级记录（Source-bound Freeze-Punch Emphasis）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`QwenLM/Qwen-MM-Plugins` 的 footage devices](https://github.com/QwenLM/Qwen-MM-Plugins/blob/main/src/capabilities/video-edit/skill/craft/snippets/footage-devices.md) 与 [art direction](https://github.com/QwenLM/Qwen-MM-Plugins/blob/main/src/capabilities/video-edit/skill/craft/art-direction.md) | 把 peak expression 上的 freeze-punch still 作为明确强调手法，同时要求镜头尺度和取景变化，避免连续重复构图 | 采用“impact frame 短暂定格 + 轻微推近”，但把它实现为可验证的 source-bound 本地编辑，不依赖生成模型 |
+| [`nopefallacy/vertical-video-editing-skills`](https://github.com/nopefallacy/vertical-video-editing-skills/blob/main/skills/video-editing/SKILL.md) | 用 pattern interrupt、带 easing 的 punch camera motion 和 anti-jitter 约束维持竖屏注意力 | 加入有界缩放与 anchor crop；默认仅 `1.08×`，避免生硬数字变焦和主体漂移 |
+| [`znyupup/ai-video-editing-skill`](https://github.com/znyupup/ai-video-editing-skill/blob/main/SKILL.md) | Vlog 高光 montage 强调 peak moment、镜头类型平衡和源帧视觉分析 | 要求先逐帧确定 source-time impact，并把人工复核项写入 Markdown review contract |
+| [`chang416/cutcraft` 的 editorial craft](https://github.com/chang416/cutcraft/blob/main/skills/cutcraft/references/editorial-craft.md) | 强调 cut on action 和成片边界复核；转场不能挽救错误切点 | 不自动猜 impact frame；入口/出口必须 1× 带音频查看，正在说话的可见嘴型默认列为人工拒绝项 |
+
+本次新增 / 调整：
+
+- 新增 `scripts/freeze_punch.py` 的 `plan / apply / verify` 闭环：支持多个不重叠事件、`1.00–1.50×` punch crop、二维主体锚点、source/plan/output SHA-256、媒体契约、完整解码和事务式原子提升；源片、交付件、plan 和 Markdown 的 symlink/hardlink 别名会被拒绝。
+- 定格窗口替换原画面而不延长时间线；视频总时长、fps、尺寸和原音频时间线保持不变，区别于会重映射下游时间的 speed ramp。
+- `pipeline_manifest.py` 新增 `freeze_punch_plan` live gate；待 apply、源片漂移、计划漂移、交付件漂移或媒体契约失败都会阻塞。`edit_brief_plan.py` 可从“定格强调 / impact freeze / freeze-punch”等自然语言生成执行步骤。
+- 新增 `docs/prompts/101-freeze-punch.md`，并接入主 `SKILL.md`、日常小红书工作流、prompts 导航、脚本索引和测试清单。
+
+使用方式：
+
+```bash
+python3 scripts/freeze_punch.py plan origin/action.mp4 \
+  --freeze 0.75,0.80,1.08,0.50,0.40 \
+  --delivery work/action-freeze-punched.mp4 \
+  --output work/freeze_punch_plan.json \
+  --markdown work/freeze_punch_plan.md
+python3 scripts/freeze_punch.py apply work/freeze_punch_plan.json
+python3 scripts/freeze_punch.py verify work/freeze_punch_plan.json --strict
+python3 scripts/pipeline_manifest.py . --require freeze_punch_plan --strict
+```
+
+验证结果：
+
+- 定向回归：`tests/test_freeze_punch.py tests/test_edit_brief_plan.py tests/test_pipeline_manifest.py` 共 `137 passed`；其中 freeze-punch 专项 `18 passed`，包含真实 apply 和 symlink/hardlink 防覆盖测试。
+- 真实 FFmpeg 烟雾测试：`320×180 / 24 fps / 3.000s / H.264 + AAC` 源片成功完成 plan → apply → strict verify；输出仍为 `3.000s / 24 fps / 320×180 / H.264 + AAC`，阻塞项为 `0`，并保留“必须带音频人工复核”的 warning。
+- 全量回归：`.venv/bin/python -m pytest tests -q` 为 `1005 passed in 21.94s`；`.venv/bin/python -m compileall -q scripts tests` 通过，skill quick validation 返回 `Skill is valid!`，`freeze_punch.py` 的顶层及 `plan / apply / verify` help、`edit_brief_plan.py --help` 和 `pipeline_manifest.py --help` 均通过。
+- 对真实输出在 `0.833s / 1.083s / 1.417s` 抽帧复核：原片仍在运动，处理后的三个采样点均保持 `0.750s` impact frame 的构图与 punch crop，确认定格窗口实际生效而不是只生成计划。
 
 ### 2026-08-25 自动化升级记录（Scoped AI Video Edit Change/Preserve Review）
 
@@ -3863,6 +3929,7 @@ scripts/
 ├── video_stabilization.py      source-bound 手持防抖 / 全长 A/B confirm gate [V3]
 ├── chroma_key.py               绿幕/蓝幕 composite+matte / review / full render gate [V3]
 ├── speed_ramp.py               source-bound 局部变速计划 / 验证 / apply [V3]
+├── freeze_punch.py             source-bound 定格替换 / punch crop / live gate [V3]
 ├── audio_transition.py         J-cut/L-cut source handle / 单次编码 / receipt [V3]
 ├── audio_cue_sheet.py          BGM/SFX 音频设计清单               [V3]
 ├── auto_stickers.py            情绪→贴纸                        [V3]

@@ -274,6 +274,18 @@ SIGNAL_KEYWORDS: Mapping[str, Sequence[str]] = {
         "慢动作",
         "慢镜头",
     ),
+    "freeze_punch": (
+        "freeze punch",
+        "freeze-punch",
+        "freeze frame punch",
+        "freeze-frame emphasis",
+        "impact freeze",
+        "定格强调",
+        "定格冲击",
+        "关键帧定格",
+        "瞬间定格",
+        "定格推近",
+    ),
     "audio_transition": (
         "j-cut",
         "j cut",
@@ -430,6 +442,7 @@ SIGNAL_LABELS: Mapping[str, str] = {
     "chroma_key": "绿幕 / 蓝幕抠像与换背景",
     "scoped_video_edit": "局部 AI 视频编辑变更/保护范围复核",
     "speed_ramp": "局部 speed ramp / velocity edit",
+    "freeze_punch": "关键帧 freeze-punch 定格强调",
     "audio_transition": "J-cut / L-cut 声画错位转场",
     "audio_sync": "外录音频对齐",
     "screen_focus": "录屏聚焦",
@@ -609,7 +622,7 @@ def build_plan(
 
     if source_media and not Path(source_media).expanduser().exists():
         blockers.append(f"source media not found: {source_media}")
-    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy", "reference_edit_rhythm", "lip_sync_review", "subtitle_style_preview", "multimodal_dead_air", "video_stabilization", "chroma_key", "scoped_video_edit", "speed_ramp", "hdr_sdr", "delivery_encode", "edit_style_profile"}):
+    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy", "reference_edit_rhythm", "lip_sync_review", "subtitle_style_preview", "multimodal_dead_air", "video_stabilization", "chroma_key", "scoped_video_edit", "speed_ramp", "freeze_punch", "hdr_sdr", "delivery_encode", "edit_style_profile"}):
         warnings.append("source media was not provided; commands use <source_media> placeholders")
 
     if transcript and not Path(transcript).expanduser().exists():
@@ -1452,6 +1465,44 @@ def build_plan(
                 outputs=["work/speed_ramp_plan.json", "work/speed_ramp_plan.md"],
                 gate_category="speed_ramp_plan",
             ),
+        )
+
+    if "freeze_punch" in ids:
+        _add_step(
+            steps,
+            seen,
+            _step(
+                "freeze_punch_plan",
+                phase="edit",
+                script="freeze_punch.py",
+                label="Plan and bind a source-bound freeze-punch emphasis",
+                reason="The brief asks to freeze an explicit impact frame and add a subtle punch-in without changing audio timing.",
+                command=shell(
+                    [
+                        python_bin,
+                        "scripts/freeze_punch.py",
+                        "plan",
+                        source,
+                        "--freeze",
+                        "<impact_time>,<freeze_duration>,1.08,0.5,0.5",
+                        "--delivery",
+                        "work/freeze-punched.mp4",
+                        "--output",
+                        "work/freeze_punch_plan.json",
+                        "--markdown",
+                        "work/freeze_punch_plan.md",
+                    ]
+                ),
+                outputs=[
+                    "work/freeze_punch_plan.json",
+                    "work/freeze_punch_plan.md",
+                    "work/freeze-punched.mp4",
+                ],
+                gate_category="freeze_punch_plan",
+            ),
+        )
+        notes.append(
+            "Pick the impact frame manually, apply the plan, then run freeze_punch.py verify --strict and watch every entry/exit at 1x with audio. Avoid freezing a visible speaking mouth."
         )
 
     if "audio_transition" in ids:

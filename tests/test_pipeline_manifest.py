@@ -13,6 +13,7 @@ from edit_revision import APPROVAL_VERSION, apply_revision, audit_proposal, prep
 from edit_recipe import export_recipe  # noqa: E402
 from edit_style_profile import create_profile, template_spec  # noqa: E402
 import delivery_encode  # noqa: E402
+import freeze_punch  # noqa: E402
 import generated_clip_review  # noqa: E402
 import generated_sequence_review  # noqa: E402
 import scoped_video_edit_review  # noqa: E402
@@ -1887,6 +1888,69 @@ def test_speed_ramp_plan_can_be_required(tmp_path):
     )
 
     assert "speed_ramp_plan" in manifest["missing_required"]
+
+
+def test_freeze_punch_plan_blocks_until_applied_and_detects_output_drift(tmp_path, monkeypatch):
+    _publish_ready_project(tmp_path)
+    source = tmp_path / "origin" / "action.mp4"
+    delivery = tmp_path / "output" / "action-freeze.mp4"
+    plan_path = tmp_path / "work" / "freeze_punch_plan.json"
+    _write(source, "source bytes")
+    media = {
+        "duration": 4.0,
+        "fps": 30.0,
+        "width": 320,
+        "height": 180,
+        "rotation": 0,
+        "has_audio": False,
+        "video_codec": "h264",
+        "audio_codec": None,
+        "pixel_format": "yuv420p",
+    }
+    monkeypatch.setattr(freeze_punch, "probe_media", lambda _path: dict(media))
+    plan = freeze_punch.build_plan(
+        str(source),
+        str(delivery),
+        media=media,
+        events=[freeze_punch.parse_freeze("1,0.8")],
+    )
+    _write(plan_path, plan)
+
+    pending = build_manifest(str(tmp_path), target_stage="publish_ready")
+    gate = next(g for g in pending["gates"] if g["category"] == "freeze_punch_plan")
+    assert gate["status"] == "blocked"
+    assert "freeze_punch_plan" in pending["blocked_gates"]
+
+    _write(delivery, "rendered bytes")
+    output = {**freeze_punch._fingerprint(delivery), **media}
+    plan["application"] = {
+        "applied_at": "2026-08-26T00:00:00Z",
+        "output": output,
+        "validation": {"decode_checked": True, "output_sha256": output["sha256"]},
+    }
+    freeze_punch._set_derived(plan)
+    _write(plan_path, plan)
+
+    current = build_manifest(str(tmp_path), target_stage="publish_ready")
+    gate = next(g for g in current["gates"] if g["category"] == "freeze_punch_plan")
+    assert gate["status"] == "ready"
+    assert "freeze_punch_plan" not in current["blocked_gates"]
+
+    _write(delivery, "changed rendered bytes")
+    stale = build_manifest(str(tmp_path), target_stage="publish_ready")
+    gate = next(g for g in stale["gates"] if g["category"] == "freeze_punch_plan")
+    assert gate["status"] == "blocked"
+    assert "freeze_punch_plan" in stale["blocked_gates"]
+
+
+def test_freeze_punch_plan_can_be_required(tmp_path):
+    manifest = build_manifest(
+        str(tmp_path),
+        target_stage="analysis",
+        required=["freeze_punch_plan"],
+    )
+
+    assert "freeze_punch_plan" in manifest["missing_required"]
 
 
 def test_audio_transition_plan_is_live_verified_and_can_be_required(tmp_path, monkeypatch):

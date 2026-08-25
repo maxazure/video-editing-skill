@@ -43,6 +43,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ source_receipts.py       事实 claim → URL/截图 source deck + publish gate
    ├─→ beat_sync.py             BGM beat-grid → 可审计剪辑骨架，或吸附已有切点
    ├─→ speed_ramp.py            impact ranges → source-bound 局部变速计划 / 验证 / apply
+   ├─→ freeze_punch.py          impact frame → 定格替换窗口 / punch crop / unchanged audio timeline gate
    ├─→ auto_enrich.py           B-roll / 章节卡 / 贴纸 / 强调点 / BGM 卡点 / imagegen 提示词
    │       └─→ Codex imagegen   gpt-image-2 自动生图（抽象概念配图）
    ├─→ audio_cue_sheet.py       BGM / SFX 音频设计清单 / 生成审批 gate
@@ -146,6 +147,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `auto_emphasis.py` | 问句/数字/转折/结论 → badge + subtle push-in cues | `--transcript` `--output` `--markdown` |
 | `beat_sync.py` | BGM → beat edit slots / Markdown review，或吸附已有切点 | `--bgm --generate-plan --beats-per-cut 4 --output ... --markdown ...` / `--cuts --window` |
 | `speed_ramp.py` | impact ranges → snap/ease/s-curve/hold 计划、digest 验证和本地事务式 apply | `plan <video> --ramp --hold --interpolate-fps` / `verify --strict` / `apply --output --receipt` |
+| `freeze_punch.py` | impact frame → source-bound 定格强调、轻微 anchor crop、时长/音频不变和成片 live gate | `plan <video> --freeze --delivery` / `apply <plan>` / `verify --strict` |
 | `auto_enrich.py` | 编排 B-roll / 贴纸 / 强调点 / 章节卡 / imagegen cues | `--transcript` `--clean-script` `--bgm` `--output` |
 | `imagegen_hint.py` | 检测抽象概念 → 产 gpt-image-2 提示词 | `--transcript` `--clean-script` `--codex-md` |
 | `audio_cue_sheet.py` | transcript → BGM/SFX cue、生成审批和音频门禁 | `--transcript` `--asset-root` `--require-local-music` `--require-local-sfx` `--strict` |
@@ -1097,6 +1099,12 @@ python3 scripts/render_final.py --config script/render_config.json --output medi
 - `apply` 用同目录临时文件渲染，成功后才替换目标；默认不覆盖、不跟随 output symlink，也不能覆盖 source
 - `--interpolate-fps` 是 FFmpeg motion interpolation，可能产生肢体 / 边缘伪影；极慢音频必须试听，必要时 plan 阶段加 `--mute-audio`
 - 最终必须用 1×、带声音完整播放；变速后重新生成字幕 / timecoded artifacts、跑 render QA，并重新做最终审批。详见 `docs/prompts/83-speed-ramp.md`
+
+**Freeze-Punch 关键帧定格强调**（表情峰值、动作落点、产品揭晓可选）：
+- 先逐帧确定 impact，再运行 `freeze_punch.py plan origin/reaction.mp4 --freeze 4.8,0.8,1.08,0.5,0.42 --delivery work/reaction-freeze-punched.mp4 --output work/freeze_punch_plan.json --markdown work/freeze_punch_plan.md`
+- 它用 impact frame 替换其后的短画面窗口；音频和总时长保持不变，所以不会因本操作漂移字幕、章节或 cue 时间码
+- pending plan 会阻塞；读完 Markdown 后运行 `apply`，再运行 `verify --strict`。apply 只有在 H.264/AAC、yuv420p、尺寸/fps/时长/音轨契约和全长解码通过后才原子提升输出并写回 hash
+- 必须 1× 带音频检查 freeze 入口/出口、可见说话人冻嘴、动作跳跃、主体裁切和放大软化。源片/plan/成片漂移会让 live gate 失效；旧 QA、approval receipt 和 publish package 必须重做。详见 `docs/prompts/101-freeze-punch.md`
 
 **J-cut / L-cut 声音先行 / 延续转场**（访谈、叙事、场景切换可选）：
 - 只在人工明确选定的边界运行：`audio_transition.py plan work/render_config.json --transition 1,j_cut,0.4 --transition 3,l_cut,0.5 --output work/audio_transition_plan.json --markdown work/audio_transition_plan.md`

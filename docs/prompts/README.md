@@ -195,6 +195,7 @@
 | 想把个人/品牌剪辑风格保存成可移植默认值，并让渲染和文案直接复用 | [98-Creator-owned Edit Style Profile](98-edit-style-profile.md) |
 | 有绿幕/蓝幕素材，想先看 matte 再换成图片或视频背景 | [99-Chroma Key](99-chroma-key.md) |
 | 想给动作 / 产品 reveal 的 impact moment 做局部慢动作或 velocity edit | [83-Speed Ramp](83-speed-ramp.md) |
+| 想把动作落点、产品揭晓或表情峰值短暂定格并轻微推近 | [101-Freeze-Punch](101-freeze-punch.md) |
 | 手持素材有不想要的抖动，想保留原片并对照防抖结果 | [84-Video Stabilization](84-video-stabilization.md) |
 | 客户或平台要求视频必须小于指定 MB | [85-Target-size Delivery Encode](85-delivery-encode.md) |
 | 想让下一镜声音先进入，或画面切走后保留上一镜声音 | [86-J-cut / L-cut Audio Transition](86-audio-transition.md) |

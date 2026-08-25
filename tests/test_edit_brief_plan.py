@@ -312,6 +312,24 @@ def test_speed_ramp_brief_routes_source_bound_plan(tmp_path):
     assert step["gate_category"] == "speed_ramp_plan"
 
 
+def test_freeze_punch_brief_routes_unchanged_timeline_plan(tmp_path):
+    source = tmp_path / "reaction.mp4"
+    source.write_text("fake video", encoding="utf-8")
+
+    plan = build_plan(
+        f"给 {source} 的惊讶表情做关键帧定格和轻微 freeze-punch 强调",
+        project_dir=str(tmp_path),
+    )
+
+    step = next(step for step in plan["steps"] if step["id"] == "freeze_punch_plan")
+    assert step["script"] == "freeze_punch.py"
+    assert "freeze_punch.py plan" in step["command"]
+    assert "<impact_time>,<freeze_duration>,1.08,0.5,0.5" in step["command"]
+    assert "work/freeze-punched.mp4" in step["outputs"]
+    assert step["gate_category"] == "freeze_punch_plan"
+    assert any("visible speaking mouth" in note for note in plan["notes"])
+
+
 def test_j_cut_brief_routes_audio_transition_plan_into_render(tmp_path):
     source = tmp_path / "interview.mp4"
     source.write_text("fake video", encoding="utf-8")

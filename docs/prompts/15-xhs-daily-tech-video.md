@@ -252,6 +252,19 @@
      # 用新 MP4 进入 render_config；1×带音频复核 impact / 插值伪影后再继续，旧字幕时间码不可复用。
      # 详见 docs/prompts/83-speed-ramp.md
 
+4ab. # 可选：表情峰值 / 动作落点 / 产品揭晓要短暂定格强调，但不改变音频和总时长：
+     python3 scripts/freeze_punch.py plan origin/<action>.mp4 \
+       --freeze <impact_time>,<freeze_duration>,1.08,0.5,0.42 \
+       --delivery work/action-freeze-punched.mp4 \
+       --output work/freeze_punch_plan.json \
+       --markdown work/freeze_punch_plan.md
+     # 阅读 Markdown 后 apply；pending blocker 是预期状态，apply 会先校验 plan/source。
+     python3 scripts/freeze_punch.py apply work/freeze_punch_plan.json
+     python3 scripts/freeze_punch.py verify work/freeze_punch_plan.json --strict
+     # 用新 MP4 进入 render_config；1×带音频检查入口/出口、冻嘴、动作跳跃、裁切和放大软化。
+     # 本操作不漂移字幕/章节时间码，但旧 QA / approval receipt / publish package 必须重做。
+     # 详见 docs/prompts/101-freeze-punch.md
+
 4b. # 如果 enrich_plan.json 的 imagegen[] 非空 → 用 Codex 内置 imagegen 生图：
     # 生图优先使用 Codex 内置 `image_gen` 工具，即 OpenAI GPT Image 2（`gpt-image-2`）。
     # 把每条 prompt_en 喂给 imagegen，1024x1536 high quality，存到 work/imagegen/
