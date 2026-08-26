@@ -116,7 +116,33 @@ def test_generated_assets_note_and_prompt_pack_steps(tmp_path):
     assert "storyboard_plan" in ids
     assert "video_prompt_pack" in ids
     assert "enrich_plan" in ids
+    assert "generated_motion_window" in ids
+    assert ids.index("generated_clip_review") < ids.index("generated_motion_window")
+    motion_step = next(step for step in plan["steps"] if step["id"] == "generated_motion_window")
+    assert motion_step["script"] == "generated_motion_window.py"
+    assert "<generated_clip.mp4>" in motion_step["command"]
+    assert motion_step["gate_category"] == "generated_motion_window"
     assert any("gpt-image-2" in note for note in plan["notes"])
+
+
+def test_existing_generated_clip_routes_active_motion_window_review(tmp_path):
+    source = tmp_path / "work" / "shot-001.mp4"
+    source.parent.mkdir(parents=True)
+    source.write_text("fake generated clip", encoding="utf-8")
+
+    plan = build_plan(
+        f"{source} 这个生成片段开头不动，裁到动作开始，检查有效运动区间",
+        project_dir=str(tmp_path),
+    )
+
+    ids = [step["id"] for step in plan["steps"]]
+    assert "generated_motion_window" in ids
+    step = next(step for step in plan["steps"] if step["id"] == "generated_motion_window")
+    assert step["script"] == "generated_motion_window.py"
+    assert str(source) in step["command"]
+    assert "work/generated_motion_window.json" in step["outputs"]
+    assert step["gate_category"] == "generated_motion_window"
+    assert any("full-frame similarity" in note for note in plan["notes"])
 
 
 def test_review_proxy_brief_routes_timecoded_review_video(tmp_path):

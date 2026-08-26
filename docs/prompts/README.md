@@ -102,6 +102,8 @@
 | 98 | [Creator-owned Edit Style Profile 创作者剪辑风格档案](98-edit-style-profile.md) | creator-owned 创意方向、节奏和受控渲染/文案默认值 → 可移植 profile |
 | 99 | [Chroma Key 绿幕 / 蓝幕抠像与换背景](99-chroma-key.md) | foreground + background → composite/matte 预览、四项人工复核、完整渲染与 source-bound live gate |
 | 100 | [Scoped Video Edit Review 局部 AI 视频编辑范围复核](100-scoped-video-edit-review.md) | source + edited → change-only / preserve invariants、同时间点 A/B 证据与 live gate |
+| 101 | [Freeze-Punch 关键帧定格强调](101-freeze-punch.md) | impact frame → source-bound 定格窗口、anchor crop、原音频/总时长不变与 live gate |
+| 102 | [Generated Motion Window 生成视频有效运动窗口](102-generated-motion-window.md) | 短生成片 0.25s freeze → active intervals、人工 trim/keep/reject、新 working copy 与 live gate |
 
 ## 快速上手
 
@@ -151,6 +153,7 @@
 | 分镜要交给 Dreamina/Veo/LTX/Wan/Sora 生成视频 | [45-Video Prompt Pack](45-video-prompt-pack.md) |
 | 已提交异步生成任务，要保存 submit_id 并跟踪下载 | [46-Generation Task Log](46-generation-task-log.md) |
 | 生成视频已经下载，想在组装前查物理、身份、道具和可用裁切范围 | [89-Generated Clip Review](89-generated-clip-review.md) |
+| 生成视频片头冻住或动作延迟，想从真正运动开始处裁切 | [102-Generated Motion Window](102-generated-motion-window.md) |
 | 多条生成视频逐片都通过了，想在组装前检查跨镜头连续性 | [91-Generated Sequence Review](91-generated-sequence-review.md) |
 | 用 AI 只换了背景/服装/包装或局部元素，想确认其他内容没有漂移 | [100-Scoped Video Edit Review](100-scoped-video-edit-review.md) |
 | 想识别视频里的人、屏幕、手机或动态主体 | [47-Video Understanding](47-video-understanding.md) |

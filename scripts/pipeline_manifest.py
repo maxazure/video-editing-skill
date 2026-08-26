@@ -257,6 +257,17 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         blocks_when_present=True,
     ),
     ArtifactDef(
+        "generated_motion_window",
+        "Generated Motion Window",
+        (
+            "**/generated_motion_window.json",
+            "**/*_generated_motion_window.json",
+            "**/generated_motion_window/*.json",
+        ),
+        "Run generated_motion_window.py confirm/apply/verify; start each selected generated clip inside reviewed active motion.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "scoped_video_edit_review",
         "Scoped AI Video Edit Review",
         ("**/scoped_video_edit_review.json", "**/*_scoped_video_edit_review.json"),
@@ -1045,6 +1056,38 @@ def evaluate_category(
             elif _int_at(verification, "summary", "warnings"):
                 status = "warn" if status != "blocked" else status
                 notes.append(f"generated clip review retains approved trim-only edits: {artifact.path}")
+        return {
+            "category": definition.category,
+            "label": definition.label,
+            "status": status,
+            "artifact_count": len(artifacts),
+            "latest_path": artifacts[0].path,
+            "notes": sorted(set(notes)),
+            "next_action": definition.next_action if status in {"missing", "blocked", "warn"} else "",
+        }
+
+    if definition.category == "generated_motion_window":
+        from generated_motion_window import verify_plan
+
+        for artifact in artifacts:
+            data = _load_json(artifact.path)
+            if data is None:
+                status = "blocked"
+                notes.append(f"unreadable generated motion-window plan: {artifact.path}")
+                continue
+            verification = verify_plan(data)
+            blocking = _int_at(verification, "summary", "blocking")
+            warnings = _int_at(verification, "summary", "warnings")
+            if blocking:
+                status = "blocked"
+                notes.append(
+                    f"invalid or unapplied generated motion window {artifact.path}: {blocking} blocking item(s)"
+                )
+            elif warnings:
+                status = "warn" if status != "blocked" else status
+                notes.append(
+                    f"generated motion window requires full-speed review: {artifact.path}: {warnings} warning(s)"
+                )
         return {
             "category": definition.category,
             "label": definition.label,

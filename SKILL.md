@@ -54,6 +54,8 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    │                            首帧/style key 尺寸/方向/透明背景/画幅 gate
    ├─→ generation_task_log.py   异步生成任务台账 / submit_id / 下载 gate
    ├─→ generated_clip_review.py 生成片段 contact sheet / 常识物理 / 连续性 / 重生 gate
+   ├─→ generated_motion_window.py
+   │                            短生成片 0.25s freeze → active intervals / 人工裁切 / live gate
    ├─→ scoped_video_edit_review.py
    │                            原片 vs 局部 AI 编辑结果 / change-only + preserve invariants / A-B gate
    ├─→ generated_sequence_review.py
@@ -158,6 +160,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `reference_frame_preflight.py` | video_prompt_pack → 首帧/style key 存在性、解码、尺寸、方向、画幅、透明背景 gate | `--prompt-pack` `--require-style-reference` `--reference shot_id=...` `--strict` |
 | `generation_task_log.py` | 异步生成任务台账：submit_id/task id、轮询、下载、本地落盘 gate | `add` `update` `import-provider-decision` `report --strict` |
 | `generated_clip_review.py` | 生成视频片段 source-bound 视觉复核：contact sheet、评分、裁切范围、重生建议 | `prepare --clip/--asset-manifest` `audit --request --response` `verify --report --strict` |
+| `generated_motion_window.py` | 短生成片全帧 freeze → active intervals、人工 trim/keep/reject、帧准确 working copy 与 live gate | `analyze <clip>` `confirm --decision` `apply --output` `verify --strict` |
 | `scoped_video_edit_review.py` | 原片 + 局部 AI 编辑结果 → 同时间点 A/B 证据、唯一变更目标、保护项逐项复核和 live gate | `prepare --source --edited --change --preserve` `audit --request --response` `verify --report --strict` |
 | `generated_sequence_review.py` | 已审生成片段跨镜头连续性复核：真实尾帧/首帧、并排图、无声边界预览和 live gate | `prepare --clip-review [--storyboard-plan]` `audit --request --response` `verify --report --strict` |
 | `generation_lessons.py` | 从 canonical generated-clip review 提取经明确批准的 provider/model/category 经验，并供下一次 prompt pack 选择 | `add --review --clip-id --lesson --approved-by [--supersedes]` `verify --strict` `select --provider [--model]` |
@@ -1184,6 +1187,13 @@ python3 scripts/render_final.py --config script/render_config.json --output medi
 - `pass` 要求加权分 ≥80 且无删段；`pass_with_edits` 要求 ≥65，并由 keep/remove 精确覆盖全片；常识/物理、身份、道具、文字水印、连续性或音画 hard fail 无论总分多高都必须 `fail`
 - 填完 response 后运行 `generated_clip_review.py audit --request work/generated_clip_review_request.json --response work/generated_clip_review_response.json --output work/generated_clip_review.json --markdown work/generated_clip_review.md --strict`；任何 clip/contact sheet 漂移、缺审、非法区间或需重生都会阻塞
 - 组装/发布前再运行 `generated_clip_review.py verify --report work/generated_clip_review.json --strict`，也可用 `pipeline_manifest.py --require generated_clip_review --strict`。reviewer label 不是身份认证或数字签名
+
+**Generated Motion Window 生成视频有效运动窗口**（逐片视觉 review 之后、跨镜头组装前运行）：
+- contact sheet 可能漏掉 0.25–1 秒的冻结开头或短暂运动；对每条通过视觉复核的生成片运行 `generated_motion_window.py analyze work/generated_video/shot_001.mp4 --project-dir . --output work/generated_motion_window/shot_001.json --markdown work/generated_motion_window/shot_001.md`
+- 脚本用本地 FFmpeg `freezedetect` 保存 `freezes[]` 与其补集 `active_intervals[]`，绑定 source SHA-256、媒体契约、参数和 canonical plan id；刚 analyze 固定阻塞，不能把 detector 建议当批准
+- 完整 1× 播放源片后运行 `confirm ... --decision trim|keep|reject --reviewed-by ... --note ...`。`trim` 默认使用建议区间，也可显式 `--start/--end`；两个边界都必须落在 active interval 内
+- `trim` 在 apply 前继续阻塞；`apply ... --output work/generated_motion_window/shot_001-active.mp4` 只写新 H.264/AAC、`yuv420p` working copy，验证时长/尺寸/fps/音轨并完整解码后才原子提升。原片、计划、检测证据或 output 漂移都会 fail closed
+- 新 working copy 必须重新完整播放，并重跑 generated-clip review、sequence/final QA 和下游审批；`pipeline_manifest.py --require generated_motion_window --strict` 会逐个 live verify `work/generated_motion_window/*.json`。FFmpeg freeze 只衡量全帧相似度，不能判断动作意义、表演、身份、物理或产品质量。详见 [docs/prompts/102-generated-motion-window.md](docs/prompts/102-generated-motion-window.md)
 
 **Scoped Video Edit Review 局部 AI 视频编辑范围复核**（换装/换背景/换包装/局部 VFX 等 edit mode 后必跑）：
 - 每次 provider call 只声明一个确切变化；运行 `scoped_video_edit_review.py prepare --project-dir . --source origin/source.mp4 --edited work/scoped_video_edit.mp4 --change-category wardrobe --change "change only the jacket from blue to red" --preserve subject_identity --preserve performance_motion --preserve camera_motion --preserve framing_composition --preserve source_audio --evidence-dir verify/scoped_video_edit --output work/scoped_video_edit_review_request.json --markdown work/scoped_video_edit_review_request.md --response-template work/scoped_video_edit_review_response.json`

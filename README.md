@@ -2,7 +2,7 @@
 
 这是一个面向 **口播、教程、访谈、播客切片、录屏演示 / facecam demo** 的 AI 视频剪辑生产线：给它原始口播音频/视频、transcript、B-roll、摄像头小窗或素材目录，它可以把“还没整理的素材”推进到 **可发布的小红书 / 抖音 / 视频号短视频**。
 
-它不是一个单点 FFmpeg 脚本，而是一条完整工作流：**项目启动/素材导入 → 个人/品牌剪辑风格 → 生产授权 → 手持防抖 / 绿蓝幕换背景 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp / 关键帧 freeze-punch / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 锁定视觉 EDL 后重建最终声音分镜 → 渲染前预检 / 真实画面字幕样式选择 → 单次编码渲染 → 质检 / 最终成片唇形复核 → 多平台导出 / 目标大小交付编码 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
+它不是一个单点 FFmpeg 脚本，而是一条完整工作流：**项目启动/素材导入 → 个人/品牌剪辑风格 → 生产授权 → 手持防抖 / 绿蓝幕换背景 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 生成片有效运动窗口 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp / 关键帧 freeze-punch / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 锁定视觉 EDL 后重建最终声音分镜 → 渲染前预检 / 真实画面字幕样式选择 → 单次编码渲染 → 质检 / 最终成片唇形复核 → 多平台导出 / 目标大小交付编码 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
 
 ## 适合做什么
 
@@ -26,6 +26,7 @@
 - **个人/品牌剪辑偏好可跨项目复用**：`edit_style_profile.py` 把创意方向、节奏、受控渲染默认值、封面风格、标题拼写与发布时段存成无本地路径的 profile；`render_final.py` / `generate_caption.py` / `cover_variants.py` 直接消费它，项目 config 和 CLI 始终优先。
 - **生成式素材有明确审批和台账**：Codex `image_gen` / GPT Image 2 提示词、Dreamina/Veo/LTX/Wan/Sora 视频提示词、provider 决策、`submit_id` 轮询下载和本地落盘 gate 都先记录再执行。
 - **生成 provider 参数先绑定具体入口再使用**：`provider_capability.py` 把 provider、UI/API surface、model、核验日期、证据和 mode/画幅/时长/分辨率/参考上限落成 profile；`video_prompt_pack.py` 会拒绝缺失、过期或设置越界的 profile。
+- **生成视频不会从冻帧起步**：`generated_motion_window.py` 以 0.25 秒 full-frame freeze evidence 找出 active intervals；人工确认 trim/keep/reject 后才生成新的 H.264/AAC 工作副本，source、检测参数、决定和输出字节都会 live verify。
 - **生成片段复核会反哺下一次提示词**：`generation_lessons.py` 只从 canonical clip review 提取人工明确批准的通用经验，绑定 source digests，并按 provider/model/category 精确筛选后交给 `video_prompt_pack.py`；不会把单片修复建议自动当成全局规则。
 - **字幕风格先在真实画面上选**：`subtitle_style_preview.py` 用最终 renderer 的同一 ASS builder、字体、字号和目标画幅，把 `normal / minimal / bold_pop` 渲染到源片早、中、晚代表帧；源片、字体、样式定义或 JPEG 漂移会让旧选择失效。
 - **数字人口型必须在最终成片上重新举证**：`lip_sync_review.py` 从最终 master 的完整短语导出 1× 带声和 0.25× 静音 proof clips，逐条复核爆破音闭唇、元音提前/滞后、讲话时冻嘴、说话人和音频质量；任何剪切、变速、换音或重编码都会让旧报告失效。
@@ -211,6 +212,8 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    │                            submit_id / 轮询 / 下载 / 本地落盘 gate
    ├─→ generated_clip_review.py 下载后的生成视频片段复核
    │                            contact sheet / 常识物理 / 身份道具 / 裁切与重生 gate
+   ├─→ generated_motion_window.py 生成片有效运动窗口
+   │                            0.25s 冻帧检测 / 人工 trim|keep|reject / 新工作副本 live gate
    ├─→ scoped_video_edit_review.py 原片 vs 局部 AI 编辑结果
    │                            change-only / preserve invariants / 同时间点 A-B + 双音轨 gate
    ├─→ generated_sequence_review.py 已审生成片段 → 相邻边界连续性复核
@@ -1090,6 +1093,33 @@ python3 scripts/generated_clip_review.py verify \
 ```
 
 `pass` 要求加权分至少 80、故事清晰、没有 hard fail 且无需删段；`pass_with_edits` 要求至少 65，并让 `keep_ranges` / `remove_ranges` 无缝覆盖整条片段；身份断裂、错误/缺失动作、肢体或物理失败、多余主体、关键道具消失、生成文字/水印、连续性矛盾、音画矛盾和 explicit must-avoid 都会越过高分直接 `fail`，要求 `regenerate=true + prompt_fix`。clip/contact sheet 漂移、漏审、区间重叠/缺口和报告派生状态篡改都会 fail closed；`pipeline_manifest.py --require generated_clip_review --strict` 可设为发布门禁。reviewer label 不是身份认证或数字签名，contact sheet 也不能替代完整播放。
+
+### 🏃 Generated Motion Window — 生成片有效运动窗口
+[`scripts/generated_motion_window.py`](scripts/generated_motion_window.py) · [详细文档](docs/prompts/102-generated-motion-window.md)
+
+短生成片常出现首帧延迟启动、尾帧冻结或中段卡住。这个 gate 用 FFmpeg `freezedetect` 以默认 0.25 秒阈值逐帧建立 full-frame freeze evidence，再取补集得到 active intervals；检测结果只提供证据，最终 `trim / keep / reject` 必须由完整 1× 播放后的人工决定。
+
+```bash
+# 1. 分析原始生成片；新计划默认阻塞，不能直接进入时间线
+python3 scripts/generated_motion_window.py analyze work/generated/shot_002.mp4 \
+  --project-dir . \
+  --output work/generated_motion_window/shot_002.json \
+  --markdown work/generated_motion_window/shot_002.md
+
+# 2. 人工确认建议边界；可显式给 --start / --end，边界必须落在 active interval 内
+python3 scripts/generated_motion_window.py confirm work/generated_motion_window/shot_002.json \
+  --decision trim \
+  --reviewed-by "<reviewer-label>" \
+  --note "Played the full clip at 1x; both boundaries begin on active motion."
+
+# 3. 只写新的工作副本，再做 live verify / manifest gate
+python3 scripts/generated_motion_window.py apply work/generated_motion_window/shot_002.json \
+  --output work/generated/shot_002-active.mp4
+python3 scripts/generated_motion_window.py verify work/generated_motion_window/shot_002.json --strict
+python3 scripts/pipeline_manifest.py . --require generated_motion_window --strict
+```
+
+`confirm --decision keep` 用于人工确认有意的静止展示；它会放行但保留 warning。`reject` 会持续阻塞并要求修复或重生。只有 `trim` 会 re-encode 为新的 H.264/yuv420p 工作副本，并在源片有声音时保留 AAC；原始 provider 下载件始终不覆盖。计划绑定 source SHA-256、媒体契约、检测参数、canonical intervals、人工决定和输出字节；源片、检测证据、计划派生状态或输出漂移都会 fail closed。检测只识别近似 full-frame 静止，不能替代对局部肢体冻结、表情、物理、音画和故意 hold 的完整人工复核。
 
 ### 🎯 Scoped Video Edit Review — 局部 AI 视频编辑范围复核
 [`scripts/scoped_video_edit_review.py`](scripts/scoped_video_edit_review.py) · [详细文档](docs/prompts/100-scoped-video-edit-review.md)
@@ -3020,6 +3050,7 @@ pytest tests/test_provider_capability.py -v # provider/surface/model 能力、fr
 pytest tests/test_reference_frame_preflight.py -v # 首帧/style key 尺寸/方向/透明背景 gate
 pytest tests/test_generation_task_log.py -v # 异步生成任务台账 + 下载 gate
 pytest tests/test_generated_clip_review.py -v # 生成视频 contact sheet / 评分 / 裁切 / 重生 / stale gate
+pytest tests/test_generated_motion_window.py -v # 生成片冻帧 evidence / 有效运动窗口 / trim working copy / live gate
 pytest tests/test_scoped_video_edit_review.py -v # 局部 AI edit change/preserve A-B 证据 / live gate
 pytest tests/test_generated_sequence_review.py -v # 已审生成片段相邻边界证据 / 连续性 / stale gate
 pytest tests/test_generation_lessons.py -v # 已审片段 → scoped prompt 经验库 / 选择 / stale gate
@@ -3052,6 +3083,46 @@ pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 pytest tests/test_review_dashboard.py -v    # 静态人工复核面板 + gate queue
 pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 gate
 ```
+
+### 2026-08-27 自动化升级记录（Source-bound Generated Motion Windows）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`TuolaGe/reference-led-ugc-product-video` creative QA](https://github.com/TuolaGe/reference-led-ugc-product-video/blob/main/references/creative-qa.md) 与 [SKILL](https://github.com/TuolaGe/reference-led-ugc-product-video/blob/main/SKILL.md) | 稀疏 contact sheet 可能漏掉生成片的冻结开头；以 0.25 秒逐帧 freeze 检测建立 active intervals，重新裁切后的 source 必须从有效运动区间开始，并在最终输出复查 | 采用 source-window gate，但检测只作为证据；人工必须完整 1× 播放后明确 `trim / keep / reject`，不会自动删掉有意的产品 hold |
+| [`chang416/cutcraft`](https://github.com/chang416/cutcraft/blob/main/skills/cutcraft/SKILL.md) | 素材分析和 rendered-output QA 都要检查 frozen frames，不能只信上游选择 | 同时绑定原始生成片与新的 working copy；live verify 会重算源片 freeze evidence，并核对输出 hash / 媒体契约 |
+| [`browser-use/video-use`](https://github.com/browser-use/video-use/blob/main/SKILL.md) | 剪切边界和最终渲染必须回到成片全速复看，自动指标不能代替视觉验收 | review contract 明确要求 1× 完整播放；re-encode 后保留 warning，要求重跑 generated-clip / sequence / final QA |
+| [`Fagan1024/smart-video-editor`](https://github.com/Fagan1024/smart-video-editor/blob/main/SKILL.md) | 选择片段前先排除模糊、抖动、曝光、空画面和过渡区等不可用窗口 | 本轮只补最明确的 full-frame 冻结 / 延迟启动缺口；没有把相似度检测冒充为局部肢体、表演、物理或画质判断 |
+
+本次新增 / 调整：
+
+- 新增 [`scripts/generated_motion_window.py`](scripts/generated_motion_window.py) 的 `analyze → confirm → apply → verify` 闭环。默认以 FFmpeg `freezedetect` 的 0.25 秒阈值找出 leading / trailing / interior freezes 及 active intervals；新计划 fail closed，直到人工记录 `trim / keep / reject`。
+- `trim` 边界必须落在 active interval 内，只写新的 H.264/yuv420p working copy；源片有音轨时保留 AAC。source、检测设置、canonical evidence、人工决定、输出 SHA-256 / 媒体契约和 plan id 都参与 live verify，项目外路径、symlink 以及 source/plan 的 hardlink 别名会被拒绝。
+- `pipeline_manifest.py` 新增 `generated_motion_window` 存在即 live verify、可 `--require` 的 gate；`edit_brief_plan.py` 会给生成素材工作流以及“冻结开头 / delayed motion”类独立 brief 安排该步骤。
+- 新增 [`tests/test_generated_motion_window.py`](tests/test_generated_motion_window.py) 和 [`docs/prompts/102-generated-motion-window.md`](docs/prompts/102-generated-motion-window.md)，并同步主 `SKILL.md`、小红书日常工作流、prompts 导航、README 能力说明、流程图、测试清单与脚本索引。
+
+使用方式：
+
+```bash
+python3 scripts/generated_motion_window.py analyze work/generated/shot_002.mp4 \
+  --project-dir . \
+  --output work/generated_motion_window/shot_002.json \
+  --markdown work/generated_motion_window/shot_002.md
+python3 scripts/generated_motion_window.py confirm work/generated_motion_window/shot_002.json \
+  --decision trim --reviewed-by "<reviewer-label>" \
+  --note "Played the full clip at 1x; both boundaries begin on active motion."
+python3 scripts/generated_motion_window.py apply work/generated_motion_window/shot_002.json \
+  --output work/generated/shot_002-active.mp4
+python3 scripts/generated_motion_window.py verify work/generated_motion_window/shot_002.json --strict
+python3 scripts/pipeline_manifest.py . --require generated_motion_window --strict
+```
+
+验证结果：
+
+- 专项 `tests/test_generated_motion_window.py` 为 `12 passed`；定向 `tests/test_generated_motion_window.py tests/test_edit_brief_plan.py tests/test_pipeline_manifest.py` 为 `133 passed in 2.76s`，覆盖 trailing freeze 解析、canonical evidence 篡改、source drift、项目外/symlink/hardlink 防护、brief 路由、manifest 缺失/待确认/live 漂移以及真实 FFmpeg apply。
+- 独立 CLI smoke 用 `160×90 / 24 fps / 2.400s / H.264 + AAC` 合成片检测到首尾两段冻结，建议并实际选择 `0.625–1.833333s`；新 working copy 为 `1.208333s / 24 fps / 160×90 / H.264 + AAC / yuv420p`，strict verify 为 `blocking=0`，并正确保留“完整 1× 复核与重跑下游 QA”的 warning。
+- 全量 `.venv/bin/python -m pytest tests -q` 为 `1019 passed in 24.59s`；`.venv/bin/python -m compileall -q scripts tests`、skill `quick_validate.py`、新脚本顶层及四个 subcommand help、`edit_brief_plan.py --help`、`pipeline_manifest.py --help` 和 `git diff --check` 全部通过。
 
 ### 2026-08-26 自动化升级记录（Source-bound Freeze-Punch Emphasis）
 
@@ -3848,6 +3919,7 @@ python3 scripts/pipeline_manifest.py . --require freeze_punch_plan --strict
 | **87** | **[HDR → Rec.709 SDR Delivery](docs/prompts/87-hdr-sdr.md)** | **PQ/HLG source hash、Hable tone-map、BT.709 tags、完整解码和 live gate** |
 | **88** | **[Multimodal Dead-Air](docs/prompts/88-multimodal-dead-air.md)** | **只剪同时静音且画面静止的死区** |
 | **89** | **[Generated Clip Review](docs/prompts/89-generated-clip-review.md)** | **生成视频下载后做逐片物理、身份、裁切与重生 gate** |
+| **102** | **[Generated Motion Window](docs/prompts/102-generated-motion-window.md)** | **检测生成片首尾冻帧，人工确认有效运动窗口并输出新工作副本** |
 | **90** | **[Generation Lessons](docs/prompts/90-generation-lessons.md)** | **把已审片段经验按 provider/model scope 复用到下一次 prompt** |
 | **91** | **[Generated Sequence Review](docs/prompts/91-generated-sequence-review.md)** | **逐片通过后复核相邻尾帧/首帧与跨镜头连续性** |
 | **92** | **[Reference Edit Rhythm](docs/prompts/92-reference-edit-rhythm.md)** | **量化参考片 hard-cut 结构并对照成片，绑定 contact sheets 与 live gate** |
@@ -3941,6 +4013,7 @@ scripts/
 ├── reference_frame_preflight.py 首帧/style key 画幅与背景预检 gate [V3]
 ├── generation_task_log.py      异步生成任务台账 + 下载 gate         [V3]
 ├── generated_clip_review.py    source-bound 生成片段评分/裁切/重生 gate [V3]
+├── generated_motion_window.py  生成片 full-frame 冻帧 / active interval / trim live gate [V3]
 ├── scoped_video_edit_review.py 原片/局部 AI edit 同时间点 A-B / preserve gate [V3]
 ├── generated_sequence_review.py 已审生成片段相邻尾帧/首帧/预览连续性 gate [V3]
 ├── generation_lessons.py       已审片段 → scoped prompt 经验库 / 选择 / verify [V3]

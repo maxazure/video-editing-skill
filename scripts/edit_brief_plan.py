@@ -286,6 +286,22 @@ SIGNAL_KEYWORDS: Mapping[str, Sequence[str]] = {
         "瞬间定格",
         "定格推近",
     ),
+    "generated_motion_window": (
+        "generated motion window",
+        "active motion window",
+        "frozen lead-in",
+        "frozen lead in",
+        "delayed motion",
+        "generated clip starts frozen",
+        "trim to active motion",
+        "生成视频有效运动区间",
+        "生成片段有效运动",
+        "生成视频开头不动",
+        "生成片段开头不动",
+        "生成视频延迟运动",
+        "冻结开头",
+        "裁到动作开始",
+    ),
     "audio_transition": (
         "j-cut",
         "j cut",
@@ -443,6 +459,7 @@ SIGNAL_LABELS: Mapping[str, str] = {
     "scoped_video_edit": "局部 AI 视频编辑变更/保护范围复核",
     "speed_ramp": "局部 speed ramp / velocity edit",
     "freeze_punch": "关键帧 freeze-punch 定格强调",
+    "generated_motion_window": "生成视频有效运动窗口 / 冻结开头裁切",
     "audio_transition": "J-cut / L-cut 声画错位转场",
     "audio_sync": "外录音频对齐",
     "screen_focus": "录屏聚焦",
@@ -622,7 +639,7 @@ def build_plan(
 
     if source_media and not Path(source_media).expanduser().exists():
         blockers.append(f"source media not found: {source_media}")
-    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy", "reference_edit_rhythm", "lip_sync_review", "subtitle_style_preview", "multimodal_dead_air", "video_stabilization", "chroma_key", "scoped_video_edit", "speed_ramp", "freeze_punch", "hdr_sdr", "delivery_encode", "edit_style_profile"}):
+    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy", "reference_edit_rhythm", "lip_sync_review", "subtitle_style_preview", "multimodal_dead_air", "video_stabilization", "chroma_key", "scoped_video_edit", "speed_ramp", "freeze_punch", "generated_motion_window", "hdr_sdr", "delivery_encode", "edit_style_profile"}):
         warnings.append("source media was not provided; commands use <source_media> placeholders")
 
     if transcript and not Path(transcript).expanduser().exists():
@@ -1243,6 +1260,37 @@ def build_plan(
                 gate_category="generated_clip_review",
             ),
         )
+        _add_step(
+            steps,
+            seen,
+            _step(
+                "generated_motion_window",
+                phase="review",
+                script="generated_motion_window.py",
+                label="Detect and approve active motion windows for generated clips",
+                reason="Sparse contact sheets can miss frozen lead-ins; each accepted generated clip needs temporal motion evidence before assembly.",
+                command=shell(
+                    [
+                        python_bin,
+                        "scripts/generated_motion_window.py",
+                        "analyze",
+                        "<generated_clip.mp4>",
+                        "--project-dir",
+                        project_dir,
+                        "--output",
+                        "work/generated_motion_window/<clip_id>.json",
+                        "--markdown",
+                        "work/generated_motion_window/<clip_id>.md",
+                    ]
+                ),
+                outputs=[
+                    "work/generated_motion_window/<clip_id>.json",
+                    "work/generated_motion_window/<clip_id>.md",
+                    "work/generated_motion_window/<clip_id>-active.mp4",
+                ],
+                gate_category="generated_motion_window",
+            ),
+        )
         if "sequence_continuity" in ids:
             _add_step(
                 steps,
@@ -1282,6 +1330,42 @@ def build_plan(
                     gate_category="generated_sequence_review",
                 ),
             )
+
+    if "generated_motion_window" in ids and "generated_assets" not in ids:
+        _add_step(
+            steps,
+            seen,
+            _step(
+                "generated_motion_window",
+                phase="review",
+                script="generated_motion_window.py",
+                label="Detect and approve the clip's active motion window",
+                reason="The brief identifies a frozen lead-in, delayed motion, or asks to trim a generated clip to active frames.",
+                command=shell(
+                    [
+                        python_bin,
+                        "scripts/generated_motion_window.py",
+                        "analyze",
+                        source,
+                        "--project-dir",
+                        project_dir,
+                        "--output",
+                        "work/generated_motion_window.json",
+                        "--markdown",
+                        "work/generated_motion_window.md",
+                    ]
+                ),
+                outputs=[
+                    "work/generated_motion_window.json",
+                    "work/generated_motion_window.md",
+                    "work/generated-active.mp4",
+                ],
+                gate_category="generated_motion_window",
+            ),
+        )
+        notes.append(
+            "Play the complete source at 1x before confirm; freezedetect only measures full-frame similarity and cannot decide whether stillness is intentional or motion is meaningful."
+        )
 
     if "audio_design" in ids:
         _add_step(
