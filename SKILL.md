@@ -100,7 +100,8 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ export_edl.py            render_config / cut list → EDL + manifest
    ├─→ export_fcpxml.py         render_config / cut list → FCPXML + manifest
    ├─→ export_otio.py           render_config / cut list → OTIO + manifest
-   ├─→ multi_export.py          小红书 3:4 / 抖音 9:16 / 视频号 ≤60s
+   ├─→ framing_preview.py       master → 各平台 cover/contain/blur 真实帧 / 选择 / live gate
+   ├─→ multi_export.py          已审画幅策略 → 小红书 3:4 / 抖音 9:16 / 视频号 ≤60s
    ├─→ hdr_sdr.py               PQ/HLG HDR → source-bound Rec.709 SDR / 完整解码 gate
    ├─→ delivery_encode.py       source-bound 两遍 H.264/AAC / 硬大小上限 / 完整解码 gate
    ├─→ generate_caption.py      标题 + 200-500 字正文 + 3-6 tags + 发布时段
@@ -196,7 +197,8 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `export_edl.py` | NLE handoff：导出 EDL + manifest | `--config render_config.json --output edit.edl` / `--cut-list rough_cut.json --output rough.edl` |
 | `export_fcpxml.py` | NLE handoff：导出 FCPXML + manifest | `--config render_config.json --output edit.fcpxml` / `--cut-list rough_cut.json --output rough.fcpxml` |
 | `export_otio.py` | NLE handoff：导出 OpenTimelineIO `.otio` + manifest | `--config render_config.json --output edit.otio` / `--cut-list rough_cut.json --output rough.otio` |
-| `multi_export.py` | 三平台导出 | `<input.mp4>` `--platforms xhs douyin wxch` |
+| `framing_preview.py` | master → 各平台 cover/contain/blur 真实帧预览、人工选择和 source/filter/preview live gate | `create --video --platforms --require-selection` / `select --platform --strategy` / `verify --strict` |
+| `multi_export.py` | 三平台导出，可消费已审画幅策略 | `<input.mp4>` `--platforms xhs douyin wxch` `--framing-preview work/framing_preview.json` |
 | `hdr_sdr.py` | PQ/HLG master → source-bound Hable tone-map / BT.709 limited tags / 完整解码 gate | `plan --delivery` / `apply` / `verify --strict` |
 | `delivery_encode.py` | master → 目标大小 H.264/AAC MP4 / source hash / 两遍码率 / 完整解码 gate | `plan --delivery --max-size-mib` / `apply` / `verify --strict` |
 | `generate_caption.py` | 标题/正文/tag | `--script` `--profile` `--output` |
@@ -1771,6 +1773,26 @@ python3 scripts/subtitle_readability_qa.py \
 ```
 
 `subtitle_readability_qa.py` 检查 output-timeline 的无效时间、乱序、重叠、极短闪现、CPS、持续时间、行数/行长，并可用 FFprobe 验证 cue 没有超过成片结尾。普通 CPS/排版风险只 WARN，必须看正常速度 master；确定性时间事故和极端阅读速度写入 `summary.blocking`。它不做 OCR，不替代字体、描边、位置或遮挡人工审片。`pipeline_manifest.py --require subtitle_readability_qa --strict` 可把报告设为发布必需项。
+
+**6g.1 平台画幅处理预览（master 与目标比例不同或画面含受保护信息时跑）**：
+
+```bash
+python3 scripts/framing_preview.py create \
+  --project-dir . --video output/master.mp4 \
+  --platforms xhs douyin wxch \
+  --preview-dir verify/framing \
+  --output work/framing_preview.json \
+  --markdown work/framing_preview.md \
+  --require-selection
+
+python3 scripts/framing_preview.py select \
+  --report work/framing_preview.json --platform xhs --strategy contain
+python3 scripts/multi_export.py output/master.mp4 \
+  --output-dir output --platforms xhs douyin wxch \
+  --framing-preview work/framing_preview.json
+```
+
+逐平台看真实早/中/晚 JPEG。`cover` 不能裁掉脸、手、多人关系、可读 UI、logo、产品边缘或文档边界；有风险时选 `contain` 或 `blur`。源/预览 bytes、显示方向、平台画布、filter digest 或选择漂移都会在编码前阻断。抽样图不替代完整 1× 平台导出审片；详见 [docs/prompts/103-framing-preview.md](docs/prompts/103-framing-preview.md)。
 
 **6h. 发布上传包（最终上传前跑）**：
 ```bash

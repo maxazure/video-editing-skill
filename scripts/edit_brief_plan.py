@@ -89,6 +89,22 @@ SIGNAL_KEYWORDS: Mapping[str, Sequence[str]] = {
         "三套字幕",
         "选字幕风格",
     ),
+    "framing_preview": (
+        "framing preview",
+        "aspect treatment preview",
+        "compare cover contain blur",
+        "preserve source framing",
+        "do not crop",
+        "no crop",
+        "画幅处理预览",
+        "构图预览",
+        "裁切预览",
+        "对比裁切和留边",
+        "保留原始构图",
+        "不要裁切",
+        "不能裁掉",
+        "模糊背景填充",
+    ),
     "semantic_review": (
         "semantic transcript review",
         "context-aware transcript",
@@ -476,6 +492,7 @@ SIGNAL_LABELS: Mapping[str, str] = {
     "publish": "发布包 / 文案",
     "subtitle_sidecar": "字幕 sidecar",
     "subtitle_style_preview": "真实画面字幕样式预览 / 选择",
+    "framing_preview": "平台画幅 cover / contain / blur 预览与选择",
     "nle_handoff": "NLE 交接",
     "review_dashboard": "人工复核面板",
     "edit_revision": "剪辑 artifact 可逆修订",
@@ -639,7 +656,7 @@ def build_plan(
 
     if source_media and not Path(source_media).expanduser().exists():
         blockers.append(f"source media not found: {source_media}")
-    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy", "reference_edit_rhythm", "lip_sync_review", "subtitle_style_preview", "multimodal_dead_air", "video_stabilization", "chroma_key", "scoped_video_edit", "speed_ramp", "freeze_punch", "generated_motion_window", "hdr_sdr", "delivery_encode", "edit_style_profile"}):
+    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy", "reference_edit_rhythm", "lip_sync_review", "subtitle_style_preview", "framing_preview", "multimodal_dead_air", "video_stabilization", "chroma_key", "scoped_video_edit", "speed_ramp", "freeze_punch", "generated_motion_window", "hdr_sdr", "delivery_encode", "edit_style_profile"}):
         warnings.append("source media was not provided; commands use <source_media> placeholders")
 
     if transcript and not Path(transcript).expanduser().exists():
@@ -2187,7 +2204,53 @@ def build_plan(
             ),
         )
 
+    if "framing_preview" in ids:
+        framing_input = "output/final.mp4" if wants_render else source
+        framing_platforms = [item for item in platforms if item in {"xhs", "douyin", "wxch"}]
+        if not framing_platforms:
+            framing_platforms = ["xhs", "douyin", "wxch"]
+        _add_step(
+            steps,
+            seen,
+            _step(
+                "framing_preview",
+                phase="publish",
+                script="framing_preview.py",
+                label="Compare and select platform framing treatments",
+                reason="The brief asks to preserve source composition or explicitly review crop, contain, and blurred-fill choices.",
+                command=shell(
+                    [
+                        python_bin,
+                        "scripts/framing_preview.py",
+                        "create",
+                        "--project-dir",
+                        project_dir,
+                        "--video",
+                        framing_input,
+                        "--platforms",
+                        *framing_platforms,
+                        "--preview-dir",
+                        "verify/framing",
+                        "--output",
+                        "work/framing_preview.json",
+                        "--markdown",
+                        "work/framing_preview.md",
+                        "--require-selection",
+                        "--strict",
+                    ]
+                ),
+                outputs=["work/framing_preview.json", "work/framing_preview.md", "verify/framing/"],
+                gate_category="framing_preview",
+            ),
+        )
+        notes.append(
+            "Review cover/contain/blur JPEGs per platform; protect faces, hands, readable UI, logos, product edges, and multi-subject context before selecting and exporting."
+        )
+
     if "multi_platform" in ids or len(set(platforms)) > 1:
+        export_command = [python_bin, "scripts/multi_export.py", "output/final.mp4", "--platforms", "xhs", "douyin", "wxch"]
+        if "framing_preview" in ids:
+            export_command.extend(["--framing-preview", "work/framing_preview.json"])
         _add_step(
             steps,
             seen,
@@ -2197,7 +2260,7 @@ def build_plan(
                 script="multi_export.py",
                 label="Export platform-specific aspect ratios",
                 reason="The brief asks for multiple platforms or platform variants.",
-                command=shell([python_bin, "scripts/multi_export.py", "output/final.mp4", "--platforms", "xhs", "douyin", "wxch"]),
+                command=shell(export_command),
                 outputs=["output/*_xhs.mp4", "output/*_douyin.mp4", "output/*_wxch.mp4"],
                 gate_category="platform_exports",
             ),

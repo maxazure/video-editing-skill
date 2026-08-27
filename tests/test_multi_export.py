@@ -67,3 +67,16 @@ def test_build_command_uses_faststart():
     assert "-movflags" in cmd
     idx = cmd.index("-movflags")
     assert cmd[idx + 1] == "+faststart"
+
+
+def test_build_command_accepts_reviewed_contain_strategy():
+    cmd = build_ffmpeg_command(
+        "in.mp4", "out.mp4", PRESETS["douyin"],
+        src_w=1920, src_h=1080, src_duration=60.0,
+        framing_strategy="contain",
+    )
+    assert "-filter_complex" in cmd
+    graph = cmd[cmd.index("-filter_complex") + 1]
+    assert "force_original_aspect_ratio=decrease" in graph
+    assert "pad=1080:1920" in graph
+    assert "0:a:0?" in cmd

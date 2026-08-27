@@ -29,6 +29,7 @@
 - **生成视频不会从冻帧起步**：`generated_motion_window.py` 以 0.25 秒 full-frame freeze evidence 找出 active intervals；人工确认 trim/keep/reject 后才生成新的 H.264/AAC 工作副本，source、检测参数、决定和输出字节都会 live verify。
 - **生成片段复核会反哺下一次提示词**：`generation_lessons.py` 只从 canonical clip review 提取人工明确批准的通用经验，绑定 source digests，并按 provider/model/category 精确筛选后交给 `video_prompt_pack.py`；不会把单片修复建议自动当成全局规则。
 - **字幕风格先在真实画面上选**：`subtitle_style_preview.py` 用最终 renderer 的同一 ASS builder、字体、字号和目标画幅，把 `normal / minimal / bold_pop` 渲染到源片早、中、晚代表帧；源片、字体、样式定义或 JPEG 漂移会让旧选择失效。
+- **平台画幅处理先看真实 A/B 再导出**：`framing_preview.py` 为小红书 / 抖音 / 视频号逐平台比较 `cover / contain / blur`，把选择绑定到 master、显示方向、filter contract 和 JPEG 证据；`multi_export.py` 只消费现场验证通过的选择。
 - **数字人口型必须在最终成片上重新举证**：`lip_sync_review.py` 从最终 master 的完整短语导出 1× 带声和 0.25× 静音 proof clips，逐条复核爆破音闭唇、元音提前/滞后、讲话时冻嘴、说话人和音频质量；任何剪切、变速、换音或重编码都会让旧报告失效。
 - **参考片节奏先量化再借鉴**：`reference_edit_rhythm.py` 用同一套 hard-cut 检测比较参考片和成片的 cuts/minute、镜头时长、结尾 hold 与切点分布，同时绑定两条视频和 contact sheets；默认只提示差异，明确验收时才阻断。
 - **适合交给强推理模型做长流程代理执行**：在 [GPT-5.6 Sol](https://developers.openai.com/api/docs/models/gpt-5.6-sol)（OpenAI 当前旗舰；API 别名 `gpt-5.6` 指向 Sol）和 [Claude Opus 4.8](https://docs.anthropic.com/en/docs/about-claude/models) 这类面向复杂专业任务、agent 工作流的模型下，本 skill 对 **口播类短视频** 至少可以替代 **80% 的常规视频剪辑工作**。
@@ -285,7 +286,8 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    ├─→ final_audio_storyboard.py
    │                            锁定 EDL + 原 storyboard → 最终时间线声音分镜 / voice ledger / live gate
    │
-   ├─→ multi_export.py          小红书 3:4 / 抖音 9:16 / 视频号 ≤60s
+   ├─→ framing_preview.py       master → 各平台 cover/contain/blur 真实帧 / 选择 / live gate
+   ├─→ multi_export.py          已审画幅策略 → 小红书 3:4 / 抖音 9:16 / 视频号 ≤60s
    ├─→ delivery_encode.py       硬大小上限 / 两遍 H.264 / 完整解码验证
    ├─→ generate_caption.py      标题 + 200-500 字正文 + 3-6 tags + 发布时段建议
    ├─→ cover_variants.py        2-4 套封面 A/B 方案 / 小尺寸预览 / 最终选择 gate
@@ -2526,6 +2528,28 @@ python3 scripts/source_receipts.py \
 | 抖音 / TikTok | 1080×1920 (9:16) | — | 全屏沉浸 |
 | 微信视频号 | 1080×1920 (9:16) | ≤60s | 自动截断；社交链分发 |
 
+当 master 与目标比例不同，且画面包含多人、UI、logo、文档或产品边缘时，先不要默认中心裁切。用 [`framing_preview.py`](scripts/framing_preview.py) 在源片早 / 中 / 晚真实帧上比较 `cover`（铺满裁切）、`contain`（完整画面 + 深色留边）和 `blur`（完整前景 + 同源模糊背景）：
+
+```bash
+python3 scripts/framing_preview.py create \
+  --project-dir . \
+  --video output/master.mp4 \
+  --platforms xhs douyin wxch \
+  --preview-dir verify/framing \
+  --output work/framing_preview.json \
+  --markdown work/framing_preview.md \
+  --require-selection
+
+python3 scripts/framing_preview.py select \
+  --report work/framing_preview.json --platform xhs --strategy contain
+
+python3 scripts/multi_export.py output/master.mp4 \
+  --output-dir output/ --platforms xhs douyin wxch \
+  --framing-preview work/framing_preview.json
+```
+
+源显示比例与目标一致时自动选择 `native`。正式导出前会 live verify source / preview SHA-256、显示方向、平台尺寸、filter digest 和选择完整性；master 重渲染、JPEG 被替换或缺任一平台选择都会停止编码。详细复核清单见 [Platform Framing Preview](docs/prompts/103-framing-preview.md)。
+
 ### 📦 Delivery Encode — source-bound 目标大小交付
 [`scripts/delivery_encode.py`](scripts/delivery_encode.py) · [详细文档](docs/prompts/85-delivery-encode.md)
 
@@ -2917,9 +2941,21 @@ python3 $SKILL/scripts/edit_compare.py \
   --report $WORK/output/verify/day${DAY}_edit_compare.json \
   --markdown $WORK/output/verify/day${DAY}_edit_compare.md
 
-# 7. 多平台
+# 7. 多平台：先在真实 master 帧上选择每个平台的画幅处理
+python3 $SKILL/scripts/framing_preview.py create \
+  --project-dir $WORK \
+  --video output/day${DAY}_master.mp4 \
+  --platforms xhs douyin wxch \
+  --preview-dir verify/framing \
+  --output work/framing_preview.json \
+  --markdown work/framing_preview.md \
+  --require-selection
+# 看完 JPEG 后逐个平台 select cover / contain / blur；原生比例自动选 native。
+python3 $SKILL/scripts/framing_preview.py select \
+  --report $WORK/work/framing_preview.json --platform xhs --strategy contain
 python3 $SKILL/scripts/multi_export.py \
-  $WORK/output/day${DAY}_master.mp4 --output-dir $WORK/output/
+  $WORK/output/day${DAY}_master.mp4 --output-dir $WORK/output/ \
+  --framing-preview $WORK/work/framing_preview.json
 
 # 7b. 可选：交给专业剪辑软件继续精修/调色/混音
 python3 $SKILL/scripts/export_edl.py \
@@ -3014,6 +3050,7 @@ pytest tests/test_content_guard.py -v       # 80+ 规则的 38 个测试
 pytest tests/test_rewrite_script.py -v      # Story Engine
 pytest tests/test_auto_broll.py -v          # B-roll 调度
 pytest tests/test_multi_export.py -v        # 多平台比例转换
+pytest tests/test_framing_preview.py -v     # cover/contain/blur 真实帧预览 / 选择 / live gate
 pytest tests/test_hdr_sdr.py -v             # PQ/HLG → Rec.709 SDR / color tags / 完整解码门禁
 pytest tests/test_delivery_encode.py -v     # 硬大小上限 / 两遍编码 / 完整解码门禁
 pytest tests/test_render_qa.py -v           # 渲染后质检
@@ -3083,6 +3120,49 @@ pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 pytest tests/test_review_dashboard.py -v    # 静态人工复核面板 + gate queue
 pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 gate
 ```
+
+### 2026-08-28 自动化升级记录（Source-bound Platform Framing Preview）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`zhengxn1/auto-cut-skill`](https://github.com/zhengxn1/auto-cut-skill/blob/main/SKILL.md) | 默认保留主片和用户素材的原画幅/构图，禁止未确认的拉伸、破坏性 crop、复制边条；目标比例变化要明确记录 | 保留原 `multi_export.py` 无报告时的既有行为，但新增显式 preview/selection gate；所有候选只使用等比例 scale，不能横纵独立拉伸 |
+| [`ChatCut-Inc/agent-plugin` talking-head guide](https://github.com/ChatCut-Inc/agent-plugin/blob/main/codex/skills/talking-head-guide/SKILL.md) | 不按批次默认 cover；逐素材比较 source/canvas 比例，保护可读文字、UI、logo、产品边缘和多人构图，必要时改用 contain / deliberate background，并在最终帧复查 | 为每个平台和真实早/中/晚源帧输出 `cover / contain / blur` 三套 JPEG；Markdown 固定列出 protected-content 复核项，选择直接驱动正式导出 |
+| [`heygen-com/hyperframes` slideshow skill](https://github.com/heygen-com/hyperframes/blob/main/skills/slideshow/SKILL.md) | 把截图、文档、UI、图表和带文字画面视为内容证据；默认 contain，四边有截断就是 bug，而不是“铺满更好看” | 把“画面铺满”和“信息完整”拆成显式可见的取舍；抽样证据不能替代完整 1× 审片，也不冒充动态主体跟踪 |
+
+本次新增 / 调整：
+
+- 新增 [`scripts/framing_preview.py`](scripts/framing_preview.py) 的 `create → select → verify` 闭环。小红书 3:4、抖音 / 视频号 9:16 分别生成 `cover`（铺满中心裁切）、`contain`（完整画面 + 深色留边）和 `blur`（完整前景 + 同源模糊背景）早/中/晚 JPEG；源显示比例与目标一致时自动记录 `native`，不制造重复候选。
+- 报告绑定项目内 master SHA-256 / 大小、媒体契约、旋转后的显示尺寸、抽样时间、平台 canvas、当前 FFmpeg filter digest、全部 JPEG bytes、逐平台选择和 canonical report id。source / orientation / filter / preview / selection / 派生状态任一漂移都会 fail closed；项目逃逸、symlink traversal，以及 source/report/Markdown/preview 同路径或 hardlink 碰撞会在写入前拒绝。
+- `multi_export.py` 新增 `--framing-preview`，在编码前 live verify 报告属于确切输入 master 且每个请求平台有选择；正式 FFmpeg graph 和 dry-run / output manifest 都记录 `framing_strategy`。不传该参数时保留已有中心裁切路径。
+- `pipeline_manifest.py` 新增存在即 live verify、可 `--require framing_preview` 的 gate；`edit_brief_plan.py` 可从“不要裁切 / 保留构图 / 对比裁切和留边 / 模糊背景填充”等中英文 brief 路由，并把选择排在平台导出之前。
+- 新增 [`tests/test_framing_preview.py`](tests/test_framing_preview.py) 和 [`docs/prompts/103-framing-preview.md`](docs/prompts/103-framing-preview.md)，并同步主 SKILL、小红书日常工作流、多平台教程、prompts 导航、README 流程图 / 能力说明 / 测试清单 / 脚本索引。
+
+使用方式：
+
+```bash
+python3 scripts/framing_preview.py create \
+  --project-dir . --video output/master.mp4 \
+  --platforms xhs douyin wxch \
+  --preview-dir verify/framing \
+  --output work/framing_preview.json \
+  --markdown work/framing_preview.md \
+  --require-selection
+
+python3 scripts/framing_preview.py select \
+  --report work/framing_preview.json --platform xhs --strategy contain
+python3 scripts/framing_preview.py verify --report work/framing_preview.json --strict
+python3 scripts/multi_export.py output/master.mp4 \
+  --output-dir output --platforms xhs douyin wxch \
+  --framing-preview work/framing_preview.json
+```
+
+验证结果：
+
+- 新增/关联定向回归 `tests/test_framing_preview.py tests/test_multi_export.py tests/test_edit_brief_plan.py tests/test_pipeline_manifest.py` 为 **143 passed in 2.32s**，覆盖三种等比例 filter graph、原生比例自动选择、多平台逐项选择、source/preview/derived-state 漂移、symlink/hardlink 防护、确切输入绑定、导出命令映射、自然语言路由和 manifest live gate。
+- 真实 FFmpeg smoke 用 `320×180 / 24 fps / 2.38s / H.264 + AAC` 横屏 master 创建小红书 3:4 三套预览；首次 `--require-selection --strict` 按预期退出 2，人工检查合并证据图确认 cover 裁两侧、contain 完整留边、blur 完整前景 + 模糊背景。选择 `contain` 后 verify 为 `ready / blocking=0 / warnings=0`，正式输出为 `1080×1440 / H.264 / yuv420p + AAC / 2.410s`。
+- 最终全量 `.venv/bin/python -m pytest tests -q` 为 **1031 passed in 22.53s**；`.venv/bin/python -m compileall -q scripts tests`、新脚本与 `multi_export.py` CLI help、manifest category、Skill Creator `quick_validate.py` 和 diff check 均通过。本轮没有调用生成 provider、消耗 credits、上传素材或发布。
 
 ### 2026-08-27 自动化升级记录（Source-bound Generated Motion Windows）
 
@@ -3920,6 +4000,7 @@ python3 scripts/pipeline_manifest.py . --require freeze_punch_plan --strict
 | **88** | **[Multimodal Dead-Air](docs/prompts/88-multimodal-dead-air.md)** | **只剪同时静音且画面静止的死区** |
 | **89** | **[Generated Clip Review](docs/prompts/89-generated-clip-review.md)** | **生成视频下载后做逐片物理、身份、裁切与重生 gate** |
 | **102** | **[Generated Motion Window](docs/prompts/102-generated-motion-window.md)** | **检测生成片首尾冻帧，人工确认有效运动窗口并输出新工作副本** |
+| **103** | **[Platform Framing Preview](docs/prompts/103-framing-preview.md)** | **逐平台比较 cover / contain / blur，绑定真实帧证据后再导出** |
 | **90** | **[Generation Lessons](docs/prompts/90-generation-lessons.md)** | **把已审片段经验按 provider/model scope 复用到下一次 prompt** |
 | **91** | **[Generated Sequence Review](docs/prompts/91-generated-sequence-review.md)** | **逐片通过后复核相邻尾帧/首帧与跨镜头连续性** |
 | **92** | **[Reference Edit Rhythm](docs/prompts/92-reference-edit-rhythm.md)** | **量化参考片 hard-cut 结构并对照成片，绑定 contact sheets 与 live gate** |
@@ -4052,6 +4133,7 @@ scripts/
 ├── export_otio.py              NLE handoff OTIO + manifest         [V3]
 ├── final_audio_storyboard.py   锁定 EDL → 最终声音分镜 + voice ledger/live gate [V3]
 ├── generate_standup_timeline.py Remotion timeline
+├── framing_preview.py          平台 cover/contain/blur 真实帧预览 / 选择 / live gate [V3]
 ├── multi_export.py             三平台导出                       [V3]
 ├── hdr_sdr.py                  PQ/HLG → source-bound Rec.709 SDR / full-decode gate [V3]
 ├── delivery_encode.py          source-bound 硬大小交付编码      [V3]

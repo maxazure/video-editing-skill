@@ -205,6 +205,26 @@ def test_subtitle_style_brief_routes_real_frame_preview_before_render(tmp_path):
     assert step["gate_category"] == "subtitle_style_preview"
 
 
+def test_framing_brief_routes_review_before_platform_exports(tmp_path):
+    source = tmp_path / "master.mp4"
+    source.write_text("fake video", encoding="utf-8")
+
+    plan = build_plan(
+        f"把 {source} 导出小红书、抖音和视频号，先对比裁切和留边，不要裁掉人物与界面文字",
+        project_dir=str(tmp_path),
+    )
+
+    ids = [step["id"] for step in plan["steps"]]
+    assert ids.index("framing_preview") < ids.index("platform_exports")
+    step = next(step for step in plan["steps"] if step["id"] == "framing_preview")
+    assert step["script"] == "framing_preview.py"
+    assert "--require-selection" in step["command"]
+    assert "work/framing_preview.json" in step["outputs"]
+    export = next(step for step in plan["steps"] if step["id"] == "platform_exports")
+    assert "--framing-preview work/framing_preview.json" in export["command"]
+    assert any("readable UI" in note for note in plan["notes"])
+
+
 def test_locked_edl_audio_brief_routes_final_timeline_storyboard(tmp_path):
     plan = build_plan(
         "视觉剪辑锁定后配音，按最终时间线重建声音，生成最终声音分镜",

@@ -10,11 +10,31 @@
 
 ## 用法
 
+画面比例不同、含多人 / UI / logo / 产品边缘时，推荐先生成真实画面处理预览并逐平台选择：
+
+```bash
+python3 scripts/framing_preview.py create \
+  --project-dir . \
+  --video output/day58_master.mp4 \
+  --platforms xhs douyin wxch \
+  --preview-dir verify/framing \
+  --output work/framing_preview.json \
+  --markdown work/framing_preview.md \
+  --require-selection
+
+# 看完 JPEG 后逐个平台记录 cover / contain / blur；原生比例会自动选择 native
+python3 scripts/framing_preview.py select \
+  --report work/framing_preview.json --platform xhs --strategy contain
+```
+
+再让正式导出消费已经 live-verified 的选择：
+
 ```bash
 python3 scripts/multi_export.py \
   output/day58_master.mp4 \
   --output-dir output/ \
-  --platforms xhs douyin wxch
+  --platforms xhs douyin wxch \
+  --framing-preview work/framing_preview.json
 ```
 
 输出：
@@ -30,6 +50,8 @@ output/
 
 ## 比例转换规则
 
+未传 `--framing-preview` 时保留原有中心裁切规则：
+
 | 源 → 目标 | 处理 |
 |---|---|
 | 9:16 → 3:4 | 上下中心裁切 |
@@ -38,6 +60,8 @@ output/
 | 16:9 → 3:4 | 左右中心裁切 |
 
 > 建议主出走 **9:16 1080×1920**（最通用），让 multi_export 去派生 3:4 版本。如果主出是 3:4，再裁到 9:16 会损失内容（顶部钩子区可能被裁掉）。
+
+传入 `--framing-preview` 后，每个平台改用已选 `cover`（铺满裁切）、`contain`（深色留边）、`blur`（完整前景 + 同源模糊背景）或自动 `native`。报告会绑定 source / preview bytes、显示方向和 filter digest；旧报告不能套到重渲染后的 master。完整流程见 [Platform Framing Preview](103-framing-preview.md)。
 
 ## 平台运营差异提醒
 

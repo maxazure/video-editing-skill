@@ -104,6 +104,7 @@
 | 100 | [Scoped Video Edit Review 局部 AI 视频编辑范围复核](100-scoped-video-edit-review.md) | source + edited → change-only / preserve invariants、同时间点 A/B 证据与 live gate |
 | 101 | [Freeze-Punch 关键帧定格强调](101-freeze-punch.md) | impact frame → source-bound 定格窗口、anchor crop、原音频/总时长不变与 live gate |
 | 102 | [Generated Motion Window 生成视频有效运动窗口](102-generated-motion-window.md) | 短生成片 0.25s freeze → active intervals、人工 trim/keep/reject、新 working copy 与 live gate |
+| 103 | [Platform Framing Preview 平台画幅处理预览](103-framing-preview.md) | master → 各平台 cover/contain/blur 真实帧、人工选择与 source/filter/preview live gate |
 
 ## 快速上手
 
@@ -178,6 +179,7 @@
 | 成片剪完后想检查是否残留复读或口吃 | [67-Speech Continuity QA](67-speech-continuity-qa.md) |
 | 想给同一条视频生成多套封面并选一张发布 | [68-Cover Variants](68-cover-variants.md) |
 | 想在完整渲染前用真实画面比较三套字幕样式并选定一套 | [94-Subtitle Style Preview](94-subtitle-style-preview.md) |
+| 多平台导出前想确认中心裁切不会丢人物、UI、logo 或产品边缘 | [103-Platform Framing Preview](103-framing-preview.md) |
 | 多段生成片视觉 EDL 已锁定，想按最终时间线重建旁白、环境声、Foley 和音乐 | [95-Final Audio Storyboard](95-final-audio-storyboard.md) |
 | 视频生成前想确认当前 UI/API 真正支持哪些 mode、时长、分辨率和参考上限 | [96-Provider Capability Profile](96-provider-capability.md) |
 | 成片剪完后想检查前三秒、长镜头和节奏空窗 | [69-Retention Rhythm QA](69-retention-rhythm-qa.md) |

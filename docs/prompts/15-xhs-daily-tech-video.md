@@ -598,12 +598,26 @@
      --radius 1.5 \
      --output output/verify/day<NN>_<秒数>s.png
 
-9. python3 scripts/multi_export.py \
+9. # 多平台比例不同或不能裁掉人物/UI/logo 时，先比较 cover/contain/blur
+   python3 scripts/framing_preview.py create \
+     --project-dir . \
+     --video output/day<NN>_master.mp4 \
+     --platforms xhs douyin wxch \
+     --preview-dir verify/framing \
+     --output work/framing_preview.json \
+     --markdown work/framing_preview.md \
+     --require-selection
+   # 看完 JPEG 后，逐个平台运行 select；原生比例会自动选择 native。
+   python3 scripts/framing_preview.py select \
+     --report work/framing_preview.json --platform xhs --strategy <cover|contain|blur>
+
+9a. python3 scripts/multi_export.py \
      output/day<NN>_master.mp4 \
      --output-dir output/ \
-     --platforms xhs douyin wxch
+     --platforms xhs douyin wxch \
+     --framing-preview work/framing_preview.json
 
-9a. # 可选：源片/master 是明确 PQ/HLG HDR，而发布目标需要 Rec.709 SDR 时：
+9b. # 可选：源片/master 是明确 PQ/HLG HDR，而发布目标需要 Rec.709 SDR 时：
     python3 scripts/hdr_sdr.py plan \
       output/day<NN>_master_hdr.mp4 \
       --delivery output/day<NN>_master_sdr.mp4 \
@@ -614,7 +628,7 @@
     # 未知 color tags 或缺少 zscale+tonemap 会在编码前阻塞；完整看完 SDR 版，再重跑 QA 和审批。
     # 详见 docs/prompts/87-hdr-sdr.md
 
-9b. # 可选：客户/平台明确限制文件大小时，对选定发布版做 source-bound 两遍交付编码：
+9c. # 可选：客户/平台明确限制文件大小时，对选定发布版做 source-bound 两遍交付编码：
     python3 scripts/delivery_encode.py plan \
       output/day<NN>_master_douyin.mp4 \
       --delivery output/day<NN>_douyin_delivery.mp4 \
