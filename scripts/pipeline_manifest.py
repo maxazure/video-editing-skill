@@ -393,6 +393,16 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         blocks_when_present=True,
     ),
     ArtifactDef(
+        "flash_safety_qa",
+        "Flash Safety QA",
+        (
+            "**/flash_safety_qa.json",
+            "**/*_flash_safety_qa.json",
+        ),
+        "Run flash_safety_qa.py verify; remove or reduce flagged luminance/red flashing and escalate regulated delivery to an accredited analyzer.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "shot_color_qa",
         "Shot Color QA",
         (
@@ -1067,6 +1077,42 @@ def evaluate_category(
             elif warnings:
                 status = "warn" if status != "blocked" else status
                 notes.append(f"platform framing preview needs review {artifact.path}: {warnings} warning(s)")
+        return {
+            "category": definition.category,
+            "label": definition.label,
+            "status": status,
+            "artifact_count": len(artifacts),
+            "latest_path": artifacts[0].path,
+            "notes": sorted(set(notes)),
+            "next_action": definition.next_action if status in {"missing", "blocked", "warn"} else "",
+        }
+
+    if definition.category == "flash_safety_qa":
+        from flash_safety_qa import verify_report
+
+        for artifact in artifacts:
+            data = _load_json(artifact.path)
+            if data is None:
+                status = "blocked"
+                notes.append(f"unreadable flash-safety report: {artifact.path}")
+                continue
+            try:
+                verification = verify_report(
+                    data,
+                    str(project_dir) if project_dir is not None else None,
+                )
+            except Exception as exc:
+                status = "blocked"
+                notes.append(f"flash-safety live verification failed {artifact.path}: {exc}")
+                continue
+            blocking = _int_at(verification, "summary", "blocking")
+            warnings = _int_at(verification, "summary", "warnings")
+            if blocking:
+                status = "blocked"
+                notes.append(f"invalid or risky flash-safety report {artifact.path}: {blocking} blocking item(s)")
+            elif warnings:
+                status = "warn" if status != "blocked" else status
+                notes.append(f"flash-safety report needs review {artifact.path}: {warnings} warning(s)")
         return {
             "category": definition.category,
             "label": definition.label,

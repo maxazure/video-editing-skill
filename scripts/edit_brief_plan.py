@@ -105,6 +105,24 @@ SIGNAL_KEYWORDS: Mapping[str, Sequence[str]] = {
         "不能裁掉",
         "模糊背景填充",
     ),
+    "flash_safety_qa": (
+        "flash safety",
+        "flashing safety",
+        "photosensitivity",
+        "photosensitive",
+        "seizure risk",
+        "strobe risk",
+        "rapid flashing",
+        "accessibility flashing",
+        "闪烁安全",
+        "光敏风险",
+        "光敏性风险",
+        "癫痫风险",
+        "频闪风险",
+        "高频闪烁",
+        "红色闪烁",
+        "无障碍闪烁",
+    ),
     "semantic_review": (
         "semantic transcript review",
         "context-aware transcript",
@@ -493,6 +511,7 @@ SIGNAL_LABELS: Mapping[str, str] = {
     "subtitle_sidecar": "字幕 sidecar",
     "subtitle_style_preview": "真实画面字幕样式预览 / 选择",
     "framing_preview": "平台画幅 cover / contain / blur 预览与选择",
+    "flash_safety_qa": "最终成片亮度 / 饱和红闪烁风险预检",
     "nle_handoff": "NLE 交接",
     "review_dashboard": "人工复核面板",
     "edit_revision": "剪辑 artifact 可逆修订",
@@ -656,7 +675,7 @@ def build_plan(
 
     if source_media and not Path(source_media).expanduser().exists():
         blockers.append(f"source media not found: {source_media}")
-    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy", "reference_edit_rhythm", "lip_sync_review", "subtitle_style_preview", "framing_preview", "multimodal_dead_air", "video_stabilization", "chroma_key", "scoped_video_edit", "speed_ramp", "freeze_punch", "generated_motion_window", "hdr_sdr", "delivery_encode", "edit_style_profile"}):
+    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy", "reference_edit_rhythm", "lip_sync_review", "subtitle_style_preview", "framing_preview", "flash_safety_qa", "multimodal_dead_air", "video_stabilization", "chroma_key", "scoped_video_edit", "speed_ramp", "freeze_punch", "generated_motion_window", "hdr_sdr", "delivery_encode", "edit_style_profile"}):
         warnings.append("source media was not provided; commands use <source_media> placeholders")
 
     if transcript and not Path(transcript).expanduser().exists():
@@ -2077,6 +2096,41 @@ def build_plan(
                 gate_category="audio_master_report",
                 required=False,
             ),
+        )
+
+    if wants_render or "qa" in ids or "publish" in ids or "flash_safety_qa" in ids:
+        flash_input = "output/final.mp4" if wants_render else source
+        _add_step(
+            steps,
+            seen,
+            _step(
+                "flash_safety_qa",
+                phase="qa",
+                script="flash_safety_qa.py",
+                label="Screen final video for high-frequency luminance and red flashes",
+                reason="Final delivery should escalate repeated flashing or photosensitivity risk before platform export or publish.",
+                command=shell(
+                    [
+                        python_bin,
+                        "scripts/flash_safety_qa.py",
+                        "analyze",
+                        flash_input,
+                        "--project-dir",
+                        project_dir,
+                        "--output",
+                        "verify/flash_safety_qa.json",
+                        "--markdown",
+                        "verify/flash_safety_qa.md",
+                        "--strict",
+                    ]
+                ),
+                outputs=["verify/flash_safety_qa.json", "verify/flash_safety_qa.md"],
+                gate_category="flash_safety_qa",
+            ),
+        )
+        notes.append(
+            "flash_safety_qa.py is a local heuristic screen, not medical/legal certification; "
+            "repair flagged windows and use an accredited analyzer for regulated or high-risk delivery."
         )
 
     if "reference_edit_rhythm" in ids:

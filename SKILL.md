@@ -1,6 +1,6 @@
 ---
 name: video-editing
-description: "Xiaohongshu/RED-tuned short-form video workflow for voice-over, talking-head, tutorials, interviews, podcasts, screen recordings, green/blue-screen compositing, B-roll, captions, and generated assets. Covers edit routing, creator-owned edit-style profiles, transcription, semantic review, multi-take/audio sync/stabilization/dead-air cleanup, highlights/shorts, story and source gates, enrichment and video-generation planning, generated clip/sequence and scoped AI video-edit review, locked-EDL final audio storyboards, color/speed/J-L cuts, reversible revisions and recipes, preflight/render/QA, subtitles, CapCut, platform/size exports, covers, captions, publish packages, dashboards, handoff formats, and Remotion."
+description: "Xiaohongshu/RED-tuned short-form video workflow for voice-over, talking-head, tutorials, interviews, podcasts, screen recordings, green/blue-screen compositing, B-roll, captions, and generated assets. Covers edit routing, creator-owned edit-style profiles, transcription, semantic review, multi-take/audio sync/stabilization/dead-air cleanup, highlights/shorts, story and source gates, enrichment and video-generation planning, generated clip/sequence and scoped AI video-edit review, locked-EDL final audio storyboards, color/speed/J-L cuts, reversible revisions and recipes, preflight/render/QA including flash/photosensitivity screening, subtitles, CapCut, platform/size exports, covers, captions, publish packages, dashboards, handoff formats, and Remotion."
 metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
 ---
 
@@ -81,6 +81,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ render_final.py          单次编码渲染（可选口播降噪 + enrich_plan/focus_events/pip_overlays + Heavy 字幕 + 响度规范化 + BGM ducking）
    │                            可选 --versioned-output 防覆盖旧成片
    ├─→ render_qa.py             渲染后黑屏/静帧/静音/尺寸质检 + review packet
+   ├─→ flash_safety_qa.py       成片亮度/饱和红 flash → 1s/5s 风险窗口 / live gate
    ├─→ shot_color_qa.py         成片镜头亮度/对比/色度/饱和度/broadcast-range + 切点跳变 gate
    ├─→ retention_rhythm_qa.py   成片 hook 活动 / 长镜头 / 注意力空窗 / 节奏 gate
    ├─→ reference_edit_rhythm.py 参考片 vs 成片 hard-cut 结构 / contact sheets / live gate
@@ -179,6 +180,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `subtitle_style_preview.py` | 真实源帧 → `render_final.py` 最终 ASS 样式对比 JPEG、人工选择与 source/font/style live gate | `create --video --platform --preview-dir --require-selection` / `select --report --style` / `verify --strict` |
 | `render_final.py` | 单次编码渲染 + 可选个人风格默认值 / 口播降噪 / J-cut/L-cut / enrich_plan / 旁白驱动 BGM ducking | `--config render_config.json` `--style-profile work/edit_style_profile.json` `--audio-transition-plan audio_transition_plan.json` `--speech-denoise light` `--enrich-plan enrich_plan.json` `--bgm-ducking` `--output final.mp4` |
 | `render_qa.py` | 渲染后 QA：尺寸/音频/黑屏/静帧/静音 + review packet | `<video.mp4>` `--platform douyin` `--json qa.json` `--review-dir verify/qa` |
+| `flash_safety_qa.py` | final/platform video → 大面积亮度/饱和红 flash、滚动 1s/5s 风险窗口与 source-bound live gate | `analyze <video> --output --markdown --strict` / `verify --report --strict` |
 | `shot_color_qa.py` | rendered master → 镜头亮度/对比/色度/饱和度/broadcast-range 与切点跳变 gate | `<video.mp4>` `--scene-boundaries` `--output shot_color_qa.json` `--markdown` `--strict` |
 | `retention_rhythm_qa.py` | 成片 hook 活动、长镜头、注意力空窗、等距/快切和字幕节奏风险 | `<video.mp4>` `--timed-text subtitles.json` `--output retention_rhythm_qa.json` `--strict` |
 | `reference_edit_rhythm.py` | 参考片 vs 成片 hard-cut 密度、镜头时长、结尾 hold、归一化切点与 contact-sheet source-bound 对照 | `analyze --reference --candidate --evidence-dir [--require-match]` / `verify --report --strict` |
@@ -1644,6 +1646,22 @@ python3 scripts/render_qa.py final.mp4 \
 ```
 
 `render_qa.py` 会检查容器元数据、平台尺寸、视频/音频流、黑屏、长静帧和长静音。对小红书派生文件使用 `--platform xhs`，对抖音/视频号使用 `--platform douyin` 或 `--platform wxch`。`--review-dir` 会写 `render_qa_review.json` / `.md`，`--review-clips` 会为可疑区间抽取短 MP4；如果只想快速查元数据，可加 `--no-filters`。
+
+**6a2. 闪烁 / 光敏风险启发式预检（最终 master 和重要平台版必跑）**：
+```bash
+python3 scripts/flash_safety_qa.py analyze final.mp4 \
+  --project-dir . \
+  --output verify/flash_safety_qa.json \
+  --markdown verify/flash_safety_qa.md \
+  --strict
+
+python3 scripts/flash_safety_qa.py verify \
+  --report verify/flash_safety_qa.json \
+  --project-dir . \
+  --strict
+```
+
+`flash_safety_qa.py` 用本地 FFmpeg 低分辨率逐帧采样，分别记录覆盖至少 25% 画面的亮度与饱和红相反 transition，并配成 flash；滚动 1 秒超过 3 次、或滚动 5 秒至少 10 次会阻断。命中后按 Markdown 时间段正常速度播放，优先删除重复闪白/闪红、降低反差/红饱和度、缩小闪烁面积或降频，再从时间线重渲染。报告绑定 source SHA-256、媒体契约、参数、算法合同和现场重算证据；`pipeline_manifest.py --require flash_safety_qa --strict` 可设为发布 gate。它只是启发式筛查，不检测有害空间 pattern，也不是医疗建议、法律合规证据或 WCAG/Harding/广播认证；高风险或受监管交付必须升级到认可的专业 photosensitivity analyzer。详见 [docs/prompts/104-flash-safety-qa.md](docs/prompts/104-flash-safety-qa.md)。
 
 **6b. 镜头色彩 / 曝光 QA（多机位、B-roll、生成素材或调色后推荐）**：
 ```bash

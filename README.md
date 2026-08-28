@@ -2,7 +2,7 @@
 
 这是一个面向 **口播、教程、访谈、播客切片、录屏演示 / facecam demo** 的 AI 视频剪辑生产线：给它原始口播音频/视频、transcript、B-roll、摄像头小窗或素材目录，它可以把“还没整理的素材”推进到 **可发布的小红书 / 抖音 / 视频号短视频**。
 
-它不是一个单点 FFmpeg 脚本，而是一条完整工作流：**项目启动/素材导入 → 个人/品牌剪辑风格 → 生产授权 → 手持防抖 / 绿蓝幕换背景 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 生成片有效运动窗口 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp / 关键帧 freeze-punch / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 锁定视觉 EDL 后重建最终声音分镜 → 渲染前预检 / 真实画面字幕样式选择 → 单次编码渲染 → 质检 / 最终成片唇形复核 → 多平台导出 / 目标大小交付编码 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
+它不是一个单点 FFmpeg 脚本，而是一条完整工作流：**项目启动/素材导入 → 个人/品牌剪辑风格 → 生产授权 → 手持防抖 / 绿蓝幕换背景 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 生成片有效运动窗口 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp / 关键帧 freeze-punch / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 锁定视觉 EDL 后重建最终声音分镜 → 渲染前预检 / 真实画面字幕样式选择 → 单次编码渲染 → 质检 / 闪烁风险筛查 / 最终成片唇形复核 → 多平台导出 / 目标大小交付编码 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
 
 ## 适合做什么
 
@@ -30,6 +30,7 @@
 - **生成片段复核会反哺下一次提示词**：`generation_lessons.py` 只从 canonical clip review 提取人工明确批准的通用经验，绑定 source digests，并按 provider/model/category 精确筛选后交给 `video_prompt_pack.py`；不会把单片修复建议自动当成全局规则。
 - **字幕风格先在真实画面上选**：`subtitle_style_preview.py` 用最终 renderer 的同一 ASS builder、字体、字号和目标画幅，把 `normal / minimal / bold_pop` 渲染到源片早、中、晚代表帧；源片、字体、样式定义或 JPEG 漂移会让旧选择失效。
 - **平台画幅处理先看真实 A/B 再导出**：`framing_preview.py` 为小红书 / 抖音 / 视频号逐平台比较 `cover / contain / blur`，把选择绑定到 master、显示方向、filter contract 和 JPEG 证据；`multi_export.py` 只消费现场验证通过的选择。
+- **最终成片会筛查大面积高频闪烁**：`flash_safety_qa.py` 用本地 FFmpeg 分析亮度与饱和红相反 transition，按滚动 1 秒 / 5 秒窗口输出风险区间；source、媒体契约、参数、算法或现场证据漂移都会让报告失效。它只做启发式风险分流，不冒充医疗或法规认证。
 - **数字人口型必须在最终成片上重新举证**：`lip_sync_review.py` 从最终 master 的完整短语导出 1× 带声和 0.25× 静音 proof clips，逐条复核爆破音闭唇、元音提前/滞后、讲话时冻嘴、说话人和音频质量；任何剪切、变速、换音或重编码都会让旧报告失效。
 - **参考片节奏先量化再借鉴**：`reference_edit_rhythm.py` 用同一套 hard-cut 检测比较参考片和成片的 cuts/minute、镜头时长、结尾 hold 与切点分布，同时绑定两条视频和 contact sheets；默认只提示差异，明确验收时才阻断。
 - **适合交给强推理模型做长流程代理执行**：在 [GPT-5.6 Sol](https://developers.openai.com/api/docs/models/gpt-5.6-sol)（OpenAI 当前旗舰；API 别名 `gpt-5.6` 指向 Sol）和 [Claude Opus 4.8](https://docs.anthropic.com/en/docs/about-claude/models) 这类面向复杂专业任务、agent 工作流的模型下，本 skill 对 **口播类短视频** 至少可以替代 **80% 的常规视频剪辑工作**。
@@ -257,6 +258,7 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    │     可选 --versioned-output：输出 _V<N>，避免覆盖旧成片
    │
    ├─→ render_qa.py             渲染后黑屏/静帧/静音/尺寸质检 + review packet
+   ├─→ flash_safety_qa.py       亮度/饱和红 flash → 1s/5s 风险窗口 / source-bound live gate
    ├─→ shot_color_qa.py         成片镜头亮度/对比/色度/饱和度/broadcast-range + 切点跳变门禁
    ├─→ retention_rhythm_qa.py   成片 hook 活动 / 长镜头 / 注意力空窗 / 节奏门禁
    ├─→ reference_edit_rhythm.py 参考片 vs 成片 hard-cut 结构 / contact sheets / live gate
@@ -2371,6 +2373,25 @@ python3 scripts/timeline_view.py output/day58_master.mp4 --at 42.5 --radius 1.5 
 
 `--review-dir` 会写 `render_qa_review.json` 和 `render_qa_review.md`，把黑屏、静帧、静音的可疑区间按 FAIL/WARN 排序；`--review-clips` 会额外抽取短 MP4 证据片段。只需要审阅清单时不加 `--review-clips`。
 
+### ⚡ Flash Safety QA — 最终成片闪烁风险预检
+[`scripts/flash_safety_qa.py`](scripts/flash_safety_qa.py) · [详细文档](docs/prompts/104-flash-safety-qa.md)
+
+`render_qa.py` 能发现长静帧，但不会判断反复闪白、闪黑或饱和红交替。`flash_safety_qa.py` 用本地 FFmpeg 把 final/platform video 等比例缩小后逐帧分析：变化覆盖至少 25% 画面时记录亮度与红信号 transition，在 0.50 秒内把相反 transition 配成 flash，再检查滚动 1 秒 / 5 秒窗口。
+
+```bash
+python3 scripts/flash_safety_qa.py analyze output/day58_master.mp4 \
+  --project-dir . \
+  --output verify/flash_safety_qa.json \
+  --markdown verify/flash_safety_qa.md \
+  --strict
+python3 scripts/flash_safety_qa.py verify \
+  --report verify/flash_safety_qa.json \
+  --project-dir . --strict
+python3 scripts/pipeline_manifest.py . --require flash_safety_qa --strict
+```
+
+滚动 1 秒超过 3 次 flash、或滚动 5 秒至少 10 次 flash 会阻断。命中后必须按时间段正常速度播放，优先删除重复闪烁、降低亮暗反差 / 红饱和度、缩小闪烁面积或降频，再从时间线重渲染。报告绑定 source bytes、媒体契约、参数、算法合同、analysis 和 canonical report id；live verify 会重新分析，不能靠改 JSON 清 gate。该工具不检测有害空间 pattern，只是启发式风险分流，不是医疗建议、法律合规证据或 WCAG / Harding / 广播认证；高风险与受监管交付需使用认可的专业 photosensitivity analyzer。
+
 ### 📈 Retention Rhythm QA — 成片留存节奏风险审计
 [`scripts/retention_rhythm_qa.py`](scripts/retention_rhythm_qa.py) · [详细文档](docs/prompts/69-retention-rhythm-qa.md)
 
@@ -3007,6 +3028,7 @@ python3 $SKILL/scripts/pipeline_manifest.py \
   --project-dir $WORK \
   --target-stage publish_ready \
   --require shot_color_qa \
+  --require flash_safety_qa \
   --output $WORK/work/pipeline_manifest.json \
   --markdown $WORK/work/pipeline_manifest.md \
   --strict
@@ -3054,6 +3076,7 @@ pytest tests/test_framing_preview.py -v     # cover/contain/blur 真实帧预览
 pytest tests/test_hdr_sdr.py -v             # PQ/HLG → Rec.709 SDR / color tags / 完整解码门禁
 pytest tests/test_delivery_encode.py -v     # 硬大小上限 / 两遍编码 / 完整解码门禁
 pytest tests/test_render_qa.py -v           # 渲染后质检
+pytest tests/test_flash_safety_qa.py -v     # 亮度/饱和红 flash、滚动窗口、source drift gate
 pytest tests/test_shot_color_qa.py -v       # 成片镜头色彩 / 曝光 / broadcast-range 门禁
 pytest tests/test_retention_rhythm_qa.py -v # 成片 hook / 长镜头 / 节奏风险门禁
 pytest tests/test_reference_edit_rhythm.py -v # 参考片/成片 hard-cut 结构 / contact-sheet / stale gate
@@ -3120,6 +3143,50 @@ pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 pytest tests/test_review_dashboard.py -v    # 静态人工复核面板 + gate queue
 pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 gate
 ```
+
+### 2026-08-29 自动化升级记录（Source-bound Flash Safety QA）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`calesthio/generative-media-skills` Remotion video composition](https://github.com/calesthio/generative-media-skills/blob/main/skills/production/runtime-assembly/remotion-video-composition/SKILL.md) | 把字幕、对比度、闪烁、运动敏感性与音频描述一起列为最终 accessibility review，而不是渲染完成就算交付 | 在最终 master / platform video 后增加独立 flash gate；报告明确不能代替完整审片、医疗建议或认可的专业检测 |
+| [`electronicarts/IRIS`](https://github.com/electronicarts/IRIS) | 开源分析亮度 flash、饱和红 flash 与空间 pattern，并区分 1 秒高频爆发和持续数秒的中频闪烁；项目也明确声明结果不是正式认证 | 本轮实现可在普通本地 FFmpeg 环境运行的亮度 / 饱和红启发式预检，同时检查滚动 1 秒与 5 秒窗口；明确列出尚不检测空间条纹 pattern |
+| [`zeima08/E2py`](https://github.com/zeima08/E2py) | 用 10% 亮度变化、25% 画面覆盖和每秒 3 次作为易复现的初筛条件，也单独检查红色信号并强调结果仅供指示 | 采用同量级默认阈值，把相反 transition 配成 flash，保留原始 transition、影响面积、时间窗与参数合同，避免只有一个不透明的 pass/fail |
+| [`clueso-ai/skills`](https://github.com/clueso-ai/skills) | 把 `accessibility-pass` 作为可组合的视频制作技能，让 accessibility 成为流水线步骤 | 接入 `edit_brief_plan.py` 与 `pipeline_manifest.py`，存在报告就 live verify，也可显式 `--require flash_safety_qa` 阻断发布 |
+
+本次新增 / 调整：
+
+- 新增 [`scripts/flash_safety_qa.py`](scripts/flash_safety_qa.py) 的 `analyze → verify` 闭环。FFmpeg 将视频最高按 30 fps、等比例缩到 64 px 宽后分析 BT.709 近似亮度和饱和红信号；变化至少覆盖 25% 画面、相反 transition 在 0.50 秒内成对时计为一次 flash。
+- 滚动 1 秒内超过 3 次 flash，或滚动 5 秒内至少 10 次 flash，均生成 blocker 与精确风险区间；低于阻断阈值但出现 flash 时保留 warning。JSON / Markdown 同时给出 transition、flash、峰值、处理建议和不可替代专业认证的边界。
+- 报告绑定项目内 source SHA-256 / 大小、媒体契约、分析参数、算法合同、完整 analysis、派生状态和 canonical report id。`verify` 会重新分析现场视频；source bytes、媒体信息、参数 / 算法、证据、状态或 id 漂移全部 fail closed，并拒绝项目逃逸、symlink traversal 及 source/report hardlink 碰撞。
+- `pipeline_manifest.py` 新增 `flash_safety_qa` category、存在即 live verify 与 `--require` gate；`edit_brief_plan.py` 会在最终渲染 / 发布路线自动追加 flash QA，明确要求时也能对 source-only 路线安排预检。
+- 新增 [`tests/test_flash_safety_qa.py`](tests/test_flash_safety_qa.py) 和 [`docs/prompts/104-flash-safety-qa.md`](docs/prompts/104-flash-safety-qa.md)，并同步主 SKILL、小红书日常工作流、prompts 导航、README 流程图 / 能力说明 / 测试清单 / 脚本索引。
+
+使用方式：
+
+```bash
+python3 scripts/flash_safety_qa.py analyze output/final.mp4 \
+  --project-dir . \
+  --output verify/flash_safety_qa.json \
+  --markdown verify/flash_safety_qa.md \
+  --strict
+
+python3 scripts/flash_safety_qa.py verify \
+  --report verify/flash_safety_qa.json \
+  --project-dir . \
+  --strict
+
+python3 scripts/pipeline_manifest.py . \
+  --require flash_safety_qa \
+  --strict
+```
+
+验证结果：
+
+- 新增/关联定向回归 `tests/test_flash_safety_qa.py tests/test_edit_brief_plan.py tests/test_pipeline_manifest.py` 为 **135 passed in 2.20s**，覆盖亮度 / 饱和红分流、1 秒与 5 秒滚动规则、阈值下 warning、source / analysis / derived-state 漂移、hardlink 防护、自然语言路线和 manifest live gate。
+- 真实 FFmpeg smoke：静态灰色 `2.0s / 160×90 / 30fps / H.264 + AAC` 样片得到 `60 frames / 0 transitions / 0 flashes / ready`，严格 analyze / verify 都退出 0；同规格 `5Hz` 黑白交替样片得到 `19 transitions / 9 flashes / 1s peak=6 / risk 0.000–1.800s / blocked`，严格 analyze / verify 都按预期退出 2。
+- 最终全量 `.venv/bin/python -m pytest tests -q` 为 **1044 passed in 21.89s**；`.venv/bin/python -m compileall -q scripts tests`、五组相关 CLI help、Skill Creator `quick_validate.py` 和 `git diff --check` 全部通过。本轮只使用本地 FFmpeg，没有调用生成 provider、消耗 credits、上传素材或发布。
 
 ### 2026-08-28 自动化升级记录（Source-bound Platform Framing Preview）
 
@@ -4001,6 +4068,7 @@ python3 scripts/pipeline_manifest.py . --require freeze_punch_plan --strict
 | **89** | **[Generated Clip Review](docs/prompts/89-generated-clip-review.md)** | **生成视频下载后做逐片物理、身份、裁切与重生 gate** |
 | **102** | **[Generated Motion Window](docs/prompts/102-generated-motion-window.md)** | **检测生成片首尾冻帧，人工确认有效运动窗口并输出新工作副本** |
 | **103** | **[Platform Framing Preview](docs/prompts/103-framing-preview.md)** | **逐平台比较 cover / contain / blur，绑定真实帧证据后再导出** |
+| **104** | **[Flash Safety QA](docs/prompts/104-flash-safety-qa.md)** | **最终成片大面积亮度 / 饱和红闪烁启发式筛查与 live gate** |
 | **90** | **[Generation Lessons](docs/prompts/90-generation-lessons.md)** | **把已审片段经验按 provider/model scope 复用到下一次 prompt** |
 | **91** | **[Generated Sequence Review](docs/prompts/91-generated-sequence-review.md)** | **逐片通过后复核相邻尾帧/首帧与跨镜头连续性** |
 | **92** | **[Reference Edit Rhythm](docs/prompts/92-reference-edit-rhythm.md)** | **量化参考片 hard-cut 结构并对照成片，绑定 contact sheets 与 live gate** |
@@ -4109,6 +4177,7 @@ scripts/
 ├── platform_safe_area_qa.py    字幕/PIP/CTA/marker 平台安全区 gate [V3]
 ├── render_final.py             单次编码渲染 + 可选口播降噪 + enrich_plan 接入（V3 强化）
 ├── render_qa.py                渲染后黑屏/静帧/静音/尺寸质检       [V3]
+├── flash_safety_qa.py          亮度/饱和红 flash + 1s/5s 滚动窗口 live gate [V3]
 ├── shot_color_qa.py            成片镜头色彩/曝光/broadcast-range gate [V3]
 ├── edit_compare.py             原片连续时钟 vs 最终像素双栏复核     [V3]
 ├── retention_rhythm_qa.py      成片 hook / 长镜头 / 注意力空窗门禁 [V3]

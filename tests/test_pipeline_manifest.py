@@ -14,6 +14,7 @@ from edit_recipe import export_recipe  # noqa: E402
 from edit_style_profile import create_profile, template_spec  # noqa: E402
 import delivery_encode  # noqa: E402
 import freeze_punch  # noqa: E402
+import flash_safety_qa  # noqa: E402
 import generated_clip_review  # noqa: E402
 import generated_motion_window  # noqa: E402
 import generated_sequence_review  # noqa: E402
@@ -56,6 +57,69 @@ def test_publish_ready_manifest_passes_when_required_artifacts_exist(tmp_path):
     assert manifest["status"] == "ready"
     assert manifest["summary"]["required_ready"] == manifest["summary"]["required"]
     assert manifest["missing_required"] == []
+
+
+def test_flash_safety_report_is_live_verified_and_can_be_required(tmp_path, monkeypatch):
+    _publish_ready_project(tmp_path)
+    source = tmp_path / "output" / "day58_master.mp4"
+    media = {
+        "duration": 5.0,
+        "fps": 30.0,
+        "width": 640,
+        "height": 360,
+        "rotation": 0,
+        "has_audio": True,
+        "video_codec": "h264",
+        "audio_codec": "aac",
+        "pixel_format": "yuv420p",
+    }
+    settings = {
+        "analysis_fps": 30.0,
+        "analysis_width": 64,
+        "luma_change": 0.10,
+        "red_change": 0.10,
+        "area_fraction": 0.25,
+        "pair_gap_seconds": 0.50,
+    }
+    frames = [bytes((24, 24, 24)) * 8 for _ in range(31)]
+    analysis = flash_safety_qa.analyze_frame_sequence(
+        frames,
+        width=4,
+        height=2,
+        fps=30.0,
+        settings=settings,
+    )
+    monkeypatch.setattr(flash_safety_qa, "probe_media", lambda _path: dict(media))
+    monkeypatch.setattr(
+        flash_safety_qa,
+        "analyze_video",
+        lambda _path, **_kwargs: dict(analysis),
+    )
+    report = flash_safety_qa.build_report(source, project_dir=tmp_path)
+    report_path = tmp_path / "verify" / "flash_safety_qa.json"
+    _write(report_path, report)
+
+    current = build_manifest(
+        str(tmp_path),
+        target_stage="publish_ready",
+        required=["flash_safety_qa"],
+    )
+    gate = next(g for g in current["gates"] if g["category"] == "flash_safety_qa")
+    assert gate["status"] == "ready"
+
+    _write(source, "changed rendered bytes")
+    stale = build_manifest(str(tmp_path), target_stage="publish_ready")
+    gate = next(g for g in stale["gates"] if g["category"] == "flash_safety_qa")
+    assert gate["status"] == "blocked"
+    assert "flash_safety_qa" in stale["blocked_gates"]
+
+    report_path.unlink()
+    missing = build_manifest(
+        str(tmp_path / "empty"),
+        target_stage="analysis",
+        required=["flash_safety_qa"],
+    )
+    assert "flash_safety_qa" in missing["missing_required"]
 
 
 def test_subtitle_style_preview_is_live_verified_and_can_be_required(tmp_path, monkeypatch):

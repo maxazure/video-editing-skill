@@ -105,6 +105,7 @@
 | 101 | [Freeze-Punch 关键帧定格强调](101-freeze-punch.md) | impact frame → source-bound 定格窗口、anchor crop、原音频/总时长不变与 live gate |
 | 102 | [Generated Motion Window 生成视频有效运动窗口](102-generated-motion-window.md) | 短生成片 0.25s freeze → active intervals、人工 trim/keep/reject、新 working copy 与 live gate |
 | 103 | [Platform Framing Preview 平台画幅处理预览](103-framing-preview.md) | master → 各平台 cover/contain/blur 真实帧、人工选择与 source/filter/preview live gate |
+| 104 | [Flash Safety QA 最终成片闪烁风险预检](104-flash-safety-qa.md) | final master / platform export → 亮度与饱和红 flash、滚动窗口和 source-bound live gate |
 
 ## 快速上手
 

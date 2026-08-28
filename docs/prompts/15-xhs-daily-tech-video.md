@@ -592,6 +592,16 @@
       --markdown output/day<NN>_audio_master_report.md \
       --strict
 
+7d. # 最终 master 的大面积亮度 / 饱和红闪烁风险预检：
+    python3 scripts/flash_safety_qa.py analyze \
+      output/day<NN>_master.mp4 \
+      --project-dir . \
+      --output output/verify/day<NN>_flash_safety_qa.json \
+      --markdown output/verify/day<NN>_flash_safety_qa.md \
+      --strict
+    # 命中后按报告区间降低闪烁频率、反差/红饱和度或面积，再重渲染。
+    # 这是启发式筛查，不是医疗/法规认证；高风险交付仍需认可的专业 analyzer。
+
 8. # 如果 render_qa 有 WARN/FAIL，或要抽查 hook / 转场 / 片尾：
    python3 scripts/timeline_view.py output/day<NN>_master.mp4 \
      --at <可疑秒数> \
@@ -722,6 +732,7 @@
      --project-dir . \
      --target-stage publish_ready \
      --require shot_color_qa \
+     --require flash_safety_qa \
      --output work/pipeline_manifest.json \
      --markdown work/pipeline_manifest.md \
      --strict
@@ -782,6 +793,7 @@
 - enrich_plan.json 里 broll/sticker/chapter 总数（确认丰富度足够）
 - content_guard 的输出（必须 ✅ 无违规）
 - render_qa 的输出（必须没有 FAIL；WARN 要解释）
+- flash_safety_qa 的输出（BLOCK 必须修；clean 结果也不是医疗 / 法规认证）
 - shot_color_qa 的输出（broadcast-range / coverage BLOCK 必须修；切点 WARN 要看 master）
 - 如输入是 PQ/HLG HDR，给我 hdr_sdr_plan、BT.709 四项 color tag 和完整 SDR 审片结论
 - subtitle_readability_qa 的输出（BLOCK 必须修；WARN 要在正常速度看成片）
@@ -803,6 +815,7 @@
 - 音乐主导内容可先跑 `beat_sync.py --generate-plan`；固定 BPM fallback 只能作为复核草稿，不能冒充真实节拍检测
 - 有 BGM 的口播成片用 `--bgm-ducking`，并在正常速度试听旁白入口、停顿恢复和片尾；音乐主导视频可不启用
 - 发布前用 audio_master_report 确认 LUFS / true peak / 长静音，不要只凭耳朵判断
+- 发布前用 flash_safety_qa 筛查大面积亮度 / 饱和红高频闪烁；不要为清 gate 随意放宽阈值，高风险交付要升级到认可的专业 analyzer
 - shot_color_qa 的亮度/色度跳变是审片提示，不是审美分；不要为了清 WARN 把有意的日夜/图形切换调平
 - subtitle_readability_qa 的 CPS / 行长 WARN 是人工复核提示，不要为了清零机械拆句
 - retention_rhythm_qa 只是可观测节奏风险，不是留存率或爆款预测；不要为了消除 WARN 机械加切点
@@ -898,6 +911,8 @@ day<NN>/
     │   ├── day<NN>_subtitle_readability_qa.md   # cue 时间范围 + 修复建议
     │   ├── day<NN>_retention_rhythm_qa.json # 成片 hook / 长镜头 / 节奏风险门禁
     │   ├── day<NN>_retention_rhythm_qa.md   # 时间范围 + 修复建议
+    │   ├── day<NN>_flash_safety_qa.json # 亮度/饱和红 flash + 滚动窗口 live gate
+    │   ├── day<NN>_flash_safety_qa.md   # 风险区间、修复方向与非认证边界
     │   ├── reference_edit_rhythm/           # 可选：参考片/候选片 contact sheets
     │   ├── day<NN>_shot_color_qa.json       # 镜头色彩 / 曝光 / broadcast-range gate
     │   └── day<NN>_shot_color_qa.md         # 镜头指标 + 可疑切点复核命令

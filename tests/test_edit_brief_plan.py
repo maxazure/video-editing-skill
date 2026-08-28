@@ -225,6 +225,41 @@ def test_framing_brief_routes_review_before_platform_exports(tmp_path):
     assert any("readable UI" in note for note in plan["notes"])
 
 
+def test_render_brief_routes_flash_safety_after_final_master(tmp_path):
+    source = tmp_path / "talk.mp4"
+    source.write_text("fake video", encoding="utf-8")
+
+    plan = build_plan(
+        f"把 {source} 渲染成小红书成片并做发布前 QA",
+        project_dir=str(tmp_path),
+    )
+
+    ids = [step["id"] for step in plan["steps"]]
+    assert ids.index("master_video") < ids.index("flash_safety_qa")
+    step = next(step for step in plan["steps"] if step["id"] == "flash_safety_qa")
+    assert step["script"] == "flash_safety_qa.py"
+    assert "flash_safety_qa.py analyze output/final.mp4" in step["command"]
+    assert "verify/flash_safety_qa.json" in step["outputs"]
+    assert step["gate_category"] == "flash_safety_qa"
+    assert any("not medical/legal certification" in note for note in plan["notes"])
+
+
+def test_explicit_flash_safety_brief_checks_existing_master_without_render(tmp_path):
+    source = tmp_path / "master.mp4"
+    source.write_text("fake video", encoding="utf-8")
+
+    plan = build_plan(
+        f"检查 {source} 有没有高频闪烁和光敏风险",
+        project_dir=str(tmp_path),
+    )
+
+    ids = [step["id"] for step in plan["steps"]]
+    assert "master_video" not in ids
+    step = next(step for step in plan["steps"] if step["id"] == "flash_safety_qa")
+    assert str(source) in step["command"]
+    assert "--strict" in step["command"]
+
+
 def test_locked_edl_audio_brief_routes_final_timeline_storyboard(tmp_path):
     plan = build_plan(
         "视觉剪辑锁定后配音，按最终时间线重建声音，生成最终声音分镜",
