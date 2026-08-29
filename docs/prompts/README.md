@@ -106,6 +106,7 @@
 | 102 | [Generated Motion Window 生成视频有效运动窗口](102-generated-motion-window.md) | 短生成片 0.25s freeze → active intervals、人工 trim/keep/reject、新 working copy 与 live gate |
 | 103 | [Platform Framing Preview 平台画幅处理预览](103-framing-preview.md) | master → 各平台 cover/contain/blur 真实帧、人工选择与 source/filter/preview live gate |
 | 104 | [Flash Safety QA 最终成片闪烁风险预检](104-flash-safety-qa.md) | final master / platform export → 亮度与饱和红 flash、滚动窗口和 source-bound live gate |
+| 105 | [Narration Loudness QA 最终旁白逐短语响度一致性](105-narration-loudness-qa.md) | finalized isolated narration + exact phrase ranges → per-segment LUFS / spread / dBTP / LRA live gate |
 
 ## 快速上手
 
@@ -186,6 +187,7 @@
 | 成片剪完后想检查前三秒、长镜头和节奏空窗 | [69-Retention Rhythm QA](69-retention-rhythm-qa.md) |
 | 有参考广告/短片，想量化它的切点结构再对照成片 | [92-Reference Edit Rhythm](92-reference-edit-rhythm.md) |
 | 数字人/生成口播成片要检查口型是否真的同步 | [93-Lip-sync Review](93-lip-sync-review.md) |
+| 分段 TTS / 配音处理后有句子忽大忽小，整片 LUFS 又看不出来 | [105-Narration Loudness QA](105-narration-loudness-qa.md) |
 | 发布前想检查字幕是否重叠、闪现或来不及读 | [70-Subtitle Readability QA](70-subtitle-readability-qa.md) |
 | 视频生成前想检查首帧和 style key 是否适配目标画幅 | [71-Reference Frame Preflight](71-reference-frame-preflight.md) |
 | 多机位、多 take 或 B-roll 里有重复镜头，想先去重候选 | [72-Visual Dedupe](72-visual-dedupe.md) |

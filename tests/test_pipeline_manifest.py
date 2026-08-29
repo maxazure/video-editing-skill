@@ -22,6 +22,7 @@ import scoped_video_edit_review  # noqa: E402
 import generation_lessons  # noqa: E402
 import hdr_sdr  # noqa: E402
 import multimodal_dead_air  # noqa: E402
+import narration_loudness_qa  # noqa: E402
 import subtitle_style_preview  # noqa: E402
 from jump_cut import Segment  # noqa: E402
 from speed_ramp import build_speed_ramp_plan, parse_hold  # noqa: E402
@@ -120,6 +121,63 @@ def test_flash_safety_report_is_live_verified_and_can_be_required(tmp_path, monk
         required=["flash_safety_qa"],
     )
     assert "flash_safety_qa" in missing["missing_required"]
+
+
+def test_narration_loudness_report_is_live_verified_and_can_be_required(tmp_path, monkeypatch):
+    _publish_ready_project(tmp_path)
+    source = tmp_path / "work" / "final_narration.wav"
+    source.write_bytes(b"narration bytes")
+    segments_path = tmp_path / "work" / "narration_segments.json"
+    _write(segments_path, {
+        "segments": [
+            {"id": "line-1", "start": 0.0, "end": 2.0},
+            {"id": "line-2", "start": 2.2, "end": 4.5},
+        ]
+    })
+    media = {
+        "duration": 5.0,
+        "format_name": "wav",
+        "audio_stream_index": 0,
+        "audio_codec": "pcm_s16le",
+        "sample_rate": 48000,
+        "channels": 1,
+        "channel_layout": "mono",
+    }
+
+    def measure(_path, *, start, end):
+        return {
+            "integrated_lufs": -18.1 if start < 1 else -17.4,
+            "true_peak_dbtp": -3.0,
+            "lra_lu": 2.0,
+        }
+
+    monkeypatch.setattr(narration_loudness_qa, "probe_audio_media", lambda _path: dict(media))
+    monkeypatch.setattr(narration_loudness_qa, "measure_range", measure)
+    report = narration_loudness_qa.build_report(source, segments_path, project_dir=tmp_path)
+    report_path = tmp_path / "verify" / "narration_loudness_qa.json"
+    _write(report_path, report)
+
+    current = build_manifest(
+        str(tmp_path),
+        target_stage="publish_ready",
+        required=["narration_loudness_qa"],
+    )
+    gate = next(g for g in current["gates"] if g["category"] == "narration_loudness_qa")
+    assert gate["status"] == "ready"
+
+    _write(source, "changed narration bytes")
+    stale = build_manifest(str(tmp_path), target_stage="publish_ready")
+    gate = next(g for g in stale["gates"] if g["category"] == "narration_loudness_qa")
+    assert gate["status"] == "blocked"
+    assert "narration_loudness_qa" in stale["blocked_gates"]
+
+    report_path.unlink()
+    missing = build_manifest(
+        str(tmp_path / "empty"),
+        target_stage="analysis",
+        required=["narration_loudness_qa"],
+    )
+    assert "narration_loudness_qa" in missing["missing_required"]
 
 
 def test_subtitle_style_preview_is_live_verified_and_can_be_required(tmp_path, monkeypatch):

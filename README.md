@@ -2,7 +2,7 @@
 
 这是一个面向 **口播、教程、访谈、播客切片、录屏演示 / facecam demo** 的 AI 视频剪辑生产线：给它原始口播音频/视频、transcript、B-roll、摄像头小窗或素材目录，它可以把“还没整理的素材”推进到 **可发布的小红书 / 抖音 / 视频号短视频**。
 
-它不是一个单点 FFmpeg 脚本，而是一条完整工作流：**项目启动/素材导入 → 个人/品牌剪辑风格 → 生产授权 → 手持防抖 / 绿蓝幕换背景 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 生成片有效运动窗口 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp / 关键帧 freeze-punch / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 锁定视觉 EDL 后重建最终声音分镜 → 渲染前预检 / 真实画面字幕样式选择 → 单次编码渲染 → 质检 / 闪烁风险筛查 / 最终成片唇形复核 → 多平台导出 / 目标大小交付编码 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
+它不是一个单点 FFmpeg 脚本，而是一条完整工作流：**项目启动/素材导入 → 个人/品牌剪辑风格 → 生产授权 → 手持防抖 / 绿蓝幕换背景 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 生成片有效运动窗口 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp / 关键帧 freeze-punch / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 锁定视觉 EDL 后重建最终声音分镜 → 最终旁白逐短语响度门禁 → 渲染前预检 / 真实画面字幕样式选择 → 单次编码渲染 → 质检 / 闪烁风险筛查 / 最终成片唇形复核 → 多平台导出 / 目标大小交付编码 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
 
 ## 适合做什么
 
@@ -31,6 +31,7 @@
 - **字幕风格先在真实画面上选**：`subtitle_style_preview.py` 用最终 renderer 的同一 ASS builder、字体、字号和目标画幅，把 `normal / minimal / bold_pop` 渲染到源片早、中、晚代表帧；源片、字体、样式定义或 JPEG 漂移会让旧选择失效。
 - **平台画幅处理先看真实 A/B 再导出**：`framing_preview.py` 为小红书 / 抖音 / 视频号逐平台比较 `cover / contain / blur`，把选择绑定到 master、显示方向、filter contract 和 JPEG 证据；`multi_export.py` 只消费现场验证通过的选择。
 - **最终成片会筛查大面积高频闪烁**：`flash_safety_qa.py` 用本地 FFmpeg 分析亮度与饱和红相反 transition，按滚动 1 秒 / 5 秒窗口输出风险区间；source、媒体契约、参数、算法或现场证据漂移都会让报告失效。它只做启发式风险分流，不冒充医疗或法规认证。
+- **分段 TTS / 配音不会再被整片平均响度掩盖**：`narration_loudness_qa.py` 在最终独立旁白音轨上逐短语实测 LUFS / dBTP / LRA，并检查非例外段 spread；旁白、时间清单或现场 measurements 漂移会让旧报告失效，混音后仍要另跑全片 `audio_master_report.py`。
 - **数字人口型必须在最终成片上重新举证**：`lip_sync_review.py` 从最终 master 的完整短语导出 1× 带声和 0.25× 静音 proof clips，逐条复核爆破音闭唇、元音提前/滞后、讲话时冻嘴、说话人和音频质量；任何剪切、变速、换音或重编码都会让旧报告失效。
 - **参考片节奏先量化再借鉴**：`reference_edit_rhythm.py` 用同一套 hard-cut 检测比较参考片和成片的 cuts/minute、镜头时长、结尾 hold 与切点分布，同时绑定两条视频和 contact sheets；默认只提示差异，明确验收时才阻断。
 - **适合交给强推理模型做长流程代理执行**：在 [GPT-5.6 Sol](https://developers.openai.com/api/docs/models/gpt-5.6-sol)（OpenAI 当前旗舰；API 别名 `gpt-5.6` 指向 Sol）和 [Claude Opus 4.8](https://docs.anthropic.com/en/docs/about-claude/models) 这类面向复杂专业任务、agent 工作流的模型下，本 skill 对 **口播类短视频** 至少可以替代 **80% 的常规视频剪辑工作**。
@@ -266,6 +267,7 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    ├─→ lip_sync_review.py       最终 master → 1×/0.25× 对口型证据 / 人工审计 / live gate
    ├─→ review_proxy.py          低码率完整审片 MP4 / 可见时间码 / faststart
    ├─→ audio_master_report.py   成片响度 / true peak / LRA / 长静音发布 gate
+   ├─→ narration_loudness_qa.py 最终独立旁白逐短语 LUFS / spread / dBTP / LRA live gate
    │     └─→ timeline_view.py   QA 可疑区间可视化复盘
    │
    ├─→ subtitle_pack.py         SRT / VTT / ASS / JSON 字幕交付包
@@ -2521,6 +2523,29 @@ python3 scripts/audio_master_report.py output/day58_master.mp4 \
 
 默认检查 -16 LUFS ±2 LU、true peak ≤ -1 dBFS、LRA ≤ 18 LU、长静音总量 ≤ 3 秒。输出 `audio_master_report.v1`，如果 `summary.blocking > 0`，`pipeline_manifest.py` 会把它列为 blocking gate。若失败，优先回到 `render_final.py` 默认响度链路重新渲染，不要反复压缩已完成 master。
 
+### 🗣️ Narration Loudness QA — 最终旁白逐短语一致性
+[`scripts/narration_loudness_qa.py`](scripts/narration_loudness_qa.py) · [详细文档](docs/prompts/105-narration-loudness-qa.md)
+
+整条旁白或最终成片的 integrated LUFS 合格，仍可能隐藏单句突然变大、变小或削顶。这个门禁要求输入**最终处理后的独立旁白音轨**和精确 `segments[]` / `phrases[]` 时间清单，用 FFmpeg `ebur128=peak=true` 逐段实测；默认目标 `-18 LUFS ±2 LU`、非例外段 spread `≤1 LU`、true peak `≤-2 dBTP`、单段 LRA `≤5 LU`。
+
+```bash
+python3 scripts/narration_loudness_qa.py analyze work/final_narration.wav \
+  --segments work/final_narration_segments.json \
+  --project-dir . \
+  --output verify/narration_loudness_qa.json \
+  --markdown verify/narration_loudness_qa.md \
+  --strict
+
+python3 scripts/narration_loudness_qa.py verify \
+  --report verify/narration_loudness_qa.json \
+  --project-dir . \
+  --strict
+
+python3 scripts/pipeline_manifest.py . --require narration_loudness_qa --strict
+```
+
+创意耳语等例外必须逐段写 `loudness_exception.reason + reviewer`；例外不参加 target/spread/LRA 阻断，但不能绕过 true-peak ceiling，且仍须至少两段非例外短语。报告绑定旁白和清单 SHA-256、媒体契约、规范化 ranges、参数、算法、逐段 measurements、派生状态与 report id，`verify` 会现场重新测量。它不判断音色、发音、呼吸、接缝或表演，也不替代混音后全片 `audio_master_report.py`。
+
 ### 🧾 Source Receipts — 事实来源 proof deck
 [`scripts/source_receipts.py`](scripts/source_receipts.py) · [详细文档](docs/prompts/58-source-receipts.md)
 
@@ -3085,6 +3110,7 @@ pytest tests/test_subtitle_style_preview.py -v # 真实源帧 ASS 样式 JPEG / 
 pytest tests/test_subtitle_readability_qa.py -v # 最终字幕 CPS / 时长 / 重叠 / 越界门禁
 pytest tests/test_platform_safe_area_qa.py -v # 字幕 / PIP / CTA / marker 平台安全区门禁
 pytest tests/test_audio_master_report.py -v # 成片响度 / true peak / LRA 门禁
+pytest tests/test_narration_loudness_qa.py -v # 最终旁白逐短语 LUFS / spread / dBTP / LRA live gate
 pytest tests/test_render_enrich_plan.py -v  # enrich_plan 自动接入渲染
 pytest tests/test_auto_emphasis.py -v      # 问句/数字/转折/结论 emphasis cues
 pytest tests/test_beat_sync.py -v          # BGM → beat edit slots / fallback review / cut snap
@@ -3143,6 +3169,49 @@ pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 pytest tests/test_review_dashboard.py -v    # 静态人工复核面板 + gate queue
 pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 gate
 ```
+
+### 2026-08-30 自动化升级记录（Source-bound Phrase-level Narration Loudness QA）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`MartinDelophy/ai-video-editor` Timeline Studio skill](https://github.com/MartinDelophy/ai-video-editor/blob/main/skills/edit-timeline-studio/SKILL.md) | 明确要求分段旁白对每个最终 stem 测量；默认目标 `-18 LUFS`、true peak `≤-2 dBTP`、段间 spread `≤1 LU`、单段 LRA `≤5 LU`，并指出整片 loudness 不能证明局部一致 | 采用相同的 phrase-level 核心门槛，但保持 provider/editor-neutral：输入最终独立旁白和精确 ranges，不依赖 Timeline Studio，也不把数值报告冒充音色/表演审听 |
+| [`wpowen/videocreat`](https://github.com/wpowen/videocreat/blob/main/SKILL.md) | 生成 TTS 时逐 segment 测量、先统一再 concat，并把 segment spread 与最终节目动态分别审计 | 把“片段一致性”和“最终混音”拆成两个 artifact：本轮新增旁白 gate，既有 `audio_master_report.py` 继续负责混音后 master；不用单一全片平均值覆盖两种问题 |
+| [`danielmiessler/LifeOS` AudioEditor](https://github.com/danielmiessler/LifeOS/blob/main/LifeOS/install/skills/AudioEditor/SKILL.md) | `LoudnessLock` 在处理后重新测量交付文件，只有编码后的现场指标进入容差才放行 | 新报告不只保存第一次 measurements；`verify` 会重读旁白/清单并逐短语重新运行 FFmpeg，旧 source、时间清单或现场证据漂移全部 fail closed |
+
+本次新增 / 调整：
+
+- 新增 [`scripts/narration_loudness_qa.py`](scripts/narration_loudness_qa.py) 的 `analyze → verify` 闭环。输入是最终处理后的独立旁白音轨和至少两段不重叠 `segments[]` / `phrases[]`；FFmpeg `ebur128=peak=true` 逐段输出 integrated LUFS、true peak 和 LRA，并计算非例外段最大 spread。
+- 默认门槛为 `-18 LUFS ±2 LU`、spread `≤1 LU`、true peak `≤-2 dBTP`、单段 LRA `≤5 LU`、最短片段 `0.5s`。刻意耳语等例外必须逐段写 `loudness_exception.reason + reviewer`；例外只豁免 target/spread/LRA，永远不能绕过 peak ceiling，且至少仍需两段非例外短语。
+- 报告绑定项目内旁白 SHA-256 / 大小 / 音频媒体契约、segment manifest SHA-256 / 大小、规范化时间范围、参数、算法合同、逐段 measurements、派生状态和 canonical report id。项目逃逸、symlink traversal、source/manifest/report hardlink 碰撞和任何 live drift 都会阻断。
+- `pipeline_manifest.py` 新增存在即 live verify、可 `--require narration_loudness_qa` 的 gate；`edit_brief_plan.py` 会从 TTS/配音分段响度和“忽大忽小”等中英文 brief 路由。README、主 SKILL、小红书 daily workflow、prompts 导航与新 [`docs/prompts/105-narration-loudness-qa.md`](docs/prompts/105-narration-loudness-qa.md) 已同步。
+
+使用方式：
+
+```bash
+python3 scripts/narration_loudness_qa.py analyze work/final_narration.wav \
+  --segments work/final_narration_segments.json \
+  --project-dir . \
+  --output verify/narration_loudness_qa.json \
+  --markdown verify/narration_loudness_qa.md \
+  --strict
+
+python3 scripts/narration_loudness_qa.py verify \
+  --report verify/narration_loudness_qa.json \
+  --project-dir . \
+  --strict
+
+python3 scripts/pipeline_manifest.py . \
+  --require narration_loudness_qa \
+  --strict
+```
+
+验证结果：
+
+- 新增/关联定向回归 `tests/test_narration_loudness_qa.py tests/test_edit_brief_plan.py tests/test_pipeline_manifest.py` 为 **138 passed in 2.32s**，覆盖 segment/phrases schema（含 numeric id）、overlap/例外验证、target/spread/peak/LRA/最短时长门禁、项目逃逸/symlink、source/manifest/measurement/derived-state 漂移、hardlink 防覆盖、自然语言路由和 manifest live gate。
+- 真实 FFmpeg smoke 使用 `4.2s / 48kHz / mono PCM` 双短语旁白：同电平样片得到 `-18.8 / -18.8 LUFS`、spread `0.0 LU`、`ready`，严格 analyze/verify 均退出 0；把第二段降音量后得到 `-18.8 / -29.7 LUFS`、spread `10.9 LU`、2 个 blocker，严格 verify 按预期退出 2。
+- 最终全量 `.venv/bin/python -m pytest tests -q` 为 **1057 passed in 22.32s**；`.venv/bin/python -m compileall -q scripts tests`、五组相关 CLI help、Skill Creator `quick_validate.py` 和 `git diff --check` 全部通过。本轮只使用本地 FFmpeg，没有调用生成/TTS provider、消耗 credits、上传素材或发布。
 
 ### 2026-08-29 自动化升级记录（Source-bound Flash Safety QA）
 
@@ -4184,6 +4253,7 @@ scripts/
 ├── reference_edit_rhythm.py    参考片 vs 成片 hard-cut 结构 / contact-sheet / live gate [V3]
 ├── speech_continuity_qa.py     成片二次 ASR 复读 / 口吃发布 gate  [V3]
 ├── audio_master_report.py      成片响度 / true peak / LRA 发布门禁 [V3]
+├── narration_loudness_qa.py    最终独立旁白逐短语响度一致性 live gate [V3]
 ├── timeline_view.py            源素材/成片切点 filmstrip+waveform  [V3]
 ├── subtitle_pack.py            SRT/VTT/ASS/JSON 字幕交付包        [V3]
 ├── subtitle_readability_qa.py  最终字幕 CPS/时长/重叠/越界 gate   [V3]

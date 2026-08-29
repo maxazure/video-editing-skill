@@ -1,6 +1,6 @@
 ---
 name: video-editing
-description: "Xiaohongshu/RED-tuned short-form video workflow for voice-over, talking-head, tutorials, interviews, podcasts, screen recordings, green/blue-screen compositing, B-roll, captions, and generated assets. Covers edit routing, creator-owned edit-style profiles, transcription, semantic review, multi-take/audio sync/stabilization/dead-air cleanup, highlights/shorts, story and source gates, enrichment and video-generation planning, generated clip/sequence and scoped AI video-edit review, locked-EDL final audio storyboards, color/speed/J-L cuts, reversible revisions and recipes, preflight/render/QA including flash/photosensitivity screening, subtitles, CapCut, platform/size exports, covers, captions, publish packages, dashboards, handoff formats, and Remotion."
+description: "Xiaohongshu/RED-tuned short-form video workflow for voice-over, talking-head, tutorials, interviews, podcasts, screen recordings, green/blue-screen compositing, B-roll, captions, and generated assets. Covers edit routing, creator-owned edit-style profiles, transcription, semantic review, multi-take/audio sync/stabilization/dead-air cleanup, highlights/shorts, story and source gates, enrichment and video-generation planning, generated clip/sequence and scoped AI video-edit review, locked-EDL final audio storyboards, phrase-level narration loudness consistency, color/speed/J-L cuts, reversible revisions and recipes, preflight/render/QA including flash/photosensitivity screening, subtitles, CapCut, platform/size exports, covers, captions, publish packages, dashboards, handoff formats, and Remotion."
 metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
 ---
 
@@ -62,6 +62,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    │                            已审片段相邻尾帧/首帧/预览 / 跨镜头连续性 gate
    ├─→ final_audio_storyboard.py
    │                            锁定视觉 EDL + 原 storyboard → 最终声音分镜 / voice ledger / live gate
+   ├─→ narration_loudness_qa.py 最终独立旁白 + 精确短语范围 → LUFS/spread/dBTP/LRA live gate
    ├─→ generation_lessons.py    已审片段 → provider/model scoped 提示词经验库
    ├─→ storyboard_assets.py     素材任务清单 / ready 预检 / paid 额度提醒
    │                            可选 media_library.py recommend 排名 B-roll 候选
@@ -188,6 +189,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `lip_sync_review.py` | 最终 master → 完整短语 1× 带声 / 0.25× 静音 proof、口型人工 audit 与 source-bound live gate | `prepare --video --segment --anchor --proof-dir` / `audit --request --response --strict` / `verify --report --strict` |
 | `review_proxy.py` | master/platform MP4 → 低码率 timecoded 审片视频 + JSON/Markdown | `<video.mp4>` `--output verify/review_proxy.mp4` `--dry-run` `--no-timecode` |
 | `audio_master_report.py` | 成片响度报告：LUFS / true peak / LRA / 长静音 gate | `<video.mp4>` `--output audio_master_report.json` `--markdown audio_master_report.md` `--strict` |
+| `narration_loudness_qa.py` | 最终独立旁白逐短语一致性：target LUFS / segment spread / true peak / LRA source-bound live gate | `analyze <media> --segments <json> --output --markdown --strict` / `verify --report --strict` |
 | `timeline_view.py` | 源素材删除段 / 成片输出切点可视化复盘图 | `<video.mp4>` `--at 42.5` `--output view.png` / `--rendered-cut-list cuts.json` `--output-dir verify/` |
 | `edit_compare.py` | 原片连续时钟 vs 最终像素双栏视频；删段置黑并验证映射 | `<source.mp4> <final.mp4>` `--cut-list` `--output-speed` `--output-offset` `--output` |
 | `subtitle_pack.py` | transcript/render_config → SRT/VTT/ASS/JSON 字幕包 | `--transcript work/transcript.json --output-dir output/subtitles` / `--config render_config.json --speed 1.25 --offset 2.0` |
@@ -1631,6 +1633,23 @@ python3 scripts/final_audio_storyboard.py verify \
 ```
 
 每个 final section 必须明确 `single_track / sectioned_tracks / stems`、shared tone、voice、sound、music、stems 与原生声音保留理由；每个完全删除的 story beat 必须选择 `remove / rewrite_into_adjacent / offscreen_bridge`。重复 voiced line、漏审、时间映射或输入/response/report 漂移 fail closed。脚本不生成音频、不提交 provider、不消耗 credits；批准 JSON 仍要按实际音频工具改写成 timed cue sheet，付费生成前另行确认。详见 [docs/prompts/95-final-audio-storyboard.md](docs/prompts/95-final-audio-storyboard.md)。
+
+如果最终旁白由多次 TTS、分段录音或逐句后处理拼成，在混入 BGM/SFX 前对**最终独立旁白音轨**逐短语测量：
+
+```bash
+python3 scripts/narration_loudness_qa.py analyze work/final_narration.wav \
+  --segments work/final_narration_segments.json \
+  --project-dir . \
+  --output verify/narration_loudness_qa.json \
+  --markdown verify/narration_loudness_qa.md \
+  --strict
+python3 scripts/narration_loudness_qa.py verify \
+  --report verify/narration_loudness_qa.json \
+  --project-dir . \
+  --strict
+```
+
+默认每段目标 `-18 LUFS ±2 LU`、非例外段 spread `≤1 LU`、true peak `≤-2 dBTP`、LRA `≤5 LU`。创意例外必须逐段写 `reason + reviewer`，且不能绕过 peak ceiling；至少保留两段非例外短语才能判断 spread。报告绑定旁白、segment manifest、媒体契约、算法和现场复测。它不评判音色、发音、呼吸、接缝或表演，也不替代混音后 `audio_master_report.py` 的全片 `-16 LUFS` 检查。详见 [docs/prompts/105-narration-loudness-qa.md](docs/prompts/105-narration-loudness-qa.md)。
 
 ### Phase 6: Post-render Validation（渲染后验证）
 

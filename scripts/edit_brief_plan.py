@@ -123,6 +123,21 @@ SIGNAL_KEYWORDS: Mapping[str, Sequence[str]] = {
         "红色闪烁",
         "无障碍闪烁",
     ),
+    "narration_loudness_qa": (
+        "narration loudness consistency",
+        "phrase loudness",
+        "segment loudness",
+        "voiceover consistency",
+        "tts loudness",
+        "tts consistency",
+        "旁白响度一致",
+        "旁白音量一致",
+        "配音响度一致",
+        "分段响度",
+        "逐句响度",
+        "旁白忽大忽小",
+        "配音忽大忽小",
+    ),
     "semantic_review": (
         "semantic transcript review",
         "context-aware transcript",
@@ -512,6 +527,7 @@ SIGNAL_LABELS: Mapping[str, str] = {
     "subtitle_style_preview": "真实画面字幕样式预览 / 选择",
     "framing_preview": "平台画幅 cover / contain / blur 预览与选择",
     "flash_safety_qa": "最终成片亮度 / 饱和红闪烁风险预检",
+    "narration_loudness_qa": "最终旁白逐短语响度一致性门禁",
     "nle_handoff": "NLE 交接",
     "review_dashboard": "人工复核面板",
     "edit_revision": "剪辑 artifact 可逆修订",
@@ -2096,6 +2112,46 @@ def build_plan(
                 gate_category="audio_master_report",
                 required=False,
             ),
+        )
+
+    if "narration_loudness_qa" in ids:
+        _add_step(
+            steps,
+            seen,
+            _step(
+                "narration_loudness_qa",
+                phase="qa",
+                script="narration_loudness_qa.py",
+                label="Measure every finalized narration phrase for loudness consistency",
+                reason="Phrase-scoped narration can contain local level jumps that a whole-program LUFS result hides.",
+                command=shell(
+                    [
+                        python_bin,
+                        "scripts/narration_loudness_qa.py",
+                        "analyze",
+                        "<final_narration_audio_or_video>",
+                        "--segments",
+                        "<final_narration_segments.json>",
+                        "--project-dir",
+                        project_dir,
+                        "--output",
+                        "verify/narration_loudness_qa.json",
+                        "--markdown",
+                        "verify/narration_loudness_qa.md",
+                        "--strict",
+                    ]
+                ),
+                outputs=[
+                    "verify/narration_loudness_qa.json",
+                    "verify/narration_loudness_qa.md",
+                ],
+                gate_category="narration_loudness_qa",
+            ),
+        )
+        notes.append(
+            "Use the finalized isolated narration track and exact final phrase ranges. Documented creative "
+            "exceptions never bypass the true-peak ceiling; after this gate, listen at 1x and run "
+            "audio_master_report.py on the mixed master."
         )
 
     if wants_render or "qa" in ids or "publish" in ids or "flash_safety_qa" in ids:

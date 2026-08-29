@@ -484,6 +484,16 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         blocks_when_present=True,
     ),
     ArtifactDef(
+        "narration_loudness_qa",
+        "Narration Loudness QA",
+        (
+            "**/narration_loudness_qa.json",
+            "**/*_narration_loudness_qa.json",
+        ),
+        "Run narration_loudness_qa.py verify; fix phrase target/spread/peak/LRA blockers before mixing or publishing.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "privacy_redaction",
         "Privacy Redaction",
         (
@@ -1113,6 +1123,48 @@ def evaluate_category(
             elif warnings:
                 status = "warn" if status != "blocked" else status
                 notes.append(f"flash-safety report needs review {artifact.path}: {warnings} warning(s)")
+        return {
+            "category": definition.category,
+            "label": definition.label,
+            "status": status,
+            "artifact_count": len(artifacts),
+            "latest_path": artifacts[0].path,
+            "notes": sorted(set(notes)),
+            "next_action": definition.next_action if status in {"missing", "blocked", "warn"} else "",
+        }
+
+    if definition.category == "narration_loudness_qa":
+        from narration_loudness_qa import verify_report
+
+        for artifact in artifacts:
+            data = _load_json(artifact.path)
+            if data is None:
+                status = "blocked"
+                notes.append(f"unreadable narration loudness report: {artifact.path}")
+                continue
+            try:
+                verification = verify_report(
+                    data,
+                    str(project_dir) if project_dir is not None else None,
+                )
+            except Exception as exc:
+                status = "blocked"
+                notes.append(f"narration loudness live verification failed {artifact.path}: {exc}")
+                continue
+            blocking = _int_at(verification, "summary", "blocking")
+            warnings = _int_at(verification, "summary", "warnings")
+            if blocking:
+                status = "blocked"
+                notes.append(
+                    f"invalid or inconsistent narration loudness report {artifact.path}: "
+                    f"{blocking} blocking item(s)"
+                )
+            elif warnings:
+                status = "warn" if status != "blocked" else status
+                notes.append(
+                    f"narration loudness report contains documented exceptions {artifact.path}: "
+                    f"{warnings} warning(s)"
+                )
         return {
             "category": definition.category,
             "label": definition.label,

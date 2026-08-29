@@ -488,6 +488,23 @@ def test_file_size_brief_routes_target_size_delivery(tmp_path):
     assert any("normal speed" in note for note in plan["notes"])
 
 
+def test_phrase_narration_loudness_brief_routes_source_bound_gate(tmp_path):
+    source = tmp_path / "narration.wav"
+    source.write_text("fake narration", encoding="utf-8")
+
+    plan = build_plan(
+        f"检查 {source} 的 TTS 分段响度，避免旁白忽大忽小",
+        project_dir=str(tmp_path),
+    )
+
+    step = next(step for step in plan["steps"] if step["id"] == "narration_loudness_qa")
+    assert step["script"] == "narration_loudness_qa.py"
+    assert "narration_loudness_qa.py analyze '<final_narration_audio_or_video>'" in step["command"]
+    assert "--segments '<final_narration_segments.json>'" in step["command"]
+    assert step["gate_category"] == "narration_loudness_qa"
+    assert any("true-peak ceiling" in note for note in plan["notes"])
+
+
 def test_hdr_sdr_route_uses_source_bound_delivery_gate(tmp_path):
     source = tmp_path / "iphone-hdr.mov"
     source.write_text("fake hdr", encoding="utf-8")
