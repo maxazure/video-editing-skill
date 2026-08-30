@@ -12,6 +12,7 @@ import chroma_key  # noqa: E402
 from edit_revision import APPROVAL_VERSION, apply_revision, audit_proposal, prepare_proposal  # noqa: E402
 from edit_recipe import export_recipe  # noqa: E402
 from edit_style_profile import create_profile, template_spec  # noqa: E402
+import audio_channel_qa  # noqa: E402
 import delivery_encode  # noqa: E402
 import freeze_punch  # noqa: E402
 import flash_safety_qa  # noqa: E402
@@ -178,6 +179,63 @@ def test_narration_loudness_report_is_live_verified_and_can_be_required(tmp_path
         required=["narration_loudness_qa"],
     )
     assert "narration_loudness_qa" in missing["missing_required"]
+
+
+def test_audio_channel_report_is_live_verified_and_can_be_required(tmp_path, monkeypatch):
+    _publish_ready_project(tmp_path)
+    source = tmp_path / "output" / "day58_master.mp4"
+    media = {
+        "duration": 1.0,
+        "format_name": "mov,mp4",
+        "audio_stream_index": 1,
+        "audio_codec": "aac",
+        "sample_rate": 48000,
+        "channels": 2,
+        "channel_layout": "stereo",
+    }
+    frames = [
+        {
+            "index": index,
+            "time": index * 0.05,
+            "phase_correlation": 1.0,
+            "left_rms_dbfs": -20.0,
+            "right_rms_dbfs": -20.0,
+            "left_peak_dbfs": -17.0,
+            "right_peak_dbfs": -17.0,
+        }
+        for index in range(20)
+    ]
+    monkeypatch.setattr(audio_channel_qa, "probe_audio_media", lambda _path: dict(media))
+    monkeypatch.setattr(
+        audio_channel_qa,
+        "measure_audio_channels",
+        lambda _path, *, settings: list(frames),
+    )
+    report = audio_channel_qa.build_report(source, project_dir=tmp_path)
+    report_path = tmp_path / "verify" / "audio_channel_qa.json"
+    _write(report_path, report)
+
+    current = build_manifest(
+        str(tmp_path),
+        target_stage="publish_ready",
+        required=["audio_channel_qa"],
+    )
+    gate = next(g for g in current["gates"] if g["category"] == "audio_channel_qa")
+    assert gate["status"] == "ready"
+
+    _write(source, "changed rendered bytes")
+    stale = build_manifest(str(tmp_path), target_stage="publish_ready")
+    gate = next(g for g in stale["gates"] if g["category"] == "audio_channel_qa")
+    assert gate["status"] == "blocked"
+    assert "audio_channel_qa" in stale["blocked_gates"]
+
+    report_path.unlink()
+    missing = build_manifest(
+        str(tmp_path / "empty"),
+        target_stage="analysis",
+        required=["audio_channel_qa"],
+    )
+    assert "audio_channel_qa" in missing["missing_required"]
 
 
 def test_subtitle_style_preview_is_live_verified_and_can_be_required(tmp_path, monkeypatch):

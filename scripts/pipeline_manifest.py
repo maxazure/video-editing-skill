@@ -484,6 +484,16 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         blocks_when_present=True,
     ),
     ArtifactDef(
+        "audio_channel_qa",
+        "Audio Channel QA",
+        (
+            "**/audio_channel_qa.json",
+            "**/*_audio_channel_qa.json",
+        ),
+        "Run audio_channel_qa.py verify; fix missing-channel activity, onset skew, balance, phase, or mono fold-down blockers before publishing.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "narration_loudness_qa",
         "Narration Loudness QA",
         (
@@ -1163,6 +1173,48 @@ def evaluate_category(
                 status = "warn" if status != "blocked" else status
                 notes.append(
                     f"narration loudness report contains documented exceptions {artifact.path}: "
+                    f"{warnings} warning(s)"
+                )
+        return {
+            "category": definition.category,
+            "label": definition.label,
+            "status": status,
+            "artifact_count": len(artifacts),
+            "latest_path": artifacts[0].path,
+            "notes": sorted(set(notes)),
+            "next_action": definition.next_action if status in {"missing", "blocked", "warn"} else "",
+        }
+
+    if definition.category == "audio_channel_qa":
+        from audio_channel_qa import verify_report
+
+        for artifact in artifacts:
+            data = _load_json(artifact.path)
+            if data is None:
+                status = "blocked"
+                notes.append(f"unreadable audio channel report: {artifact.path}")
+                continue
+            try:
+                verification = verify_report(
+                    data,
+                    str(project_dir) if project_dir is not None else None,
+                )
+            except Exception as exc:
+                status = "blocked"
+                notes.append(f"audio channel live verification failed {artifact.path}: {exc}")
+                continue
+            blocking = _int_at(verification, "summary", "blocking")
+            warnings = _int_at(verification, "summary", "warnings")
+            if blocking:
+                status = "blocked"
+                notes.append(
+                    f"invalid or risky audio channel report {artifact.path}: "
+                    f"{blocking} blocking item(s)"
+                )
+            elif warnings:
+                status = "warn" if status != "blocked" else status
+                notes.append(
+                    f"audio channel report needs listening review {artifact.path}: "
                     f"{warnings} warning(s)"
                 )
         return {

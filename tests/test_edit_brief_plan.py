@@ -505,6 +505,23 @@ def test_phrase_narration_loudness_brief_routes_source_bound_gate(tmp_path):
     assert any("true-peak ceiling" in note for note in plan["notes"])
 
 
+def test_audio_channel_brief_routes_source_bound_final_mix_gate(tmp_path):
+    source = tmp_path / "master.mp4"
+    source.write_text("fake master", encoding="utf-8")
+
+    plan = build_plan(
+        f"检查 {source} 的左右声道平衡、相位抵消和单声道兼容",
+        project_dir=str(tmp_path),
+    )
+
+    step = next(step for step in plan["steps"] if step["id"] == "audio_channel_qa")
+    assert step["script"] == "audio_channel_qa.py"
+    assert f"audio_channel_qa.py analyze {source}" in step["command"]
+    assert "verify/audio_channel_qa.json" in step["outputs"]
+    assert step["gate_category"] == "audio_channel_qa"
+    assert any("mono fold-down at 1x" in note for note in plan["notes"])
+
+
 def test_hdr_sdr_route_uses_source_bound_delivery_gate(tmp_path):
     source = tmp_path / "iphone-hdr.mov"
     source.write_text("fake hdr", encoding="utf-8")

@@ -51,6 +51,7 @@ python3 scripts/edit_brief_plan.py \
 | 多镜头/跨镜头连续性、镜头衔接、角色/道具连续性 | 先 `generated_clip_review.py`，再 `generated_sequence_review.py` 提取相邻边界证据并审计 |
 | 参考视频节奏、参考广告节奏、复刻剪辑结构 | 成片后用 `reference_edit_rhythm.py analyze` 量化 hard-cut 结构和 contact sheets；默认 WARN，明确验收时才加 `--require-match` |
 | BGM、音效、声音设计 | `audio_cue_sheet.py` |
+| 左右声道、相位抵消、单声道兼容、mono fold-down | `audio_channel_qa.py analyze` → `verify` |
 | 手持抖动、画面抖动、视频防抖、stabilize | `video_stabilization.py plan` → `apply --comparison` → `confirm` |
 | 录屏、点击、热点 | `screen_focus.py` |
 | facecam、小窗、PIP | `pip_overlay.py` |

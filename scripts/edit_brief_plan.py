@@ -138,6 +138,26 @@ SIGNAL_KEYWORDS: Mapping[str, Sequence[str]] = {
         "旁白忽大忽小",
         "配音忽大忽小",
     ),
+    "audio_channel_qa": (
+        "audio channel qa",
+        "stereo channel qa",
+        "stereo balance",
+        "left right balance",
+        "channel onset skew",
+        "interchannel skew",
+        "phase correlation",
+        "phase cancellation",
+        "mono compatibility",
+        "mono fold-down",
+        "左右声道检查",
+        "左右声道平衡",
+        "声道错位",
+        "声道起始偏移",
+        "相位抵消",
+        "反相",
+        "单声道兼容",
+        "单声道折叠",
+    ),
     "semantic_review": (
         "semantic transcript review",
         "context-aware transcript",
@@ -528,6 +548,7 @@ SIGNAL_LABELS: Mapping[str, str] = {
     "framing_preview": "平台画幅 cover / contain / blur 预览与选择",
     "flash_safety_qa": "最终成片亮度 / 饱和红闪烁风险预检",
     "narration_loudness_qa": "最终旁白逐短语响度一致性门禁",
+    "audio_channel_qa": "最终成片声道活动 / 平衡 / 相位 / mono fold-down 门禁",
     "nle_handoff": "NLE 交接",
     "review_dashboard": "人工复核面板",
     "edit_revision": "剪辑 artifact 可逆修订",
@@ -691,7 +712,7 @@ def build_plan(
 
     if source_media and not Path(source_media).expanduser().exists():
         blockers.append(f"source media not found: {source_media}")
-    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy", "reference_edit_rhythm", "lip_sync_review", "subtitle_style_preview", "framing_preview", "flash_safety_qa", "multimodal_dead_air", "video_stabilization", "chroma_key", "scoped_video_edit", "speed_ramp", "freeze_punch", "generated_motion_window", "hdr_sdr", "delivery_encode", "edit_style_profile"}):
+    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy", "reference_edit_rhythm", "lip_sync_review", "subtitle_style_preview", "framing_preview", "flash_safety_qa", "audio_channel_qa", "multimodal_dead_air", "video_stabilization", "chroma_key", "scoped_video_edit", "speed_ramp", "freeze_punch", "generated_motion_window", "hdr_sdr", "delivery_encode", "edit_style_profile"}):
         warnings.append("source media was not provided; commands use <source_media> placeholders")
 
     if transcript and not Path(transcript).expanduser().exists():
@@ -2112,6 +2133,41 @@ def build_plan(
                 gate_category="audio_master_report",
                 required=False,
             ),
+        )
+
+    if wants_render or "qa" in ids or "publish" in ids or "audio_channel_qa" in ids:
+        channel_input = "output/final.mp4" if wants_render else source
+        _add_step(
+            steps,
+            seen,
+            _step(
+                "audio_channel_qa",
+                phase="qa",
+                script="audio_channel_qa.py",
+                label="Check final audio channel activity, onset, balance, phase, and mono fold-down",
+                reason="Stereo delivery can pass whole-program loudness while one channel starts early, is missing, or cancels in mono playback.",
+                command=shell(
+                    [
+                        python_bin,
+                        "scripts/audio_channel_qa.py",
+                        "analyze",
+                        channel_input,
+                        "--project-dir",
+                        project_dir,
+                        "--output",
+                        "verify/audio_channel_qa.json",
+                        "--markdown",
+                        "verify/audio_channel_qa.md",
+                        "--strict",
+                    ]
+                ),
+                outputs=["verify/audio_channel_qa.json", "verify/audio_channel_qa.md"],
+                gate_category="audio_channel_qa",
+            ),
+        )
+        notes.append(
+            "audio_channel_qa.py is a sampled engineering screen: audition the complete stereo master and "
+            "a mono fold-down at 1x, and keep audio_master_report.py as the separate loudness/peak gate."
         )
 
     if "narration_loudness_qa" in ids:

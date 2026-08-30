@@ -107,6 +107,7 @@
 | 103 | [Platform Framing Preview 平台画幅处理预览](103-framing-preview.md) | master → 各平台 cover/contain/blur 真实帧、人工选择与 source/filter/preview live gate |
 | 104 | [Flash Safety QA 最终成片闪烁风险预检](104-flash-safety-qa.md) | final master / platform export → 亮度与饱和红 flash、滚动窗口和 source-bound live gate |
 | 105 | [Narration Loudness QA 最终旁白逐短语响度一致性](105-narration-loudness-qa.md) | finalized isolated narration + exact phrase ranges → per-segment LUFS / spread / dBTP / LRA live gate |
+| 106 | [Audio Channel QA 左右声道 / 相位 / 单声道兼容](106-audio-channel-qa.md) | final master → channel activity、onset skew、L/R balance、phase correlation 与 mono fold-down live gate |
 
 ## 快速上手
 
@@ -166,6 +167,7 @@
 | 视频项目暂停后想让下一位 agent 接着做 | [52-Project Resume](52-project-resume.md) |
 | 渲染前想先挡住缺文件/坏时间段 | [53-Edit Preflight](53-edit-preflight.md) |
 | 想确认成片音量、爆峰和长静音是否达标 | [54-Audio Master Report](54-audio-master-report.md) |
+| 成片左右声道不一致、疑似反相，或要检查手机单声道兼容 | [106-Audio Channel QA](106-audio-channel-qa.md) |
 | 已有 SRT 和保留/删除字幕编号，想生成剪辑方案 | [55-SRT Edit Plan](55-srt-edit-plan.md) |
 | 相机内录音和外录麦克风音频需要自动对齐 | [56-Audio Sync](56-audio-sync.md) |
 | 渲染或发布前想打开一个总复核面板 | [57-Review Dashboard](57-review-dashboard.md) |

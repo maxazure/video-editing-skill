@@ -2,7 +2,7 @@
 
 这是一个面向 **口播、教程、访谈、播客切片、录屏演示 / facecam demo** 的 AI 视频剪辑生产线：给它原始口播音频/视频、transcript、B-roll、摄像头小窗或素材目录，它可以把“还没整理的素材”推进到 **可发布的小红书 / 抖音 / 视频号短视频**。
 
-它不是一个单点 FFmpeg 脚本，而是一条完整工作流：**项目启动/素材导入 → 个人/品牌剪辑风格 → 生产授权 → 手持防抖 / 绿蓝幕换背景 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 生成片有效运动窗口 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp / 关键帧 freeze-punch / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 锁定视觉 EDL 后重建最终声音分镜 → 最终旁白逐短语响度门禁 → 渲染前预检 / 真实画面字幕样式选择 → 单次编码渲染 → 质检 / 闪烁风险筛查 / 最终成片唇形复核 → 多平台导出 / 目标大小交付编码 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
+它不是一个单点 FFmpeg 脚本，而是一条完整工作流：**项目启动/素材导入 → 个人/品牌剪辑风格 → 生产授权 → 手持防抖 / 绿蓝幕换背景 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 生成片有效运动窗口 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp / 关键帧 freeze-punch / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 锁定视觉 EDL 后重建最终声音分镜 → 最终旁白逐短语响度门禁 → 渲染前预检 / 真实画面字幕样式选择 → 单次编码渲染 → 质检 / 声道完整性 / 闪烁风险筛查 / 最终成片唇形复核 → 多平台导出 / 目标大小交付编码 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
 
 ## 适合做什么
 
@@ -32,6 +32,7 @@
 - **平台画幅处理先看真实 A/B 再导出**：`framing_preview.py` 为小红书 / 抖音 / 视频号逐平台比较 `cover / contain / blur`，把选择绑定到 master、显示方向、filter contract 和 JPEG 证据；`multi_export.py` 只消费现场验证通过的选择。
 - **最终成片会筛查大面积高频闪烁**：`flash_safety_qa.py` 用本地 FFmpeg 分析亮度与饱和红相反 transition，按滚动 1 秒 / 5 秒窗口输出风险区间；source、媒体契约、参数、算法或现场证据漂移都会让报告失效。它只做启发式风险分流，不冒充医疗或法规认证。
 - **分段 TTS / 配音不会再被整片平均响度掩盖**：`narration_loudness_qa.py` 在最终独立旁白音轨上逐短语实测 LUFS / dBTP / LRA，并检查非例外段 spread；旁白、时间清单或现场 measurements 漂移会让旧报告失效，混音后仍要另跑全片 `audio_master_report.py`。
+- **最终声道错误不会被整片响度合格掩盖**：`audio_channel_qa.py` 现场检查左右声道活动、起始错位、能量平衡、相位相关和 mono fold-down 损失；source、媒体契约、阈值、算法或 measurements 漂移都会让旧报告失效。
 - **数字人口型必须在最终成片上重新举证**：`lip_sync_review.py` 从最终 master 的完整短语导出 1× 带声和 0.25× 静音 proof clips，逐条复核爆破音闭唇、元音提前/滞后、讲话时冻嘴、说话人和音频质量；任何剪切、变速、换音或重编码都会让旧报告失效。
 - **参考片节奏先量化再借鉴**：`reference_edit_rhythm.py` 用同一套 hard-cut 检测比较参考片和成片的 cuts/minute、镜头时长、结尾 hold 与切点分布，同时绑定两条视频和 contact sheets；默认只提示差异，明确验收时才阻断。
 - **适合交给强推理模型做长流程代理执行**：在 [GPT-5.6 Sol](https://developers.openai.com/api/docs/models/gpt-5.6-sol)（OpenAI 当前旗舰；API 别名 `gpt-5.6` 指向 Sol）和 [Claude Opus 4.8](https://docs.anthropic.com/en/docs/about-claude/models) 这类面向复杂专业任务、agent 工作流的模型下，本 skill 对 **口播类短视频** 至少可以替代 **80% 的常规视频剪辑工作**。
@@ -259,6 +260,7 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    │     可选 --versioned-output：输出 _V<N>，避免覆盖旧成片
    │
    ├─→ render_qa.py             渲染后黑屏/静帧/静音/尺寸质检 + review packet
+   ├─→ audio_channel_qa.py      成片声道活动/起始/平衡/相位/mono fold-down live gate
    ├─→ flash_safety_qa.py       亮度/饱和红 flash → 1s/5s 风险窗口 / source-bound live gate
    ├─→ shot_color_qa.py         成片镜头亮度/对比/色度/饱和度/broadcast-range + 切点跳变门禁
    ├─→ retention_rhythm_qa.py   成片 hook 活动 / 长镜头 / 注意力空窗 / 节奏门禁
@@ -2523,6 +2525,28 @@ python3 scripts/audio_master_report.py output/day58_master.mp4 \
 
 默认检查 -16 LUFS ±2 LU、true peak ≤ -1 dBFS、LRA ≤ 18 LU、长静音总量 ≤ 3 秒。输出 `audio_master_report.v1`，如果 `summary.blocking > 0`，`pipeline_manifest.py` 会把它列为 blocking gate。若失败，优先回到 `render_final.py` 默认响度链路重新渲染，不要反复压缩已完成 master。
 
+### 🎧 Audio Channel QA — 最终声道完整性 / mono 兼容
+[`scripts/audio_channel_qa.py`](scripts/audio_channel_qa.py) · [详细文档](docs/prompts/106-audio-channel-qa.md)
+
+最终 master 的整片响度合格，仍可能只有一边先说话、某个声道缺失、左右能量严重失衡，或反相后在手机单扬声器折叠时中心内容消失。这个只读门禁用本地 FFmpeg `aphasemeter + astats` 固定窗口采样，不改媒体、不调用 provider：
+
+```bash
+python3 scripts/audio_channel_qa.py analyze output/final.mp4 \
+  --project-dir . \
+  --output verify/audio_channel_qa.json \
+  --markdown verify/audio_channel_qa.md \
+  --strict
+
+python3 scripts/audio_channel_qa.py verify \
+  --report verify/audio_channel_qa.json \
+  --project-dir . \
+  --strict
+
+python3 scripts/pipeline_manifest.py . --require audio_channel_qa --strict
+```
+
+默认 `>200 ms` onset skew、`>6 dB` L/R balance、整体 phase correlation `<-0.10`、持续负相关窗口或 mono fold-down loss `>6 dB` 会阻断；较轻风险保留 warning。mono 直接通过声道专项，`>2` 声道要求先定义明确 downmix。报告绑定 source SHA-256、音频媒体契约、参数、算法、现场 measurements、checks 和 report id。它不识别语音、不判断创意 panning，也不替代完整 1× stereo/mono 试听或 `audio_master_report.py`。
+
 ### 🗣️ Narration Loudness QA — 最终旁白逐短语一致性
 [`scripts/narration_loudness_qa.py`](scripts/narration_loudness_qa.py) · [详细文档](docs/prompts/105-narration-loudness-qa.md)
 
@@ -3054,6 +3078,7 @@ python3 $SKILL/scripts/pipeline_manifest.py \
   --target-stage publish_ready \
   --require shot_color_qa \
   --require flash_safety_qa \
+  --require audio_channel_qa \
   --output $WORK/work/pipeline_manifest.json \
   --markdown $WORK/work/pipeline_manifest.md \
   --strict
@@ -3110,6 +3135,7 @@ pytest tests/test_subtitle_style_preview.py -v # 真实源帧 ASS 样式 JPEG / 
 pytest tests/test_subtitle_readability_qa.py -v # 最终字幕 CPS / 时长 / 重叠 / 越界门禁
 pytest tests/test_platform_safe_area_qa.py -v # 字幕 / PIP / CTA / marker 平台安全区门禁
 pytest tests/test_audio_master_report.py -v # 成片响度 / true peak / LRA 门禁
+pytest tests/test_audio_channel_qa.py -v # 左右活动 / onset / balance / phase / mono fold-down live gate
 pytest tests/test_narration_loudness_qa.py -v # 最终旁白逐短语 LUFS / spread / dBTP / LRA live gate
 pytest tests/test_render_enrich_plan.py -v  # enrich_plan 自动接入渲染
 pytest tests/test_auto_emphasis.py -v      # 问句/数字/转折/结论 emphasis cues
@@ -3169,6 +3195,50 @@ pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 pytest tests/test_review_dashboard.py -v    # 静态人工复核面板 + gate queue
 pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 gate
 ```
+
+### 2026-08-31 自动化升级记录（Source-bound Audio Channel Integrity QA）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`MartinDelophy/ai-video-editor` Timeline Studio skill](https://github.com/MartinDelophy/ai-video-editor/blob/main/skills/edit-timeline-studio/SKILL.md) | 明确要求 stereo/multichannel 时间偏移作用到全部声道，并在交付前比较左右活动，拒绝单边提前发声和未说明的 interchannel onset skew | 新增最终文件现场声道测量；不依赖 Timeline Studio，也不从时间线结构猜测成片音频正确性 |
+| [`calesthio/generative-media-skills` Remotion video composition](https://github.com/calesthio/generative-media-skills/blob/main/skills/production/runtime-assembly/remotion-video-composition/SKILL.md) | 最终 audio review 同时检查 intelligibility、mix、fades、sync、clipping 和 loudness，不能只确认“有音轨” | 把声道完整性拆成独立 gate，并继续保留 `audio_master_report.py` 的响度/peak职责和完整 1× 人工试听 |
+| [`gdamdam/mscope`](https://github.com/gdamdam/mscope) | 本地只读分析 phase correlation、L/R balance、per-channel RMS/peak、DC/clip 等信号健康指标，并明确 `-1` 相关意味着 mono 兼容风险 | 采用 FFmpeg 已有 `aphasemeter + astats` 做可复现固定窗口测量；不引入浏览器运行时或复制其 DSP 实现 |
+| [`JuzzyDee/audio-analyzer-rs`](https://github.com/JuzzyDee/audio-analyzer-rs) | 将 phase correlation、mid/side width、L/R balance、mono compatibility 与按时间定位的问题窗口一起结构化输出 | 报告保留 energy-weighted phase、负相关持续时间/比例、最差窗口和 mono fold-down 能量损失；本轮不扩张到音乐 key/BPM/频谱分析 |
+
+本次新增 / 调整：
+
+- 新增 [`scripts/audio_channel_qa.py`](scripts/audio_channel_qa.py) 的 `analyze → verify` 闭环。mono 音轨通过声道专项，stereo 使用本地 FFmpeg 固定窗口读取左右 RMS/peak 与 phase metadata，`>2` 声道在没有明确 downmix 合同时 fail closed。
+- 默认检查声道活动、onset skew（`>50 ms` warning / `>200 ms` blocker）、L/R integrated balance（`>3 dB` warning / `>6 dB` blocker）、energy-weighted phase correlation、持续负相关窗口和 mono fold-down loss（`>3.5 dB` warning / `>6 dB` blocker）。脚本不自动修复、不识别语音、不把创意 panning 误称为客观错误。
+- JSON/Markdown 绑定项目内 source SHA-256 / 大小 / 首音轨媒体契约、全部 settings、算法合同、现场 analysis、checks、limitations 和 canonical report id；项目逃逸、symlink/hardlink 覆盖、source/算法/参数/measurement/派生状态漂移都会阻断。
+- `pipeline_manifest.py` 新增存在即 live verify、可 `--require audio_channel_qa` 的 gate；`edit_brief_plan.py` 会从左右声道、interchannel skew、反相、phase cancellation、mono compatibility 等中英文 brief 路由，并在普通 render/QA/publish runbook 中自动安排最终 master 检查。
+- README、主 SKILL、小红书 daily workflow、Edit Brief 文档、prompts 导航和新 [`docs/prompts/106-audio-channel-qa.md`](docs/prompts/106-audio-channel-qa.md) 已同步；完整试听、整片响度和声画同步仍是互不替代的独立检查。
+
+使用方式：
+
+```bash
+python3 scripts/audio_channel_qa.py analyze output/final.mp4 \
+  --project-dir . \
+  --output verify/audio_channel_qa.json \
+  --markdown verify/audio_channel_qa.md \
+  --strict
+
+python3 scripts/audio_channel_qa.py verify \
+  --report verify/audio_channel_qa.json \
+  --project-dir . \
+  --strict
+
+python3 scripts/pipeline_manifest.py . \
+  --require audio_channel_qa \
+  --strict
+```
+
+验证结果：
+
+- 新增 13 项回归；关联定向 `.venv/bin/python -m pytest tests/test_audio_channel_qa.py tests/test_edit_brief_plan.py tests/test_pipeline_manifest.py -q` 通过 **140 passed in 2.40s**。覆盖 FFmpeg metadata 解析、同相 stereo、单边提前、缺声道/失衡、反相/mono 抵消、mono 与 multichannel 边界、source/measurement/derived-state 漂移、项目逃逸、symlink/hardlink 防护、CLI、自然语言路由与 manifest live gate。
+- 真实 H.264/AAC smoke：正常同相 2 秒 stereo 为 `ready / phase=1.0 / mono loss=0.0 dB`；完全反相片为 `blocked / phase=-1.0 / negative=2.0s / mono loss=120.0 dB`，analyze/verify 严格模式均退出 2；右声道延迟 300 ms 的片准确测得 `onset_skew=300.0 ms` 并阻断。smoke 目录已移入废纸篓。
+- 最终全量 `.venv/bin/python -m pytest tests -q` 为 **1070 passed in 22.65s**；`.venv/bin/python -m compileall -q scripts tests`、五组相关 CLI help、Skill Creator `quick_validate.py` 和 `git diff --check` 全部通过。本轮只使用本地 FFmpeg，没有调用生成/TTS provider、消耗 credits、上传素材或发布。
 
 ### 2026-08-30 自动化升级记录（Source-bound Phrase-level Narration Loudness QA）
 
@@ -4253,6 +4323,7 @@ scripts/
 ├── reference_edit_rhythm.py    参考片 vs 成片 hard-cut 结构 / contact-sheet / live gate [V3]
 ├── speech_continuity_qa.py     成片二次 ASR 复读 / 口吃发布 gate  [V3]
 ├── audio_master_report.py      成片响度 / true peak / LRA 发布门禁 [V3]
+├── audio_channel_qa.py         成片声道活动/起始/平衡/相位/mono fold-down live gate [V3]
 ├── narration_loudness_qa.py    最终独立旁白逐短语响度一致性 live gate [V3]
 ├── timeline_view.py            源素材/成片切点 filmstrip+waveform  [V3]
 ├── subtitle_pack.py            SRT/VTT/ASS/JSON 字幕交付包        [V3]

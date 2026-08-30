@@ -1,6 +1,6 @@
 ---
 name: video-editing
-description: "Xiaohongshu/RED-tuned short-form video workflow for voice-over, talking-head, tutorials, interviews, podcasts, screen recordings, green/blue-screen compositing, B-roll, captions, and generated assets. Covers edit routing, creator-owned edit-style profiles, transcription, semantic review, multi-take/audio sync/stabilization/dead-air cleanup, highlights/shorts, story and source gates, enrichment and video-generation planning, generated clip/sequence and scoped AI video-edit review, locked-EDL final audio storyboards, phrase-level narration loudness consistency, color/speed/J-L cuts, reversible revisions and recipes, preflight/render/QA including flash/photosensitivity screening, subtitles, CapCut, platform/size exports, covers, captions, publish packages, dashboards, handoff formats, and Remotion."
+description: "Xiaohongshu/RED-tuned short-form video workflow for voice-over, talking-head, tutorials, interviews, podcasts, screen recordings, green/blue-screen compositing, B-roll, captions, and generated assets. Covers edit routing, creator-owned edit-style profiles, transcription, semantic review, multi-take/audio sync/stabilization/dead-air cleanup, highlights/shorts, story and source gates, enrichment and video-generation planning, generated clip/sequence and scoped AI video-edit review, locked-EDL final audio storyboards, phrase-level narration loudness and final channel-integrity QA, color/speed/J-L cuts, reversible revisions and recipes, preflight/render/QA including flash/photosensitivity screening, subtitles, CapCut, platform/size exports, covers, captions, publish packages, dashboards, handoff formats, and Remotion."
 metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
 ---
 
@@ -82,6 +82,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ render_final.py          单次编码渲染（可选口播降噪 + enrich_plan/focus_events/pip_overlays + Heavy 字幕 + 响度规范化 + BGM ducking）
    │                            可选 --versioned-output 防覆盖旧成片
    ├─→ render_qa.py             渲染后黑屏/静帧/静音/尺寸质检 + review packet
+   ├─→ audio_channel_qa.py      成片声道活动/起始/平衡/相位/mono fold-down live gate
    ├─→ flash_safety_qa.py       成片亮度/饱和红 flash → 1s/5s 风险窗口 / live gate
    ├─→ shot_color_qa.py         成片镜头亮度/对比/色度/饱和度/broadcast-range + 切点跳变 gate
    ├─→ retention_rhythm_qa.py   成片 hook 活动 / 长镜头 / 注意力空窗 / 节奏 gate
@@ -189,6 +190,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `lip_sync_review.py` | 最终 master → 完整短语 1× 带声 / 0.25× 静音 proof、口型人工 audit 与 source-bound live gate | `prepare --video --segment --anchor --proof-dir` / `audit --request --response --strict` / `verify --report --strict` |
 | `review_proxy.py` | master/platform MP4 → 低码率 timecoded 审片视频 + JSON/Markdown | `<video.mp4>` `--output verify/review_proxy.mp4` `--dry-run` `--no-timecode` |
 | `audio_master_report.py` | 成片响度报告：LUFS / true peak / LRA / 长静音 gate | `<video.mp4>` `--output audio_master_report.json` `--markdown audio_master_report.md` `--strict` |
+| `audio_channel_qa.py` | 最终 master → 声道活动、起始错位、L/R 平衡、相位相关与 mono fold-down source-bound live gate | `analyze <media> --output --markdown --strict` / `verify --report --strict` |
 | `narration_loudness_qa.py` | 最终独立旁白逐短语一致性：target LUFS / segment spread / true peak / LRA source-bound live gate | `analyze <media> --segments <json> --output --markdown --strict` / `verify --report --strict` |
 | `timeline_view.py` | 源素材删除段 / 成片输出切点可视化复盘图 | `<video.mp4>` `--at 42.5` `--output view.png` / `--rendered-cut-list cuts.json` `--output-dir verify/` |
 | `edit_compare.py` | 原片连续时钟 vs 最终像素双栏视频；删段置黑并验证映射 | `<source.mp4> <final.mp4>` `--cut-list` `--output-speed` `--output-offset` `--output` |
@@ -1665,6 +1667,22 @@ python3 scripts/render_qa.py final.mp4 \
 ```
 
 `render_qa.py` 会检查容器元数据、平台尺寸、视频/音频流、黑屏、长静帧和长静音。对小红书派生文件使用 `--platform xhs`，对抖音/视频号使用 `--platform douyin` 或 `--platform wxch`。`--review-dir` 会写 `render_qa_review.json` / `.md`，`--review-clips` 会为可疑区间抽取短 MP4；如果只想快速查元数据，可加 `--no-filters`。
+
+**6a1. 音频声道完整性（最终 master 和重要平台版必跑）**：
+```bash
+python3 scripts/audio_channel_qa.py analyze final.mp4 \
+  --project-dir . \
+  --output verify/audio_channel_qa.json \
+  --markdown verify/audio_channel_qa.md \
+  --strict
+
+python3 scripts/audio_channel_qa.py verify \
+  --report verify/audio_channel_qa.json \
+  --project-dir . \
+  --strict
+```
+
+`audio_channel_qa.py` 用本地 FFmpeg 固定窗口测量左右声道活动、起始偏移、能量平衡、相位相关和 mono fold-down 能量损失。mono 直接通过声道专项；stereo 会现场测量；多声道要求先定义明确 downmix。它不改音频，也不替代完整 1× stereo/mono 试听、`audio_master_report.py` 的响度/爆峰检查或同步复核。详见 [docs/prompts/106-audio-channel-qa.md](docs/prompts/106-audio-channel-qa.md)。
 
 **6a2. 闪烁 / 光敏风险启发式预检（最终 master 和重要平台版必跑）**：
 ```bash
