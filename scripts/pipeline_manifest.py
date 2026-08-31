@@ -393,6 +393,16 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         blocks_when_present=True,
     ),
     ArtifactDef(
+        "encode_quality_qa",
+        "Encode Quality QA",
+        (
+            "**/encode_quality_qa.json",
+            "**/*_encode_quality_qa.json",
+        ),
+        "Run encode_quality_qa.py verify; raise bitrate or reduce downscaling when the same-timeline derivative falls below its SSIM/PSNR floors.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "flash_safety_qa",
         "Flash Safety QA",
         (
@@ -1133,6 +1143,48 @@ def evaluate_category(
             elif warnings:
                 status = "warn" if status != "blocked" else status
                 notes.append(f"flash-safety report needs review {artifact.path}: {warnings} warning(s)")
+        return {
+            "category": definition.category,
+            "label": definition.label,
+            "status": status,
+            "artifact_count": len(artifacts),
+            "latest_path": artifacts[0].path,
+            "notes": sorted(set(notes)),
+            "next_action": definition.next_action if status in {"missing", "blocked", "warn"} else "",
+        }
+
+    if definition.category == "encode_quality_qa":
+        from encode_quality_qa import verify_report
+
+        for artifact in artifacts:
+            data = _load_json(artifact.path)
+            if data is None:
+                status = "blocked"
+                notes.append(f"unreadable encode-quality report: {artifact.path}")
+                continue
+            try:
+                verification = verify_report(
+                    data,
+                    str(project_dir) if project_dir is not None else None,
+                )
+            except Exception as exc:
+                status = "blocked"
+                notes.append(f"encode-quality live verification failed {artifact.path}: {exc}")
+                continue
+            blocking = _int_at(verification, "summary", "blocking")
+            warnings = _int_at(verification, "summary", "warnings")
+            if blocking:
+                status = "blocked"
+                notes.append(
+                    f"invalid or degraded encode-quality report {artifact.path}: "
+                    f"{blocking} blocking item(s)"
+                )
+            elif warnings:
+                status = "warn" if status != "blocked" else status
+                notes.append(
+                    f"encode-quality report needs visual review {artifact.path}: "
+                    f"{warnings} warning(s)"
+                )
         return {
             "category": definition.category,
             "label": definition.label,

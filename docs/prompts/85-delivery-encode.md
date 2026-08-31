@@ -60,6 +60,13 @@ python3 scripts/delivery_encode.py verify \
 随后对交付文件运行现有 QA，并绑定最终字节：
 
 ```bash
+python3 scripts/encode_quality_qa.py analyze \
+  output/day85_master.mp4 output/day85_share.mp4 \
+  --project-dir . \
+  --output verify/encode_quality_qa.json \
+  --markdown verify/encode_quality_qa.md \
+  --strict
+
 python3 scripts/render_qa.py output/day85_share.mp4 \
   --platform douyin \
   --json verify/day85_share_qa.json
@@ -72,5 +79,7 @@ python3 scripts/approval_receipt.py create \
   --output verify/approval_receipt.json \
   --markdown verify/approval_receipt.md
 ```
+
+仅当 master 与交付件保持同时间线、同构图且没有调色/HDR/插帧/变速时运行该像素门禁；其他情况直接做正确的人工 A/B。详见 [107 Encode Quality QA](107-encode-quality-qa.md)。
 
 如果 `verify` 报 source/output hash、stored summary、设置或 decode receipt 漂移，不要手改 plan id；重新从当前 master 建计划并编码。`pipeline_manifest.py --require delivery_encode_plan --strict` 可把这份交付契约设为发布必需 gate。

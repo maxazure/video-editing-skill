@@ -108,6 +108,7 @@
 | 104 | [Flash Safety QA 最终成片闪烁风险预检](104-flash-safety-qa.md) | final master / platform export → 亮度与饱和红 flash、滚动窗口和 source-bound live gate |
 | 105 | [Narration Loudness QA 最终旁白逐短语响度一致性](105-narration-loudness-qa.md) | finalized isolated narration + exact phrase ranges → per-segment LUFS / spread / dBTP / LRA live gate |
 | 106 | [Audio Channel QA 左右声道 / 相位 / 单声道兼容](106-audio-channel-qa.md) | final master → channel activity、onset skew、L/R balance、phase correlation 与 mono fold-down live gate |
+| 107 | [Encode Quality QA 同时间线重编码画质损失](107-encode-quality-qa.md) | reference master + same-timeline derivative → SSIM/PSNR、P05、最差帧与双输入 live gate |
 
 ## 快速上手
 
@@ -208,5 +209,6 @@
 | 想把动作落点、产品揭晓或表情峰值短暂定格并轻微推近 | [101-Freeze-Punch](101-freeze-punch.md) |
 | 手持素材有不想要的抖动，想保留原片并对照防抖结果 | [84-Video Stabilization](84-video-stabilization.md) |
 | 客户或平台要求视频必须小于指定 MB | [85-Target-size Delivery Encode](85-delivery-encode.md) |
+| 压缩/转码完成后想确认相对 master 没有过度画质损失 | [107-Encode Quality QA](107-encode-quality-qa.md) |
 | 想让下一镜声音先进入，或画面切走后保留上一镜声音 | [86-J-cut / L-cut Audio Transition](86-audio-transition.md) |
 | iPhone HDR / PQ / HLG 上传平台后过曝，想交付 Rec.709 SDR | [87-HDR → Rec.709 SDR Delivery](87-hdr-sdr.md) |

@@ -479,6 +479,7 @@ def test_file_size_brief_routes_target_size_delivery(tmp_path):
         project_dir=str(tmp_path),
     )
 
+    ids = [item["id"] for item in plan["steps"]]
     step = next(step for step in plan["steps"] if step["id"] == "delivery_encode_plan")
     assert step["script"] == "delivery_encode.py"
     assert "delivery_encode.py plan" in step["command"]
@@ -486,6 +487,28 @@ def test_file_size_brief_routes_target_size_delivery(tmp_path):
     assert str(source) in step["command"]
     assert step["gate_category"] == "delivery_encode_plan"
     assert any("normal speed" in note for note in plan["notes"])
+    quality_step = next(step for step in plan["steps"] if step["id"] == "encode_quality_qa")
+    assert ids.index("delivery_encode_plan") < ids.index("encode_quality_qa")
+    assert f"encode_quality_qa.py analyze {source} output/final_delivery.mp4" in quality_step["command"]
+    assert quality_step["gate_category"] == "encode_quality_qa"
+
+
+def test_encode_quality_brief_routes_same_timeline_metric_gate(tmp_path):
+    source = tmp_path / "master.mp4"
+    source.write_text("fake master", encoding="utf-8")
+
+    plan = build_plan(
+        f"比较 {source} 和压缩版的重编码画质损失，跑 SSIM 和 PSNR",
+        project_dir=str(tmp_path),
+    )
+
+    step = next(step for step in plan["steps"] if step["id"] == "encode_quality_qa")
+    assert step["script"] == "encode_quality_qa.py"
+    assert str(source) in step["command"]
+    assert "'<encoded_candidate>'" in step["command"]
+    assert "verify/encode_quality_qa.json" in step["outputs"]
+    assert step["gate_category"] == "encode_quality_qa"
+    assert any("same-timeline" in note for note in plan["notes"])
 
 
 def test_phrase_narration_loudness_brief_routes_source_bound_gate(tmp_path):

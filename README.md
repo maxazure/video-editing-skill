@@ -2,7 +2,7 @@
 
 这是一个面向 **口播、教程、访谈、播客切片、录屏演示 / facecam demo** 的 AI 视频剪辑生产线：给它原始口播音频/视频、transcript、B-roll、摄像头小窗或素材目录，它可以把“还没整理的素材”推进到 **可发布的小红书 / 抖音 / 视频号短视频**。
 
-它不是一个单点 FFmpeg 脚本，而是一条完整工作流：**项目启动/素材导入 → 个人/品牌剪辑风格 → 生产授权 → 手持防抖 / 绿蓝幕换背景 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 生成片有效运动窗口 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp / 关键帧 freeze-punch / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 锁定视觉 EDL 后重建最终声音分镜 → 最终旁白逐短语响度门禁 → 渲染前预检 / 真实画面字幕样式选择 → 单次编码渲染 → 质检 / 声道完整性 / 闪烁风险筛查 / 最终成片唇形复核 → 多平台导出 / 目标大小交付编码 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
+它不是一个单点 FFmpeg 脚本，而是一条完整工作流：**项目启动/素材导入 → 个人/品牌剪辑风格 → 生产授权 → 手持防抖 / 绿蓝幕换背景 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 生成片有效运动窗口 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp / 关键帧 freeze-punch / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 锁定视觉 EDL 后重建最终声音分镜 → 最终旁白逐短语响度门禁 → 渲染前预检 / 真实画面字幕样式选择 → 单次编码渲染 → 质检 / 声道完整性 / 闪烁风险筛查 / 最终成片唇形复核 → 多平台导出 / 目标大小交付编码 / 重编码画质损失门禁 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
 
 ## 适合做什么
 
@@ -16,6 +16,7 @@
 - **局部慢动作先计划再渲染**：`speed_ramp.py` 把显式 impact frame 周围的 `snap/ease/s_curve`、hold 和可选 FFmpeg 插帧编译成 source-bound 计划；源 hash 或 piece 时间映射漂移会阻塞，apply 采用同目录临时文件事务式落盘。
 - **动作落点可以定格并轻推近**：`freeze_punch.py` 用第一帧替换指定 source-time 窗口，保持总时长和原音频时间线不变；计划绑定源片、事件和输出字节，完整解码、成片漂移或尚未 apply 都会阻塞 manifest。
 - **上传大小限制变成硬门禁**：`delivery_encode.py` 依据源片时长计算两遍 H.264/AAC 码率，绑定源与输出 SHA-256；完整解码、音视频契约或硬大小上限任一失败都不会提升成交付件。
+- **压缩后“能播放”不再等于“画质够用”**：`encode_quality_qa.py` 对同时间线、同构图的 master 与重编码衍生件做全长 SSIM/PSNR 比较，保存平均值、P05 低尾部和最差帧时间码；两条视频、媒体契约、阈值或现场复测漂移都会让报告失效。
 - **专业声画错位不再靠手写 FFmpeg**：`audio_transition.py` 对明确边界规划 J-cut/L-cut，验证真实音频 handle、config/transcript/source hash 和 compiled timing；`render_final.py` 在同一次编码中完成画面硬切、音频 pre-lap/overhang、字幕、overlay 与 BGM。
 - **事实型内容有 proof deck**：新闻、数据、产品事实或来源页截图可用 `source_receipts.py` 生成 URL/截图复核包，作为发布前 gate。
 - **高影响动作先绑定确切授权范围**：`production_authorization.py` 把外部上传、侵入性重排/删除、付费生成、声音克隆、真人/未成年人/公众人物/品牌/IP 权利和发布决定绑定到具体素材 SHA-256、用途与 provider/surface；scope 或源字节变化会让旧授权失效。
@@ -260,6 +261,7 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    │     可选 --versioned-output：输出 _V<N>，避免覆盖旧成片
    │
    ├─→ render_qa.py             渲染后黑屏/静帧/静音/尺寸质检 + review packet
+   ├─→ encode_quality_qa.py     同时间线 master vs 重编码件 → SSIM/PSNR / 最差帧 / live gate
    ├─→ audio_channel_qa.py      成片声道活动/起始/平衡/相位/mono fold-down live gate
    ├─→ flash_safety_qa.py       亮度/饱和红 flash → 1s/5s 风险窗口 / source-bound live gate
    ├─→ shot_color_qa.py         成片镜头亮度/对比/色度/饱和度/broadcast-range + 切点跳变门禁
@@ -2377,6 +2379,30 @@ python3 scripts/timeline_view.py output/day58_master.mp4 --at 42.5 --radius 1.5 
 
 `--review-dir` 会写 `render_qa_review.json` 和 `render_qa_review.md`，把黑屏、静帧、静音的可疑区间按 FAIL/WARN 排序；`--review-clips` 会额外抽取短 MP4 证据片段。只需要审阅清单时不加 `--review-clips`。
 
+### 🎛️ Encode Quality QA — 同时间线重编码画质损失门禁
+[`scripts/encode_quality_qa.py`](scripts/encode_quality_qa.py) · [详细文档](docs/prompts/107-encode-quality-qa.md)
+
+`delivery_encode.py` 的硬大小和完整解码只能证明文件技术可读，不能证明压缩损失可接受。对没有裁切、调色、HDR tone-map、变速、插帧或内容修改的同时间线衍生件，用 FFmpeg 自带 `ssim + psnr` 全长对照：
+
+```bash
+python3 scripts/encode_quality_qa.py analyze \
+  output/master.mp4 output/final_delivery.mp4 \
+  --project-dir . \
+  --output verify/encode_quality_qa.json \
+  --markdown verify/encode_quality_qa.md \
+  --strict
+
+python3 scripts/encode_quality_qa.py verify \
+  --report verify/encode_quality_qa.json \
+  --project-dir . --strict
+
+python3 scripts/pipeline_manifest.py . --require encode_quality_qa --strict
+```
+
+默认门槛为 mean SSIM `≥0.95`、P05 SSIM `≥0.88`、有限帧 mean PSNR `≥35 dB`；接近门槛只 WARN，低于门槛阻断。候选分辨率不同时，仅在显示画幅一致的前提下用 Lanczos 归一到参考尺寸并保留 warning；fps 差超过 `0.01` 或时长差超过 1 帧直接拒绝比较。报告绑定两条视频 SHA-256、媒体契约、阈值、完整测量摘要与 canonical id，`verify` 会现场重跑。
+
+最差帧时间码只是定位入口，必须在目标屏幕上同时查看 reference/candidate 并正常速度播放周边运动。SSIM/PSNR 不测声音，也不适用于有意改变像素或时间线的处理；这些情况使用对应人工 A/B、color/HDR/framing/retiming gate。本实现不调用 `libvmaf`，因此不会伪造 VMAF 分数。
+
 ### ⚡ Flash Safety QA — 最终成片闪烁风险预检
 [`scripts/flash_safety_qa.py`](scripts/flash_safety_qa.py) · [详细文档](docs/prompts/104-flash-safety-qa.md)
 
@@ -2639,6 +2665,8 @@ python3 scripts/delivery_encode.py verify work/delivery_encode_plan.json --stric
 ```
 
 可选 `--max-width` / `--max-height` 保持画幅比缩小，`--fps` 只允许不高于源片。交付编码是最后一次重编码，不能替代人工观感审片；交付 MP4 还应重跑 `render_qa.py`、字幕/平台安全区检查和 `approval_receipt.py`。
+
+若交付件没有改动构图、时间线、调色或 HDR，则紧接着运行 `encode_quality_qa.py analyze output/master.mp4 output/master-under-20m.mp4 --project-dir . --output verify/encode_quality_qa.json --markdown verify/encode_quality_qa.md --strict`，先处理 SSIM/PSNR blocker，再看报告里的最差帧时间码并完整 A/B 播放。
 
 ### ✍️ Caption Generator — 标题 + 正文 + 标签
 [`scripts/generate_caption.py`](scripts/generate_caption.py)
@@ -3125,6 +3153,7 @@ pytest tests/test_multi_export.py -v        # 多平台比例转换
 pytest tests/test_framing_preview.py -v     # cover/contain/blur 真实帧预览 / 选择 / live gate
 pytest tests/test_hdr_sdr.py -v             # PQ/HLG → Rec.709 SDR / color tags / 完整解码门禁
 pytest tests/test_delivery_encode.py -v     # 硬大小上限 / 两遍编码 / 完整解码门禁
+pytest tests/test_encode_quality_qa.py -v   # 同时间线 SSIM/PSNR / P05 / 双输入 drift live gate
 pytest tests/test_render_qa.py -v           # 渲染后质检
 pytest tests/test_flash_safety_qa.py -v     # 亮度/饱和红 flash、滚动窗口、source drift gate
 pytest tests/test_shot_color_qa.py -v       # 成片镜头色彩 / 曝光 / broadcast-range 门禁
@@ -3195,6 +3224,38 @@ pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 pytest tests/test_review_dashboard.py -v    # 静态人工复核面板 + gate queue
 pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 gate
 ```
+
+### 2026-09-01 自动化升级记录（Source-bound Encode Quality QA）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`0xDarkMatter/claude-mods` FFmpeg Ops skill](https://github.com/0xDarkMatter/claude-mods/blob/main/skills/ffmpeg-ops/SKILL.md) | 把 VMAF/SSIM/PSNR 做成独立 quality gate，阈值失败使用明确退出码，方便 agent 分支修复编码参数 | 新增本地 `analyze → verify` 与 `--strict` 门禁；不复制其脚本，也不假设当前 FFmpeg 具备 `libvmaf` |
+| [`terranvigil/veo`](https://github.com/terranvigil/veo) | 除全局分数外保留 per-frame 质量时间线和 dip marker，便于从“平均不错”定位到局部坏帧 | 报告同时保存 mean、P05、minimum 和最低 SSIM 帧时间码，Markdown 直接给人工 A/B 复核入口 |
+| [`patraxo/ltx2-vidgen-skill`](https://github.com/patraxo/ltx2-vidgen-skill) | 性能优化以 blackdetect + PSNR/SSIM + frame inspection + audio 的组合证据证明零视觉回退，而不是只看任务成功 | 明确把 pixel metrics、最差帧人工查看、完整 1× 播放和既有 audio/render QA 分层，任一项都不冒充完整批准 |
+| [`slhck/ffmpeg-quality-metrics`](https://github.com/slhck/ffmpeg-quality-metrics) | 支持参考尺寸归一、时间对齐、逐帧指标与全局统计，清楚区分 distorted/reference 输入 | 仅允许同时间线、同显示画幅；候选可 Lanczos 归一到参考尺寸，fps/时长/画幅不兼容则 fail closed |
+| [`Netflix/vmaf`](https://github.com/Netflix/vmaf) | VMAF 提供感知质量评估和多种 full-reference 指标，但 FFmpeg 使用需要单独编译 `libvmaf` filter | 本机 FFmpeg 8.1.1 只有 `ssim/psnr`、没有 `libvmaf`；本轮保持零新增依赖并在报告中明确不声称 VMAF |
+
+本次新增 / 调整：
+
+- 新增 [`scripts/encode_quality_qa.py`](scripts/encode_quality_qa.py) 的 `analyze → verify` 闭环。它绑定项目内 reference/candidate SHA-256、媒体契约、阈值、FFmpeg 算法合同和现场复测；同文件、项目逃逸、symlink/hardlink 覆盖、fps/时长/画幅不兼容、指标或 derived state 漂移均 fail closed。
+- 全长比较保存 mean SSIM、P05 SSIM、minimum SSIM、有限帧 PSNR 统计和默认 12 个最差帧时间码。默认 `mean SSIM ≥0.95 / P05 ≥0.88 / finite mean PSNR ≥35 dB`；候选分辨率不同但画幅一致时才做 Lanczos 归一并 WARN。
+- `pipeline_manifest.py` 新增存在即 live verify、可 `--require encode_quality_qa` 的 gate；`edit_brief_plan.py` 支持中英文压缩画质 / SSIM / PSNR 路由，并在目标大小交付后自动安排 exact master → delivery 比较。
+- README、主 SKILL、小红书 daily workflow、prompts 导航和新 [`docs/prompts/107-encode-quality-qa.md`](docs/prompts/107-encode-quality-qa.md) 已同步。
+
+使用方式：
+
+```bash
+python3 scripts/encode_quality_qa.py analyze output/master.mp4 output/final_delivery.mp4 \
+  --project-dir . --output verify/encode_quality_qa.json \
+  --markdown verify/encode_quality_qa.md --strict
+python3 scripts/encode_quality_qa.py verify \
+  --report verify/encode_quality_qa.json --project-dir . --strict
+python3 scripts/pipeline_manifest.py . --require encode_quality_qa --strict
+```
+
+验证结果：关联定向回归 `tests/test_encode_quality_qa.py tests/test_edit_brief_plan.py tests/test_pipeline_manifest.py` 通过 **140 passed in 2.72s**，完整项目测试通过 **1081 passed in 23.96s**。真实 3 秒 320×180/30fps FFmpeg smoke 中，lossless reference → CRF 20 H.264 得到 `mean SSIM=0.967204 / P05=0.899230 / mean PSNR=38.032889 dB`，状态 `warn`、analyze 与 live verify 的 strict 退出均为 0；80×46 降采样后最近邻放大并 CRF 45 的劣化版本得到 `0.805515 / 0.784832 / 23.413222 dB`，3 个 blocker、strict 退出 2。`compileall`、两组 CLI help、manifest category、Skill Creator `quick_validate.py` 与 `git diff --check` 均通过。
 
 ### 2026-08-31 自动化升级记录（Source-bound Audio Channel Integrity QA）
 
@@ -4316,6 +4377,7 @@ scripts/
 ├── platform_safe_area_qa.py    字幕/PIP/CTA/marker 平台安全区 gate [V3]
 ├── render_final.py             单次编码渲染 + 可选口播降噪 + enrich_plan 接入（V3 强化）
 ├── render_qa.py                渲染后黑屏/静帧/静音/尺寸质检       [V3]
+├── encode_quality_qa.py        同时间线 reference/candidate SSIM/PSNR live gate [V3]
 ├── flash_safety_qa.py          亮度/饱和红 flash + 1s/5s 滚动窗口 live gate [V3]
 ├── shot_color_qa.py            成片镜头色彩/曝光/broadcast-range gate [V3]
 ├── edit_compare.py             原片连续时钟 vs 最终像素双栏复核     [V3]

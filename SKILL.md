@@ -1,6 +1,6 @@
 ---
 name: video-editing
-description: "Xiaohongshu/RED-tuned short-form video workflow for voice-over, talking-head, tutorials, interviews, podcasts, screen recordings, green/blue-screen compositing, B-roll, captions, and generated assets. Covers edit routing, creator-owned edit-style profiles, transcription, semantic review, multi-take/audio sync/stabilization/dead-air cleanup, highlights/shorts, story and source gates, enrichment and video-generation planning, generated clip/sequence and scoped AI video-edit review, locked-EDL final audio storyboards, phrase-level narration loudness and final channel-integrity QA, color/speed/J-L cuts, reversible revisions and recipes, preflight/render/QA including flash/photosensitivity screening, subtitles, CapCut, platform/size exports, covers, captions, publish packages, dashboards, handoff formats, and Remotion."
+description: "Xiaohongshu/RED-tuned short-form video workflow for voice-over, talking-head, tutorials, interviews, podcasts, screen recordings, green/blue-screen compositing, B-roll, captions, and generated assets. Covers edit routing, creator-owned edit-style profiles, transcription, semantic review, multi-take/audio sync/stabilization/dead-air cleanup, highlights/shorts, story and source gates, enrichment and video-generation planning, generated clip/sequence and scoped AI video-edit review, locked-EDL final audio storyboards, phrase-level narration loudness and final channel-integrity QA, color/speed/J-L cuts, reversible revisions and recipes, preflight/render/QA including flash/photosensitivity and encode-quality screening, subtitles, CapCut, platform/size exports, covers, captions, publish packages, dashboards, handoff formats, and Remotion."
 metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
 ---
 
@@ -82,6 +82,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ render_final.py          单次编码渲染（可选口播降噪 + enrich_plan/focus_events/pip_overlays + Heavy 字幕 + 响度规范化 + BGM ducking）
    │                            可选 --versioned-output 防覆盖旧成片
    ├─→ render_qa.py             渲染后黑屏/静帧/静音/尺寸质检 + review packet
+   ├─→ encode_quality_qa.py     同时间线 master vs 重编码件 → SSIM/PSNR / 最差帧 / live gate
    ├─→ audio_channel_qa.py      成片声道活动/起始/平衡/相位/mono fold-down live gate
    ├─→ flash_safety_qa.py       成片亮度/饱和红 flash → 1s/5s 风险窗口 / live gate
    ├─→ shot_color_qa.py         成片镜头亮度/对比/色度/饱和度/broadcast-range + 切点跳变 gate
@@ -182,6 +183,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `subtitle_style_preview.py` | 真实源帧 → `render_final.py` 最终 ASS 样式对比 JPEG、人工选择与 source/font/style live gate | `create --video --platform --preview-dir --require-selection` / `select --report --style` / `verify --strict` |
 | `render_final.py` | 单次编码渲染 + 可选个人风格默认值 / 口播降噪 / J-cut/L-cut / enrich_plan / 旁白驱动 BGM ducking | `--config render_config.json` `--style-profile work/edit_style_profile.json` `--audio-transition-plan audio_transition_plan.json` `--speech-denoise light` `--enrich-plan enrich_plan.json` `--bgm-ducking` `--output final.mp4` |
 | `render_qa.py` | 渲染后 QA：尺寸/音频/黑屏/静帧/静音 + review packet | `<video.mp4>` `--platform douyin` `--json qa.json` `--review-dir verify/qa` |
+| `encode_quality_qa.py` | 同时间线参考 master vs 重编码件 → 全长 SSIM/PSNR、P05、最差帧时间码与双输入 live gate | `analyze <reference> <candidate> --output --markdown --strict` / `verify --report --strict` |
 | `flash_safety_qa.py` | final/platform video → 大面积亮度/饱和红 flash、滚动 1s/5s 风险窗口与 source-bound live gate | `analyze <video> --output --markdown --strict` / `verify --report --strict` |
 | `shot_color_qa.py` | rendered master → 镜头亮度/对比/色度/饱和度/broadcast-range 与切点跳变 gate | `<video.mp4>` `--scene-boundaries` `--output shot_color_qa.json` `--markdown` `--strict` |
 | `retention_rhythm_qa.py` | 成片 hook 活动、长镜头、注意力空窗、等距/快切和字幕节奏风险 | `<video.mp4>` `--timed-text subtitles.json` `--output retention_rhythm_qa.json` `--strict` |
@@ -1668,6 +1670,19 @@ python3 scripts/render_qa.py final.mp4 \
 
 `render_qa.py` 会检查容器元数据、平台尺寸、视频/音频流、黑屏、长静帧和长静音。对小红书派生文件使用 `--platform xhs`，对抖音/视频号使用 `--platform douyin` 或 `--platform wxch`。`--review-dir` 会写 `render_qa_review.json` / `.md`，`--review-clips` 会为可疑区间抽取短 MP4；如果只想快速查元数据，可加 `--no-filters`。
 
+**6a0. 同时间线重编码画质（压缩 / 转码衍生件必跑）**：
+```bash
+python3 scripts/encode_quality_qa.py analyze output/master.mp4 output/final_delivery.mp4 \
+  --project-dir . \
+  --output verify/encode_quality_qa.json \
+  --markdown verify/encode_quality_qa.md \
+  --strict
+python3 scripts/encode_quality_qa.py verify \
+  --report verify/encode_quality_qa.json --project-dir . --strict
+```
+
+仅在 reference/candidate 保持同一时间线和同一构图时使用；fps 差超过 `0.01`、时长差超过 1 帧或显示画幅不同会直接拒绝。默认 mean SSIM `≥0.95`、P05 SSIM `≥0.88`、有限帧 mean PSNR `≥35 dB`；候选分辨率不同但画幅一致时才 Lanczos 归一并 WARN。按 Markdown 最差帧时间码 A/B 查看并完整 1× 播放，不能把指标当成人工画质批准。它不测音频，也不适用于 crop/grade/HDR/retime/interpolation；本实现不调用 `libvmaf`，不声称 VMAF。`pipeline_manifest.py --require encode_quality_qa --strict` 可设为发布 gate。详见 [docs/prompts/107-encode-quality-qa.md](docs/prompts/107-encode-quality-qa.md)。
+
 **6a1. 音频声道完整性（最终 master 和重要平台版必跑）**：
 ```bash
 python3 scripts/audio_channel_qa.py analyze final.mp4 \
@@ -1944,7 +1959,7 @@ python3 scripts/delivery_encode.py apply work/delivery_encode_plan.json \
 python3 scripts/delivery_encode.py verify work/delivery_encode_plan.json
 ```
 
-`delivery_encode.py` 绑定 master SHA-256，用两遍 `libx264` 在 6% 容器余量内计算 H.264/AAC 码率；输出超过硬上限、容器/流/尺寸/fps/时长/音频不符或完整 FFmpeg decode 失败都会阻塞。apply 只先写同目录临时 MP4，技术验证通过后才原子晋升，不覆盖源文件。完整解码不是画质批准；必须正常速度看完交付版，再跑 `render_qa.py` 并把最终 SHA-256 放入 `approval_receipt.py`。详见 [docs/prompts/85-delivery-encode.md](docs/prompts/85-delivery-encode.md)。
+`delivery_encode.py` 绑定 master SHA-256，用两遍 `libx264` 在 6% 容器余量内计算 H.264/AAC 码率；输出超过硬上限、容器/流/尺寸/fps/时长/音频不符或完整 FFmpeg decode 失败都会阻塞。apply 只先写同目录临时 MP4，技术验证通过后才原子晋升，不覆盖源文件。完整解码不是画质批准；若构图/时间线未变，紧接着运行 `encode_quality_qa.py`，再正常速度看完交付版、跑 `render_qa.py` 并把最终 SHA-256 放入 `approval_receipt.py`。详见 [docs/prompts/85-delivery-encode.md](docs/prompts/85-delivery-encode.md) 与 [docs/prompts/107-encode-quality-qa.md](docs/prompts/107-encode-quality-qa.md)。
 
 **6o. 字幕文字最终校验**：
 1. 读取最终视频使用的所有 transcript 片段的文字

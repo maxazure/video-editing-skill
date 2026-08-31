@@ -673,7 +673,18 @@
     python3 scripts/delivery_encode.py apply work/delivery_encode_plan.json \
       --markdown work/delivery_encode_plan.md
     python3 scripts/delivery_encode.py verify work/delivery_encode_plan.json
-    # 完整解码通过不等于画质批准；正常速度看完整交付版，再跑 render_qa 并纳入 approval receipt。
+    # 同构图、同时间线时，继续做全长 SSIM/PSNR；HDR/裁切/调色/变速结果不能用此像素门禁。
+    python3 scripts/encode_quality_qa.py analyze \
+      output/day<NN>_master_douyin.mp4 \
+      output/day<NN>_douyin_delivery.mp4 \
+      --project-dir . \
+      --output verify/encode_quality_qa.json \
+      --markdown verify/encode_quality_qa.md \
+      --strict
+    python3 scripts/encode_quality_qa.py verify \
+      --report verify/encode_quality_qa.json --project-dir . --strict
+    # 完整解码和分数都不等于画质批准；看最差帧时间码并正常速度 A/B 播放完整交付版，
+    # 再跑 render_qa 并纳入 approval receipt。详见 docs/prompts/107-encode-quality-qa.md。
 
 9c. # 可选：如果要交给 Premiere / FCP / Resolve 继续精修：
     python3 scripts/export_edl.py \
@@ -762,6 +773,7 @@
      --output work/pipeline_manifest.json \
      --markdown work/pipeline_manifest.md \
      --strict
+    # 若执行了 9c 的目标大小交付，另加：--require encode_quality_qa
 
 14. # 完整审片并确认封面/文案/字幕后，把最终交付件绑定到具体 SHA-256：
     python3 scripts/approval_receipt.py create \

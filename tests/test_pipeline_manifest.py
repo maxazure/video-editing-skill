@@ -14,6 +14,7 @@ from edit_recipe import export_recipe  # noqa: E402
 from edit_style_profile import create_profile, template_spec  # noqa: E402
 import audio_channel_qa  # noqa: E402
 import delivery_encode  # noqa: E402
+import encode_quality_qa  # noqa: E402
 import freeze_punch  # noqa: E402
 import flash_safety_qa  # noqa: E402
 import generated_clip_review  # noqa: E402
@@ -236,6 +237,77 @@ def test_audio_channel_report_is_live_verified_and_can_be_required(tmp_path, mon
         required=["audio_channel_qa"],
     )
     assert "audio_channel_qa" in missing["missing_required"]
+
+
+def test_encode_quality_report_is_live_verified_and_can_be_required(tmp_path, monkeypatch):
+    _publish_ready_project(tmp_path)
+    reference = tmp_path / "output" / "day58_master.mp4"
+    candidate = tmp_path / "output" / "day58_delivery.mp4"
+    candidate.write_bytes(b"encoded delivery")
+    media = {
+        "duration": 2.0,
+        "fps": 30.0,
+        "width": 640,
+        "height": 360,
+        "rotation": 0,
+        "has_audio": True,
+        "video_codec": "h264",
+        "audio_codec": "aac",
+        "pixel_format": "yuv420p",
+    }
+    analysis = {
+        "normalization": {
+            "width": 640,
+            "height": 360,
+            "fps": 30.0,
+            "candidate_scaled": False,
+            "pixel_format": "yuv420p",
+            "scale_flags": "lanczos",
+        },
+        "frames_compared": 60,
+        "seconds_compared": 2.0,
+        "ssim": {"mean": 0.99, "p05": 0.98, "minimum": 0.97},
+        "psnr": {
+            "mean_finite_db": 42.0,
+            "p05_finite_db": 40.0,
+            "minimum_finite_db": 39.0,
+            "finite_frames": 60,
+            "infinite_frames": 0,
+            "all_infinite": False,
+        },
+        "worst_frames": [],
+    }
+    monkeypatch.setattr(encode_quality_qa, "probe_media", lambda _path: dict(media))
+    monkeypatch.setattr(
+        encode_quality_qa,
+        "measure_quality",
+        lambda *_args, **_kwargs: dict(analysis),
+    )
+    report = encode_quality_qa.build_report(reference, candidate, project_dir=tmp_path)
+    report_path = tmp_path / "verify" / "encode_quality_qa.json"
+    _write(report_path, report)
+
+    current = build_manifest(
+        str(tmp_path),
+        target_stage="publish_ready",
+        required=["encode_quality_qa"],
+    )
+    gate = next(g for g in current["gates"] if g["category"] == "encode_quality_qa")
+    assert gate["status"] == "ready"
+
+    candidate.write_bytes(b"changed encoded delivery")
+    stale = build_manifest(str(tmp_path), target_stage="publish_ready")
+    gate = next(g for g in stale["gates"] if g["category"] == "encode_quality_qa")
+    assert gate["status"] == "blocked"
+    assert "encode_quality_qa" in stale["blocked_gates"]
+
+    report_path.unlink()
+    missing = build_manifest(
+        str(tmp_path / "empty"),
+        target_stage="analysis",
+        required=["encode_quality_qa"],
+    )
+    assert "encode_quality_qa" in missing["missing_required"]
 
 
 def test_subtitle_style_preview_is_live_verified_and_can_be_required(tmp_path, monkeypatch):

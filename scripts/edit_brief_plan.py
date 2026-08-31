@@ -449,6 +449,22 @@ SIGNAL_KEYWORDS: Mapping[str, Sequence[str]] = {
         "上传限制",
         "传输限制",
     ),
+    "encode_quality_qa": (
+        "encode quality qa",
+        "encode quality comparison",
+        "re-encode quality",
+        "reencode quality",
+        "transcode quality",
+        "compression quality",
+        "ssim",
+        "psnr",
+        "压缩画质",
+        "重编码画质",
+        "转码画质",
+        "画质损失",
+        "编码损失",
+        "客观画质",
+    ),
     "publish": ("发布", "上传", "publish", "upload", "发布包", "标题", "文案", "hashtag", "tags"),
     "subtitle_sidecar": ("srt", "vtt", "ass", "字幕文件", "sidecar"),
     "nle_handoff": ("premiere", "final cut", "fcpxml", "resolve", "达芬奇", "edl", "otio", "剪辑软件"),
@@ -542,6 +558,7 @@ SIGNAL_LABELS: Mapping[str, str] = {
     "multi_platform": "多平台导出",
     "hdr_sdr": "PQ/HLG HDR → Rec.709 SDR 交付",
     "delivery_encode": "目标大小交付编码",
+    "encode_quality_qa": "重编码衍生件 SSIM / PSNR 画质门禁",
     "publish": "发布包 / 文案",
     "subtitle_sidecar": "字幕 sidecar",
     "subtitle_style_preview": "真实画面字幕样式预览 / 选择",
@@ -712,7 +729,7 @@ def build_plan(
 
     if source_media and not Path(source_media).expanduser().exists():
         blockers.append(f"source media not found: {source_media}")
-    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy", "reference_edit_rhythm", "lip_sync_review", "subtitle_style_preview", "framing_preview", "flash_safety_qa", "audio_channel_qa", "multimodal_dead_air", "video_stabilization", "chroma_key", "scoped_video_edit", "speed_ramp", "freeze_punch", "generated_motion_window", "hdr_sdr", "delivery_encode", "edit_style_profile"}):
+    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy", "reference_edit_rhythm", "lip_sync_review", "subtitle_style_preview", "framing_preview", "flash_safety_qa", "audio_channel_qa", "multimodal_dead_air", "video_stabilization", "chroma_key", "scoped_video_edit", "speed_ramp", "freeze_punch", "generated_motion_window", "hdr_sdr", "delivery_encode", "encode_quality_qa", "edit_style_profile"}):
         warnings.append("source media was not provided; commands use <source_media> placeholders")
 
     if transcript and not Path(transcript).expanduser().exists():
@@ -2546,6 +2563,48 @@ def build_plan(
         notes.append(
             "After reviewing the two-pass plan, run delivery_encode.py apply, then watch the complete "
             "delivery at normal speed and bind the exact output into render QA / approval receipt."
+        )
+
+    if "delivery_encode" in ids or "encode_quality_qa" in ids:
+        if "delivery_encode" in ids:
+            quality_reference = delivery_input
+            quality_candidate = "output/final_delivery.mp4"
+        else:
+            quality_reference = source
+            quality_candidate = "<encoded_candidate>"
+        _add_step(
+            steps,
+            seen,
+            _step(
+                "encode_quality_qa",
+                phase="qa",
+                script="encode_quality_qa.py",
+                label="Measure visual loss in the same-timeline delivery encode",
+                reason="A decodable size-constrained or transcoded file can still contain visible compression loss.",
+                command=shell(
+                    [
+                        python_bin,
+                        "scripts/encode_quality_qa.py",
+                        "analyze",
+                        quality_reference,
+                        quality_candidate,
+                        "--project-dir",
+                        project_dir,
+                        "--output",
+                        "verify/encode_quality_qa.json",
+                        "--markdown",
+                        "verify/encode_quality_qa.md",
+                        "--strict",
+                    ]
+                ),
+                outputs=["verify/encode_quality_qa.json", "verify/encode_quality_qa.md"],
+                gate_category="encode_quality_qa",
+            ),
+        )
+        notes.append(
+            "encode_quality_qa.py is only valid for same-timeline, same-composition derivatives. "
+            "Inspect its worst-frame timecodes at 1x; use human A/B review instead after crop, grade, "
+            "HDR tone mapping, retiming, interpolation, or editorial changes."
         )
 
     if "publish" in ids:

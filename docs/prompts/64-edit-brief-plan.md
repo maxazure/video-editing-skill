@@ -52,6 +52,7 @@ python3 scripts/edit_brief_plan.py \
 | 参考视频节奏、参考广告节奏、复刻剪辑结构 | 成片后用 `reference_edit_rhythm.py analyze` 量化 hard-cut 结构和 contact sheets；默认 WARN，明确验收时才加 `--require-match` |
 | BGM、音效、声音设计 | `audio_cue_sheet.py` |
 | 左右声道、相位抵消、单声道兼容、mono fold-down | `audio_channel_qa.py analyze` → `verify` |
+| 压缩画质、重编码画质、SSIM、PSNR | `encode_quality_qa.py analyze` → `verify`；目标大小交付后自动安排 source → delivery 对照 |
 | 手持抖动、画面抖动、视频防抖、stabilize | `video_stabilization.py plan` → `apply --comparison` → `confirm` |
 | 录屏、点击、热点 | `screen_focus.py` |
 | facecam、小窗、PIP | `pip_overlay.py` |
