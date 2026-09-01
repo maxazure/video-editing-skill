@@ -2,7 +2,7 @@
 
 这是一个面向 **口播、教程、访谈、播客切片、录屏演示 / facecam demo** 的 AI 视频剪辑生产线：给它原始口播音频/视频、transcript、B-roll、摄像头小窗或素材目录，它可以把“还没整理的素材”推进到 **可发布的小红书 / 抖音 / 视频号短视频**。
 
-它不是一个单点 FFmpeg 脚本，而是一条完整工作流：**项目启动/素材导入 → 个人/品牌剪辑风格 → 生产授权 → 手持防抖 / 绿蓝幕换背景 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 生成片有效运动窗口 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp / 关键帧 freeze-punch / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 锁定视觉 EDL 后重建最终声音分镜 → 最终旁白逐短语响度门禁 → 渲染前预检 / 真实画面字幕样式选择 → 单次编码渲染 → 质检 / 声道完整性 / 闪烁风险筛查 / 最终成片唇形复核 → 多平台导出 / 目标大小交付编码 / 重编码画质损失门禁 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
+它不是一个单点 FFmpeg 脚本，而是一条完整工作流：**项目启动/素材导入 → 个人/品牌剪辑风格 → 生产授权 → 手持防抖 / 绿蓝幕换背景 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 生成片有效运动窗口 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp / 关键帧 freeze-punch / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 锁定视觉 EDL 后重建最终声音分镜 → 最终旁白逐短语响度门禁 → 渲染前预检 / 真实画面字幕样式选择 → 单次编码渲染 → 质检 / 声道完整性 / 闪烁风险 / 单帧瞬态伪影筛查 / 最终成片唇形复核 → 多平台导出 / 目标大小交付编码 / 重编码画质损失门禁 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
 
 ## 适合做什么
 
@@ -32,6 +32,7 @@
 - **字幕风格先在真实画面上选**：`subtitle_style_preview.py` 用最终 renderer 的同一 ASS builder、字体、字号和目标画幅，把 `normal / minimal / bold_pop` 渲染到源片早、中、晚代表帧；源片、字体、样式定义或 JPEG 漂移会让旧选择失效。
 - **平台画幅处理先看真实 A/B 再导出**：`framing_preview.py` 为小红书 / 抖音 / 视频号逐平台比较 `cover / contain / blur`，把选择绑定到 master、显示方向、filter contract 和 JPEG 证据；`multi_export.py` 只消费现场验证通过的选择。
 - **最终成片会筛查大面积高频闪烁**：`flash_safety_qa.py` 用本地 FFmpeg 分析亮度与饱和红相反 transition，按滚动 1 秒 / 5 秒窗口输出风险区间；source、媒体契约、参数、算法或现场证据漂移都会让报告失效。它只做启发式风险分流，不冒充医疗或法规认证。
+- **长静帧和高频闪烁之间的单帧事故也有门禁**：`temporal_artifact_qa.py` 查找 1–3 帧突然偏离又回到近似原画面的局部 spike，为每个候选导出 `before / suspect / after` JPEG；必须完整 1× 播放并逐帧决定 `intentional_edit / artifact / uncertain`，后两者继续阻断。
 - **分段 TTS / 配音不会再被整片平均响度掩盖**：`narration_loudness_qa.py` 在最终独立旁白音轨上逐短语实测 LUFS / dBTP / LRA，并检查非例外段 spread；旁白、时间清单或现场 measurements 漂移会让旧报告失效，混音后仍要另跑全片 `audio_master_report.py`。
 - **最终声道错误不会被整片响度合格掩盖**：`audio_channel_qa.py` 现场检查左右声道活动、起始错位、能量平衡、相位相关和 mono fold-down 损失；source、媒体契约、阈值、算法或 measurements 漂移都会让旧报告失效。
 - **数字人口型必须在最终成片上重新举证**：`lip_sync_review.py` 从最终 master 的完整短语导出 1× 带声和 0.25× 静音 proof clips，逐条复核爆破音闭唇、元音提前/滞后、讲话时冻嘴、说话人和音频质量；任何剪切、变速、换音或重编码都会让旧报告失效。
@@ -264,6 +265,7 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    ├─→ encode_quality_qa.py     同时间线 master vs 重编码件 → SSIM/PSNR / 最差帧 / live gate
    ├─→ audio_channel_qa.py      成片声道活动/起始/平衡/相位/mono fold-down live gate
    ├─→ flash_safety_qa.py       亮度/饱和红 flash → 1s/5s 风险窗口 / source-bound live gate
+   ├─→ temporal_artifact_qa.py  单帧/少数帧 return-to-state spike → 三帧证据 / 人工 audit / live gate
    ├─→ shot_color_qa.py         成片镜头亮度/对比/色度/饱和度/broadcast-range + 切点跳变门禁
    ├─→ retention_rhythm_qa.py   成片 hook 活动 / 长镜头 / 注意力空窗 / 节奏门禁
    ├─→ reference_edit_rhythm.py 参考片 vs 成片 hard-cut 结构 / contact sheets / live gate
@@ -2422,6 +2424,35 @@ python3 scripts/pipeline_manifest.py . --require flash_safety_qa --strict
 
 滚动 1 秒超过 3 次 flash、或滚动 5 秒至少 10 次 flash 会阻断。命中后必须按时间段正常速度播放，优先删除重复闪烁、降低亮暗反差 / 红饱和度、缩小闪烁面积或降频，再从时间线重渲染。报告绑定 source bytes、媒体契约、参数、算法合同、analysis 和 canonical report id；live verify 会重新分析，不能靠改 JSON 清 gate。该工具不检测有害空间 pattern，只是启发式风险分流，不是医疗建议、法律合规证据或 WCAG / Harding / 广播认证；高风险与受监管交付需使用认可的专业 photosensitivity analyzer。
 
+### 🧩 Temporal Artifact QA — 单帧 / 少数帧瞬态伪影
+[`scripts/temporal_artifact_qa.py`](scripts/temporal_artifact_qa.py) · [详细文档](docs/prompts/108-temporal-artifact-qa.md)
+
+`render_qa.py` 的长冻结 / 黑场检测和 `flash_safety_qa.py` 的重复闪烁规则都可能漏过一次性的错误 insert、单帧撕裂或少数帧生成变形。新脚本最高按 30 fps、160 px 宽灰度采样，找出 1–3 帧进入/退出变化同时显著高于局部运动基线、且异常前后重新相似的 return-to-state spike；普通 hard cut 只有一次大变化，不应命中。
+
+```bash
+python3 scripts/temporal_artifact_qa.py analyze output/day58_master.mp4 \
+  --project-dir . \
+  --evidence-dir verify/temporal_artifact_frames \
+  --output verify/temporal_artifact_qa.json \
+  --markdown verify/temporal_artifact_qa.md \
+  --response-template work/temporal_artifact_response.json \
+  --strict
+
+# 命中候选后：完整 1× 播放，填写 response，再绑定人工决定
+python3 scripts/temporal_artifact_qa.py audit \
+  --report verify/temporal_artifact_qa.json \
+  --response work/temporal_artifact_response.json \
+  --output verify/temporal_artifact_qa.json \
+  --markdown verify/temporal_artifact_qa.md \
+  --project-dir . --force --strict
+
+python3 scripts/temporal_artifact_qa.py verify \
+  --report verify/temporal_artifact_qa.json --project-dir . --strict
+python3 scripts/pipeline_manifest.py . --require temporal_artifact_qa --strict
+```
+
+每张候选 JPEG 固定从左到右为 `before / suspect / after`；三帧都要描述。`intentional_edit` 会保留 warning，确认 `artifact` 或仍 `uncertain` 都会阻断并要求具体修复动作。报告绑定 source、媒体契约、算法、参数、完整分析、JPEG bytes、response 与 canonical ids，任一漂移都会失效。它只是人工审片入口，不识别人脸、身份、物理或语义，也可能漏掉持续漂移和小区域问题。
+
 ### 📈 Retention Rhythm QA — 成片留存节奏风险审计
 [`scripts/retention_rhythm_qa.py`](scripts/retention_rhythm_qa.py) · [详细文档](docs/prompts/69-retention-rhythm-qa.md)
 
@@ -3106,6 +3137,7 @@ python3 $SKILL/scripts/pipeline_manifest.py \
   --target-stage publish_ready \
   --require shot_color_qa \
   --require flash_safety_qa \
+  --require temporal_artifact_qa \
   --require audio_channel_qa \
   --output $WORK/work/pipeline_manifest.json \
   --markdown $WORK/work/pipeline_manifest.md \
@@ -3156,6 +3188,7 @@ pytest tests/test_delivery_encode.py -v     # 硬大小上限 / 两遍编码 / �
 pytest tests/test_encode_quality_qa.py -v   # 同时间线 SSIM/PSNR / P05 / 双输入 drift live gate
 pytest tests/test_render_qa.py -v           # 渲染后质检
 pytest tests/test_flash_safety_qa.py -v     # 亮度/饱和红 flash、滚动窗口、source drift gate
+pytest tests/test_temporal_artifact_qa.py -v # 单帧/少数帧 spike、三帧证据、人工 audit / live gate
 pytest tests/test_shot_color_qa.py -v       # 成片镜头色彩 / 曝光 / broadcast-range 门禁
 pytest tests/test_retention_rhythm_qa.py -v # 成片 hook / 长镜头 / 节奏风险门禁
 pytest tests/test_reference_edit_rhythm.py -v # 参考片/成片 hard-cut 结构 / contact-sheet / stale gate
@@ -3224,6 +3257,51 @@ pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 pytest tests/test_review_dashboard.py -v    # 静态人工复核面板 + gate queue
 pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 gate
 ```
+
+### 2026-09-02 自动化升级记录（Source-bound Temporal Artifact QA）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`huangserva/xyz-video-skill`](https://github.com/huangserva/xyz-video-skill/blob/refactor/video-creator/SKILL.md#步骤-56-两阶段视频质量审查) | 生成片先用缩小帧 MSE、局部 spike 等规则粗筛，再导出风险帧让母模型结合动作意图逐帧裁定；明确单帧 / 少数帧面部变形和画面撕裂不能只靠全局平均值发现 | 吸收“局部自动筛查 → 三帧证据 → 显式人工决定”结构；改用滑动局部中位数与 return-to-state 双边合同，保持 Python 标准库 + FFmpeg，不引入其 OpenCV 人脸 / HOG 语义判断 |
+| [`Rajbharti06/Ultimate-Video-Editing-Skills`](https://github.com/Rajbharti06/Ultimate-Video-Editing-Skills/blob/main/skills/ultimate-video-editor/SKILL.md#quality-checklist-before-delivery) | 交付清单把 `No flash frames or single-frame artifacts` 与完整 1× 审片列为明确要求 | 把单帧事故从 checklist 变成可执行 source-bound gate；检测候选后必须声明完整 1× 播放，并分别描述 before / suspect / after |
+| [`0xadvait/ai-video-skill`](https://github.com/0xadvait/ai-video-skill/blob/main/reference/style-library.md#flicker-warble-and-high-frequency-noise) | 把生成视频 flicker / warble / 高频噪声视为独立失败模式，并明确复杂运动与锐化会放大时序不一致 | 报告明确 fast action、whip pan、计划 glitch 等会产生候选，持续漂移和局部语义变形仍需 generated-clip / 完整人工复核；不把像素 spike 冒充生成质量结论 |
+| [`bradautomates/claude-video`](https://github.com/bradautomates/claude-video/blob/main/skills/watch/SKILL.md) | 默认去重适合长视频理解，但对细微逐帧运动提供 `--no-dedup`，并允许聚焦片段提高采样密度 | 本功能不使用 keyframe-only / 去重抽帧，固定保留候选原始时序位置，并输出精确三帧证据；完整视频仍需正常速度播放 |
+
+本次新增 / 调整：
+
+- 新增 [`scripts/temporal_artifact_qa.py`](scripts/temporal_artifact_qa.py) 的 `analyze → audit → verify` 闭环。默认最高按 30 fps、160 px 宽灰度采样，检测 1–3 帧进入 / 退出 MSE 同时高于 `max(150, local median × 2.5)`、且候选前后恢复相似的瞬态 excursion；普通 hard cut 只有单边跳变，不应误报。
+- 每个候选输出一张固定 `before / suspect / after` JPEG。没有候选时自动 screen 为 ready；有候选时先阻断，response 必须记录完整 1× 播放、三帧观察、理由和 `intentional_edit|artifact|uncertain`。确认 artifact 或 uncertain 保持 blocker 并要求 repair action；计划内且视觉干净的 intentional edit 保留 warning。
+- JSON/Markdown 绑定项目内 source SHA-256 / 大小 / 媒体契约、算法合同、settings、完整 analysis、证据 JPEG、response、summary、scan/report ids；source/evidence/analysis/response/派生状态漂移、项目逃逸、symlink 或输出 hardlink 风险均 fail closed。
+- `pipeline_manifest.py` 新增存在即 live verify、可 `--require temporal_artifact_qa` 的 gate；`edit_brief_plan.py` 支持中英文单帧伪影 / 闪帧 / 撕裂 / transient glitch 路由，并在普通 render / QA / publish runbook 中自动安排该检查。
+- README、主 SKILL、小红书 daily workflow、prompts 导航和新 [`docs/prompts/108-temporal-artifact-qa.md`](docs/prompts/108-temporal-artifact-qa.md) 已同步。
+
+使用方式：
+
+```bash
+python3 scripts/temporal_artifact_qa.py analyze output/final.mp4 \
+  --project-dir . \
+  --evidence-dir verify/temporal_artifact_frames \
+  --output verify/temporal_artifact_qa.json \
+  --markdown verify/temporal_artifact_qa.md \
+  --response-template work/temporal_artifact_response.json \
+  --strict
+
+# 命中候选时填写 response，然后：
+python3 scripts/temporal_artifact_qa.py audit \
+  --report verify/temporal_artifact_qa.json \
+  --response work/temporal_artifact_response.json \
+  --output verify/temporal_artifact_qa.json \
+  --markdown verify/temporal_artifact_qa.md \
+  --project-dir . --force --strict
+
+python3 scripts/temporal_artifact_qa.py verify \
+  --report verify/temporal_artifact_qa.json --project-dir . --strict
+python3 scripts/pipeline_manifest.py . --require temporal_artifact_qa --strict
+```
+
+验证结果：新增 14 项 temporal-artifact 回归并扩展 brief / manifest 测试；关联定向 `.venv/bin/python -m pytest tests/test_temporal_artifact_qa.py tests/test_edit_brief_plan.py tests/test_pipeline_manifest.py -q` 通过 **148 passed in 2.67s**，完整项目测试 `.venv/bin/python -m pytest tests -q` 通过 **1098 passed in 25.07s**。真实 FFmpeg smoke 使用 320×180 / 30fps H.264：正常红→蓝 hard cut 为 `ready / candidates=0 / strict exit 0`；连续红片中插入 1 个白帧得到第 30 帧候选，`entry=exit=32041 MSE / recovery=0`，自动输出三栏 JPEG 并以 `pending review / strict exit 2` 阻断；人工查看 JPEG 确认为红 / 白 / 红，audit 标记 artifact 后 live verify 继续以 1 blocker、退出 2 阻断。`compileall`、四组 CLI help、自然语言路由、manifest category、Skill Creator `quick_validate.py` 与 `git diff --check` 均通过。本轮没有调用生成 / TTS provider、消耗 credits、上传素材或发布。
 
 ### 2026-09-01 自动化升级记录（Source-bound Encode Quality QA）
 
@@ -4269,6 +4347,7 @@ python3 scripts/pipeline_manifest.py . --require freeze_punch_plan --strict
 | **102** | **[Generated Motion Window](docs/prompts/102-generated-motion-window.md)** | **检测生成片首尾冻帧，人工确认有效运动窗口并输出新工作副本** |
 | **103** | **[Platform Framing Preview](docs/prompts/103-framing-preview.md)** | **逐平台比较 cover / contain / blur，绑定真实帧证据后再导出** |
 | **104** | **[Flash Safety QA](docs/prompts/104-flash-safety-qa.md)** | **最终成片大面积亮度 / 饱和红闪烁启发式筛查与 live gate** |
+| **108** | **[Temporal Artifact QA](docs/prompts/108-temporal-artifact-qa.md)** | **单帧 / 少数帧瞬态伪影筛查、三帧证据与人工 audit live gate** |
 | **90** | **[Generation Lessons](docs/prompts/90-generation-lessons.md)** | **把已审片段经验按 provider/model scope 复用到下一次 prompt** |
 | **91** | **[Generated Sequence Review](docs/prompts/91-generated-sequence-review.md)** | **逐片通过后复核相邻尾帧/首帧与跨镜头连续性** |
 | **92** | **[Reference Edit Rhythm](docs/prompts/92-reference-edit-rhythm.md)** | **量化参考片 hard-cut 结构并对照成片，绑定 contact sheets 与 live gate** |
@@ -4379,6 +4458,7 @@ scripts/
 ├── render_qa.py                渲染后黑屏/静帧/静音/尺寸质检       [V3]
 ├── encode_quality_qa.py        同时间线 reference/candidate SSIM/PSNR live gate [V3]
 ├── flash_safety_qa.py          亮度/饱和红 flash + 1s/5s 滚动窗口 live gate [V3]
+├── temporal_artifact_qa.py     单帧/少数帧瞬态伪影 + 三帧证据 / 人工 audit live gate [V3]
 ├── shot_color_qa.py            成片镜头色彩/曝光/broadcast-range gate [V3]
 ├── edit_compare.py             原片连续时钟 vs 最终像素双栏复核     [V3]
 ├── retention_rhythm_qa.py      成片 hook / 长镜头 / 注意力空窗门禁 [V3]

@@ -85,6 +85,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ encode_quality_qa.py     同时间线 master vs 重编码件 → SSIM/PSNR / 最差帧 / live gate
    ├─→ audio_channel_qa.py      成片声道活动/起始/平衡/相位/mono fold-down live gate
    ├─→ flash_safety_qa.py       成片亮度/饱和红 flash → 1s/5s 风险窗口 / live gate
+   ├─→ temporal_artifact_qa.py  单帧/少数帧 return-to-state spike → 三帧证据 / 人工 audit / live gate
    ├─→ shot_color_qa.py         成片镜头亮度/对比/色度/饱和度/broadcast-range + 切点跳变 gate
    ├─→ retention_rhythm_qa.py   成片 hook 活动 / 长镜头 / 注意力空窗 / 节奏 gate
    ├─→ reference_edit_rhythm.py 参考片 vs 成片 hard-cut 结构 / contact sheets / live gate
@@ -185,6 +186,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `render_qa.py` | 渲染后 QA：尺寸/音频/黑屏/静帧/静音 + review packet | `<video.mp4>` `--platform douyin` `--json qa.json` `--review-dir verify/qa` |
 | `encode_quality_qa.py` | 同时间线参考 master vs 重编码件 → 全长 SSIM/PSNR、P05、最差帧时间码与双输入 live gate | `analyze <reference> <candidate> --output --markdown --strict` / `verify --report --strict` |
 | `flash_safety_qa.py` | final/platform video → 大面积亮度/饱和红 flash、滚动 1s/5s 风险窗口与 source-bound live gate | `analyze <video> --output --markdown --strict` / `verify --report --strict` |
+| `temporal_artifact_qa.py` | final/generated video → 单帧/少数帧局部突变筛查、before/suspect/after 证据与人工决定 live gate | `analyze <video> --evidence-dir --response-template --strict` / `audit --report --response` / `verify --strict` |
 | `shot_color_qa.py` | rendered master → 镜头亮度/对比/色度/饱和度/broadcast-range 与切点跳变 gate | `<video.mp4>` `--scene-boundaries` `--output shot_color_qa.json` `--markdown` `--strict` |
 | `retention_rhythm_qa.py` | 成片 hook 活动、长镜头、注意力空窗、等距/快切和字幕节奏风险 | `<video.mp4>` `--timed-text subtitles.json` `--output retention_rhythm_qa.json` `--strict` |
 | `reference_edit_rhythm.py` | 参考片 vs 成片 hard-cut 密度、镜头时长、结尾 hold、归一化切点与 contact-sheet source-bound 对照 | `analyze --reference --candidate --evidence-dir [--require-match]` / `verify --report --strict` |
@@ -1714,6 +1716,19 @@ python3 scripts/flash_safety_qa.py verify \
 ```
 
 `flash_safety_qa.py` 用本地 FFmpeg 低分辨率逐帧采样，分别记录覆盖至少 25% 画面的亮度与饱和红相反 transition，并配成 flash；滚动 1 秒超过 3 次、或滚动 5 秒至少 10 次会阻断。命中后按 Markdown 时间段正常速度播放，优先删除重复闪白/闪红、降低反差/红饱和度、缩小闪烁面积或降频，再从时间线重渲染。报告绑定 source SHA-256、媒体契约、参数、算法合同和现场重算证据；`pipeline_manifest.py --require flash_safety_qa --strict` 可设为发布 gate。它只是启发式筛查，不检测有害空间 pattern，也不是医疗建议、法律合规证据或 WCAG/Harding/广播认证；高风险或受监管交付必须升级到认可的专业 photosensitivity analyzer。详见 [docs/prompts/104-flash-safety-qa.md](docs/prompts/104-flash-safety-qa.md)。
+
+**6a3. 单帧 / 少数帧瞬态伪影（最终 master 和生成素材推荐）**：
+```bash
+python3 scripts/temporal_artifact_qa.py analyze final.mp4 \
+  --project-dir . \
+  --evidence-dir verify/temporal_artifact_frames \
+  --output verify/temporal_artifact_qa.json \
+  --markdown verify/temporal_artifact_qa.md \
+  --response-template work/temporal_artifact_response.json \
+  --strict
+```
+
+脚本寻找 1–3 个采样帧短暂偏离、随后回到近似原画面的局部 spike；普通 hard cut 不应满足双边突变与恢复相似合同。命中候选后，必须完整 1× 播放，再逐张描述 `before / suspect / after`，填写 `intentional_edit|artifact|uncertain` 并运行 `audit`。后两种决定保持阻塞；source、算法、分析、JPEG、response 或派生状态漂移都会让 live gate 失效。它不识别人脸、身份、物理或语义，也可能漏掉持续漂移和小区域问题。详见 [docs/prompts/108-temporal-artifact-qa.md](docs/prompts/108-temporal-artifact-qa.md)。
 
 **6b. 镜头色彩 / 曝光 QA（多机位、B-roll、生成素材或调色后推荐）**：
 ```bash

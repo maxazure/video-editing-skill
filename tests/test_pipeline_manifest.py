@@ -17,6 +17,7 @@ import delivery_encode  # noqa: E402
 import encode_quality_qa  # noqa: E402
 import freeze_punch  # noqa: E402
 import flash_safety_qa  # noqa: E402
+import temporal_artifact_qa  # noqa: E402
 import generated_clip_review  # noqa: E402
 import generated_motion_window  # noqa: E402
 import generated_sequence_review  # noqa: E402
@@ -123,6 +124,68 @@ def test_flash_safety_report_is_live_verified_and_can_be_required(tmp_path, monk
         required=["flash_safety_qa"],
     )
     assert "flash_safety_qa" in missing["missing_required"]
+
+
+def test_temporal_artifact_report_is_live_verified_and_can_be_required(tmp_path, monkeypatch):
+    _publish_ready_project(tmp_path)
+    source = tmp_path / "output" / "day58_master.mp4"
+    media = {
+        "duration": 1.0,
+        "fps": 30.0,
+        "width": 640,
+        "height": 360,
+        "rotation": 0,
+        "has_audio": True,
+        "video_codec": "h264",
+        "audio_codec": "aac",
+        "pixel_format": "yuv420p",
+    }
+    settings = temporal_artifact_qa.default_settings()
+    settings.update({"analysis_width": 32, "local_radius": 4})
+    frames = [bytes([24]) * 64 for _ in range(31)]
+    analysis = temporal_artifact_qa.analyze_frame_sequence(
+        frames,
+        width=32,
+        height=2,
+        fps=30.0,
+        settings=settings,
+    )
+    monkeypatch.setattr(temporal_artifact_qa, "probe_media", lambda _path: dict(media))
+    monkeypatch.setattr(
+        temporal_artifact_qa,
+        "analyze_video",
+        lambda *_args, **_kwargs: dict(analysis),
+    )
+    report = temporal_artifact_qa.build_report(
+        source,
+        project_dir=tmp_path,
+        evidence_dir=tmp_path / "verify" / "temporal_artifact_frames",
+        settings=settings,
+    )
+    report_path = tmp_path / "verify" / "temporal_artifact_qa.json"
+    _write(report_path, report)
+
+    current = build_manifest(
+        str(tmp_path),
+        target_stage="publish_ready",
+        required=["temporal_artifact_qa"],
+    )
+    gate = next(g for g in current["gates"] if g["category"] == "temporal_artifact_qa")
+    assert gate["status"] == "ready"
+
+    _write(source, "changed rendered bytes")
+    stale = build_manifest(str(tmp_path), target_stage="publish_ready")
+    gate = next(g for g in stale["gates"] if g["category"] == "temporal_artifact_qa")
+    assert gate["status"] == "blocked"
+    assert "temporal_artifact_qa" in stale["blocked_gates"]
+
+    report_path.unlink()
+    missing = build_manifest(
+        str(tmp_path / "empty"),
+        target_stage="analysis",
+        required=["temporal_artifact_qa"],
+    )
+    assert "temporal_artifact_qa" in missing["missing_required"]
 
 
 def test_narration_loudness_report_is_live_verified_and_can_be_required(tmp_path, monkeypatch):

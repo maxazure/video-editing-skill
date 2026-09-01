@@ -123,6 +123,21 @@ SIGNAL_KEYWORDS: Mapping[str, Sequence[str]] = {
         "红色闪烁",
         "无障碍闪烁",
     ),
+    "temporal_artifact_qa": (
+        "temporal artifact",
+        "single frame artifact",
+        "flash frame",
+        "frame tear",
+        "one frame glitch",
+        "transient glitch",
+        "单帧异常",
+        "单帧伪影",
+        "闪帧",
+        "画面撕裂",
+        "瞬态异常",
+        "少数帧变形",
+        "局部突变",
+    ),
     "narration_loudness_qa": (
         "narration loudness consistency",
         "phrase loudness",
@@ -564,6 +579,7 @@ SIGNAL_LABELS: Mapping[str, str] = {
     "subtitle_style_preview": "真实画面字幕样式预览 / 选择",
     "framing_preview": "平台画幅 cover / contain / blur 预览与选择",
     "flash_safety_qa": "最终成片亮度 / 饱和红闪烁风险预检",
+    "temporal_artifact_qa": "单帧 / 少数帧瞬态伪影筛查与逐帧复核",
     "narration_loudness_qa": "最终旁白逐短语响度一致性门禁",
     "audio_channel_qa": "最终成片声道活动 / 平衡 / 相位 / mono fold-down 门禁",
     "nle_handoff": "NLE 交接",
@@ -729,7 +745,7 @@ def build_plan(
 
     if source_media and not Path(source_media).expanduser().exists():
         blockers.append(f"source media not found: {source_media}")
-    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy", "reference_edit_rhythm", "lip_sync_review", "subtitle_style_preview", "framing_preview", "flash_safety_qa", "audio_channel_qa", "multimodal_dead_air", "video_stabilization", "chroma_key", "scoped_video_edit", "speed_ramp", "freeze_punch", "generated_motion_window", "hdr_sdr", "delivery_encode", "encode_quality_qa", "edit_style_profile"}):
+    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy", "reference_edit_rhythm", "lip_sync_review", "subtitle_style_preview", "framing_preview", "flash_safety_qa", "temporal_artifact_qa", "audio_channel_qa", "multimodal_dead_air", "video_stabilization", "chroma_key", "scoped_video_edit", "speed_ramp", "freeze_punch", "generated_motion_window", "hdr_sdr", "delivery_encode", "encode_quality_qa", "edit_style_profile"}):
         warnings.append("source media was not provided; commands use <source_media> placeholders")
 
     if transcript and not Path(transcript).expanduser().exists():
@@ -2260,6 +2276,51 @@ def build_plan(
         notes.append(
             "flash_safety_qa.py is a local heuristic screen, not medical/legal certification; "
             "repair flagged windows and use an accredited analyzer for regulated or high-risk delivery."
+        )
+
+    if wants_render or "qa" in ids or "publish" in ids or "temporal_artifact_qa" in ids:
+        artifact_input = "output/final.mp4" if wants_render else source
+        _add_step(
+            steps,
+            seen,
+            _step(
+                "temporal_artifact_qa",
+                phase="qa",
+                script="temporal_artifact_qa.py",
+                label="Screen single-frame and brief return-to-state visual artifacts",
+                reason="Final delivery can contain a one-frame tear, flash frame, or generated deformation that long-freeze and repeated-flash checks miss.",
+                command=shell(
+                    [
+                        python_bin,
+                        "scripts/temporal_artifact_qa.py",
+                        "analyze",
+                        artifact_input,
+                        "--project-dir",
+                        project_dir,
+                        "--evidence-dir",
+                        "verify/temporal_artifact_frames",
+                        "--output",
+                        "verify/temporal_artifact_qa.json",
+                        "--markdown",
+                        "verify/temporal_artifact_qa.md",
+                        "--response-template",
+                        "work/temporal_artifact_response.json",
+                        "--strict",
+                    ]
+                ),
+                outputs=[
+                    "verify/temporal_artifact_qa.json",
+                    "verify/temporal_artifact_qa.md",
+                    "verify/temporal_artifact_frames/",
+                    "work/temporal_artifact_response.json",
+                ],
+                gate_category="temporal_artifact_qa",
+            ),
+        )
+        notes.append(
+            "temporal_artifact_qa.py only triages local return-to-state spikes. If candidates exist, "
+            "play the full video at 1x, inspect every before/suspect/after JPEG, complete the response, "
+            "and run audit before treating the gate as reviewed."
         )
 
     if "reference_edit_rhythm" in ids:

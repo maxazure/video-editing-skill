@@ -627,6 +627,18 @@
     # 命中后按报告区间降低闪烁频率、反差/红饱和度或面积，再重渲染。
     # 这是启发式筛查，不是医疗/法规认证；高风险交付仍需认可的专业 analyzer。
 
+7e. # 筛查单帧 / 少数帧闪帧、撕裂或生成变形：
+    python3 scripts/temporal_artifact_qa.py analyze \
+      output/day<NN>_master.mp4 \
+      --project-dir . \
+      --evidence-dir output/verify/day<NN>_temporal_artifact_frames \
+      --output output/verify/day<NN>_temporal_artifact_qa.json \
+      --markdown output/verify/day<NN>_temporal_artifact_qa.md \
+      --response-template work/day<NN>_temporal_artifact_response.json \
+      --strict
+    # 命中时完整 1× 播放，逐张看 before/suspect/after，填写 response 后运行 audit。
+    # artifact / uncertain 保持阻塞；intentional_edit 只在时间线意图明确且完整播放干净时使用。
+
 8. # 如果 render_qa 有 WARN/FAIL，或要抽查 hook / 转场 / 片尾：
    python3 scripts/timeline_view.py output/day<NN>_master.mp4 \
      --at <可疑秒数> \
@@ -769,6 +781,7 @@
      --target-stage publish_ready \
      --require shot_color_qa \
      --require flash_safety_qa \
+     --require temporal_artifact_qa \
      --require audio_channel_qa \
      --output work/pipeline_manifest.json \
      --markdown work/pipeline_manifest.md \
@@ -832,6 +845,7 @@
 - content_guard 的输出（必须 ✅ 无违规）
 - render_qa 的输出（必须没有 FAIL；WARN 要解释）
 - flash_safety_qa 的输出（BLOCK 必须修；clean 结果也不是医疗 / 法规认证）
+- temporal_artifact_qa 的输出、候选 before/suspect/after JPEG 与人工决定（artifact / uncertain 必须修）
 - shot_color_qa 的输出（broadcast-range / coverage BLOCK 必须修；切点 WARN 要看 master）
 - 如输入是 PQ/HLG HDR，给我 hdr_sdr_plan、BT.709 四项 color tag 和完整 SDR 审片结论
 - subtitle_readability_qa 的输出（BLOCK 必须修；WARN 要在正常速度看成片）
@@ -858,6 +872,7 @@
 - 发布前用 audio_channel_qa 检查缺声道、左右起始/能量、反相和 mono fold-down；报告不能替代 1× stereo/mono 完整试听
 - 分段 TTS / 配音先对最终独立旁白运行 narration_loudness_qa，再在混音后运行 audio_master_report；两者不能互相替代
 - 发布前用 flash_safety_qa 筛查大面积亮度 / 饱和红高频闪烁；不要为清 gate 随意放宽阈值，高风险交付要升级到认可的专业 analyzer
+- 发布前用 temporal_artifact_qa 补查单帧 / 少数帧瞬态异常；候选是人工审片入口，不是自动坏帧结论，也不能替代完整 1× 播放
 - shot_color_qa 的亮度/色度跳变是审片提示，不是审美分；不要为了清 WARN 把有意的日夜/图形切换调平
 - subtitle_readability_qa 的 CPS / 行长 WARN 是人工复核提示，不要为了清零机械拆句
 - retention_rhythm_qa 只是可观测节奏风险，不是留存率或爆款预测；不要为了消除 WARN 机械加切点

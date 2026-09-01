@@ -141,6 +141,7 @@
 | 只想给口播重点加轻强调 | [59-Auto Emphasis](59-auto-emphasis.md) |
 | 抽象概念想用 AI 生图（注意力机制/复利…） | [19-imagegen](19-imagegen.md) |
 | 渲染后想确认没有黑屏/静帧/静音/尺寸错 | [20-Render QA](20-render-qa.md) |
+| 最终片疑似有闪帧、单帧撕裂或少数帧生成变形 | [108-Temporal Artifact QA](108-temporal-artifact-qa.md) |
 | 口播停顿太多想自动剪紧 | [21-Jump Cut](21-jump-cut.md) |
 | 只想删掉同时静音且画面静止的死区 | [88-Multimodal Dead-Air](88-multimodal-dead-air.md) |
 | 想人工看源素材或成片切点附近画面和波形 | [22-Timeline View](22-timeline-view.md) |

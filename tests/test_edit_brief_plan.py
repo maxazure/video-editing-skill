@@ -260,6 +260,41 @@ def test_explicit_flash_safety_brief_checks_existing_master_without_render(tmp_p
     assert "--strict" in step["command"]
 
 
+def test_render_brief_routes_temporal_artifact_review_after_final_master(tmp_path):
+    source = tmp_path / "talk.mp4"
+    source.write_text("fake video", encoding="utf-8")
+
+    plan = build_plan(
+        f"把 {source} 渲染成小红书成片并做发布前 QA",
+        project_dir=str(tmp_path),
+    )
+
+    ids = [step["id"] for step in plan["steps"]]
+    assert ids.index("master_video") < ids.index("temporal_artifact_qa")
+    step = next(step for step in plan["steps"] if step["id"] == "temporal_artifact_qa")
+    assert step["script"] == "temporal_artifact_qa.py"
+    assert "temporal_artifact_qa.py analyze output/final.mp4" in step["command"]
+    assert "verify/temporal_artifact_frames/" in step["outputs"]
+    assert step["gate_category"] == "temporal_artifact_qa"
+    assert any("before/suspect/after" in note for note in plan["notes"])
+
+
+def test_explicit_single_frame_artifact_brief_checks_existing_video(tmp_path):
+    source = tmp_path / "master.mp4"
+    source.write_text("fake video", encoding="utf-8")
+
+    plan = build_plan(
+        f"检查 {source} 有没有单帧伪影、闪帧或画面撕裂",
+        project_dir=str(tmp_path),
+    )
+
+    ids = [step["id"] for step in plan["steps"]]
+    assert "master_video" not in ids
+    step = next(step for step in plan["steps"] if step["id"] == "temporal_artifact_qa")
+    assert str(source) in step["command"]
+    assert "--response-template" in step["command"]
+
+
 def test_locked_edl_audio_brief_routes_final_timeline_storyboard(tmp_path):
     plan = build_plan(
         "视觉剪辑锁定后配音，按最终时间线重建声音，生成最终声音分镜",
