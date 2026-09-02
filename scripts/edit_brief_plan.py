@@ -173,6 +173,22 @@ SIGNAL_KEYWORDS: Mapping[str, Sequence[str]] = {
         "单声道兼容",
         "单声道折叠",
     ),
+    "caption_speech_qa": (
+        "caption speech qa",
+        "caption audio alignment",
+        "subtitle speech alignment",
+        "orphan caption",
+        "silent caption",
+        "caption without speech",
+        "caption timing against speech",
+        "字幕与人声对齐",
+        "字幕人声对齐",
+        "字幕没有声音",
+        "字幕对不上声音",
+        "字幕提前",
+        "字幕延迟",
+        "孤立字幕",
+    ),
     "semantic_review": (
         "semantic transcript review",
         "context-aware transcript",
@@ -582,6 +598,7 @@ SIGNAL_LABELS: Mapping[str, str] = {
     "temporal_artifact_qa": "单帧 / 少数帧瞬态伪影筛查与逐帧复核",
     "narration_loudness_qa": "最终旁白逐短语响度一致性门禁",
     "audio_channel_qa": "最终成片声道活动 / 平衡 / 相位 / mono fold-down 门禁",
+    "caption_speech_qa": "字幕 cue 与独立人声活动对齐门禁",
     "nle_handoff": "NLE 交接",
     "review_dashboard": "人工复核面板",
     "edit_revision": "剪辑 artifact 可逆修订",
@@ -745,7 +762,7 @@ def build_plan(
 
     if source_media and not Path(source_media).expanduser().exists():
         blockers.append(f"source media not found: {source_media}")
-    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy", "reference_edit_rhythm", "lip_sync_review", "subtitle_style_preview", "framing_preview", "flash_safety_qa", "temporal_artifact_qa", "audio_channel_qa", "multimodal_dead_air", "video_stabilization", "chroma_key", "scoped_video_edit", "speed_ramp", "freeze_punch", "generated_motion_window", "hdr_sdr", "delivery_encode", "encode_quality_qa", "edit_style_profile"}):
+    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy", "reference_edit_rhythm", "lip_sync_review", "subtitle_style_preview", "framing_preview", "flash_safety_qa", "temporal_artifact_qa", "audio_channel_qa", "caption_speech_qa", "multimodal_dead_air", "video_stabilization", "chroma_key", "scoped_video_edit", "speed_ramp", "freeze_punch", "generated_motion_window", "hdr_sdr", "delivery_encode", "encode_quality_qa", "edit_style_profile"}):
         warnings.append("source media was not provided; commands use <source_media> placeholders")
 
     if transcript and not Path(transcript).expanduser().exists():
@@ -2241,6 +2258,42 @@ def build_plan(
             "Use the finalized isolated narration track and exact final phrase ranges. Documented creative "
             "exceptions never bypass the true-peak ceiling; after this gate, listen at 1x and run "
             "audio_master_report.py on the mixed master."
+        )
+
+    if "caption_speech_qa" in ids:
+        _add_step(
+            steps,
+            seen,
+            _step(
+                "caption_speech_qa",
+                phase="qa",
+                script="caption_speech_qa.py",
+                label="Check every subtitle cue against the isolated speech timeline",
+                reason="Readable subtitle timing can still be grossly offset, orphaned, or extended through silence after editing or retiming.",
+                command=shell(
+                    [
+                        python_bin,
+                        "scripts/caption_speech_qa.py",
+                        "analyze",
+                        "<isolated_speech_audio_or_video>",
+                        "--subtitle-pack",
+                        "output/subtitles/final.json",
+                        "--project-dir",
+                        project_dir,
+                        "--output",
+                        "verify/caption_speech_qa.json",
+                        "--markdown",
+                        "verify/caption_speech_qa.md",
+                        "--strict",
+                    ]
+                ),
+                outputs=["verify/caption_speech_qa.json", "verify/caption_speech_qa.md"],
+                gate_category="caption_speech_qa",
+            ),
+        )
+        notes.append(
+            "caption_speech_qa.py only measures amplitude activity: provide an isolated dialogue/narration "
+            "track without BGM/SFX, then watch the complete final captions and mix at 1x."
         )
 
     if wants_render or "qa" in ids or "publish" in ids or "flash_safety_qa" in ids:

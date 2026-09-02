@@ -571,7 +571,21 @@
        --markdown output/verify/day<NN>_retention_rhythm_qa.md \
        --strict
 
-7b.1. # 可选：用户给了参考广告/短片，并明确要参考它的剪辑节奏时。
+7b.1. # 可选：能提供最终独立对白/旁白轨时，检查每条字幕是否真的落在人声活动上。
+      python3 scripts/caption_speech_qa.py analyze \
+        work/final_narration.wav \
+        --subtitle-pack output/subtitles/day<NN>_master.json \
+        --project-dir . \
+        --output output/verify/day<NN>_caption_speech_qa.json \
+        --markdown output/verify/day<NN>_caption_speech_qa.md \
+        --strict
+      python3 scripts/caption_speech_qa.py verify \
+        --report output/verify/day<NN>_caption_speech_qa.json \
+        --project-dir . \
+        --strict
+      # 不要输入带 BGM/SFX 的完整混音；振幅活动不是 speech recognition / forced alignment。
+
+7b.2. # 可选：用户给了参考广告/短片，并明确要参考它的剪辑节奏时。
       python3 scripts/reference_edit_rhythm.py analyze \
         --project-dir . \
         --reference origin/<reference-video>.mp4 \
@@ -786,6 +800,7 @@
      --output work/pipeline_manifest.json \
      --markdown work/pipeline_manifest.md \
      --strict
+    # 若执行了 7b.1 的字幕/人声对齐，另加：--require caption_speech_qa
     # 若执行了 9c 的目标大小交付，另加：--require encode_quality_qa
 
 14. # 完整审片并确认封面/文案/字幕后，把最终交付件绑定到具体 SHA-256：
@@ -849,6 +864,7 @@
 - shot_color_qa 的输出（broadcast-range / coverage BLOCK 必须修；切点 WARN 要看 master）
 - 如输入是 PQ/HLG HDR，给我 hdr_sdr_plan、BT.709 四项 color tag 和完整 SDR 审片结论
 - subtitle_readability_qa 的输出（BLOCK 必须修；WARN 要在正常速度看成片）
+- 如有最终独立人声轨，给出 caption_speech_qa 的逐 cue activity ratio、头尾静音和 live verify 状态
 - retention_rhythm_qa 的输出（BLOCK 必须修；WARN 要结合成片人工判断）
 - 如有参考视频，给我 reference_edit_rhythm 的 cut density / median shot / final hold / boundary distance、两张 contact sheet 和 live verify 状态
 - audio_master_report 的输出（必须 `summary.blocking == 0`）
@@ -871,6 +887,7 @@
 - 发布前用 audio_master_report 确认 LUFS / true peak / 长静音，不要只凭耳朵判断
 - 发布前用 audio_channel_qa 检查缺声道、左右起始/能量、反相和 mono fold-down；报告不能替代 1× stereo/mono 完整试听
 - 分段 TTS / 配音先对最终独立旁白运行 narration_loudness_qa，再在混音后运行 audio_master_report；两者不能互相替代
+- 有最终独立人声轨时，用 caption_speech_qa 检查孤立/offset/越界字幕；禁止把含 BGM/SFX 的完整混音当人声输入，ready 也不替代最终 1× 字幕审看
 - 发布前用 flash_safety_qa 筛查大面积亮度 / 饱和红高频闪烁；不要为清 gate 随意放宽阈值，高风险交付要升级到认可的专业 analyzer
 - 发布前用 temporal_artifact_qa 补查单帧 / 少数帧瞬态异常；候选是人工审片入口，不是自动坏帧结论，也不能替代完整 1× 播放
 - shot_color_qa 的亮度/色度跳变是审片提示，不是审美分；不要为了清 WARN 把有意的日夜/图形切换调平
@@ -966,6 +983,8 @@ day<NN>/
     │   ├── day<NN>_review_proxy.md      # 审片说明
     │   ├── day<NN>_subtitle_readability_qa.json # CPS / 时长 / 重叠 / 越界门禁
     │   ├── day<NN>_subtitle_readability_qa.md   # cue 时间范围 + 修复建议
+    │   ├── day<NN>_caption_speech_qa.json # 可选：字幕 cue / 独立人声活动覆盖 live gate
+    │   ├── day<NN>_caption_speech_qa.md   # 可选：逐 cue activity / edge silence 与复核边界
     │   ├── day<NN>_retention_rhythm_qa.json # 成片 hook / 长镜头 / 节奏风险门禁
     │   ├── day<NN>_retention_rhythm_qa.md   # 时间范围 + 修复建议
     │   ├── day<NN>_flash_safety_qa.json # 亮度/饱和红 flash + 滚动窗口 live gate

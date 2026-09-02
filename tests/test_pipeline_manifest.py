@@ -1422,6 +1422,30 @@ def test_subtitle_readability_qa_can_be_required(tmp_path):
     assert "subtitle_readability_qa" in manifest["missing_required"]
 
 
+def test_caption_speech_qa_live_verification_blocks_invalid_report(tmp_path):
+    _write(tmp_path / "verify" / "caption_speech_qa.json", {
+        "schema": "caption_speech_qa.v1",
+        "summary": {"status": "ready", "blocking": 0, "warnings": 0},
+    })
+
+    manifest = build_manifest(str(tmp_path), target_stage="analysis")
+
+    assert "caption_speech_qa" in manifest["blocked_gates"]
+    gate = next(g for g in manifest["gates"] if g["category"] == "caption_speech_qa")
+    assert gate["status"] == "blocked"
+    assert "blocking item(s)" in gate["notes"][0]
+
+
+def test_caption_speech_qa_can_be_required(tmp_path):
+    manifest = build_manifest(
+        str(tmp_path),
+        target_stage="analysis",
+        required=["caption_speech_qa"],
+    )
+
+    assert "caption_speech_qa" in manifest["missing_required"]
+
+
 def test_platform_safe_area_qa_blocks_when_critical_element_hits_ui(tmp_path):
     _write(tmp_path / "verify" / "platform_safe_area_qa.json", {
         "version": "platform_safe_area_qa.v1",

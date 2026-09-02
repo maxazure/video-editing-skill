@@ -109,6 +109,8 @@
 | 105 | [Narration Loudness QA 最终旁白逐短语响度一致性](105-narration-loudness-qa.md) | finalized isolated narration + exact phrase ranges → per-segment LUFS / spread / dBTP / LRA live gate |
 | 106 | [Audio Channel QA 左右声道 / 相位 / 单声道兼容](106-audio-channel-qa.md) | final master → channel activity、onset skew、L/R balance、phase correlation 与 mono fold-down live gate |
 | 107 | [Encode Quality QA 同时间线重编码画质损失](107-encode-quality-qa.md) | reference master + same-timeline derivative → SSIM/PSNR、P05、最差帧与双输入 live gate |
+| 108 | [Temporal Artifact QA 单帧 / 少数帧瞬态伪影](108-temporal-artifact-qa.md) | final/generated video → return-to-state spike、三帧证据、人工 audit 与 live gate |
+| 109 | [Caption / Speech QA 字幕与独立人声活动对齐](109-caption-speech-qa.md) | subtitle_pack + isolated speech → 孤立/错位/越界 cue、头尾静音与 live gate |
 
 ## 快速上手
 
@@ -193,6 +195,7 @@
 | 数字人/生成口播成片要检查口型是否真的同步 | [93-Lip-sync Review](93-lip-sync-review.md) |
 | 分段 TTS / 配音处理后有句子忽大忽小，整片 LUFS 又看不出来 | [105-Narration Loudness QA](105-narration-loudness-qa.md) |
 | 发布前想检查字幕是否重叠、闪现或来不及读 | [70-Subtitle Readability QA](70-subtitle-readability-qa.md) |
+| 字幕时间结构合法，但怀疑字幕提前、延迟、落在静音里或说完后停留太久 | [109-Caption / Speech QA](109-caption-speech-qa.md) |
 | 视频生成前想检查首帧和 style key 是否适配目标画幅 | [71-Reference Frame Preflight](71-reference-frame-preflight.md) |
 | 多机位、多 take 或 B-roll 里有重复镜头，想先去重候选 | [72-Visual Dedupe](72-visual-dedupe.md) |
 | 发布前想检查字幕、PIP、CTA 或点击标记会不会被平台 UI 挡住 | [73-Platform Safe Area QA](73-platform-safe-area-qa.md) |

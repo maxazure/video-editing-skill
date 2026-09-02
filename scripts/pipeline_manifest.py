@@ -542,6 +542,16 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         "Run subtitle_pack.py when platform sidecar subtitles are needed.",
     ),
     ArtifactDef(
+        "caption_speech_qa",
+        "Caption / Speech QA",
+        (
+            "**/caption_speech_qa.json",
+            "**/*_caption_speech_qa.json",
+        ),
+        "Run caption_speech_qa.py verify with the isolated speech track; fix orphan, offset, edge, or long-pause caption risks before publishing.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "subtitle_readability_qa",
         "Subtitle Readability QA",
         (
@@ -1313,6 +1323,48 @@ def evaluate_category(
                 status = "warn" if status != "blocked" else status
                 notes.append(
                     f"audio channel report needs listening review {artifact.path}: "
+                    f"{warnings} warning(s)"
+                )
+        return {
+            "category": definition.category,
+            "label": definition.label,
+            "status": status,
+            "artifact_count": len(artifacts),
+            "latest_path": artifacts[0].path,
+            "notes": sorted(set(notes)),
+            "next_action": definition.next_action if status in {"missing", "blocked", "warn"} else "",
+        }
+
+    if definition.category == "caption_speech_qa":
+        from caption_speech_qa import verify_report
+
+        for artifact in artifacts:
+            data = _load_json(artifact.path)
+            if data is None:
+                status = "blocked"
+                notes.append(f"unreadable caption/speech report: {artifact.path}")
+                continue
+            try:
+                verification = verify_report(
+                    data,
+                    str(project_dir) if project_dir is not None else None,
+                )
+            except Exception as exc:
+                status = "blocked"
+                notes.append(f"caption/speech live verification failed {artifact.path}: {exc}")
+                continue
+            blocking = _int_at(verification, "summary", "blocking")
+            warnings = _int_at(verification, "summary", "warnings")
+            if blocking:
+                status = "blocked"
+                notes.append(
+                    f"invalid or mistimed caption/speech report {artifact.path}: "
+                    f"{blocking} blocking item(s)"
+                )
+            elif warnings:
+                status = "warn" if status != "blocked" else status
+                notes.append(
+                    f"caption/speech report needs normal-speed review {artifact.path}: "
                     f"{warnings} warning(s)"
                 )
         return {

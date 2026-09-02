@@ -580,6 +580,24 @@ def test_audio_channel_brief_routes_source_bound_final_mix_gate(tmp_path):
     assert any("mono fold-down at 1x" in note for note in plan["notes"])
 
 
+def test_caption_speech_brief_routes_isolated_audio_gate(tmp_path):
+    source = tmp_path / "origin" / "talk.mp4"
+    source.parent.mkdir(parents=True)
+    source.write_text("fake video", encoding="utf-8")
+
+    plan = build_plan(
+        f"检查 {source} 的字幕对不上声音和孤立字幕问题",
+        project_dir=str(tmp_path),
+    )
+
+    step = next(step for step in plan["steps"] if step["id"] == "caption_speech_qa")
+    assert step["script"] == "caption_speech_qa.py"
+    assert "<isolated_speech_audio_or_video>" in step["command"]
+    assert "--subtitle-pack output/subtitles/final.json" in step["command"]
+    assert step["gate_category"] == "caption_speech_qa"
+    assert any("without BGM/SFX" in note for note in plan["notes"])
+
+
 def test_hdr_sdr_route_uses_source_bound_delivery_gate(tmp_path):
     source = tmp_path / "iphone-hdr.mov"
     source.write_text("fake hdr", encoding="utf-8")

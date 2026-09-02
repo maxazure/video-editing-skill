@@ -2,7 +2,7 @@
 
 这是一个面向 **口播、教程、访谈、播客切片、录屏演示 / facecam demo** 的 AI 视频剪辑生产线：给它原始口播音频/视频、transcript、B-roll、摄像头小窗或素材目录，它可以把“还没整理的素材”推进到 **可发布的小红书 / 抖音 / 视频号短视频**。
 
-它不是一个单点 FFmpeg 脚本，而是一条完整工作流：**项目启动/素材导入 → 个人/品牌剪辑风格 → 生产授权 → 手持防抖 / 绿蓝幕换背景 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 生成片有效运动窗口 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp / 关键帧 freeze-punch / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 锁定视觉 EDL 后重建最终声音分镜 → 最终旁白逐短语响度门禁 → 渲染前预检 / 真实画面字幕样式选择 → 单次编码渲染 → 质检 / 声道完整性 / 闪烁风险 / 单帧瞬态伪影筛查 / 最终成片唇形复核 → 多平台导出 / 目标大小交付编码 / 重编码画质损失门禁 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
+它不是一个单点 FFmpeg 脚本，而是一条完整工作流：**项目启动/素材导入 → 个人/品牌剪辑风格 → 生产授权 → 手持防抖 / 绿蓝幕换背景 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 生成片有效运动窗口 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp / 关键帧 freeze-punch / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 锁定视觉 EDL 后重建最终声音分镜 → 最终旁白逐短语响度门禁 → 渲染前预检 / 真实画面字幕样式选择 → 单次编码渲染 → 质检 / 字幕与独立人声对齐 / 声道完整性 / 闪烁风险 / 单帧瞬态伪影筛查 / 最终成片唇形复核 → 多平台导出 / 目标大小交付编码 / 重编码画质损失门禁 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
 
 ## 适合做什么
 
@@ -30,6 +30,7 @@
 - **生成视频不会从冻帧起步**：`generated_motion_window.py` 以 0.25 秒 full-frame freeze evidence 找出 active intervals；人工确认 trim/keep/reject 后才生成新的 H.264/AAC 工作副本，source、检测参数、决定和输出字节都会 live verify。
 - **生成片段复核会反哺下一次提示词**：`generation_lessons.py` 只从 canonical clip review 提取人工明确批准的通用经验，绑定 source digests，并按 provider/model/category 精确筛选后交给 `video_prompt_pack.py`；不会把单片修复建议自动当成全局规则。
 - **字幕风格先在真实画面上选**：`subtitle_style_preview.py` 用最终 renderer 的同一 ASS builder、字体、字号和目标画幅，把 `normal / minimal / bold_pop` 渲染到源片早、中、晚代表帧；源片、字体、样式定义或 JPEG 漂移会让旧选择失效。
+- **字幕不再只检查“能否读完”，还检查显示时是否有人声**：`caption_speech_qa.py` 把 `subtitle_pack.v1` cue 与最终独立对白/旁白轨的 FFmpeg audio-activity intervals 对照，阻断孤立、严重错位、头尾超出和音轨越界字幕；人声轨、字幕、阈值或现场测量漂移都会让旧报告失效。
 - **平台画幅处理先看真实 A/B 再导出**：`framing_preview.py` 为小红书 / 抖音 / 视频号逐平台比较 `cover / contain / blur`，把选择绑定到 master、显示方向、filter contract 和 JPEG 证据；`multi_export.py` 只消费现场验证通过的选择。
 - **最终成片会筛查大面积高频闪烁**：`flash_safety_qa.py` 用本地 FFmpeg 分析亮度与饱和红相反 transition，按滚动 1 秒 / 5 秒窗口输出风险区间；source、媒体契约、参数、算法或现场证据漂移都会让报告失效。它只做启发式风险分流，不冒充医疗或法规认证。
 - **长静帧和高频闪烁之间的单帧事故也有门禁**：`temporal_artifact_qa.py` 查找 1–3 帧突然偏离又回到近似原画面的局部 spike，为每个候选导出 `before / suspect / after` JPEG；必须完整 1× 播放并逐帧决定 `intentional_edit / artifact / uncertain`，后两者继续阻断。
@@ -1436,6 +1437,30 @@ python3 scripts/subtitle_readability_qa.py \
 ```
 
 默认中文 18 字/行、英文 42 字符/行；18 CPS 以上、0.5 秒以下、7 秒以上或超过 2 行只 WARN，必须结合正常速度成片判断。时间无效、cue 重叠、超过媒体结尾、短于 0.15 秒或超过 25 CPS 会写入 `summary.blocking`，`--strict` 返回 2。报告存在且 blocking 非零时 `pipeline_manifest.py` 会阻塞；要强制具备报告可加 `--require subtitle_readability_qa`。本 gate 只读 timed text，不做 OCR，也不声称能判断字体、颜色、描边或画面安全区。
+
+### 🗣️ Caption / Speech QA — 字幕与独立人声活动对齐
+[`scripts/caption_speech_qa.py`](scripts/caption_speech_qa.py) · [详细文档](docs/prompts/109-caption-speech-qa.md)
+
+字幕 JSON 的顺序、时长、CPS 和媒体边界都合法，不代表它显示时真的有人在说话。对最终独立 dialogue/narration bus（或明确没有 BGM/SFX 的 speech-dominant 轨）运行：
+
+```bash
+python3 scripts/caption_speech_qa.py analyze work/final_narration.wav \
+  --subtitle-pack output/subtitles/final.json \
+  --project-dir . \
+  --output verify/caption_speech_qa.json \
+  --markdown verify/caption_speech_qa.md \
+  --strict
+
+python3 scripts/caption_speech_qa.py verify \
+  --report verify/caption_speech_qa.json \
+  --project-dir . --strict
+
+python3 scripts/pipeline_manifest.py . --require caption_speech_qa --strict
+```
+
+脚本用本地 FFmpeg `silencedetect` 反推出 audio-activity intervals，逐 cue 检查整条无活动、有效活动比例、头尾静音、内部长停顿和音轨越界。默认零活动或活动比例低于 25% 阻断，25%–50% 警告，头/尾静音超过 0.60 秒阻断，内部静音超过 0.80 秒警告。JSON/Markdown 绑定人声轨和 subtitle pack 的 SHA-256、音频媒体契约、算法/阈值、完整 silence/activity/cue measurements 与 canonical id，`verify` 会现场重算。
+
+它是振幅活动 gate，不是 speech recognition / forced alignment；BGM、环境声或 SFX 会造成假通过，因此不能直接喂完整混音。ready 只说明没有发现明显孤立/offset/edge 事故，不证明字级或音素级同步，最终仍要在完整混音下正常速度看完所有字幕。
 
 ### 📐 Platform Safe Area QA — 平台 UI 遮挡门禁
 [`scripts/platform_safe_area_qa.py`](scripts/platform_safe_area_qa.py) · [详细文档](docs/prompts/73-platform-safe-area-qa.md)
@@ -3237,6 +3262,7 @@ pytest tests/test_export_fcpxml.py -v       # NLE handoff FCPXML + manifest
 pytest tests/test_export_otio.py -v         # NLE handoff OTIO + manifest
 pytest tests/test_screen_focus.py -v        # 录屏点击聚焦计划 + render 接入
 pytest tests/test_subtitle_pack.py -v       # SRT/VTT/ASS/JSON 字幕交付包
+pytest tests/test_caption_speech_qa.py -v   # 字幕 cue / 独立人声活动覆盖与 source-bound live gate
 pytest tests/test_srt_edit_plan.py -v       # SRT 编辑指令转 render_config/cut list
 pytest tests/test_script_alignment.py -v    # 目标稿 → 多 take 原话匹配 / choices / render_config
 pytest tests/test_audio_cue_sheet.py -v     # BGM/SFX 音频设计清单
@@ -3257,6 +3283,40 @@ pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 pytest tests/test_review_dashboard.py -v    # 静态人工复核面板 + gate queue
 pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 gate
 ```
+
+### 2026-09-03 自动化升级记录（Source-bound Caption / Speech QA）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`MartinDelophy/ai-video-editor` Timeline Studio skill](https://github.com/MartinDelophy/ai-video-editor/blob/main/skills/edit-timeline-studio/SKILL.md#4-verify-the-result) | 把“每条可见字幕必须在完整 active interval 对应可听人声”列为最终门禁，明确拒绝 orphan caption、silent linked clip 和字幕超出语音 | 新增逐 cue audio-activity overlap/edge 检查；要求独立人声轨，避免只看字幕结构或 timeline track 就误判通过 |
+| [`davidecac/palmier-ugc-edit-subtitle`](https://github.com/davidecac/palmier-ugc-edit-subtitle#the-two-insights-that-make-it-work) | 用真实音频振幅找 silence，并指出剪切后自动字幕会在语音边界漂移；更高精度时应采用 forced alignment | 吸收本地 `silencedetect` 与 cut 后重新验证；本轮不引入 PyTorch/wav2vec2，不声称字级 forced alignment |
+| [`speechlab0210/video-production-skill`](https://github.com/speechlab0210/video-production-skill/blob/main/references/lessons-learned.md#subtitle-alignment-for-roughcloned-voices-do-not-use-whisper-word-timestamps) | 对粗糙/克隆音色建议用真实 silence geometry 约束字幕，并保证 cue 单调、不重叠、在界内；另用 ASR 窗口抽查语义对齐 | 本 gate 专注最终 audio activity、边缘和时间线越界，继续由现有 `subtitle_readability_qa.py` 负责单调/重叠/CPS；语义/字级仍留给正常速度复核或独立 ASR/forced alignment |
+| [`wpowen/videocreat`](https://github.com/wpowen/videocreat/blob/main/SKILL.md#5-generate-or-record-audio) | 要求 subtitle cue timing 与实际 TTS segment 来自同一声音事实源，不能用固定时长平均或只看总时长 | 报告把最终独立人声 bytes、subtitle pack、媒体契约、测量参数和逐 cue 派生状态绑定在一起，任一漂移都会使旧 gate 失效 |
+
+本次新增 / 调整：
+
+- 新增 [`scripts/caption_speech_qa.py`](scripts/caption_speech_qa.py) 的 `analyze → verify` 闭环，只接受 `subtitle_pack.v1` 与项目内独立 dialogue/narration 音轨。默认 `silencedetect=-36dB / 0.16s`，逐 cue 计算 activity overlap、active ratio、leading/trailing silence、最长内部静音和 timeline bounds。
+- 零活动、active ratio `<25%`、头尾静音 `>0.60s` 或 cue 超出音轨会阻断；active ratio `25%–50%`、内部静音 `>0.80s` 警告。完整混音因 BGM/SFX 可产生假通过，被明确排除在输入合同外；工具不调用 ASR/provider，不自动改字幕，也不声称 forced alignment。
+- JSON/Markdown 绑定 speech source / subtitle pack SHA-256、大小、音频媒体契约、算法、settings、silence/activity intervals、逐 cue metrics/checks、summary 和 canonical report id；输入、阈值、测量或派生状态漂移，以及项目逃逸、symlink/hardlink 覆盖风险都 fail closed。
+- `pipeline_manifest.py` 新增存在即 live verify、可 `--require caption_speech_qa` 的 gate；`edit_brief_plan.py` 支持中英文“字幕对不上声音 / orphan caption / silent caption”路由。README、主 SKILL、小红书 daily workflow、prompts 导航和新 [`docs/prompts/109-caption-speech-qa.md`](docs/prompts/109-caption-speech-qa.md) 已同步。
+
+使用方式：
+
+```bash
+python3 scripts/caption_speech_qa.py analyze work/final_narration.wav \
+  --subtitle-pack output/subtitles/final.json \
+  --project-dir . \
+  --output verify/caption_speech_qa.json \
+  --markdown verify/caption_speech_qa.md \
+  --strict
+python3 scripts/caption_speech_qa.py verify \
+  --report verify/caption_speech_qa.json --project-dir . --strict
+python3 scripts/pipeline_manifest.py . --require caption_speech_qa --strict
+```
+
+验证结果：新增 10 项 caption/speech 单元回归，并扩展 brief / manifest 测试；关联定向 `.venv/bin/python -m pytest tests/test_caption_speech_qa.py tests/test_edit_brief_plan.py tests/test_pipeline_manifest.py -q` 通过 **147 passed in 2.60s**。真实 FFmpeg smoke 使用 4 秒 48kHz mono PCM 人声替身，两段 tone 为 `0.20–1.20s` / `2.00–3.00s`：两条正确 cue 为 `ready / blocking=0 / warnings=0`，live verify 同样 ready；把单条 cue 放到 `1.35–1.75s` 静音区得到 `no measurable audio activity`、`blocking=1`，strict 退出 2。最终全量 `.venv/bin/python -m pytest tests -q` 通过 **1111 passed in 24.09s**；`compileall`、三组 CLI help、Skill Creator `quick_validate.py` 与 `git diff --check` 均通过。本轮没有调用生成 / TTS provider、消耗 credits、上传素材或发布。
 
 ### 2026-09-02 自动化升级记录（Source-bound Temporal Artifact QA）
 
@@ -4331,6 +4391,7 @@ python3 scripts/pipeline_manifest.py . --require freeze_punch_plan --strict
 | **28** | **[Screen Focus](docs/prompts/28-screen-focus.md)** | **录屏点击/热点自动聚焦** |
 | **29** | **[Subtitle Pack](docs/prompts/29-subtitle-pack.md)** | **导出 SRT/VTT/ASS/JSON 字幕包** |
 | **70** | **[Subtitle Readability QA](docs/prompts/70-subtitle-readability-qa.md)** | **检查最终字幕 CPS、时长、行长、重叠和媒体越界** |
+| **109** | **[Caption / Speech QA](docs/prompts/109-caption-speech-qa.md)** | **字幕 cue 与独立人声活动覆盖、头尾静音和 source-bound live gate** |
 | **71** | **[Reference Frame Preflight](docs/prompts/71-reference-frame-preflight.md)** | **检查视频生成首帧/style key 的尺寸、方向、画幅和透明背景** |
 | **75** | **[Speech Denoise](docs/prompts/75-speech-denoise.md)** | **可选清理口播低频震动与稳态底噪** |
 | **76** | **[Multicam Sync](docs/prompts/76-multicam-sync.md)** | **多机位 offset / coverage / 对齐预览和 gate** |
