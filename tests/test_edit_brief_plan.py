@@ -14,6 +14,21 @@ def test_infer_source_media_from_brief():
     assert infer_source_media("use /tmp/raw/talk.MOV, add captions") == "/tmp/raw/talk.MOV"
 
 
+def test_subtitle_missing_glyph_brief_routes_font_coverage_gate(tmp_path):
+    plan = build_plan(
+        "检查最终字幕有没有生僻字缺字或豆腐块，并绑定实际字体",
+        project_dir=str(tmp_path),
+    )
+
+    ids = [step["id"] for step in plan["steps"]]
+    assert "subtitle_glyph_qa" in ids
+    step = next(step for step in plan["steps"] if step["id"] == "subtitle_glyph_qa")
+    assert step["script"] == "subtitle_glyph_qa.py"
+    assert "--subtitle-pack output/subtitles/final.json" in step["command"]
+    assert "--font 'fonts/<final_subtitle_font.ttf>'" in step["command"]
+    assert step["gate_category"] == "subtitle_glyph_qa"
+
+
 def test_batch_short_brief_routes_highlights_before_batch(tmp_path):
     source = tmp_path / "origin" / "interview.mp4"
     source.parent.mkdir(parents=True)

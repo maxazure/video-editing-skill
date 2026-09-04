@@ -64,6 +64,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    │                            锁定视觉 EDL + 原 storyboard → 最终声音分镜 / voice ledger / live gate
    ├─→ narration_loudness_qa.py 最终独立旁白 + 精确短语范围 → LUFS/spread/dBTP/LRA live gate
    ├─→ caption_speech_qa.py    subtitle_pack + 独立人声轨 → 孤立/错位/越界字幕 live gate
+   ├─→ subtitle_glyph_qa.py   subtitle_pack + 显式字体 → 逐字符 cmap 覆盖 / 缺字 live gate
    ├─→ generation_lessons.py    已审片段 → provider/model scoped 提示词经验库
    ├─→ storyboard_assets.py     素材任务清单 / ready 预检 / paid 额度提醒
    │                            可选 media_library.py recommend 排名 B-roll 候选
@@ -198,6 +199,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `audio_channel_qa.py` | 最终 master → 声道活动、起始错位、L/R 平衡、相位相关与 mono fold-down source-bound live gate | `analyze <media> --output --markdown --strict` / `verify --report --strict` |
 | `narration_loudness_qa.py` | 最终独立旁白逐短语一致性：target LUFS / segment spread / true peak / LRA source-bound live gate | `analyze <media> --segments <json> --output --markdown --strict` / `verify --report --strict` |
 | `caption_speech_qa.py` | subtitle_pack cue → 独立人声活动覆盖、头尾静音、内部停顿与时间线越界 source-bound live gate | `analyze <isolated-speech> --subtitle-pack <json> --output --markdown --strict` / `verify --report --strict` |
+| `subtitle_glyph_qa.py` | subtitle_pack + 项目内显式字体 → 逐字符 Unicode cmap 覆盖、缺字/fallback 清单与 source-bound live gate | `analyze --subtitle-pack --font [--fallback-font] --output --strict` / `verify --report --strict` |
 | `timeline_view.py` | 源素材删除段 / 成片输出切点可视化复盘图 | `<video.mp4>` `--at 42.5` `--output view.png` / `--rendered-cut-list cuts.json` `--output-dir verify/` |
 | `edit_compare.py` | 原片连续时钟 vs 最终像素双栏视频；删段置黑并验证映射 | `<source.mp4> <final.mp4>` `--cut-list` `--output-speed` `--output-offset` `--output` |
 | `subtitle_pack.py` | transcript/render_config → SRT/VTT/ASS/JSON 字幕包 | `--transcript work/transcript.json --output-dir output/subtitles` / `--config render_config.json --speed 1.25 --offset 2.0` |
@@ -1718,6 +1720,23 @@ python3 scripts/caption_speech_qa.py verify \
 ```
 
 只把最终独立对白/旁白轨，或明确没有 BGM/SFX 的 speech-dominant 轨交给此脚本。它用本地 FFmpeg `silencedetect` 把静音区间反转成 audio-activity intervals，再逐条检查 `subtitle_pack.v1` cue 是否整条无活动、有效活动比例过低、头尾静音过长、内部停顿过长或超出音轨时间线。报告绑定人声轨、字幕 JSON、媒体契约、参数、完整测量和 canonical id；`pipeline_manifest.py --require caption_speech_qa --strict` 可设为发布 gate。振幅活动不是 speech recognition / forced alignment；有 BGM/SFX 会造成假通过，ready 也不能替代最终混音下完整 1× 字幕审看。详见 [docs/prompts/109-caption-speech-qa.md](docs/prompts/109-caption-speech-qa.md)。
+
+### Subtitle Glyph QA（生僻字 / emoji / 多语言字幕时推荐）
+
+```bash
+python3 scripts/subtitle_glyph_qa.py analyze \
+  --subtitle-pack output/subtitles/final.json \
+  --font 'fonts/NotoSansSC[wght].ttf' \
+  --project-dir . \
+  --output verify/subtitle_glyph_qa.json \
+  --markdown verify/subtitle_glyph_qa.md \
+  --strict
+python3 scripts/subtitle_glyph_qa.py verify \
+  --report verify/subtitle_glyph_qa.json \
+  --project-dir . --strict
+```
+
+脚本直接读取 TTF/OTF/TTC/OTC 的 Unicode `cmap`，覆盖 `subtitle_pack.v1` 中全部可见字符，并把字幕、主字体、显式 fallback、覆盖分配和 canonical report id 绑定起来。系统隐式字体替换不算证据；缺字会阻断，显式 fallback 默认警告，`--require-primary` 可禁止 fallback。它不证明 shaping、彩色 emoji、ASS 布局或视觉可读性，最终仍要完整 1× 看字幕和全分辨率抽帧。详见 [docs/prompts/110-subtitle-glyph-qa.md](docs/prompts/110-subtitle-glyph-qa.md)。
 
 **6a2. 闪烁 / 光敏风险启发式预检（最终 master 和重要平台版必跑）**：
 ```bash

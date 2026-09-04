@@ -571,6 +571,20 @@
        --markdown output/verify/day<NN>_retention_rhythm_qa.md \
        --strict
 
+7b.0. # 对最终字幕的每个可见字符检查实际字体 cmap；不要信任系统隐式 fallback。
+      python3 scripts/subtitle_glyph_qa.py analyze \
+        --subtitle-pack output/subtitles/day<NN>_master.json \
+        --font 'fonts/NotoSansSC[wght].ttf' \
+        --project-dir . \
+        --output output/verify/day<NN>_subtitle_glyph_qa.json \
+        --markdown output/verify/day<NN>_subtitle_glyph_qa.md \
+        --strict
+      python3 scripts/subtitle_glyph_qa.py verify \
+        --report output/verify/day<NN>_subtitle_glyph_qa.json \
+        --project-dir . \
+        --strict
+      # 若确需 fallback，复制字体到项目 fonts/ 并显式加 --fallback-font；仍须看完整成片。
+
 7b.1. # 可选：能提供最终独立对白/旁白轨时，检查每条字幕是否真的落在人声活动上。
       python3 scripts/caption_speech_qa.py analyze \
         work/final_narration.wav \
@@ -797,6 +811,7 @@
      --require flash_safety_qa \
      --require temporal_artifact_qa \
      --require audio_channel_qa \
+     --require subtitle_glyph_qa \
      --output work/pipeline_manifest.json \
      --markdown work/pipeline_manifest.md \
      --strict
@@ -864,6 +879,7 @@
 - shot_color_qa 的输出（broadcast-range / coverage BLOCK 必须修；切点 WARN 要看 master）
 - 如输入是 PQ/HLG HDR，给我 hdr_sdr_plan、BT.709 四项 color tag 和完整 SDR 审片结论
 - subtitle_readability_qa 的输出（BLOCK 必须修；WARN 要在正常速度看成片）
+- subtitle_glyph_qa 的逐字符 coverage、显式 fallback、missing 字符和 live verify 状态（missing 必须修）
 - 如有最终独立人声轨，给出 caption_speech_qa 的逐 cue activity ratio、头尾静音和 live verify 状态
 - retention_rhythm_qa 的输出（BLOCK 必须修；WARN 要结合成片人工判断）
 - 如有参考视频，给我 reference_edit_rhythm 的 cut density / median shot / final hold / boundary distance、两张 contact sheet 和 live verify 状态
@@ -892,6 +908,7 @@
 - 发布前用 temporal_artifact_qa 补查单帧 / 少数帧瞬态异常；候选是人工审片入口，不是自动坏帧结论，也不能替代完整 1× 播放
 - shot_color_qa 的亮度/色度跳变是审片提示，不是审美分；不要为了清 WARN 把有意的日夜/图形切换调平
 - subtitle_readability_qa 的 CPS / 行长 WARN 是人工复核提示，不要为了清零机械拆句
+- subtitle_glyph_qa 只证明显式字体 cmap 覆盖；不证明 shaping、彩色 emoji、ASS 布局或最终可读性，仍须完整 1× 审片
 - retention_rhythm_qa 只是可观测节奏风险，不是留存率或爆款预测；不要为了消除 WARN 机械加切点
 - reference_edit_rhythm 只允许借鉴剪辑结构，不复制参考片画面、音频、品牌或故事；没有明确验收要求时不要加 `--require-match`
 - 如果 content_guard 拦截，先重写标题再继续，不要 --no-content-guard 绕过
@@ -983,6 +1000,8 @@ day<NN>/
     │   ├── day<NN>_review_proxy.md      # 审片说明
     │   ├── day<NN>_subtitle_readability_qa.json # CPS / 时长 / 重叠 / 越界门禁
     │   ├── day<NN>_subtitle_readability_qa.md   # cue 时间范围 + 修复建议
+    │   ├── day<NN>_subtitle_glyph_qa.json # 逐字符 cmap 覆盖 / 显式 fallback / missing live gate
+    │   ├── day<NN>_subtitle_glyph_qa.md   # 缺字 codepoint、cue 和字体分配复核表
     │   ├── day<NN>_caption_speech_qa.json # 可选：字幕 cue / 独立人声活动覆盖 live gate
     │   ├── day<NN>_caption_speech_qa.md   # 可选：逐 cue activity / edge silence 与复核边界
     │   ├── day<NN>_retention_rhythm_qa.json # 成片 hook / 长镜头 / 节奏风险门禁

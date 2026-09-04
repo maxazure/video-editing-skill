@@ -115,6 +115,13 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         blocks_when_present=True,
     ),
     ArtifactDef(
+        "subtitle_glyph_qa",
+        "Subtitle Glyph QA",
+        ("**/subtitle_glyph_qa.json", "**/*_subtitle_glyph_qa.json"),
+        "Run subtitle_glyph_qa.py verify; add an explicit font or fallback for every missing subtitle character before rendering.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "framing_preview",
         "Platform Framing Preview",
         ("**/framing_preview.json", "**/*_framing_preview.json"),
@@ -1094,6 +1101,39 @@ def evaluate_category(
             elif warnings:
                 status = "warn" if status != "blocked" else status
                 notes.append(f"subtitle style preview needs review {artifact.path}: {warnings} warning(s)")
+        return {
+            "category": definition.category,
+            "label": definition.label,
+            "status": status,
+            "artifact_count": len(artifacts),
+            "latest_path": artifacts[0].path,
+            "notes": sorted(set(notes)),
+            "next_action": definition.next_action if status in {"missing", "blocked", "warn"} else "",
+        }
+
+    if definition.category == "subtitle_glyph_qa":
+        from subtitle_glyph_qa import verify_report
+
+        for artifact in artifacts:
+            data = _load_json(artifact.path)
+            if data is None:
+                status = "blocked"
+                notes.append(f"unreadable subtitle glyph report: {artifact.path}")
+                continue
+            try:
+                verification = verify_report(data, str(project_dir) if project_dir is not None else None)
+            except Exception as exc:
+                status = "blocked"
+                notes.append(f"subtitle glyph live verification failed {artifact.path}: {exc}")
+                continue
+            blocking = _int_at(verification, "summary", "blocking")
+            warnings = _int_at(verification, "summary", "warnings")
+            if blocking:
+                status = "blocked"
+                notes.append(f"invalid subtitle glyph report {artifact.path}: {blocking} blocking item(s)")
+            elif warnings:
+                status = "warn" if status != "blocked" else status
+                notes.append(f"subtitle glyph report uses explicit fallback {artifact.path}: {warnings} warning(s)")
         return {
             "category": definition.category,
             "label": definition.label,

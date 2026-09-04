@@ -2,7 +2,7 @@
 
 这是一个面向 **口播、教程、访谈、播客切片、录屏演示 / facecam demo** 的 AI 视频剪辑生产线：给它原始口播音频/视频、transcript、B-roll、摄像头小窗或素材目录，它可以把“还没整理的素材”推进到 **可发布的小红书 / 抖音 / 视频号短视频**。
 
-它不是一个单点 FFmpeg 脚本，而是一条完整工作流：**项目启动/素材导入 → 个人/品牌剪辑风格 → 生产授权 → 手持防抖 / 绿蓝幕换背景 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 生成片有效运动窗口 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp / 关键帧 freeze-punch / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 锁定视觉 EDL 后重建最终声音分镜 → 最终旁白逐短语响度门禁 → 渲染前预检 / 真实画面字幕样式选择 → 单次编码渲染 → 质检 / 字幕与独立人声对齐 / 声道完整性 / 闪烁风险 / 单帧瞬态伪影筛查 / 最终成片唇形复核 → 多平台导出 / 目标大小交付编码 / 重编码画质损失门禁 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
+它不是一个单点 FFmpeg 脚本，而是一条完整工作流：**项目启动/素材导入 → 个人/品牌剪辑风格 → 生产授权 → 手持防抖 / 绿蓝幕换背景 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 生成片有效运动窗口 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp / 关键帧 freeze-punch / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 锁定视觉 EDL 后重建最终声音分镜 → 最终旁白逐短语响度门禁 → 渲染前预检 / 真实画面字幕样式选择 / 字幕逐字符字体覆盖 → 单次编码渲染 → 质检 / 字幕与独立人声对齐 / 声道完整性 / 闪烁风险 / 单帧瞬态伪影筛查 / 最终成片唇形复核 → 多平台导出 / 目标大小交付编码 / 重编码画质损失门禁 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
 
 ## 适合做什么
 
@@ -30,6 +30,7 @@
 - **生成视频不会从冻帧起步**：`generated_motion_window.py` 以 0.25 秒 full-frame freeze evidence 找出 active intervals；人工确认 trim/keep/reject 后才生成新的 H.264/AAC 工作副本，source、检测参数、决定和输出字节都会 live verify。
 - **生成片段复核会反哺下一次提示词**：`generation_lessons.py` 只从 canonical clip review 提取人工明确批准的通用经验，绑定 source digests，并按 provider/model/category 精确筛选后交给 `video_prompt_pack.py`；不会把单片修复建议自动当成全局规则。
 - **字幕风格先在真实画面上选**：`subtitle_style_preview.py` 用最终 renderer 的同一 ASS builder、字体、字号和目标画幅，把 `normal / minimal / bold_pop` 渲染到源片早、中、晚代表帧；源片、字体、样式定义或 JPEG 漂移会让旧选择失效。
+- **生僻字、emoji 和多语言字幕不再赌系统 fallback**：`subtitle_glyph_qa.py` 读取最终 `subtitle_pack.v1` 与实际 TTF/OTF/TTC/OTC 的 Unicode cmap，逐字符记录主字体、显式 fallback 或 missing；字幕、字体、设置或派生覆盖结果漂移都会让旧报告失效。
 - **字幕不再只检查“能否读完”，还检查显示时是否有人声**：`caption_speech_qa.py` 把 `subtitle_pack.v1` cue 与最终独立对白/旁白轨的 FFmpeg audio-activity intervals 对照，阻断孤立、严重错位、头尾超出和音轨越界字幕；人声轨、字幕、阈值或现场测量漂移都会让旧报告失效。
 - **平台画幅处理先看真实 A/B 再导出**：`framing_preview.py` 为小红书 / 抖音 / 视频号逐平台比较 `cover / contain / blur`，把选择绑定到 master、显示方向、filter contract 和 JPEG 证据；`multi_export.py` 只消费现场验证通过的选择。
 - **最终成片会筛查大面积高频闪烁**：`flash_safety_qa.py` 用本地 FFmpeg 分析亮度与饱和红相反 transition，按滚动 1 秒 / 5 秒窗口输出风险区间；source、媒体契约、参数、算法或现场证据漂移都会让报告失效。它只做启发式风险分流，不冒充医疗或法规认证。
@@ -257,6 +258,7 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    │                            JSON/Markdown/SVG 证据 + 多平台 profile
    │
    ├─→ subtitle_style_preview.py 真实源帧 → 最终 ASS 预设对比 JPEG / 选择 / live gate
+   ├─→ subtitle_glyph_qa.py    subtitle_pack + 显式字体 → 逐字符 cmap 覆盖 / 缺字 live gate
    │
    ├─→ render_final.py          单次编码渲染 + enrich_plan 自动接入
    │     B-roll / 章节卡 / 贴纸 / 生成图 / 点击聚焦 / PIP camera + 可选口播降噪 + Heavy 字幕 + 响度规范化 + BGM ducking
@@ -1437,6 +1439,28 @@ python3 scripts/subtitle_readability_qa.py \
 ```
 
 默认中文 18 字/行、英文 42 字符/行；18 CPS 以上、0.5 秒以下、7 秒以上或超过 2 行只 WARN，必须结合正常速度成片判断。时间无效、cue 重叠、超过媒体结尾、短于 0.15 秒或超过 25 CPS 会写入 `summary.blocking`，`--strict` 返回 2。报告存在且 blocking 非零时 `pipeline_manifest.py` 会阻塞；要强制具备报告可加 `--require subtitle_readability_qa`。本 gate 只读 timed text，不做 OCR，也不声称能判断字体、颜色、描边或画面安全区。
+
+### 🔤 Subtitle Glyph QA — 字幕逐字符字体覆盖门禁
+[`scripts/subtitle_glyph_qa.py`](scripts/subtitle_glyph_qa.py) · [详细文档](docs/prompts/110-subtitle-glyph-qa.md)
+
+字幕时间、CPS 和样式预览都通过，不代表生僻字、emoji、繁体或多语言字符真的存在于最终字体。用 renderer 实际配置的项目内字体检查完整 `subtitle_pack.v1`：
+
+```bash
+python3 scripts/subtitle_glyph_qa.py analyze \
+  --project-dir . \
+  --subtitle-pack output/subtitles/final.json \
+  --font 'fonts/NotoSansSC[wght].ttf' \
+  --output verify/subtitle_glyph_qa.json \
+  --markdown verify/subtitle_glyph_qa.md \
+  --strict
+python3 scripts/subtitle_glyph_qa.py verify \
+  --project-dir . \
+  --report verify/subtitle_glyph_qa.json \
+  --strict
+python3 scripts/pipeline_manifest.py . --require subtitle_glyph_qa --strict
+```
+
+脚本只用 Python 标准库解析 TTF/OTF/TTC/OTC 的 Unicode `cmap`，把字幕包、主字体、重复 `--fallback-font` 指定的显式 fallback、逐字符分配、missing 清单和 canonical report id 绑定起来。所有字体都没有的字符会阻断；显式 fallback 默认警告，`--require-primary` 可把 fallback 也设为阻断。系统隐式 fallback 不算证据。cmap 覆盖不证明 shaping、彩色 emoji、ASS 布局或视觉可读性，TTC/OTC 多 face 只按并集检查并警告；最终仍要完整 1× 看字幕和全分辨率抽帧。
 
 ### 🗣️ Caption / Speech QA — 字幕与独立人声活动对齐
 [`scripts/caption_speech_qa.py`](scripts/caption_speech_qa.py) · [详细文档](docs/prompts/109-caption-speech-qa.md)
@@ -3219,6 +3243,7 @@ pytest tests/test_retention_rhythm_qa.py -v # 成片 hook / 长镜头 / 节奏�
 pytest tests/test_reference_edit_rhythm.py -v # 参考片/成片 hard-cut 结构 / contact-sheet / stale gate
 pytest tests/test_lip_sync_review.py -v # 最终 master 口型 proofs / 人工 audit / source drift gate
 pytest tests/test_subtitle_style_preview.py -v # 真实源帧 ASS 样式 JPEG / 选择 / source-font-style drift gate
+pytest tests/test_subtitle_glyph_qa.py -v # 最终字幕逐字符 cmap 覆盖 / 显式 fallback / live drift gate
 pytest tests/test_subtitle_readability_qa.py -v # 最终字幕 CPS / 时长 / 重叠 / 越界门禁
 pytest tests/test_platform_safe_area_qa.py -v # 字幕 / PIP / CTA / marker 平台安全区门禁
 pytest tests/test_audio_master_report.py -v # 成片响度 / true peak / LRA 门禁
@@ -3283,6 +3308,44 @@ pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 pytest tests/test_review_dashboard.py -v    # 静态人工复核面板 + gate queue
 pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 gate
 ```
+
+### 2026-09-05 自动化升级记录（Source-bound Subtitle Glyph QA）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`Jaycheng1103/chatgpt-video-editing-skills` production rules](https://github.com/Jaycheng1103/chatgpt-video-editing-skills/blob/main/skills/chatgpt-short-video-editor/references/production-rules.md#visuals-captions-and-sound) | 明确要求使用已安装的指定字幕字体；字体缺失或验证失败应停止，不能静默替换或接受 missing-glyph 方框 | 新增逐字符 OpenType cmap gate；系统隐式 fallback 不算通过证据，主字体和每个显式 fallback 都绑定确切文件 bytes |
+| [`speechlab0210/video-production-skill`](https://github.com/speechlab0210/video-production-skill/blob/main/SKILL.md#step-5-quality-check-three-checks-all-required) | 字幕交付不止检查文件存在，还要求从最终视频抽帧确认文字在真实像素中可读 | 本轮先补可确定重算的全字幕字形覆盖；继续要求在全分辨率代表帧和完整 1× 成片中检查 shaping、布局、颜色与可读性 |
+| [`browser-use/video-use`](https://github.com/browser-use/video-use/blob/main/SKILL.md#hard-rules-production-correctness--non-negotiable) | 把字幕应用顺序、最终输出验证和 silent failure 当作 production correctness，而不是审美偏好 | 新 gate 接入 `pipeline_manifest.py`，报告一旦出现、字体/字幕/派生结果漂移就 fail closed；不把“renderer 大概会找到字体”当成可发布状态 |
+| [`EverythingAI-Pro/ai-video-editor`](https://github.com/EverythingAI-Pro/ai-video-editor/blob/main/SKILL.md#hard-rules-production-correctness--these-prevent-silent-failures) | 在 libass 不可用时明确改走可验证的 PNG caption renderer，避免字幕链路静默失效 | 本项目保留现有 libass 路径，但把实际字体文件作为输入合同；只报告真实 cmap 覆盖，不自动安装依赖或偷偷换 renderer |
+
+本次新增 / 调整能力：
+
+- 新增 [`scripts/subtitle_glyph_qa.py`](scripts/subtitle_glyph_qa.py) 的 `analyze → verify` 闭环。脚本只用 Python 标准库解析 TTF/OTF/TTC/OTC 的 Unicode cmap format 0/4/6/12，并识别但不信任 many-to-one format 13；它从 `subtitle_pack.v1` 汇总全部可见字符、Unicode 名称和 cue 位置，再记录主字体、显式 fallback 或 missing。
+- 所有显式字体都缺少的字符会阻断；使用 `--fallback-font` 可建立可审计 fallback chain 并保留 warning，`--require-primary` 会把任何 fallback 也升级为 blocker。空白、换行、控制/格式字符、ZWJ 与 variation selector 不要求独立 glyph；组合附标、emoji modifier 和其他可见字符仍会检查。
+- JSON/Markdown 绑定 subtitle pack、字体 SHA-256/大小/容器/face/cmap formats、逐字符 assignments、missing/fallback 清单、settings、checks、summary 与 canonical report id。`verify` 从现场 bytes 重建，字幕、字体、设置或派生覆盖漂移都会失效；项目逃逸、symlink、重复/硬链接输入以及 `--force` 覆盖已绑定文件均 fail closed。
+- `pipeline_manifest.py` 新增存在即 live verify、可 `--require subtitle_glyph_qa` 的 gate；`edit_brief_plan.py` 支持中英文“字幕缺字 / 豆腐块 / font glyph coverage / emoji 字幕”路由。README、主 SKILL、小红书 daily workflow、prompts 导航和新 [`docs/prompts/110-subtitle-glyph-qa.md`](docs/prompts/110-subtitle-glyph-qa.md) 已同步。
+- 边界保持明确：cmap 覆盖不证明 shaping、kerning、彩色 emoji、ASS 位置或手机可读性；TTC/OTC 多 face 只按 collection 并集检查并警告，最终仍要完整 1× 审片。
+
+使用方式：
+
+```bash
+python3 scripts/subtitle_glyph_qa.py analyze \
+  --project-dir . \
+  --subtitle-pack output/subtitles/final.json \
+  --font 'fonts/NotoSansSC[wght].ttf' \
+  --output verify/subtitle_glyph_qa.json \
+  --markdown verify/subtitle_glyph_qa.md \
+  --strict
+python3 scripts/subtitle_glyph_qa.py verify \
+  --project-dir . \
+  --report verify/subtitle_glyph_qa.json \
+  --strict
+python3 scripts/pipeline_manifest.py . --require subtitle_glyph_qa --strict
+```
+
+验证结果：新增 14 项 glyph/cmap/CLI/安全测试，并扩展 brief / manifest 测试；关联定向 `.venv/bin/python -m pytest tests/test_subtitle_glyph_qa.py tests/test_pipeline_manifest.py tests/test_edit_brief_plan.py -q` 通过 **153 passed in 2.81s**，最终全量 `.venv/bin/python -m pytest tests -q` 通过 **1127 passed in 24.48s**。真实字体 smoke 使用项目内 `fonts/NotoSansSC[wght].ttf`：含“龘”的 15 个去重可见字符为 `ready / missing=0 / blocking=0`，live verify 同样 ready；加入 😀 后得到 `missing=1 / blocking=1`，strict 退出 2。format 13 last-resort/tofu many-to-one 回归确认不会被误算为真实覆盖。`.venv/bin/python -m compileall -q scripts tests`、新 CLI 三组 help、edit-brief / pipeline help、Skill Creator `quick_validate.py` 和 `git diff --check` 均通过；smoke 目录已移入废纸篓。本轮未调用生成/TTS provider、未消耗 credits、未上传素材或发布。
 
 ### 2026-09-03 自动化升级记录（Source-bound Caption / Speech QA）
 

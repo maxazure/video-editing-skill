@@ -26,6 +26,7 @@ import generation_lessons  # noqa: E402
 import hdr_sdr  # noqa: E402
 import multimodal_dead_air  # noqa: E402
 import narration_loudness_qa  # noqa: E402
+import subtitle_glyph_qa  # noqa: E402
 import subtitle_style_preview  # noqa: E402
 from jump_cut import Segment  # noqa: E402
 from speed_ramp import build_speed_ramp_plan, parse_hold  # noqa: E402
@@ -61,6 +62,39 @@ def test_publish_ready_manifest_passes_when_required_artifacts_exist(tmp_path):
     assert manifest["status"] == "ready"
     assert manifest["summary"]["required_ready"] == manifest["summary"]["required"]
     assert manifest["missing_required"] == []
+
+
+def test_subtitle_glyph_qa_is_live_verified_and_can_be_required(tmp_path, monkeypatch):
+    _publish_ready_project(tmp_path)
+    report_path = tmp_path / "verify" / "subtitle_glyph_qa.json"
+    _write(report_path, {"schema": "subtitle_glyph_qa.v1", "summary": {"blocking": 0}})
+
+    monkeypatch.setattr(
+        subtitle_glyph_qa,
+        "verify_report",
+        lambda _report, _project_dir: {"summary": {"blocking": 0, "warnings": 0}},
+    )
+    current = build_manifest(
+        str(tmp_path), target_stage="publish_ready", required=["subtitle_glyph_qa"]
+    )
+    gate = next(g for g in current["gates"] if g["category"] == "subtitle_glyph_qa")
+    assert gate["status"] == "ready"
+
+    monkeypatch.setattr(
+        subtitle_glyph_qa,
+        "verify_report",
+        lambda _report, _project_dir: {"summary": {"blocking": 1, "warnings": 0}},
+    )
+    stale = build_manifest(str(tmp_path), target_stage="publish_ready")
+    gate = next(g for g in stale["gates"] if g["category"] == "subtitle_glyph_qa")
+    assert gate["status"] == "blocked"
+    assert "subtitle_glyph_qa" in stale["blocked_gates"]
+
+    report_path.unlink()
+    missing = build_manifest(
+        str(tmp_path), target_stage="publish_ready", required=["subtitle_glyph_qa"]
+    )
+    assert "subtitle_glyph_qa" in missing["missing_required"]
 
 
 def test_flash_safety_report_is_live_verified_and_can_be_required(tmp_path, monkeypatch):

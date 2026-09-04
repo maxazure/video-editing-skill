@@ -89,6 +89,25 @@ SIGNAL_KEYWORDS: Mapping[str, Sequence[str]] = {
         "三套字幕",
         "选字幕风格",
     ),
+    "subtitle_glyph_qa": (
+        "subtitle glyph qa",
+        "font glyph coverage",
+        "subtitle font coverage",
+        "missing subtitle glyph",
+        "missing glyph",
+        "tofu subtitle",
+        "tofu box",
+        "字幕字体覆盖",
+        "字幕缺字",
+        "字幕方框",
+        "字幕豆腐块",
+        "豆腐块",
+        "缺字",
+        "字体缺字",
+        "缺失字形",
+        "生僻字字幕",
+        "emoji 字幕",
+    ),
     "framing_preview": (
         "framing preview",
         "aspect treatment preview",
@@ -593,6 +612,7 @@ SIGNAL_LABELS: Mapping[str, str] = {
     "publish": "发布包 / 文案",
     "subtitle_sidecar": "字幕 sidecar",
     "subtitle_style_preview": "真实画面字幕样式预览 / 选择",
+    "subtitle_glyph_qa": "字幕逐字符字体覆盖 / 缺字门禁",
     "framing_preview": "平台画幅 cover / contain / blur 预览与选择",
     "flash_safety_qa": "最终成片亮度 / 饱和红闪烁风险预检",
     "temporal_artifact_qa": "单帧 / 少数帧瞬态伪影筛查与逐帧复核",
@@ -2030,6 +2050,43 @@ def build_plan(
             "Review every subtitle-style JPEG at phone size and full size, then run "
             "subtitle_style_preview.py select. Pass the selected style to render_final.py; "
             "any source, font, ASS preset, or preview-byte drift invalidates the old selection."
+        )
+
+    if "subtitle_glyph_qa" in ids:
+        _add_step(
+            steps,
+            seen,
+            _step(
+                "subtitle_glyph_qa",
+                phase="qa",
+                script="subtitle_glyph_qa.py",
+                label="Verify every final subtitle character against explicit fonts",
+                reason="A subtitle file can be structurally valid while rare CJK, emoji, or symbols render as missing-glyph boxes or silent font fallback.",
+                command=shell(
+                    [
+                        python_bin,
+                        "scripts/subtitle_glyph_qa.py",
+                        "analyze",
+                        "--project-dir",
+                        project_dir,
+                        "--subtitle-pack",
+                        "output/subtitles/final.json",
+                        "--font",
+                        "fonts/<final_subtitle_font.ttf>",
+                        "--output",
+                        "verify/subtitle_glyph_qa.json",
+                        "--markdown",
+                        "verify/subtitle_glyph_qa.md",
+                        "--strict",
+                    ]
+                ),
+                outputs=["verify/subtitle_glyph_qa.json", "verify/subtitle_glyph_qa.md"],
+                gate_category="subtitle_glyph_qa",
+            ),
+        )
+        notes.append(
+            "Use the exact font file configured for the final renderer. Add each intentional fallback with "
+            "--fallback-font; implicit system fallback is not evidence. After the gate, inspect the final captions at 1x."
         )
 
     if "final_audio_storyboard" in ids:
