@@ -108,6 +108,25 @@ SIGNAL_KEYWORDS: Mapping[str, Sequence[str]] = {
         "生僻字字幕",
         "emoji 字幕",
     ),
+    "subtitle_render_review": (
+        "subtitle render review",
+        "caption render review",
+        "burned caption review",
+        "burned subtitle review",
+        "captions not showing",
+        "subtitles not showing",
+        "caption missing from final",
+        "verify final captions",
+        "字幕渲染复核",
+        "字幕烧录复核",
+        "检查成片字幕",
+        "字幕没显示",
+        "字幕没有烧进成片",
+        "最终字幕可读性",
+        "成片字幕缺失",
+        "成片字幕被裁切",
+        "成片字幕被遮挡",
+    ),
     "framing_preview": (
         "framing preview",
         "aspect treatment preview",
@@ -613,6 +632,7 @@ SIGNAL_LABELS: Mapping[str, str] = {
     "subtitle_sidecar": "字幕 sidecar",
     "subtitle_style_preview": "真实画面字幕样式预览 / 选择",
     "subtitle_glyph_qa": "字幕逐字符字体覆盖 / 缺字门禁",
+    "subtitle_render_review": "最终成片字幕像素证据 / 完整审片门禁",
     "framing_preview": "平台画幅 cover / contain / blur 预览与选择",
     "flash_safety_qa": "最终成片亮度 / 饱和红闪烁风险预检",
     "temporal_artifact_qa": "单帧 / 少数帧瞬态伪影筛查与逐帧复核",
@@ -782,7 +802,7 @@ def build_plan(
 
     if source_media and not Path(source_media).expanduser().exists():
         blockers.append(f"source media not found: {source_media}")
-    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy", "reference_edit_rhythm", "lip_sync_review", "subtitle_style_preview", "framing_preview", "flash_safety_qa", "temporal_artifact_qa", "audio_channel_qa", "caption_speech_qa", "multimodal_dead_air", "video_stabilization", "chroma_key", "scoped_video_edit", "speed_ramp", "freeze_punch", "generated_motion_window", "hdr_sdr", "delivery_encode", "encode_quality_qa", "edit_style_profile"}):
+    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy", "reference_edit_rhythm", "lip_sync_review", "subtitle_style_preview", "subtitle_render_review", "framing_preview", "flash_safety_qa", "temporal_artifact_qa", "audio_channel_qa", "caption_speech_qa", "multimodal_dead_air", "video_stabilization", "chroma_key", "scoped_video_edit", "speed_ramp", "freeze_punch", "generated_motion_window", "hdr_sdr", "delivery_encode", "encode_quality_qa", "edit_style_profile"}):
         warnings.append("source media was not provided; commands use <source_media> placeholders")
 
     if transcript and not Path(transcript).expanduser().exists():
@@ -2209,6 +2229,91 @@ def build_plan(
                 outputs=["output/final_V<N>.mp4"],
                 gate_category="master_video",
             ),
+        )
+
+    needs_subtitle_render_review = "subtitle_render_review" in ids or (
+        wants_render and "transcript" in ids
+    )
+    if needs_subtitle_render_review:
+        if wants_render:
+            _add_step(
+                steps,
+                seen,
+                _step(
+                    "subtitle_pack_for_render_review",
+                    phase="qa",
+                    script="subtitle_pack.py",
+                    label="Export the exact final-timeline subtitle pack for rendered-pixel review",
+                    reason="The final-video proof review needs the expected text and timing for each rendered cue.",
+                    command=shell(
+                        [
+                            python_bin,
+                            "scripts/subtitle_pack.py",
+                            "--config",
+                            "work/render_config.json",
+                            "--mode",
+                            "concat",
+                            "--speed",
+                            primary_speed,
+                            "--offset",
+                            "<match_final_cover_duration_seconds>",
+                            "--output-dir",
+                            "output/subtitles",
+                            "--basename",
+                            "final",
+                        ]
+                    ),
+                    outputs=["output/subtitles/final.json"],
+                    gate_category="subtitles",
+                    required=False,
+                ),
+            )
+        review_video = "output/final.mp4" if wants_render else source
+        _add_step(
+            steps,
+            seen,
+            _step(
+                "subtitle_render_review",
+                phase="qa",
+                script="subtitle_render_review.py",
+                label="Review rendered subtitle pixels in the exact final video",
+                reason="A valid subtitle pack and font can still produce missing, stale, clipped, obscured, or unreadable captions in the delivery MP4.",
+                command=shell(
+                    [
+                        python_bin,
+                        "scripts/subtitle_render_review.py",
+                        "prepare",
+                        "--project-dir",
+                        project_dir,
+                        "--video",
+                        review_video,
+                        "--subtitle-pack",
+                        "output/subtitles/final.json",
+                        "--proof-dir",
+                        "verify/subtitle_render",
+                        "--output",
+                        "work/subtitle_render_review_request.json",
+                        "--markdown",
+                        "work/subtitle_render_review_request.md",
+                        "--response-template",
+                        "work/subtitle_render_review_response.json",
+                    ]
+                ),
+                outputs=[
+                    "work/subtitle_render_review_request.json",
+                    "work/subtitle_render_review_response.json",
+                    "work/subtitle_render_review.json",
+                    "verify/subtitle_render/",
+                ],
+                gate_category="subtitle_render_review",
+            ),
+        )
+        notes.append(
+            "Set subtitle_pack --offset to the exact final cover/title-card duration before preparing proofs; "
+            "subtitle timing must match the rendered master. "
+            "Watch the exact final video from start to finish at 1x, inspect every sampled context clip and "
+            "midpoint frame against its expected cue, then run subtitle_render_review.py audit and verify. "
+            "Sampled proofs do not replace the full playback pass."
         )
 
     if wants_render or "qa" in ids or "publish" in ids:

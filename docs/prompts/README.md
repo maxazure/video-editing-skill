@@ -112,6 +112,7 @@
 | 108 | [Temporal Artifact QA 单帧 / 少数帧瞬态伪影](108-temporal-artifact-qa.md) | final/generated video → return-to-state spike、三帧证据、人工 audit 与 live gate |
 | 109 | [Caption / Speech QA 字幕与独立人声活动对齐](109-caption-speech-qa.md) | subtitle_pack + isolated speech → 孤立/错位/越界 cue、头尾静音与 live gate |
 | 110 | [Subtitle Glyph QA 字幕逐字符字体覆盖](110-subtitle-glyph-qa.md) | subtitle_pack + explicit fonts → Unicode cmap 覆盖、缺字/fallback 清单与 live gate |
+| 111 | [Subtitle Render Review 最终成片字幕像素复核](111-subtitle-render-review.md) | final MP4 + subtitle_pack → 高风险 cue 的 1× clip / 原尺寸帧、完整审片与 live gate |
 
 ## 快速上手
 
@@ -198,6 +199,7 @@
 | 发布前想检查字幕是否重叠、闪现或来不及读 | [70-Subtitle Readability QA](70-subtitle-readability-qa.md) |
 | 字幕时间结构合法，但怀疑字幕提前、延迟、落在静音里或说完后停留太久 | [109-Caption / Speech QA](109-caption-speech-qa.md) |
 | 字幕有生僻字、emoji 或多语言文本，担心字体缺字、方框或悄悄 fallback | [110-Subtitle Glyph QA](110-subtitle-glyph-qa.md) |
+| 字幕文件和字体检查都通过，仍要确认最终 MP4 没有漏字幕、旧文案、裁切、遮挡或缩小后不可读 | [111-Subtitle Render Review](111-subtitle-render-review.md) |
 | 视频生成前想检查首帧和 style key 是否适配目标画幅 | [71-Reference Frame Preflight](71-reference-frame-preflight.md) |
 | 多机位、多 take 或 B-roll 里有重复镜头，想先去重候选 | [72-Visual Dedupe](72-visual-dedupe.md) |
 | 发布前想检查字幕、PIP、CTA 或点击标记会不会被平台 UI 挡住 | [73-Platform Safe Area QA](73-platform-safe-area-qa.md) |

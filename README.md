@@ -2,7 +2,7 @@
 
 这是一个面向 **口播、教程、访谈、播客切片、录屏演示 / facecam demo** 的 AI 视频剪辑生产线：给它原始口播音频/视频、transcript、B-roll、摄像头小窗或素材目录，它可以把“还没整理的素材”推进到 **可发布的小红书 / 抖音 / 视频号短视频**。
 
-它不是一个单点 FFmpeg 脚本，而是一条完整工作流：**项目启动/素材导入 → 个人/品牌剪辑风格 → 生产授权 → 手持防抖 / 绿蓝幕换背景 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 生成片有效运动窗口 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp / 关键帧 freeze-punch / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 锁定视觉 EDL 后重建最终声音分镜 → 最终旁白逐短语响度门禁 → 渲染前预检 / 真实画面字幕样式选择 / 字幕逐字符字体覆盖 → 单次编码渲染 → 质检 / 字幕与独立人声对齐 / 声道完整性 / 闪烁风险 / 单帧瞬态伪影筛查 / 最终成片唇形复核 → 多平台导出 / 目标大小交付编码 / 重编码画质损失门禁 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
+它提供一条完整工作流：**项目启动/素材导入 → 个人/品牌剪辑风格 → 生产授权 → 手持防抖 / 绿蓝幕换背景 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 生成片有效运动窗口 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp / 关键帧 freeze-punch / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 锁定视觉 EDL 后重建最终声音分镜 → 最终旁白逐短语响度门禁 → 渲染前预检 / 真实画面字幕样式选择 / 字幕逐字符字体覆盖 → 单次编码渲染 → 质检 / 最终成片字幕像素复核 / 字幕与独立人声对齐 / 声道完整性 / 闪烁风险 / 单帧瞬态伪影筛查 / 最终成片唇形复核 → 多平台导出 / 目标大小交付编码 / 重编码画质损失门禁 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
 
 ## 适合做什么
 
@@ -31,6 +31,7 @@
 - **生成片段复核会反哺下一次提示词**：`generation_lessons.py` 只从 canonical clip review 提取人工明确批准的通用经验，绑定 source digests，并按 provider/model/category 精确筛选后交给 `video_prompt_pack.py`；不会把单片修复建议自动当成全局规则。
 - **字幕风格先在真实画面上选**：`subtitle_style_preview.py` 用最终 renderer 的同一 ASS builder、字体、字号和目标画幅，把 `normal / minimal / bold_pop` 渲染到源片早、中、晚代表帧；源片、字体、样式定义或 JPEG 漂移会让旧选择失效。
 - **生僻字、emoji 和多语言字幕不再赌系统 fallback**：`subtitle_glyph_qa.py` 读取最终 `subtitle_pack.v1` 与实际 TTF/OTF/TTC/OTC 的 Unicode cmap，逐字符记录主字体、显式 fallback 或 missing；字幕、字体、设置或派生覆盖结果漂移都会让旧报告失效。
+- **字幕最终有没有出现在成片像素里可以举证**：`subtitle_render_review.py` 从确切 final MP4 选择首尾、最长、最高 CPS、最短、中段与均匀分布 cue，导出 1× 上下文片段和中点原尺寸帧；通过要求完整正常速度审片，并逐样本确认文字存在、匹配、可读、没有裁切或遮挡。
 - **字幕不再只检查“能否读完”，还检查显示时是否有人声**：`caption_speech_qa.py` 把 `subtitle_pack.v1` cue 与最终独立对白/旁白轨的 FFmpeg audio-activity intervals 对照，阻断孤立、严重错位、头尾超出和音轨越界字幕；人声轨、字幕、阈值或现场测量漂移都会让旧报告失效。
 - **平台画幅处理先看真实 A/B 再导出**：`framing_preview.py` 为小红书 / 抖音 / 视频号逐平台比较 `cover / contain / blur`，把选择绑定到 master、显示方向、filter contract 和 JPEG 证据；`multi_export.py` 只消费现场验证通过的选择。
 - **最终成片会筛查大面积高频闪烁**：`flash_safety_qa.py` 用本地 FFmpeg 分析亮度与饱和红相反 transition，按滚动 1 秒 / 5 秒窗口输出风险区间；source、媒体契约、参数、算法或现场证据漂移都会让报告失效。它只做启发式风险分流，不冒充医疗或法规认证。
@@ -264,6 +265,7 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    │     B-roll / 章节卡 / 贴纸 / 生成图 / 点击聚焦 / PIP camera + 可选口播降噪 + Heavy 字幕 + 响度规范化 + BGM ducking
    │     可选 --versioned-output：输出 _V<N>，避免覆盖旧成片
    │
+   ├─→ subtitle_render_review.py 最终 MP4 + subtitle_pack → 高风险字幕 1× clips / 原尺寸帧 / 完整审片 live gate
    ├─→ render_qa.py             渲染后黑屏/静帧/静音/尺寸质检 + review packet
    ├─→ encode_quality_qa.py     同时间线 master vs 重编码件 → SSIM/PSNR / 最差帧 / live gate
    ├─→ audio_channel_qa.py      成片声道活动/起始/平衡/相位/mono fold-down live gate
@@ -1461,6 +1463,34 @@ python3 scripts/pipeline_manifest.py . --require subtitle_glyph_qa --strict
 ```
 
 脚本只用 Python 标准库解析 TTF/OTF/TTC/OTC 的 Unicode `cmap`，把字幕包、主字体、重复 `--fallback-font` 指定的显式 fallback、逐字符分配、missing 清单和 canonical report id 绑定起来。所有字体都没有的字符会阻断；显式 fallback 默认警告，`--require-primary` 可把 fallback 也设为阻断。系统隐式 fallback 不算证据。cmap 覆盖不证明 shaping、彩色 emoji、ASS 布局或视觉可读性，TTC/OTC 多 face 只按并集检查并警告；最终仍要完整 1× 看字幕和全分辨率抽帧。
+
+### 👁️ Subtitle Render Review — 最终成片字幕像素复核
+[`scripts/subtitle_render_review.py`](scripts/subtitle_render_review.py) · [详细文档](docs/prompts/111-subtitle-render-review.md)
+
+字幕包、时长、CPS 和字体都合法，仍需确认最终编码像素没有漏字幕、旧文案、裁切、遮挡或手机尺寸下不可读。脚本从确切 final 选择首尾、最长文字、最高 CPS、最短时长、中段和均匀分布 cue，为每条生成带上下文的 1× clip 与字幕中点原尺寸 JPEG。
+
+```bash
+python3 scripts/subtitle_render_review.py prepare \
+  --project-dir . \
+  --video output/final.mp4 \
+  --subtitle-pack output/subtitles/final.json \
+  --proof-dir verify/subtitle_render \
+  --output work/subtitle_render_review_request.json \
+  --markdown work/subtitle_render_review_request.md \
+  --response-template work/subtitle_render_review_response.json
+
+# 正常速度完整看完 final，逐条填写 response 后：
+python3 scripts/subtitle_render_review.py audit \
+  --request work/subtitle_render_review_request.json \
+  --response work/subtitle_render_review_response.json \
+  --output work/subtitle_render_review.json \
+  --markdown work/subtitle_render_review.md --strict
+python3 scripts/subtitle_render_review.py verify \
+  --report work/subtitle_render_review.json --project-dir . --strict
+python3 scripts/pipeline_manifest.py . --require subtitle_render_review --strict
+```
+
+每个样本只有 `visible / matches / readable / clear / repair_action=none` 才能通过；缺失、错字、不可读、裁切、遮挡与 `not_observable` 都会 fail closed。报告绑定 final、subtitle pack、proof bytes、媒体契约、采样设置、人工 response 与 canonical id，重渲染或替换证据后立即失效。该门禁不做 OCR 或自动可读性评分，默认抽样也不能替代从头到尾检查全部字幕；`reviewed_by` 只是自填标签，不是身份认证或数字签名。
 
 ### 🗣️ Caption / Speech QA — 字幕与独立人声活动对齐
 [`scripts/caption_speech_qa.py`](scripts/caption_speech_qa.py) · [详细文档](docs/prompts/109-caption-speech-qa.md)
@@ -3244,6 +3274,7 @@ pytest tests/test_reference_edit_rhythm.py -v # 参考片/成片 hard-cut 结构
 pytest tests/test_lip_sync_review.py -v # 最终 master 口型 proofs / 人工 audit / source drift gate
 pytest tests/test_subtitle_style_preview.py -v # 真实源帧 ASS 样式 JPEG / 选择 / source-font-style drift gate
 pytest tests/test_subtitle_glyph_qa.py -v # 最终字幕逐字符 cmap 覆盖 / 显式 fallback / live drift gate
+pytest tests/test_subtitle_render_review.py -v # final 字幕像素 proofs / 完整 1× 人工审片 / live gate
 pytest tests/test_subtitle_readability_qa.py -v # 最终字幕 CPS / 时长 / 重叠 / 越界门禁
 pytest tests/test_platform_safe_area_qa.py -v # 字幕 / PIP / CTA / marker 平台安全区门禁
 pytest tests/test_audio_master_report.py -v # 成片响度 / true peak / LRA 门禁
@@ -3308,6 +3339,50 @@ pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 pytest tests/test_review_dashboard.py -v    # 静态人工复核面板 + gate queue
 pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 gate
 ```
+
+### 2026-09-06 自动化升级记录（Source-bound Final Subtitle Pixel Review）
+
+本次联网研究的 GitHub 参考：
+
+| 项目 / 资料 | 借鉴点 | 本次处理 |
+|---|---|---|
+| [`Surojit16/video-editing-skill@874df58`](https://github.com/Surojit16/video-editing-skill/tree/874df58) | 明确把 “Captions not showing” 列为导出后故障场景 | 将字幕存在性提升为确切 final MP4 的像素证据与阻塞门禁 |
+| [`xuquanjun1-lab/video-editing-skill@3a61c93`](https://github.com/xuquanjun1-lab/video-editing-skill/tree/3a61c93) | 要求查看渲染关键帧，检查文字/字幕遮挡与同步 | 为每个高风险 cue 导出 1× context clip 和中点原尺寸 JPEG |
+| [`eiway112/video-production-skill@746bf52`](https://github.com/eiway112/video-production-skill/tree/746bf52) | QA 面向实际渲染交付件，并检查字幕与物理画面区域冲突 | 逐样本记录 presence、text match、readability、clipping/obscuring 和修复动作 |
+| [`Zxzv-arch/video-production-studio-skill@83e211a`](https://github.com/Zxzv-arch/video-production-studio-skill/tree/83e211a) | 最终交付需检查最长/最低字幕、title-safe 和场景代表帧 | 确定性选择首尾、最长、最高 CPS、最短、中段与均匀分布 cue |
+| [`albertpikkop/remotion-ffmpeg-video-skill@6765d3c`](https://github.com/albertpikkop/remotion-ffmpeg-video-skill/tree/6765d3c) | 强调验证实际文件和 render still，退出码不能证明文字真的可读 | `prepare → audit → verify` 绑定 final/subtitle/proof bytes，派生状态现场重算 |
+| [`hyt315/notebook-video` quality checklist](https://github.com/hyt315/notebook-video/blob/main/references/quality-checklist.md) / [`AshCoolman/agent-skills` walkthrough-video](https://github.com/AshCoolman/agent-skills/blob/main/global/walkthrough-video/SKILL.md) | `CaptionFitGate`、contact sheet 和“overlay 实际出现”抽帧验证，同时保留完整审片要求 | 抽样只负责高风险证据；完整 1× 播放 final 是独立必过条件，`not_observable` fail closed |
+
+新增/调整能力：
+
+- 新增 [`scripts/subtitle_render_review.py`](scripts/subtitle_render_review.py) 的 `prepare → audit → verify` 闭环。输入只接受项目内确切 final 与 `subtitle_pack.v1`；默认最多选择 8 条高风险 cue，并为每条输出 source-bound 1× H.264/AAC context clip 与字幕中点 JPEG。
+- response 要求 `reviewed_by`、完整 1× 播放状态、全片 verdict 和逐样本 `caption_presence / text_match / readability / layout / repair_action`。通过项必须为 `visible / matches / readable / clear / none`；漏烧、旧文案、不可读、裁切、遮挡、无法观察或未完整播放都会阻断。
+- request/report 绑定 final、subtitle pack、全部 proofs 的 SHA-256/大小/媒体契约、cue 文本与时间、采样设置、人工 response 和 canonical id；视频、字幕、证据、项目路径或派生统计漂移后 live verify 失效。脚本不把 OCR、forced alignment、字体 cmap 或抽样帧包装成全片视觉证明，`reviewed_by` 也不提供身份认证。
+- `pipeline_manifest.py` 新增存在即 live verify、可 `--require subtitle_render_review` 的 gate；`edit_brief_plan.py` 支持中英文“字幕没显示 / 最终字幕裁切或遮挡 / caption missing from final”路由，并在带转写的最终渲染后自动生成 final-timeline subtitle pack 与审片步骤。主 SKILL、每日工作流、prompts 导航和 [`docs/prompts/111-subtitle-render-review.md`](docs/prompts/111-subtitle-render-review.md) 已同步。
+
+使用方式：
+
+```bash
+python3 scripts/subtitle_render_review.py prepare \
+  --project-dir . \
+  --video output/final.mp4 \
+  --subtitle-pack output/subtitles/final.json \
+  --proof-dir verify/subtitle_render \
+  --output work/subtitle_render_review_request.json \
+  --markdown work/subtitle_render_review_request.md \
+  --response-template work/subtitle_render_review_response.json
+# 完整 1× 看完 final，并逐条填写 response
+python3 scripts/subtitle_render_review.py audit \
+  --request work/subtitle_render_review_request.json \
+  --response work/subtitle_render_review_response.json \
+  --output work/subtitle_render_review.json \
+  --markdown work/subtitle_render_review.md --strict
+python3 scripts/subtitle_render_review.py verify \
+  --report work/subtitle_render_review.json --project-dir . --strict
+python3 scripts/pipeline_manifest.py . --require subtitle_render_review --strict
+```
+
+验证结果：新增 **10 项** subtitle render selection/request/audit/drift/CLI/manifest 测试，并扩展 **2 项** brief 路由测试；关联定向 `.venv/bin/python -m pytest -q tests/test_subtitle_render_review.py tests/test_edit_brief_plan.py tests/test_pipeline_manifest.py` 通过 **151 passed in 2.77s**，最终全量 `.venv/bin/python -m pytest tests -q` 通过 **1139 passed in 23.09s**。真实 FFmpeg smoke 使用 6 秒、320×180、H.264/AAC 的三字幕成片：`prepare` 生成 3 组可解码 clip/JPEG，request live verify 为 `ready / blocking=0`；中段 JPEG 清楚暴露右侧裁切，诚实填写 `full_playback=not_completed` 与 `layout=clipped / restyle_captions` 后，audit/verify 得到 `blocked / blocking=3 / passed=2/3`，strict 按预期退出 2。`.venv/bin/python -m compileall -q scripts tests`、新 CLI 四组 help、edit-brief / pipeline help、Skill Creator `quick_validate.py` 和 `git diff --check` 均通过。本轮未调用生成/TTS provider、未消耗 credits、未上传素材或发布。
 
 ### 2026-09-05 自动化升级记录（Source-bound Subtitle Glyph QA）
 

@@ -220,6 +220,48 @@ def test_subtitle_style_brief_routes_real_frame_preview_before_render(tmp_path):
     assert step["gate_category"] == "subtitle_style_preview"
 
 
+def test_rendered_subtitle_review_uses_supplied_final_video(tmp_path):
+    source = tmp_path / "final.mp4"
+    source.write_text("fake final video", encoding="utf-8")
+
+    plan = build_plan(
+        "检查这个交付文件的字幕没显示或被画面挡住的问题",
+        project_dir=str(tmp_path),
+        source_media=str(source),
+    )
+
+    ids = [step["id"] for step in plan["steps"]]
+    assert "master_video" not in ids
+    step = next(step for step in plan["steps"] if step["id"] == "subtitle_render_review")
+    assert step["script"] == "subtitle_render_review.py"
+    assert str(source) in step["command"]
+    assert "--subtitle-pack output/subtitles/final.json" in step["command"]
+    assert step["gate_category"] == "subtitle_render_review"
+    assert any("full playback pass" in note for note in plan["notes"])
+
+
+def test_captioned_render_routes_subtitle_pack_and_pixel_review_after_master(tmp_path):
+    source = tmp_path / "talk.mp4"
+    source.write_text("fake source video", encoding="utf-8")
+
+    plan = build_plan(
+        f"把 {source} 转写后加字幕并渲染最终成片",
+        project_dir=str(tmp_path),
+    )
+
+    ids = [step["id"] for step in plan["steps"]]
+    assert ids.index("master_video") < ids.index("subtitle_pack_for_render_review")
+    assert ids.index("subtitle_pack_for_render_review") < ids.index("subtitle_render_review")
+    pack = next(
+        step for step in plan["steps"] if step["id"] == "subtitle_pack_for_render_review"
+    )
+    assert "--mode concat" in pack["command"]
+    assert "--speed 1.25" in pack["command"]
+    assert "--offset '<match_final_cover_duration_seconds>'" in pack["command"]
+    review = next(step for step in plan["steps"] if step["id"] == "subtitle_render_review")
+    assert "--video output/final.mp4" in review["command"]
+
+
 def test_framing_brief_routes_review_before_platform_exports(tmp_path):
     source = tmp_path / "master.mp4"
     source.write_text("fake video", encoding="utf-8")

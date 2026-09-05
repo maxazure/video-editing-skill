@@ -83,6 +83,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ subtitle_style_preview.py 真实源帧 → 最终 ASS 预设对比 JPEG / 选择 / live gate
    ├─→ render_final.py          单次编码渲染（可选口播降噪 + enrich_plan/focus_events/pip_overlays + Heavy 字幕 + 响度规范化 + BGM ducking）
    │                            可选 --versioned-output 防覆盖旧成片
+   ├─→ subtitle_render_review.py 最终 MP4 + subtitle_pack → 高风险字幕 1× clips / 原尺寸帧 / 完整审片 live gate
    ├─→ render_qa.py             渲染后黑屏/静帧/静音/尺寸质检 + review packet
    ├─→ encode_quality_qa.py     同时间线 master vs 重编码件 → SSIM/PSNR / 最差帧 / live gate
    ├─→ audio_channel_qa.py      成片声道活动/起始/平衡/相位/mono fold-down live gate
@@ -185,6 +186,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `platform_safe_area_qa.py` | 字幕、badge、PIP、CTA、章节卡、marker → 平台 UI 遮挡 gate + SVG guide | `--config` `--enrich-plan` `--elements` `--platform xhs|douyin|wxch` `--guide` `--strict` |
 | `subtitle_style_preview.py` | 真实源帧 → `render_final.py` 最终 ASS 样式对比 JPEG、人工选择与 source/font/style live gate | `create --video --platform --preview-dir --require-selection` / `select --report --style` / `verify --strict` |
 | `render_final.py` | 单次编码渲染 + 可选个人风格默认值 / 口播降噪 / J-cut/L-cut / enrich_plan / 旁白驱动 BGM ducking | `--config render_config.json` `--style-profile work/edit_style_profile.json` `--audio-transition-plan audio_transition_plan.json` `--speech-denoise light` `--enrich-plan enrich_plan.json` `--bgm-ducking` `--output final.mp4` |
+| `subtitle_render_review.py` | 最终 MP4 + subtitle_pack → 高风险字幕上下文 clip / 中点原尺寸帧、完整 1× 人工审片与 source-bound live gate | `prepare --video --subtitle-pack --proof-dir` / `audit --request --response --strict` / `verify --report --strict` |
 | `render_qa.py` | 渲染后 QA：尺寸/音频/黑屏/静帧/静音 + review packet | `<video.mp4>` `--platform douyin` `--json qa.json` `--review-dir verify/qa` |
 | `encode_quality_qa.py` | 同时间线参考 master vs 重编码件 → 全长 SSIM/PSNR、P05、最差帧时间码与双输入 live gate | `analyze <reference> <candidate> --output --markdown --strict` / `verify --report --strict` |
 | `flash_safety_qa.py` | final/platform video → 大面积亮度/饱和红 flash、滚动 1s/5s 风险窗口与 source-bound live gate | `analyze <video> --output --markdown --strict` / `verify --report --strict` |
@@ -1737,6 +1739,30 @@ python3 scripts/subtitle_glyph_qa.py verify \
 ```
 
 脚本直接读取 TTF/OTF/TTC/OTC 的 Unicode `cmap`，覆盖 `subtitle_pack.v1` 中全部可见字符，并把字幕、主字体、显式 fallback、覆盖分配和 canonical report id 绑定起来。系统隐式字体替换不算证据；缺字会阻断，显式 fallback 默认警告，`--require-primary` 可禁止 fallback。它不证明 shaping、彩色 emoji、ASS 布局或视觉可读性，最终仍要完整 1× 看字幕和全分辨率抽帧。详见 [docs/prompts/110-subtitle-glyph-qa.md](docs/prompts/110-subtitle-glyph-qa.md)。
+
+### Subtitle Render Review（有烧录字幕的最终成片必跑）
+
+```bash
+python3 scripts/subtitle_render_review.py prepare \
+  --project-dir . \
+  --video output/final.mp4 \
+  --subtitle-pack output/subtitles/final.json \
+  --proof-dir verify/subtitle_render \
+  --output work/subtitle_render_review_request.json \
+  --markdown work/subtitle_render_review_request.md \
+  --response-template work/subtitle_render_review_response.json
+
+# 完整 1× 看完 final，并逐条填写 response 后：
+python3 scripts/subtitle_render_review.py audit \
+  --request work/subtitle_render_review_request.json \
+  --response work/subtitle_render_review_response.json \
+  --output work/subtitle_render_review.json \
+  --markdown work/subtitle_render_review.md --strict
+python3 scripts/subtitle_render_review.py verify \
+  --report work/subtitle_render_review.json --project-dir . --strict
+```
+
+脚本从确切 final 选择首尾、最长、最高 CPS、最短、中段和均匀分布 cue，导出带声 1× context clips 与字幕中点原尺寸 JPEG。通过要求完整播放全片，且每个样本均为 `visible / matches / readable / clear / repair_action=none`；缺失、旧文案、不可读、裁切、遮挡或不可观察都会 fail closed。报告绑定 final、subtitle pack、proof bytes、媒体契约、采样设置、人工 response 与 canonical id；任何重渲染或证据漂移后都要重做。它不做 OCR 或自动可读性评分，默认抽样也不替代逐条完整审片。详见 [docs/prompts/111-subtitle-render-review.md](docs/prompts/111-subtitle-render-review.md)。
 
 **6a2. 闪烁 / 光敏风险启发式预检（最终 master 和重要平台版必跑）**：
 ```bash
