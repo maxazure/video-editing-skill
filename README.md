@@ -2,7 +2,7 @@
 
 这是一个面向 **口播、教程、访谈、播客切片、录屏演示 / facecam demo** 的 AI 视频剪辑生产线：给它原始口播音频/视频、transcript、B-roll、摄像头小窗或素材目录，它可以把“还没整理的素材”推进到 **可发布的小红书 / 抖音 / 视频号短视频**。
 
-它提供一条完整工作流：**项目启动/素材导入 → 个人/品牌剪辑风格 → 生产授权 → 手持防抖 / 绿蓝幕换背景 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 生成片有效运动窗口 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp / 关键帧 freeze-punch / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 锁定视觉 EDL 后重建最终声音分镜 → 最终旁白逐短语响度门禁 → 渲染前预检 / 真实画面字幕样式选择 / 字幕逐字符字体覆盖 → 单次编码渲染 → 质检 / 最终成片字幕像素复核 / 字幕与独立人声对齐 / 声道完整性 / 闪烁风险 / 单帧瞬态伪影筛查 / 最终成片唇形复核 → 多平台导出 / 目标大小交付编码 / 重编码画质损失门禁 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
+它提供一条完整工作流：**项目启动/素材导入 → 手机/录屏 VFR 时基归一 → 个人/品牌剪辑风格 → 生产授权 → 手持防抖 / 绿蓝幕换背景 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 生成片有效运动窗口 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp / 关键帧 freeze-punch / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 锁定视觉 EDL 后重建最终声音分镜 → 最终旁白逐短语响度门禁 → 渲染前预检 / 真实画面字幕样式选择 / 字幕逐字符字体覆盖 → 单次编码渲染 → 质检 / 最终成片字幕像素复核 / 字幕与独立人声对齐 / 声道完整性 / 闪烁风险 / 单帧瞬态伪影筛查 / 最终成片唇形复核 → 多平台导出 / 目标大小交付编码 / 重编码画质损失门禁 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
 
 ## 适合做什么
 
@@ -11,6 +11,7 @@
 - **噪声口播可在单次编码内保守清理**：`render_final.py --speech-denoise light|medium|strong` 会在变速、压缩、响度规范化和 BGM ducking 前处理低频震动与稳态底噪；默认关闭，最大降噪限制为 12 dB。
 - **停顿删段可同时看声音和画面**：`multimodal_dead_air.py` 只有在静帧覆盖静音达到门槛时才提出候选，实际只删二者交集；源 hash、20% 删除预算、切点复盘、单次编码和完整解码都进入 gate。
 - **多机位先同步再剪辑**：`multicam_sync.py` 把两台以上相机/手机/录音设备对齐到同一参考时间线，记录每路 offset、置信度、有效音轨、公共重叠区间，并可用多窗口 probe 测量长片时钟漂移；原片不改、不重编码。
+- **手机和录屏 VFR 可先变成可审计 CFR 工作副本**：`frame_rate_conform.py` 读取全部解码帧 PTS 间隔，绑定精确目标有理帧率；输出必须通过恒定 cadence、帧数、音画起止、显示方向、SHA-256 和完整解码验证，原片保持不变。
 - **手持防抖保留原片和 A/B 证据**：`video_stabilization.py` 把源 SHA-256、确切 FFmpeg 后端和人工决定写进计划；apply 只生成新工作副本与全长左右对照，完整 1× 复核并 confirm 后 manifest 才放行。
 - **绿幕/蓝幕换背景先看 matte 再渲染**：`chroma_key.py` 在前景早/中/晚生成 composite 与黑白 matte，人工逐项确认边缘、主体完整性、溢色和背景匹配后才允许完整 H.264/AAC 输出；源、背景、预览、filter 或成片漂移都会让旧 review 失效。
 - **局部慢动作先计划再渲染**：`speed_ramp.py` 把显式 impact frame 周围的 `snap/ease/s_curve`、hold 和可选 FFmpeg 插帧编译成 source-bound 计划；源 hash 或 piece 时间映射漂移会阻塞，apply 采用同目录临时文件事务式落盘。
@@ -141,6 +142,7 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    │
    ├─→ project_bootstrap.py     原始素材目录 → origin/work/output/verify/edit + source inventory
    ├─→ edit_brief_plan.py       用户一句话需求 → 本地脚本 runbook / commands / gates
+   ├─→ frame_rate_conform.py    手机/录屏 VFR → 全量 PTS 检测 / CFR 工作副本 / live gate
    ├─→ edit_style_profile.py    个人/品牌创意方向、节奏与渲染/文案默认值 → 可移植 profile
    ├─→ production_authorization.py
    │                            确切素材/动作/provider/权利依据 → 显式授权 + live gate
@@ -640,6 +642,25 @@ python3 scripts/project_bootstrap.py \
 
 默认 `--mode copy`，会按路径和扩展名把素材归入 `origin/raw`、`origin/broll`、`origin/audio`、`origin/bgm`、`origin/images`、`origin/assets` 或 `origin/sidecars`；同名文件自动加后缀，不覆盖已有文件。`pipeline_manifest.py` 会发现 `source_inventory.json`，需要把素材导入作为 analysis gate 时可加 `--require source_inventory`。脚本不转码、不渲染、不上传，也不调用 LLM 或生成服务。
 
+### 🎞️ Frame-rate Conform — VFR 源素材归一
+[`scripts/frame_rate_conform.py`](scripts/frame_rate_conform.py) · [详细文档](docs/prompts/112-frame-rate-conform.md)
+
+手机、屏幕录制或会议软件素材出现可变帧率，或切段后逐渐音画漂移时，先读取全部 decoded frame PTS 并生成新的 CFR 工作副本：
+
+```bash
+python3 scripts/frame_rate_conform.py plan origin/phone.mp4 \
+  --fps 30 \
+  --delivery work/phone-cfr.mp4 \
+  --project-dir . \
+  --output work/frame_rate_conform_plan.json \
+  --markdown work/frame_rate_conform_plan.md
+python3 scripts/frame_rate_conform.py apply work/frame_rate_conform_plan.json
+python3 scripts/frame_rate_conform.py verify work/frame_rate_conform_plan.json --strict
+python3 scripts/pipeline_manifest.py . --require frame_rate_conform_plan --strict
+```
+
+计划保存 source SHA-256、媒体合同、全部 PTS 间隔统计、精确目标有理帧率和 canonical encoding contract。apply 先写同目录临时 H.264/AAC MP4；只有 cadence 恒定且单调、帧数匹配 `duration × fps`、音画起止在容差内、显示尺寸/rotation 正确并完整解码成功时才原子提升。`29.97` 会规范成 `30000/1001`；30/60 fps 仍需按素材运动和平台选择。升帧只复制画面，降帧会丢运动采样。HDR/BT.2020/>8-bit 或明显既有音画 offset 会停止，避免静默改变色彩或同步决定。后续转写、切段、字幕和渲染都改用 `work/phone-cfr.mp4`。
+
 ### 🧭 Edit Brief Plan — 自然语言剪辑需求路由
 [`scripts/edit_brief_plan.py`](scripts/edit_brief_plan.py) · [详细文档](docs/prompts/64-edit-brief-plan.md)
 
@@ -655,7 +676,7 @@ python3 scripts/edit_brief_plan.py \
   --strict
 ```
 
-它会识别 `origin/interview.mp4` 这类源素材路径、目标平台、手持防抖、绿幕/蓝幕换背景、目标脚本对齐、多 take、长视频拆条、批量短视频、字幕、B-roll、BGM、去停顿、J-cut/L-cut、生成素材、PIP、调色、QA、发布包等信号，并把它们映射到已有脚本，例如 `video_stabilization.py`、`chroma_key.py`、`script_alignment.py`、`highlight_picker.py`、`shorts_batch.py`、`jump_cut.py`、`audio_transition.py`、`auto_enrich.py`、`render_final.py`、`render_qa.py` 和 `publish_package.py`。`pipeline_manifest.py` 会发现 `edit_brief_plan.json`；当 `summary.blocking > 0`（例如 brief 为空或显式 source 缺失）时会作为 blocker，也可以用 `--require edit_brief_plan` 把需求路由作为 analysis gate。
+它会识别 `origin/interview.mp4` 这类源素材路径、目标平台、VFR/CFR 源素材归一、手持防抖、绿幕/蓝幕换背景、目标脚本对齐、多 take、长视频拆条、批量短视频、字幕、B-roll、BGM、去停顿、J-cut/L-cut、生成素材、PIP、调色、QA、发布包等信号，并把它们映射到已有脚本，例如 `frame_rate_conform.py`、`video_stabilization.py`、`chroma_key.py`、`script_alignment.py`、`highlight_picker.py`、`shorts_batch.py`、`jump_cut.py`、`audio_transition.py`、`auto_enrich.py`、`render_final.py`、`render_qa.py` 和 `publish_package.py`。VFR 路由会把验证后的 `work/source-cfr.mp4` 传给后续步骤；brief 没有明确 30/60/NTSC rate 时会保留 `<target_fps>`。`pipeline_manifest.py` 会发现 `edit_brief_plan.json`；当 `summary.blocking > 0`（例如 brief 为空或显式 source 缺失）时会作为 blocker，也可以用 `--require edit_brief_plan` 把需求路由作为 analysis gate。
 
 ### 🛂 Production Authorization — 确切范围生产授权
 [`scripts/production_authorization.py`](scripts/production_authorization.py) · [详细文档](docs/prompts/97-production-authorization.md)
@@ -3262,6 +3283,7 @@ pytest tests/test_rewrite_script.py -v      # Story Engine
 pytest tests/test_auto_broll.py -v          # B-roll 调度
 pytest tests/test_multi_export.py -v        # 多平台比例转换
 pytest tests/test_framing_preview.py -v     # cover/contain/blur 真实帧预览 / 选择 / live gate
+pytest tests/test_frame_rate_conform.py -v  # VFR decoded PTS / CFR 工作副本 / 帧数与音画起止 live gate
 pytest tests/test_hdr_sdr.py -v             # PQ/HLG → Rec.709 SDR / color tags / 完整解码门禁
 pytest tests/test_delivery_encode.py -v     # 硬大小上限 / 两遍编码 / 完整解码门禁
 pytest tests/test_encode_quality_qa.py -v   # 同时间线 SSIM/PSNR / P05 / 双输入 drift live gate
@@ -3339,6 +3361,40 @@ pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 pytest tests/test_review_dashboard.py -v    # 静态人工复核面板 + gate queue
 pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 gate
 ```
+
+### 2026-09-07 自动化升级记录（Source-bound VFR → CFR Conformance）
+
+本次联网研究的 GitHub 参考：
+
+| 项目 / 资料 | 借鉴点 | 本次处理 |
+|---|---|---|
+| [`kajisho5/ffmpeg-skill@c8acb76`](https://github.com/kajisho5/ffmpeg-skill/tree/c8acb76f8423f879f8c0cd374d876421d526c335) | 检查 `r_frame_rate` / `avg_frame_rate`，为 VFR 输入自动采用 CFR 输出，并保留真实 VFR 回归素材 | 扩展为读取全部 decoded frame PTS；容器 rate 只作辅助信息，实际 cadence 决定 VFR 证据 |
+| [`argus-metis/hermes-video-editing@5974bc9`](https://github.com/argus-metis/hermes-video-editing/tree/5974bc93bdd957a185c10fb0173539a11f5bb10e) | 长视频统一 CFR，并用 `aresample=async=1` 约束逐渐累积的音画漂移 | CFR 工作副本同步把音频重采样到 48 kHz，并验证音画流起止误差 |
+| [`tuitamogamer-gpt/claude-code-setup@91c1e05`](https://github.com/tuitamogamer-gpt/claude-code-setup/blob/91c1e05795ddacd277ee8379e6983b0423076f18/claude-ai-skills/video-editor/SKILL.md) | 通过 `setpts` / `asetpts` 生成稳定时间线，并在输出端检查音视频 `start_time` | 工作副本从零时间码开始，逐帧率容差检查音画 start，并保留完整解码 receipt |
+| [`enoky/SceneCutGUI@72b20c0`](https://github.com/enoky/SceneCutGUI/tree/72b20c0033b13fa3964c44b20196faea847af33d) | 使用精确有理帧率和可验证帧数，避免 29.97/59.94 的近似值污染时间基 | `29.97` / `23.976` / `59.94` 自动规范到 NTSC rational；输出校验 `frame_count ≈ duration × fps` |
+
+新增/调整能力：
+
+- 新增 [`scripts/frame_rate_conform.py`](scripts/frame_rate_conform.py) 的 `plan → apply → verify` 闭环。`plan` 读取全部视频帧的 `best_effort_timestamp_time`，统计相邻间隔、非单调时间戳、variable ratio、源媒体合同与 SHA-256，并绑定精确目标帧率和项目内 CFR 交付路径。
+- `apply` 生成 H.264/yuv420p + AAC/48 kHz MP4；视频采用精确 CFR，音频采用 `aresample=async=1:first_pts=0`。临时输出必须通过实际 cadence、帧数、显示尺寸/方向、时长、音画起止和 `ffmpeg -xerror` 全量解码，随后才会原子提升为工作副本。
+- `verify` 会重新读取源文件和输出文件，重算 bytes、媒体合同、全部 PTS、canonical settings、验证 receipt 与派生状态。源文件、目标帧率、输出或验证记录漂移都会阻断；HDR/BT.2020/>8-bit 和源端明显音画 offset 会 fail closed，交给显式色彩或同步流程处理。
+- `pipeline_manifest.py` 新增存在即 live verify、可 `--require frame_rate_conform_plan` 的 gate；`edit_brief_plan.py` 可识别中英文 VFR/CFR、手机或录屏漂移需求，明确 rate 时自动带入，缺失时保留 `<target_fps>`，并把所有后续转写、裁切、字幕和渲染输入切换到 `work/source-cfr.mp4`。主 SKILL、每日工作流、prompts 导航和 [`docs/prompts/112-frame-rate-conform.md`](docs/prompts/112-frame-rate-conform.md) 已同步。
+
+使用方式：
+
+```bash
+python3 scripts/frame_rate_conform.py plan origin/phone.mp4 \
+  --fps 30 \
+  --delivery work/phone-cfr.mp4 \
+  --project-dir . \
+  --output work/frame_rate_conform_plan.json \
+  --markdown work/frame_rate_conform_plan.md
+python3 scripts/frame_rate_conform.py apply work/frame_rate_conform_plan.json
+python3 scripts/frame_rate_conform.py verify work/frame_rate_conform_plan.json --strict
+python3 scripts/pipeline_manifest.py . --require frame_rate_conform_plan --strict
+```
+
+验证结果：新增 **11 项** rate/decoded PTS/plan binding/HDR/音画 offset/命令/漂移/真实 apply/编码中源漂移/路径/CLI 测试，并扩展 brief 与 manifest 覆盖；关联定向 `.venv/bin/python -m pytest tests/test_frame_rate_conform.py tests/test_edit_brief_plan.py tests/test_pipeline_manifest.py -q` 通过 **153 passed in 2.76s**，最终全量 `.venv/bin/python -m pytest tests -q` 通过 **1151 passed in 24.32s**。真实 FFmpeg smoke 使用 4 秒、320×180、H.264/AAC VFR 样本：源文件共 82 帧，81 个间隔中检出 31 个 variable intervals、最大间隔 0.1 秒；30 fps conformance 产出 120 帧，119 个间隔全部恒定，音画起止、目标帧率、SHA-256 和全量解码均通过，最终为 `ready / blocking=0 / warnings=0`。`.venv/bin/python -m compileall -q scripts tests`、三组新 CLI help、pipeline category discovery、Skill Creator `quick_validate.py` 和 `git diff --check` 均通过。本轮未调用生成/TTS provider、未消耗 credits、未上传素材或发布。
 
 ### 2026-09-06 自动化升级记录（Source-bound Final Subtitle Pixel Review）
 
@@ -4567,6 +4623,7 @@ python3 scripts/pipeline_manifest.py . --require freeze_punch_plan --strict
 | **59** | **[Auto Emphasis](docs/prompts/59-auto-emphasis.md)** | **数字/转折/结论自动落视觉重点** |
 | **60** | **[Takes Pack](docs/prompts/60-takes-pack.md)** | **多 take / Scribe transcript 压成保留 speaker/audio events 的 phrase-level 阅读视图** |
 | **61** | **[Project Bootstrap](docs/prompts/61-project-bootstrap.md)** | **原始素材目录 → source inventory + project memory** |
+| **112** | **[Frame-rate Conform](docs/prompts/112-frame-rate-conform.md)** | **手机/录屏 VFR → decoded PTS 检测、CFR 工作副本与 live gate** |
 | **62** | **[Hook Variants](docs/prompts/62-hook-variants.md)** | **同一视频批量生成前三秒 hook 角度** |
 | **67** | **[Speech Continuity QA](docs/prompts/67-speech-continuity-qa.md)** | **成片二次 ASR 检查复读、近重复 take 和句内口吃** |
 | **68** | **[Cover Variants](docs/prompts/68-cover-variants.md)** | **多套封面、feed-size 预览、标题协同和最终选择** |
@@ -4600,6 +4657,7 @@ python3 scripts/pipeline_manifest.py . --require freeze_punch_plan --strict
 scripts/
 ├── utils.py                    平台/字体/编码器自检
 ├── project_bootstrap.py        项目启动 + source inventory             [V3]
+├── frame_rate_conform.py       VFR 全量 PTS 检测 + source-bound CFR 工作副本/live gate [V3]
 ├── edit_brief_plan.py          自然语言剪辑需求 → 本地 runbook          [V3]
 ├── production_authorization.py 确切动作/provider/素材/权利依据授权 gate  [V3]
 ├── _internal_text_guard.py     内部 token 拦截器

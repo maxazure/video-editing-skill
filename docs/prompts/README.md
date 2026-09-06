@@ -113,6 +113,7 @@
 | 109 | [Caption / Speech QA 字幕与独立人声活动对齐](109-caption-speech-qa.md) | subtitle_pack + isolated speech → 孤立/错位/越界 cue、头尾静音与 live gate |
 | 110 | [Subtitle Glyph QA 字幕逐字符字体覆盖](110-subtitle-glyph-qa.md) | subtitle_pack + explicit fonts → Unicode cmap 覆盖、缺字/fallback 清单与 live gate |
 | 111 | [Subtitle Render Review 最终成片字幕像素复核](111-subtitle-render-review.md) | final MP4 + subtitle_pack → 高风险 cue 的 1× clip / 原尺寸帧、完整审片与 live gate |
+| 112 | [Frame-rate Conform 可变帧率源素材归一](112-frame-rate-conform.md) | 手机/录屏 VFR → 全量 PTS 检测、精确 CFR 工作副本、帧数/音画起止与 live gate |
 
 ## 快速上手
 
@@ -214,6 +215,7 @@
 | 想把个人/品牌剪辑风格保存成可移植默认值，并让渲染和文案直接复用 | [98-Creator-owned Edit Style Profile](98-edit-style-profile.md) |
 | 有绿幕/蓝幕素材，想先看 matte 再换成图片或视频背景 | [99-Chroma Key](99-chroma-key.md) |
 | 想给动作 / 产品 reveal 的 impact moment 做局部慢动作或 velocity edit | [83-Speed Ramp](83-speed-ramp.md) |
+| 手机或录屏素材是 VFR，剪辑后音画逐渐漂移，想先统一固定帧率 | [112-Frame-rate Conform](112-frame-rate-conform.md) |
 | 想把动作落点、产品揭晓或表情峰值短暂定格并轻微推近 | [101-Freeze-Punch](101-freeze-punch.md) |
 | 手持素材有不想要的抖动，想保留原片并对照防抖结果 | [84-Video Stabilization](84-video-stabilization.md) |
 | 客户或平台要求视频必须小于指定 MB | [85-Target-size Delivery Encode](85-delivery-encode.md) |

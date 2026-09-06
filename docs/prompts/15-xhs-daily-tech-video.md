@@ -38,6 +38,18 @@
      --platform xhs
    # 详见 docs/prompts/64-edit-brief-plan.md
 
+0v. # 条件 gate：手机/录屏源是 VFR，或剪切后音画逐渐漂移时，先做 CFR 工作副本：
+    python3 scripts/frame_rate_conform.py plan origin/<phone-or-screen>.mp4 \
+      --fps 30 \
+      --delivery work/<source>-cfr.mp4 \
+      --project-dir . \
+      --output work/frame_rate_conform_plan.json \
+      --markdown work/frame_rate_conform_plan.md
+    python3 scripts/frame_rate_conform.py apply work/frame_rate_conform_plan.json
+    python3 scripts/frame_rate_conform.py verify work/frame_rate_conform_plan.json --strict
+    # 后续转写、切段、字幕和渲染都用 work/<source>-cfr.mp4；完整 1× 看 pan、滚动、口型和结尾。
+    # 目标 30/60 fps 按素材运动和发布平台选择；详见 docs/prompts/112-frame-rate-conform.md
+
 0s. # 可选：同一个人/品牌需要跨项目维持风格时，先建可移植剪辑风格档案：
     python3 scripts/edit_style_profile.py template \
       --output work/edit_style_profile_spec.json

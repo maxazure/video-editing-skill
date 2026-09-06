@@ -15,6 +15,7 @@ import re
 import shlex
 import sys
 from datetime import datetime, timezone
+from fractions import Fraction
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
@@ -457,6 +458,24 @@ SIGNAL_KEYWORDS: Mapping[str, Sequence[str]] = {
         "音频交叠剪辑",
     ),
     "audio_sync": ("外录", "领夹麦", "lav", "recorder", "scratch audio", "audio sync", "对齐音频", "同步音频"),
+    "frame_rate_conform": (
+        "variable frame rate",
+        "constant frame rate",
+        "vfr source",
+        "vfr footage",
+        "convert vfr",
+        "conform to cfr",
+        "phone video drift",
+        "screen recording drift",
+        "audio drifts after cuts",
+        "可变帧率",
+        "固定帧率",
+        "帧率归一",
+        "转恒定帧率",
+        "手机视频音画漂移",
+        "录屏音画漂移",
+        "剪完音画漂移",
+    ),
     "screen_focus": ("录屏", "screen recording", "demo", "cursor", "点击", "热点", "focus"),
     "pip": ("facecam", "webcam", "小窗", "pip", "camera overlay", "摄像头"),
     "color_grade": ("调色", "lut", "color grade", "cinematic", "色彩", "film look"),
@@ -616,6 +635,7 @@ SIGNAL_LABELS: Mapping[str, str] = {
     "generated_motion_window": "生成视频有效运动窗口 / 冻结开头裁切",
     "audio_transition": "J-cut / L-cut 声画错位转场",
     "audio_sync": "外录音频对齐",
+    "frame_rate_conform": "VFR 源素材检测 / CFR 工作副本",
     "screen_focus": "录屏聚焦",
     "pip": "摄像头小窗",
     "color_grade": "调色计划",
@@ -742,6 +762,23 @@ def _clean_script_path() -> str:
     return "work/clean_script.md"
 
 
+def infer_target_fps(brief: str) -> Optional[str]:
+    match = re.search(
+        r"(?<![\d.])(\d+(?:\.\d+)?(?:/\d+)?)\s*(?:fps|帧(?:每秒)?)\b",
+        brief,
+        re.IGNORECASE,
+    )
+    if not match:
+        return None
+    try:
+        value = float(Fraction(match.group(1)))
+    except (ValueError, ZeroDivisionError):
+        return None
+    if value <= 0 or value > 240:
+        return None
+    return match.group(1)
+
+
 def _add_step(steps: List[Dict[str, Any]], seen: set[str], step: Dict[str, Any]) -> None:
     if step["id"] in seen:
         return
@@ -790,7 +827,8 @@ def build_plan(
     signals = detect_signals(normalized, platforms)
     ids = _signal_ids(signals)
     primary_platform = platforms[0]
-    source = source_media or "<source_media>"
+    source_input = source_media or "<source_media>"
+    source = "work/source-cfr.mp4" if "frame_rate_conform" in ids else source_input
     transcript_path = _transcript_path(source_media, transcript)
     clean_script = _clean_script_path()
     blockers: List[str] = []
@@ -802,7 +840,7 @@ def build_plan(
 
     if source_media and not Path(source_media).expanduser().exists():
         blockers.append(f"source media not found: {source_media}")
-    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy", "reference_edit_rhythm", "lip_sync_review", "subtitle_style_preview", "subtitle_render_review", "framing_preview", "flash_safety_qa", "temporal_artifact_qa", "audio_channel_qa", "caption_speech_qa", "multimodal_dead_air", "video_stabilization", "chroma_key", "scoped_video_edit", "speed_ramp", "freeze_punch", "generated_motion_window", "hdr_sdr", "delivery_encode", "encode_quality_qa", "edit_style_profile"}):
+    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy", "reference_edit_rhythm", "lip_sync_review", "subtitle_style_preview", "subtitle_render_review", "framing_preview", "flash_safety_qa", "temporal_artifact_qa", "audio_channel_qa", "caption_speech_qa", "multimodal_dead_air", "video_stabilization", "chroma_key", "scoped_video_edit", "speed_ramp", "freeze_punch", "generated_motion_window", "frame_rate_conform", "hdr_sdr", "delivery_encode", "encode_quality_qa", "edit_style_profile"}):
         warnings.append("source media was not provided; commands use <source_media> placeholders")
 
     if transcript and not Path(transcript).expanduser().exists():
@@ -853,7 +891,7 @@ def build_plan(
                         python_bin,
                         "scripts/project_bootstrap.py",
                         "--source",
-                        source,
+                        source_input,
                         "--project-dir",
                         project_dir,
                         "--strict",
@@ -863,6 +901,49 @@ def build_plan(
                 gate_category="source_inventory",
                 required=False,
             ),
+        )
+
+    if "frame_rate_conform" in ids:
+        target_fps = infer_target_fps(normalized)
+        _add_step(
+            steps,
+            seen,
+            _step(
+                "frame_rate_conform_plan",
+                phase="ingest",
+                script="frame_rate_conform.py",
+                label="Measure VFR cadence and create a CFR working-copy plan",
+                reason="The brief identifies variable-rate phone/screen footage or post-cut A/V drift.",
+                command=shell(
+                    [
+                        python_bin,
+                        "scripts/frame_rate_conform.py",
+                        "plan",
+                        source_input,
+                        "--fps",
+                        target_fps or "<target_fps>",
+                        "--delivery",
+                        source,
+                        "--project-dir",
+                        project_dir,
+                        "--output",
+                        "work/frame_rate_conform_plan.json",
+                        "--markdown",
+                        "work/frame_rate_conform_plan.md",
+                    ]
+                ),
+                outputs=[
+                    "work/frame_rate_conform_plan.json",
+                    "work/frame_rate_conform_plan.md",
+                    source,
+                ],
+                gate_category="frame_rate_conform_plan",
+            ),
+        )
+        notes.append(
+            "Review the decoded cadence report, run frame_rate_conform.py apply/verify, then use "
+            "work/source-cfr.mp4 for transcription, cuts, captions, sync, and rendering. Choose 30/60 fps "
+            "from the intended motion and platform when the brief does not specify a rate."
         )
 
     if "production_authorization" in ids:
@@ -3015,6 +3096,7 @@ def build_plan(
             "brief": normalized,
             "project_dir": project_dir,
             "source_media": source_media,
+            "working_source": source if source != source_input else source_media,
             "transcript": transcript,
             "platforms": platforms,
         },

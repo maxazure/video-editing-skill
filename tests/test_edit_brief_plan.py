@@ -6,12 +6,41 @@ import sys
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(REPO, "scripts"))
 
-from edit_brief_plan import build_plan, emit_markdown, infer_source_media  # noqa: E402
+from edit_brief_plan import (  # noqa: E402
+    build_plan,
+    emit_markdown,
+    infer_source_media,
+    infer_target_fps,
+)
 
 
 def test_infer_source_media_from_brief():
     assert infer_source_media("把 origin/interview.mp4 剪成三条短视频") == "origin/interview.mp4"
     assert infer_source_media("use /tmp/raw/talk.MOV, add captions") == "/tmp/raw/talk.MOV"
+
+
+def test_vfr_brief_routes_cfr_working_copy_before_downstream_edits(tmp_path):
+    source = tmp_path / "origin" / "phone.mp4"
+    source.parent.mkdir(parents=True)
+    source.write_text("fake video", encoding="utf-8")
+
+    plan = build_plan(
+        f"把 {source} 这个手机可变帧率素材转成 30fps 固定帧率，再转写和渲染",
+        project_dir=str(tmp_path),
+    )
+
+    ids = [step["id"] for step in plan["steps"]]
+    assert ids.index("frame_rate_conform_plan") < ids.index("transcript")
+    step = next(step for step in plan["steps"] if step["id"] == "frame_rate_conform_plan")
+    assert step["script"] == "frame_rate_conform.py"
+    assert f"frame_rate_conform.py plan {source}" in step["command"]
+    assert "--fps 30" in step["command"]
+    assert "--delivery work/source-cfr.mp4" in step["command"]
+    transcript = next(step for step in plan["steps"] if step["id"] == "transcript")
+    assert "transcribe.py work/source-cfr.mp4" in transcript["command"]
+    assert plan["source"]["working_source"] == "work/source-cfr.mp4"
+    assert step["gate_category"] == "frame_rate_conform_plan"
+    assert infer_target_fps("conform to 30000/1001 fps") == "30000/1001"
 
 
 def test_subtitle_missing_glyph_brief_routes_font_coverage_gate(tmp_path):

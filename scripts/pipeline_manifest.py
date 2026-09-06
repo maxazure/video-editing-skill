@@ -49,6 +49,13 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         "Run project_bootstrap.py to create origin/, work/, output/, verify/, source inventory, and project memory.",
     ),
     ArtifactDef(
+        "frame_rate_conform_plan",
+        "Frame-rate Conform Plan",
+        ("**/frame_rate_conform_plan.json", "**/*_frame_rate_conform_plan.json"),
+        "Run frame_rate_conform.py apply/verify, then use the validated CFR working copy for every downstream edit.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "edit_brief_plan",
         "Edit Brief Plan",
         ("**/edit_brief_plan.json", "**/*_edit_brief_plan.json"),
@@ -1707,6 +1714,45 @@ def evaluate_category(
             elif warnings:
                 status = "warn" if status != "blocked" else status
                 notes.append(f"chroma-key composite retains {warnings} review warning(s): {artifact.path}")
+        return {
+            "category": definition.category,
+            "label": definition.label,
+            "status": status,
+            "artifact_count": len(artifacts),
+            "latest_path": artifacts[0].path,
+            "notes": sorted(set(notes)),
+            "next_action": definition.next_action if status in {"missing", "blocked", "warn"} else "",
+        }
+
+    if definition.category == "frame_rate_conform_plan":
+        from frame_rate_conform import verify_plan
+
+        for artifact in artifacts:
+            data = _load_json(artifact.path)
+            if data is None:
+                status = "blocked"
+                notes.append(f"unreadable frame-rate conform plan: {artifact.path}")
+                continue
+            try:
+                verification = verify_plan(data)
+            except Exception as exc:
+                status = "blocked"
+                notes.append(f"frame-rate conform verification failed {artifact.path}: {exc}")
+                continue
+            blocking = _int_at(verification, "summary", "blocking")
+            warnings = _int_at(verification, "summary", "warnings")
+            if blocking:
+                status = "blocked"
+                notes.append(
+                    f"invalid or unapplied frame-rate conform {artifact.path}: "
+                    f"{blocking} blocking item(s)"
+                )
+            elif warnings:
+                status = "warn" if status != "blocked" else status
+                notes.append(
+                    f"frame-rate conform requires full-speed motion review: {artifact.path}: "
+                    f"{warnings} warning(s)"
+                )
         return {
             "category": definition.category,
             "label": definition.label,

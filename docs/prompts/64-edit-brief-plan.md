@@ -50,6 +50,7 @@ python3 scripts/edit_brief_plan.py \
 | 生成经验库、prompt lessons、复用复盘经验 | `generation_lessons.py verify`；与生成视频同时出现时，在 prompt pack 前验证并注入 library |
 | 多镜头/跨镜头连续性、镜头衔接、角色/道具连续性 | 先 `generated_clip_review.py`，再 `generated_sequence_review.py` 提取相邻边界证据并审计 |
 | 参考视频节奏、参考广告节奏、复刻剪辑结构 | 成片后用 `reference_edit_rhythm.py analyze` 量化 hard-cut 结构和 contact sheets；默认 WARN，明确验收时才加 `--require-match` |
+| VFR、可变帧率、固定帧率、手机/录屏音画漂移 | `frame_rate_conform.py plan` → `apply` → `verify`；工作副本会成为后续转写、切段与渲染输入 |
 | BGM、音效、声音设计 | `audio_cue_sheet.py` |
 | 左右声道、相位抵消、单声道兼容、mono fold-down | `audio_channel_qa.py analyze` → `verify` |
 | 压缩画质、重编码画质、SSIM、PSNR | `encode_quality_qa.py analyze` → `verify`；目标大小交付后自动安排 source → delivery 对照 |
@@ -76,5 +77,6 @@ python3 scripts/pipeline_manifest.py \
 
 - 先看 `work/edit_brief_plan.md`，不要盲跑所有命令；它是 runbook，不是自动执行器。
 - 对生成视频或 paid provider，只生成 prompt pack 和审批 gate；不会提交 Dreamina/即梦/Veo/Sora 任务。
+- VFR 路由会要求明确 `30`、`60` 或 `30000/1001` 等目标帧率；brief 未给 rate 时保留 `<target_fps>`，由素材运动和平台决定。
 - 如果实际项目已有 transcript、render_config 或 clean_script，可用 `--transcript` 指向现有文件，并删除 Markdown 里不需要的步骤。
 - 复杂项目先跑这一步，再把确认后的 gate 交给 `review_dashboard.py` 或 `project_resume.py`。

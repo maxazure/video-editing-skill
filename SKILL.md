@@ -1,6 +1,6 @@
 ---
 name: video-editing
-description: "Xiaohongshu/RED-tuned short-form video workflow for voice-over, talking-head, tutorials, interviews, podcasts, screen recordings, green/blue-screen compositing, B-roll, captions, and generated assets. Covers edit routing, creator-owned edit-style profiles, transcription, semantic review, multi-take/audio sync/stabilization/dead-air cleanup, highlights/shorts, story and source gates, enrichment and video-generation planning, generated clip/sequence and scoped AI video-edit review, locked-EDL final audio storyboards, phrase-level narration loudness and final channel-integrity QA, color/speed/J-L cuts, reversible revisions and recipes, preflight/render/QA including flash/photosensitivity and encode-quality screening, subtitles, CapCut, platform/size exports, covers, captions, publish packages, dashboards, handoff formats, and Remotion."
+description: "Xiaohongshu/RED-tuned short-form video workflow for voice-over, talking-head, tutorials, interviews, podcasts, screen recordings, green/blue-screen compositing, B-roll, captions, and generated assets. Covers edit routing, creator-owned edit-style profiles, VFR/CFR source conformance, transcription, semantic review, multi-take/audio sync/stabilization/dead-air cleanup, highlights/shorts, story and source gates, enrichment and video-generation planning, generated clip/sequence and scoped AI video-edit review, locked-EDL final audio storyboards, phrase-level narration loudness and final channel-integrity QA, color/speed/J-L cuts, reversible revisions and recipes, preflight/render/QA including flash/photosensitivity and encode-quality screening, subtitles, CapCut, platform/size exports, covers, captions, publish packages, dashboards, handoff formats, and Remotion."
 metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
 ---
 
@@ -15,6 +15,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    │
    ├─→ project_bootstrap.py     原始素材目录 → source inventory / project.md
    ├─→ edit_brief_plan.py       用户一句话需求 → 本地脚本 runbook / gates
+   ├─→ frame_rate_conform.py    手机/录屏 VFR → 全量 PTS 检测 / CFR 工作副本 / live gate
    ├─→ edit_style_profile.py    个人/品牌创意方向、节奏与渲染/文案默认值 → 可移植 profile
    ├─→ production_authorization.py
    │                            确切素材/动作/provider/权利依据 → 显式授权 + live gate
@@ -128,6 +129,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 |---|---|---|
 | `project_bootstrap.py` | 原始素材目录 → 项目结构 / source inventory / project.md | `--source raw_dir` `--project-dir work/day61` `--mode copy|hardlink` `--strict` |
 | `edit_brief_plan.py` | 自然语言剪辑需求 → 本地脚本 runbook / 命令 / manifest gate | `--brief` `--brief-file` `--source-media` `--platform` `--markdown` `--strict` |
+| `frame_rate_conform.py` | 手机/录屏 VFR → decoded PTS cadence、精确 CFR 工作副本、帧数/音画起止与 live gate | `plan <source> --fps 30 --delivery` / `apply <plan>` / `verify <plan> --strict` |
 | `edit_style_profile.py` | 个人/品牌创意方向、剪辑节奏、渲染/文案默认值 → 无路径可移植 profile / digest 验证 / defaults-only 合并 | `template` / `create --spec` / `verify --profile --strict` / `apply --config --receipt` |
 | `production_authorization.py` | 外部上传、侵入性剪辑、付费生成、声音克隆、真人/IP 和发布 → source-bound 授权 gate | `prepare --scope --response-template` / `audit --request --response --strict` / `verify --report --strict` |
 | `transcript_review.py` | transcript → 文本或本地同步媒体 HTML 校稿 → reviewed transcript | `export` / `html --video --max-cps` / `apply --review --output` |
@@ -478,6 +480,23 @@ python3 scripts/pipeline_manifest.py \
   --require source_inventory \
   --strict
 ```
+
+### Phase 0aa: Frame-rate Conform（手机 / 录屏 VFR 可选）
+
+当源素材已知是 VFR、`r_frame_rate` 与 `avg_frame_rate` 可疑，或多段裁切后出现累积音画漂移时，先创建项目内 CFR 工作副本：
+
+```bash
+python3 scripts/frame_rate_conform.py plan origin/phone.mp4 \
+  --fps 30 \
+  --delivery work/phone-cfr.mp4 \
+  --project-dir . \
+  --output work/frame_rate_conform_plan.json \
+  --markdown work/frame_rate_conform_plan.md
+python3 scripts/frame_rate_conform.py apply work/frame_rate_conform_plan.json
+python3 scripts/frame_rate_conform.py verify work/frame_rate_conform_plan.json --strict
+```
+
+脚本读取全部解码视频帧的 PTS 间隔，记录 variable/non-monotonic interval、精确目标有理帧率、源/输出 SHA-256、媒体合同和完整解码 receipt。apply 只有在输出帧间隔恒定、`frame_count ≈ duration × fps`、音画起止在容差内、显示尺寸/方向正确时才原子提升；之后所有转写、裁切、字幕、同步和渲染改用 `work/phone-cfr.mp4`。30/60 fps 需按真实运动和平台选择；升帧只复制画面，降帧会丢运动采样。HDR/BT.2020/>8-bit、明显既有音画 offset 或独立设备 clock drift 不在此工具的自动修复范围。详见 [Frame-rate Conform](./docs/prompts/112-frame-rate-conform.md)。
 
 ### Phase 0b: Production Authorization（按确切范围授权）
 
@@ -2489,13 +2508,17 @@ sudo apt update && sudo apt install ffmpeg
 
 **根因**：DJI 素材为 30/1 fps，部分 DJI 和所有 iPhone MOV 文件为 30000/1001 (29.97fps)。`-c copy` 拼接不会重新编码，帧率不同导致时间戳不连续，播放器在切换点卡死。
 
-**解决**：拼接不同来源的 B-roll 素材前，必须先统一帧率再拼接。对每段素材预处理：
+**解决**：拼接不同来源的 B-roll 素材前，先用 source-bound 计划统一帧率。对每段素材执行：
 ```bash
-ffmpeg -i clip.MOV -vf "fps=30" -pix_fmt yuv420p -c:a copy clip_30fps.mp4
+python3 scripts/frame_rate_conform.py plan origin/clip.MOV \
+  --fps 30 --delivery work/clip-cfr.mp4 --project-dir . \
+  --output work/clip_frame_rate_conform_plan.json
+python3 scripts/frame_rate_conform.py apply work/clip_frame_rate_conform_plan.json
+python3 scripts/frame_rate_conform.py verify work/clip_frame_rate_conform_plan.json --strict
 ```
-然后再用 concat 拼接。**禁止对混合帧率素材使用 `-c copy` concat。**
+然后用已验证的 CFR 工作副本拼接。**禁止对混合帧率或 VFR 素材使用 `-c copy` concat。**
 
-**检测方法**：拼接前用 `ffprobe -v 0 -select_streams v:0 -show_entries stream=r_frame_rate` 检查每个素材的帧率，如果不一致就必须重编码统一。
+**检测方法**：`frame_rate_conform.py plan` 会比较容器 rate，并读取全部 decoded `best_effort_timestamp_time` 计算帧间隔；只看 `r_frame_rate` 无法证明实际 cadence 恒定。
 
 ---
 
