@@ -514,6 +514,25 @@ def test_speed_ramp_brief_routes_source_bound_plan(tmp_path):
     assert step["gate_category"] == "speed_ramp_plan"
 
 
+def test_audio_dropout_brief_routes_listening_review_gate(tmp_path):
+    source = tmp_path / "final.mp4"
+    source.write_text("fake video", encoding="utf-8")
+
+    plan = build_plan(
+        f"检查 {source} 有没有短促音频掉点或声音突然断掉",
+        project_dir=str(tmp_path),
+    )
+
+    step = next(step for step in plan["steps"] if step["id"] == "audio_dropout_qa")
+    assert step["script"] == "audio_dropout_qa.py"
+    assert f"audio_dropout_qa.py analyze {source}" in step["command"]
+    assert "verify/audio_dropout_qa_response.json" in step["outputs"]
+    assert "verify/audio_dropout_qa_scan.json" in step["outputs"]
+    assert "verify/audio_dropout_clips/" in step["outputs"]
+    assert step["gate_category"] == "audio_dropout_qa"
+    assert any("every WAV proof at 1x" in note for note in plan["notes"])
+
+
 def test_freeze_punch_brief_routes_unchanged_timeline_plan(tmp_path):
     source = tmp_path / "reaction.mp4"
     source.write_text("fake video", encoding="utf-8")

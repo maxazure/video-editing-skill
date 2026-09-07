@@ -212,6 +212,24 @@ SIGNAL_KEYWORDS: Mapping[str, Sequence[str]] = {
         "单声道兼容",
         "单声道折叠",
     ),
+    "audio_dropout_qa": (
+        "audio dropout qa",
+        "audio dropout",
+        "digital silence",
+        "brief audio gap",
+        "missing audio samples",
+        "chopped speech",
+        "audio cut out",
+        "sound cuts out",
+        "音频掉点",
+        "声音掉点",
+        "短促静音",
+        "数字静音",
+        "声音突然断掉",
+        "音频突然断掉",
+        "吞音",
+        "断音",
+    ),
     "caption_speech_qa": (
         "caption speech qa",
         "caption audio alignment",
@@ -658,6 +676,7 @@ SIGNAL_LABELS: Mapping[str, str] = {
     "temporal_artifact_qa": "单帧 / 少数帧瞬态伪影筛查与逐帧复核",
     "narration_loudness_qa": "最终旁白逐短语响度一致性门禁",
     "audio_channel_qa": "最终成片声道活动 / 平衡 / 相位 / mono fold-down 门禁",
+    "audio_dropout_qa": "最终人声 / 混音短促数字掉点复核门禁",
     "caption_speech_qa": "字幕 cue 与独立人声活动对齐门禁",
     "nle_handoff": "NLE 交接",
     "review_dashboard": "人工复核面板",
@@ -840,7 +859,7 @@ def build_plan(
 
     if source_media and not Path(source_media).expanduser().exists():
         blockers.append(f"source media not found: {source_media}")
-    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy", "reference_edit_rhythm", "lip_sync_review", "subtitle_style_preview", "subtitle_render_review", "framing_preview", "flash_safety_qa", "temporal_artifact_qa", "audio_channel_qa", "caption_speech_qa", "multimodal_dead_air", "video_stabilization", "chroma_key", "scoped_video_edit", "speed_ramp", "freeze_punch", "generated_motion_window", "frame_rate_conform", "hdr_sdr", "delivery_encode", "encode_quality_qa", "edit_style_profile"}):
+    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy", "reference_edit_rhythm", "lip_sync_review", "subtitle_style_preview", "subtitle_render_review", "framing_preview", "flash_safety_qa", "temporal_artifact_qa", "audio_channel_qa", "audio_dropout_qa", "caption_speech_qa", "multimodal_dead_air", "video_stabilization", "chroma_key", "scoped_video_edit", "speed_ramp", "freeze_punch", "generated_motion_window", "frame_rate_conform", "hdr_sdr", "delivery_encode", "encode_quality_qa", "edit_style_profile"}):
         warnings.append("source media was not provided; commands use <source_media> placeholders")
 
     if transcript and not Path(transcript).expanduser().exists():
@@ -2426,6 +2445,53 @@ def build_plan(
                 gate_category="audio_master_report",
                 required=False,
             ),
+        )
+
+    if wants_render or "qa" in ids or "publish" in ids or "audio_dropout_qa" in ids:
+        dropout_input = "output/final.mp4" if wants_render else source
+        _add_step(
+            steps,
+            seen,
+            _step(
+                "audio_dropout_qa",
+                phase="qa",
+                script="audio_dropout_qa.py",
+                label="Screen brief audio dropouts and bind normal-speed listening evidence",
+                reason="Short digital gaps and broken joins can be too brief for the long-silence gate while still chopping speech.",
+                command=shell(
+                    [
+                        python_bin,
+                        "scripts/audio_dropout_qa.py",
+                        "analyze",
+                        dropout_input,
+                        "--project-dir",
+                        project_dir,
+                        "--evidence-dir",
+                        "verify/audio_dropout_clips",
+                        "--output",
+                        "verify/audio_dropout_qa_scan.json",
+                        "--markdown",
+                        "verify/audio_dropout_qa_scan.md",
+                        "--response-template",
+                        "verify/audio_dropout_qa_response.json",
+                        "--strict",
+                    ]
+                ),
+                outputs=[
+                    "verify/audio_dropout_qa_scan.json",
+                    "verify/audio_dropout_qa_scan.md",
+                    "verify/audio_dropout_qa.md",
+                    "verify/audio_dropout_qa.json",
+                    "verify/audio_dropout_qa_response.json",
+                    "verify/audio_dropout_clips/",
+                ],
+                gate_category="audio_dropout_qa",
+            ),
+        )
+        notes.append(
+            "When audio_dropout_qa.py finds candidates, play the complete track and every WAV proof at 1x, "
+            "fill the response, then run audit and verify. Prefer the isolated final dialogue/narration stem; "
+            "BGM/SFX can hide speech dropouts, and deliberate pauses can trigger the locator."
         )
 
     if wants_render or "qa" in ids or "publish" in ids or "audio_channel_qa" in ids:

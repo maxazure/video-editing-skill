@@ -2,7 +2,7 @@
 
 这是一个面向 **口播、教程、访谈、播客切片、录屏演示 / facecam demo** 的 AI 视频剪辑生产线：给它原始口播音频/视频、transcript、B-roll、摄像头小窗或素材目录，它可以把“还没整理的素材”推进到 **可发布的小红书 / 抖音 / 视频号短视频**。
 
-它提供一条完整工作流：**项目启动/素材导入 → 手机/录屏 VFR 时基归一 → 个人/品牌剪辑风格 → 生产授权 → 手持防抖 / 绿蓝幕换背景 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 生成片有效运动窗口 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp / 关键帧 freeze-punch / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 锁定视觉 EDL 后重建最终声音分镜 → 最终旁白逐短语响度门禁 → 渲染前预检 / 真实画面字幕样式选择 / 字幕逐字符字体覆盖 → 单次编码渲染 → 质检 / 最终成片字幕像素复核 / 字幕与独立人声对齐 / 声道完整性 / 闪烁风险 / 单帧瞬态伪影筛查 / 最终成片唇形复核 → 多平台导出 / 目标大小交付编码 / 重编码画质损失门禁 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
+它提供一条完整工作流：**项目启动/素材导入 → 手机/录屏 VFR 时基归一 → 个人/品牌剪辑风格 → 生产授权 → 手持防抖 / 绿蓝幕换背景 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 生成片有效运动窗口 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp / 关键帧 freeze-punch / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 锁定视觉 EDL 后重建最终声音分镜 → 最终旁白逐短语响度门禁 → 渲染前预检 / 真实画面字幕样式选择 / 字幕逐字符字体覆盖 → 单次编码渲染 → 质检 / 最终成片字幕像素复核 / 字幕与独立人声对齐 / 声道完整性 / 短促音频掉点 / 闪烁风险 / 单帧瞬态伪影筛查 / 最终成片唇形复核 → 多平台导出 / 目标大小交付编码 / 重编码画质损失门禁 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
 
 ## 适合做什么
 
@@ -39,6 +39,7 @@
 - **长静帧和高频闪烁之间的单帧事故也有门禁**：`temporal_artifact_qa.py` 查找 1–3 帧突然偏离又回到近似原画面的局部 spike，为每个候选导出 `before / suspect / after` JPEG；必须完整 1× 播放并逐帧决定 `intentional_edit / artifact / uncertain`，后两者继续阻断。
 - **分段 TTS / 配音不会再被整片平均响度掩盖**：`narration_loudness_qa.py` 在最终独立旁白音轨上逐短语实测 LUFS / dBTP / LRA，并检查非例外段 spread；旁白、时间清单或现场 measurements 漂移会让旧报告失效，混音后仍要另跑全片 `audio_master_report.py`。
 - **最终声道错误不会被整片响度合格掩盖**：`audio_channel_qa.py` 现场检查左右声道活动、起始错位、能量平衡、相位相关和 mono fold-down 损失；source、媒体契约、阈值、算法或 measurements 漂移都会让旧报告失效。
+- **几十毫秒断音不会被长静音门槛漏掉**：`audio_dropout_qa.py` 用 20 ms 窗口查找活跃音频之间的短促近静音，导出正常速度 WAV 上下文；每个候选必须完整试听并标记为掉点、刻意停顿或不确定，源文件、测量、证据或 response 漂移都会阻断。
 - **数字人口型必须在最终成片上重新举证**：`lip_sync_review.py` 从最终 master 的完整短语导出 1× 带声和 0.25× 静音 proof clips，逐条复核爆破音闭唇、元音提前/滞后、讲话时冻嘴、说话人和音频质量；任何剪切、变速、换音或重编码都会让旧报告失效。
 - **参考片节奏先量化再借鉴**：`reference_edit_rhythm.py` 用同一套 hard-cut 检测比较参考片和成片的 cuts/minute、镜头时长、结尾 hold 与切点分布，同时绑定两条视频和 contact sheets；默认只提示差异，明确验收时才阻断。
 - **适合交给强推理模型做长流程代理执行**：在 [GPT-5.6 Sol](https://developers.openai.com/api/docs/models/gpt-5.6-sol)（OpenAI 当前旗舰；API 别名 `gpt-5.6` 指向 Sol）和 [Claude Opus 4.8](https://docs.anthropic.com/en/docs/about-claude/models) 这类面向复杂专业任务、agent 工作流的模型下，本 skill 对 **口播类短视频** 至少可以替代 **80% 的常规视频剪辑工作**。
@@ -271,6 +272,7 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    ├─→ render_qa.py             渲染后黑屏/静帧/静音/尺寸质检 + review packet
    ├─→ encode_quality_qa.py     同时间线 master vs 重编码件 → SSIM/PSNR / 最差帧 / live gate
    ├─→ audio_channel_qa.py      成片声道活动/起始/平衡/相位/mono fold-down live gate
+   ├─→ audio_dropout_qa.py      最终人声/混音短促近静音候选 / 1× WAV 听审 live gate
    ├─→ flash_safety_qa.py       亮度/饱和红 flash → 1s/5s 风险窗口 / source-bound live gate
    ├─→ temporal_artifact_qa.py  单帧/少数帧 return-to-state spike → 三帧证据 / 人工 audit / live gate
    ├─→ shot_color_qa.py         成片镜头亮度/对比/色度/饱和度/broadcast-range + 切点跳变门禁
@@ -2704,6 +2706,34 @@ python3 scripts/pipeline_manifest.py . --require audio_channel_qa --strict
 
 默认 `>200 ms` onset skew、`>6 dB` L/R balance、整体 phase correlation `<-0.10`、持续负相关窗口或 mono fold-down loss `>6 dB` 会阻断；较轻风险保留 warning。mono 直接通过声道专项，`>2` 声道要求先定义明确 downmix。报告绑定 source SHA-256、音频媒体契约、参数、算法、现场 measurements、checks 和 report id。它不识别语音、不判断创意 panning，也不替代完整 1× stereo/mono 试听或 `audio_master_report.py`。
 
+### Audio Dropout QA — 短促数字掉点听审
+[`scripts/audio_dropout_qa.py`](scripts/audio_dropout_qa.py) · [详细文档](docs/prompts/113-audio-dropout-qa.md)
+
+最终响度、长静音和声道检查都可能通过，拼接点附近仍可能出现几十到几百毫秒的数字静音或吞音。这个只读门禁用 FFmpeg `astats` 固定窗口下混测量，把活跃音频之间的短近静音定位成候选，并为每项导出正常速度 WAV：
+
+```bash
+python3 scripts/audio_dropout_qa.py analyze work/final_narration.wav \
+  --project-dir . \
+  --evidence-dir verify/audio_dropout_clips \
+  --output verify/audio_dropout_qa_scan.json \
+  --markdown verify/audio_dropout_qa_scan.md \
+  --response-template verify/audio_dropout_qa_response.json \
+  --strict
+
+python3 scripts/audio_dropout_qa.py audit \
+  --report verify/audio_dropout_qa_scan.json \
+  --response verify/audio_dropout_qa_response.json \
+  --output verify/audio_dropout_qa.json \
+  --markdown verify/audio_dropout_qa.md \
+  --project-dir . --strict
+
+python3 scripts/audio_dropout_qa.py verify \
+  --report verify/audio_dropout_qa.json \
+  --project-dir . --strict
+```
+
+默认候选为 `40–400 ms`、不高于 `-60 dBFS`、前后各 120 ms 有足够活动且至少下降 24 dB。候选必须在完整 1× 播放后逐项标记 `dropout / intentional_pause / uncertain`；确认掉点和不确定继续阻断，刻意停顿保留 warning。优先输入最终独立对白/旁白轨；BGM/SFX 可能掩盖掉点。它不识别语音、不自动修音，也不替代完整试听或 `audio_master_report.py`。
+
 ### 🗣️ Narration Loudness QA — 最终旁白逐短语一致性
 [`scripts/narration_loudness_qa.py`](scripts/narration_loudness_qa.py) · [详细文档](docs/prompts/105-narration-loudness-qa.md)
 
@@ -3301,6 +3331,7 @@ pytest tests/test_subtitle_readability_qa.py -v # 最终字幕 CPS / 时长 / �
 pytest tests/test_platform_safe_area_qa.py -v # 字幕 / PIP / CTA / marker 平台安全区门禁
 pytest tests/test_audio_master_report.py -v # 成片响度 / true peak / LRA 门禁
 pytest tests/test_audio_channel_qa.py -v # 左右活动 / onset / balance / phase / mono fold-down live gate
+pytest tests/test_audio_dropout_qa.py -v # 短促近静音候选 / 1× WAV 证据 / 人工听审 live gate
 pytest tests/test_narration_loudness_qa.py -v # 最终旁白逐短语 LUFS / spread / dBTP / LRA live gate
 pytest tests/test_render_enrich_plan.py -v  # enrich_plan 自动接入渲染
 pytest tests/test_auto_emphasis.py -v      # 问句/数字/转折/结论 emphasis cues
@@ -3361,6 +3392,50 @@ pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 pytest tests/test_review_dashboard.py -v    # 静态人工复核面板 + gate queue
 pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 gate
 ```
+
+### 2026-09-08 自动化升级记录（Source-bound Brief Audio Dropout QA）
+
+本次联网研究的 GitHub 参考：
+
+| 项目 / 资料 | 借鉴点 | 本次处理 |
+|---|---|---|
+| [`ajantoniou/uploadcheck-mcp`](https://github.com/ajantoniou/uploadcheck-mcp) | 把 audio dropouts 与 dead air、clipping、loudness、channel balance 分成独立发布前检查，并返回时间码 | 保留本地执行，不接入云端服务；新增独立短掉点 detector 与 timestamped WAV 证据 |
+| [`TuolaGe/reference-led-ugc-product-video`](https://github.com/TuolaGe/reference-led-ugc-product-video/blob/main/SKILL.md) | 最终交付同时要求 unexpected-silence 检测、完整播放和可恢复 review handoff | 候选只做定位；完整 1× 播放、逐候选听审 response 与 source/evidence binding 共同决定 gate |
+| [`novoads/agent-skills` novoads-api](https://github.com/novoads/agent-skills/blob/main/skills/novoads-api/SKILL.md) | QA 失败要给出具体 silence figure / missing stream 证据，音轨缺失或静音需重新生成或修复 | 报告保留确切时间、持续时长、前后文 RMS、下降深度和 repair action，拒绝只写笼统结论 |
+| [`kajisho5/ffmpeg-skill`](https://github.com/kajisho5/ffmpeg-skill) | 音频作为一等输入，本地 FFmpeg 测量、结构化结果、执行后验证且不改原片 | 输入可为音频或视频，读取第一音轨、固定窗口分析，输出 JSON/Markdown 并通过 live verify 重测 |
+
+新增/调整能力：
+
+- 新增 [`scripts/audio_dropout_qa.py`](scripts/audio_dropout_qa.py) 的 `analyze → audit → verify` 闭环。默认以 16 kHz / 20 ms 窗口读取第一音轨并下混 mono，找出 `40–400 ms`、不高于 `-60 dBFS`、前后各 120 ms 有足够活动且下降至少 24 dB 的短促近静音区间。
+- 每个候选生成 48 kHz mono PCM 正常速度上下文 WAV。response 必须记录 `reviewed_by`、完整全轨 1× 播放、before/during/after 听感、`dropout | intentional_pause | uncertain` 决定、原因与必要 repair action；确认掉点或不确定继续阻断，刻意停顿保留 warning。
+- 报告绑定 source SHA-256、音频媒体合同、算法、设置、现场 measurements、候选、evidence bytes、人工 response、派生状态和 canonical ids。源、证据、检测结果、response 或报告字段漂移都会失效；候选超过上限会 fail closed。
+- `pipeline_manifest.py` 新增存在即 live verify、可 `--require audio_dropout_qa` 的 gate；`edit_brief_plan.py` 支持中英文“audio cut out / 音频掉点 / 短促静音 / 吞音 / 断音”路由，并在普通 render/QA/publish runbook 中安排检查。主 SKILL、daily workflow、prompts 导航和 [`docs/prompts/113-audio-dropout-qa.md`](docs/prompts/113-audio-dropout-qa.md) 已同步。
+
+使用方式：
+
+```bash
+python3 scripts/audio_dropout_qa.py analyze work/final_narration.wav \
+  --project-dir . \
+  --evidence-dir verify/audio_dropout_clips \
+  --output verify/audio_dropout_qa_scan.json \
+  --markdown verify/audio_dropout_qa_scan.md \
+  --response-template verify/audio_dropout_qa_response.json \
+  --strict
+# 完整 1× 播放音轨和全部 WAV，填写 response 后：
+python3 scripts/audio_dropout_qa.py audit \
+  --report verify/audio_dropout_qa_scan.json \
+  --response verify/audio_dropout_qa_response.json \
+  --output verify/audio_dropout_qa.json \
+  --markdown verify/audio_dropout_qa.md \
+  --project-dir . --strict
+python3 scripts/audio_dropout_qa.py verify \
+  --report verify/audio_dropout_qa.json --project-dir . --strict
+python3 scripts/pipeline_manifest.py . --require audio_dropout_qa --strict
+```
+
+优先对最终独立对白/旁白轨运行；只有混音成片时也可使用，但 BGM/SFX 可能掩盖人声掉点。该 gate 不识别语音、不自动修音，也不替代完整试听或 `audio_master_report.py` 的 LUFS、true peak、LRA 和长静音检查。
+
+验证结果：新增 **13 项** detector/阈值/上下文/候选上限/听审/漂移/路径/CLI 回归，并扩展 brief 与 manifest 覆盖；关联定向 `.venv/bin/python -m pytest tests/test_audio_dropout_qa.py tests/test_edit_brief_plan.py tests/test_pipeline_manifest.py -q` 通过 **157 passed in 2.91s**，最终全量 `.venv/bin/python -m pytest tests -q` 通过 **1166 passed in 26.47s**。真实 FFmpeg smoke 使用 2 秒 48 kHz PCM：连续 tone 为 `ready / candidates=0`；在 `0.800–0.860s` 插入 60 ms 数字静音后准确得到 1 个候选和 149,838-byte 正常速度 WAV，人工确认 `dropout` 后 audit/verify 都保持 `blocked / blocking=1`，strict 按预期退出 2。`compileall`、三组新 CLI help、自然语言路由、pipeline category discovery、Skill Creator `quick_validate.py` 与 `git diff --check` 均通过。本轮未调用生成/TTS provider、未消耗 credits、未上传素材或发布。
 
 ### 2026-09-07 自动化升级记录（Source-bound VFR → CFR Conformance）
 
@@ -4624,6 +4699,7 @@ python3 scripts/pipeline_manifest.py . --require freeze_punch_plan --strict
 | **60** | **[Takes Pack](docs/prompts/60-takes-pack.md)** | **多 take / Scribe transcript 压成保留 speaker/audio events 的 phrase-level 阅读视图** |
 | **61** | **[Project Bootstrap](docs/prompts/61-project-bootstrap.md)** | **原始素材目录 → source inventory + project memory** |
 | **112** | **[Frame-rate Conform](docs/prompts/112-frame-rate-conform.md)** | **手机/录屏 VFR → decoded PTS 检测、CFR 工作副本与 live gate** |
+| **113** | **[Audio Dropout QA](docs/prompts/113-audio-dropout-qa.md)** | **短促数字静音候选、正常速度 WAV 证据、人工听审与 live gate** |
 | **62** | **[Hook Variants](docs/prompts/62-hook-variants.md)** | **同一视频批量生成前三秒 hook 角度** |
 | **67** | **[Speech Continuity QA](docs/prompts/67-speech-continuity-qa.md)** | **成片二次 ASR 检查复读、近重复 take 和句内口吃** |
 | **68** | **[Cover Variants](docs/prompts/68-cover-variants.md)** | **多套封面、feed-size 预览、标题协同和最终选择** |
@@ -4723,6 +4799,7 @@ scripts/
 ├── speech_continuity_qa.py     成片二次 ASR 复读 / 口吃发布 gate  [V3]
 ├── audio_master_report.py      成片响度 / true peak / LRA 发布门禁 [V3]
 ├── audio_channel_qa.py         成片声道活动/起始/平衡/相位/mono fold-down live gate [V3]
+├── audio_dropout_qa.py         最终人声/混音短促掉点候选 / 1× WAV 听审 live gate [V3]
 ├── narration_loudness_qa.py    最终独立旁白逐短语响度一致性 live gate [V3]
 ├── timeline_view.py            源素材/成片切点 filmstrip+waveform  [V3]
 ├── subtitle_pack.py            SRT/VTT/ASS/JSON 字幕交付包        [V3]

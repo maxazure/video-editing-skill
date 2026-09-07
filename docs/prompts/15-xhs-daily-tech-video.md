@@ -666,7 +666,30 @@
         --strict
       # 仍要在正常速度分别试听 stereo master 和 mono fold-down。
 
-7c.2. # 可选：最终旁白由多段 TTS / 配音片段拼成，混音前先查逐短语一致性。
+7c.2. # 最终独立人声优先：查 40–400 ms 短促断音，并绑定正常速度听审证据。
+      python3 scripts/audio_dropout_qa.py analyze \
+        work/final_narration.wav \
+        --project-dir . \
+        --evidence-dir output/verify/day<NN>_audio_dropout_clips \
+        --output output/verify/day<NN>_audio_dropout_qa_scan.json \
+        --markdown output/verify/day<NN>_audio_dropout_qa_scan.md \
+        --response-template output/verify/day<NN>_audio_dropout_qa_response.json \
+        --strict
+      # 完整 1× 播放人声轨和全部 WAV，填写 response；dropout/uncertain 必须修。
+      python3 scripts/audio_dropout_qa.py audit \
+        --report output/verify/day<NN>_audio_dropout_qa_scan.json \
+        --response output/verify/day<NN>_audio_dropout_qa_response.json \
+        --output output/verify/day<NN>_audio_dropout_qa.json \
+        --markdown output/verify/day<NN>_audio_dropout_qa.md \
+        --project-dir . \
+        --strict
+      python3 scripts/audio_dropout_qa.py verify \
+        --report output/verify/day<NN>_audio_dropout_qa.json \
+        --project-dir . \
+        --strict
+      # 只有 mix 时可改用 master，但 BGM/SFX 可能掩盖人声掉点，交付说明要写明。
+
+7c.3. # 可选：最终旁白由多段 TTS / 配音片段拼成，混音前先查逐短语一致性。
       python3 scripts/narration_loudness_qa.py analyze \
         work/final_narration.wav \
         --segments work/final_narration_segments.json \
@@ -845,6 +868,7 @@
      --require flash_safety_qa \
      --require temporal_artifact_qa \
      --require audio_channel_qa \
+     --require audio_dropout_qa \
      --require subtitle_glyph_qa \
      --require subtitle_render_review \
      --output work/pipeline_manifest.json \
@@ -921,6 +945,7 @@
 - 如有参考视频，给我 reference_edit_rhythm 的 cut density / median shot / final hold / boundary distance、两张 contact sheet 和 live verify 状态
 - audio_master_report 的输出（必须 `summary.blocking == 0`）
 - audio_channel_qa 的左右活动、onset skew、balance、phase correlation、mono fold-down loss 和 live verify 状态
+- audio_dropout_qa 的候选时间/持续时长/前后文 RMS/下降深度、WAV 证据、完整 1× 播放和人工决定
 - 如使用分段 TTS / 配音，给出 narration_loudness_qa 的逐短语 LUFS、spread、dBTP、LRA 和 live verify 状态
 - 如用了 J-cut/L-cut，给我 audio_transition_plan / apply receipt，并说明每个改变边界的 1× 耳机 + 手机试听结论
 - 如用了 multimodal dead-air，给我 plan/verify 状态、源切点复盘路径和完整工作副本审片结论
@@ -938,6 +963,7 @@
 - 有 BGM 的口播成片用 `--bgm-ducking`，并在正常速度试听旁白入口、停顿恢复和片尾；音乐主导视频可不启用
 - 发布前用 audio_master_report 确认 LUFS / true peak / 长静音，不要只凭耳朵判断
 - 发布前用 audio_channel_qa 检查缺声道、左右起始/能量、反相和 mono fold-down；报告不能替代 1× stereo/mono 完整试听
+- 发布前优先对最终独立人声轨运行 audio_dropout_qa；dropout/uncertain 必须修复，intentional_pause 要保留说明，混音 BGM/SFX 可能掩盖掉点
 - 分段 TTS / 配音先对最终独立旁白运行 narration_loudness_qa，再在混音后运行 audio_master_report；两者不能互相替代
 - 有最终独立人声轨时，用 caption_speech_qa 检查孤立/offset/越界字幕；禁止把含 BGM/SFX 的完整混音当人声输入，ready 也不替代最终 1× 字幕审看
 - 发布前用 flash_safety_qa 筛查大面积亮度 / 饱和红高频闪烁；不要为清 gate 随意放宽阈值，高风险交付要升级到认可的专业 analyzer
@@ -1052,6 +1078,8 @@ day<NN>/
     │   ├── day<NN>_flash_safety_qa.md   # 风险区间、修复方向与非认证边界
     │   ├── day<NN>_audio_channel_qa.json # 声道活动/onset/balance/phase/mono fold-down live gate
     │   ├── day<NN>_audio_channel_qa.md   # 指标、blocker/warning 与完整试听边界
+    │   ├── day<NN>_audio_dropout_qa.json # 短促近静音候选 / evidence / 人工听审 live gate
+    │   ├── day<NN>_audio_dropout_qa.md   # 候选时间、RMS、下降深度与复核边界
     │   ├── day<NN>_narration_loudness_qa.json # 可选：最终旁白逐短语 LUFS/spread/dBTP/LRA live gate
     │   ├── day<NN>_narration_loudness_qa.md   # 可选：短语表、blocker、例外与人工试听要求
     │   ├── reference_edit_rhythm/           # 可选：参考片/候选片 contact sheets

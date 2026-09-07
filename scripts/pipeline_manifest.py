@@ -535,6 +535,16 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         blocks_when_present=True,
     ),
     ArtifactDef(
+        "audio_dropout_qa",
+        "Audio Dropout QA",
+        (
+            "**/audio_dropout_qa.json",
+            "**/*_audio_dropout_qa.json",
+        ),
+        "Run audio_dropout_qa.py audit and verify; repair confirmed or uncertain brief gaps before publishing.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "narration_loudness_qa",
         "Narration Loudness QA",
         (
@@ -1414,6 +1424,48 @@ def evaluate_category(
                 status = "warn" if status != "blocked" else status
                 notes.append(
                     f"audio channel report needs listening review {artifact.path}: "
+                    f"{warnings} warning(s)"
+                )
+        return {
+            "category": definition.category,
+            "label": definition.label,
+            "status": status,
+            "artifact_count": len(artifacts),
+            "latest_path": artifacts[0].path,
+            "notes": sorted(set(notes)),
+            "next_action": definition.next_action if status in {"missing", "blocked", "warn"} else "",
+        }
+
+    if definition.category == "audio_dropout_qa":
+        from audio_dropout_qa import verify_report
+
+        for artifact in artifacts:
+            data = _load_json(artifact.path)
+            if data is None:
+                status = "blocked"
+                notes.append(f"unreadable audio dropout report: {artifact.path}")
+                continue
+            try:
+                verification = verify_report(
+                    data,
+                    str(project_dir) if project_dir is not None else None,
+                )
+            except Exception as exc:
+                status = "blocked"
+                notes.append(f"audio dropout live verification failed {artifact.path}: {exc}")
+                continue
+            blocking = _int_at(verification, "summary", "blocking")
+            warnings = _int_at(verification, "summary", "warnings")
+            if blocking:
+                status = "blocked"
+                notes.append(
+                    f"invalid or unresolved audio dropout report {artifact.path}: "
+                    f"{blocking} blocking item(s)"
+                )
+            elif warnings:
+                status = "warn" if status != "blocked" else status
+                notes.append(
+                    f"audio dropout report contains intentional-pause review {artifact.path}: "
                     f"{warnings} warning(s)"
                 )
         return {

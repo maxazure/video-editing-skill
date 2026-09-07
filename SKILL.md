@@ -1,6 +1,6 @@
 ---
 name: video-editing
-description: "Xiaohongshu/RED-tuned short-form video workflow for voice-over, talking-head, tutorials, interviews, podcasts, screen recordings, green/blue-screen compositing, B-roll, captions, and generated assets. Covers edit routing, creator-owned edit-style profiles, VFR/CFR source conformance, transcription, semantic review, multi-take/audio sync/stabilization/dead-air cleanup, highlights/shorts, story and source gates, enrichment and video-generation planning, generated clip/sequence and scoped AI video-edit review, locked-EDL final audio storyboards, phrase-level narration loudness and final channel-integrity QA, color/speed/J-L cuts, reversible revisions and recipes, preflight/render/QA including flash/photosensitivity and encode-quality screening, subtitles, CapCut, platform/size exports, covers, captions, publish packages, dashboards, handoff formats, and Remotion."
+description: "Xiaohongshu/RED-tuned short-form video workflow for voice-over, talking-head, tutorials, interviews, podcasts, screen recordings, green/blue-screen compositing, B-roll, captions, and generated assets. Covers edit routing, creator-owned edit-style profiles, VFR/CFR source conformance, transcription, semantic review, multi-take/audio sync/stabilization/dead-air cleanup, highlights/shorts, story and source gates, enrichment and video-generation planning, generated clip/sequence and scoped AI video-edit review, locked-EDL final audio storyboards, phrase-level narration loudness, final channel-integrity and brief audio-dropout QA, color/speed/J-L cuts, reversible revisions and recipes, preflight/render/QA including flash/photosensitivity and encode-quality screening, subtitles, CapCut, platform/size exports, covers, captions, publish packages, dashboards, handoff formats, and Remotion."
 metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
 ---
 
@@ -88,6 +88,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ render_qa.py             渲染后黑屏/静帧/静音/尺寸质检 + review packet
    ├─→ encode_quality_qa.py     同时间线 master vs 重编码件 → SSIM/PSNR / 最差帧 / live gate
    ├─→ audio_channel_qa.py      成片声道活动/起始/平衡/相位/mono fold-down live gate
+   ├─→ audio_dropout_qa.py      最终人声/混音短促近静音候选 / 1× WAV 听审 live gate
    ├─→ flash_safety_qa.py       成片亮度/饱和红 flash → 1s/5s 风险窗口 / live gate
    ├─→ temporal_artifact_qa.py  单帧/少数帧 return-to-state spike → 三帧证据 / 人工 audit / live gate
    ├─→ shot_color_qa.py         成片镜头亮度/对比/色度/饱和度/broadcast-range + 切点跳变 gate
@@ -201,6 +202,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `review_proxy.py` | master/platform MP4 → 低码率 timecoded 审片视频 + JSON/Markdown | `<video.mp4>` `--output verify/review_proxy.mp4` `--dry-run` `--no-timecode` |
 | `audio_master_report.py` | 成片响度报告：LUFS / true peak / LRA / 长静音 gate | `<video.mp4>` `--output audio_master_report.json` `--markdown audio_master_report.md` `--strict` |
 | `audio_channel_qa.py` | 最终 master → 声道活动、起始错位、L/R 平衡、相位相关与 mono fold-down source-bound live gate | `analyze <media> --output --markdown --strict` / `verify --report --strict` |
+| `audio_dropout_qa.py` | 最终人声/混音 → 20 ms 短近静音候选、1× WAV 证据、人工听审与 source-bound live gate | `analyze <media> --evidence-dir --response-template --strict` / `audit --response` / `verify --strict` |
 | `narration_loudness_qa.py` | 最终独立旁白逐短语一致性：target LUFS / segment spread / true peak / LRA source-bound live gate | `analyze <media> --segments <json> --output --markdown --strict` / `verify --report --strict` |
 | `caption_speech_qa.py` | subtitle_pack cue → 独立人声活动覆盖、头尾静音、内部停顿与时间线越界 source-bound live gate | `analyze <isolated-speech> --subtitle-pack <json> --output --markdown --strict` / `verify --report --strict` |
 | `subtitle_glyph_qa.py` | subtitle_pack + 项目内显式字体 → 逐字符 Unicode cmap 覆盖、缺字/fallback 清单与 source-bound live gate | `analyze --subtitle-pack --font [--fallback-font] --output --strict` / `verify --report --strict` |
@@ -1725,6 +1727,19 @@ python3 scripts/audio_channel_qa.py verify \
 ```
 
 `audio_channel_qa.py` 用本地 FFmpeg 固定窗口测量左右声道活动、起始偏移、能量平衡、相位相关和 mono fold-down 能量损失。mono 直接通过声道专项；stereo 会现场测量；多声道要求先定义明确 downmix。它不改音频，也不替代完整 1× stereo/mono 试听、`audio_master_report.py` 的响度/爆峰检查或同步复核。详见 [docs/prompts/106-audio-channel-qa.md](docs/prompts/106-audio-channel-qa.md)。
+
+**6a2. 短促音频掉点（最终独立人声优先）**：
+```bash
+python3 scripts/audio_dropout_qa.py analyze work/final_narration.wav \
+  --project-dir . \
+  --evidence-dir verify/audio_dropout_clips \
+  --output verify/audio_dropout_qa_scan.json \
+  --markdown verify/audio_dropout_qa_scan.md \
+  --response-template verify/audio_dropout_qa_response.json \
+  --strict
+```
+
+默认以 20 ms 窗口定位活跃音频之间 `40–400 ms` 的短近静音。出现候选时完整 1× 播放输入与全部 WAV，填写 `dropout | intentional_pause | uncertain`，再运行 `audit` 和 `verify`。确认掉点与不确定继续阻断；刻意停顿保留 warning。优先使用最终独立对白/旁白 stem，BGM/SFX 可能掩盖掉点。它不识别语音、不修音，也不替代 `audio_master_report.py`。详见 [docs/prompts/113-audio-dropout-qa.md](docs/prompts/113-audio-dropout-qa.md)。
 
 ### Caption / Speech QA（字幕与独立人声活动对齐）
 

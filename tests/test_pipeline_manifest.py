@@ -13,6 +13,7 @@ from edit_revision import APPROVAL_VERSION, apply_revision, audit_proposal, prep
 from edit_recipe import export_recipe  # noqa: E402
 from edit_style_profile import create_profile, template_spec  # noqa: E402
 import audio_channel_qa  # noqa: E402
+import audio_dropout_qa  # noqa: E402
 import delivery_encode  # noqa: E402
 import encode_quality_qa  # noqa: E402
 import freeze_punch  # noqa: E402
@@ -334,6 +335,68 @@ def test_audio_channel_report_is_live_verified_and_can_be_required(tmp_path, mon
         required=["audio_channel_qa"],
     )
     assert "audio_channel_qa" in missing["missing_required"]
+
+
+def test_audio_dropout_report_is_live_verified_and_can_be_required(tmp_path, monkeypatch):
+    _publish_ready_project(tmp_path)
+    source = tmp_path / "output" / "day58_master.mp4"
+    media = {
+        "duration": 1.0,
+        "format_name": "mov,mp4",
+        "audio_stream_index": 1,
+        "audio_codec": "aac",
+        "sample_rate": 48000,
+        "channels": 2,
+        "channel_layout": "stereo",
+    }
+    analysis = audio_dropout_qa.analyze_windows(
+        [
+            {
+                "index": index,
+                "time": index * 0.02,
+                "rms_dbfs": -20.0,
+                "peak_dbfs": -17.0,
+            }
+            for index in range(50)
+        ],
+        duration=1.0,
+        settings=audio_dropout_qa.normalize_settings(),
+    )
+    monkeypatch.setattr(audio_dropout_qa, "probe_audio_media", lambda _path: dict(media))
+    monkeypatch.setattr(
+        audio_dropout_qa,
+        "analyze_audio",
+        lambda *_args, **_kwargs: json.loads(json.dumps(analysis)),
+    )
+    report = audio_dropout_qa.build_report(
+        source,
+        project_dir=tmp_path,
+        evidence_dir=tmp_path / "verify" / "audio_dropout_clips",
+    )
+    report_path = tmp_path / "verify" / "audio_dropout_qa.json"
+    _write(report_path, report)
+
+    current = build_manifest(
+        str(tmp_path),
+        target_stage="publish_ready",
+        required=["audio_dropout_qa"],
+    )
+    gate = next(g for g in current["gates"] if g["category"] == "audio_dropout_qa")
+    assert gate["status"] == "ready"
+
+    _write(source, "changed rendered bytes")
+    stale = build_manifest(str(tmp_path), target_stage="publish_ready")
+    gate = next(g for g in stale["gates"] if g["category"] == "audio_dropout_qa")
+    assert gate["status"] == "blocked"
+    assert "audio_dropout_qa" in stale["blocked_gates"]
+
+    report_path.unlink()
+    missing = build_manifest(
+        str(tmp_path / "empty"),
+        target_stage="analysis",
+        required=["audio_dropout_qa"],
+    )
+    assert "audio_dropout_qa" in missing["missing_required"]
 
 
 def test_encode_quality_report_is_live_verified_and_can_be_required(tmp_path, monkeypatch):
