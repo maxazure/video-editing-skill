@@ -2,7 +2,7 @@
 
 这是一个面向 **口播、教程、访谈、播客切片、录屏演示 / facecam demo** 的 AI 视频剪辑生产线：给它原始口播音频/视频、transcript、B-roll、摄像头小窗或素材目录，它可以把“还没整理的素材”推进到 **可发布的小红书 / 抖音 / 视频号短视频**。
 
-它提供一条完整工作流：**项目启动/素材导入 → 手机/录屏 VFR 时基归一 → 个人/品牌剪辑风格 → 生产授权 → 手持防抖 / 绿蓝幕换背景 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 生成片有效运动窗口 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp / 关键帧 freeze-punch / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 锁定视觉 EDL 后重建最终声音分镜 → 最终旁白逐短语响度门禁 → 渲染前预检 / 真实画面字幕样式选择 / 字幕逐字符字体覆盖 → 单次编码渲染 → 质检 / 最终成片字幕像素复核 / 字幕与独立人声对齐 / 声道完整性 / 短促音频掉点 / 闪烁风险 / 单帧瞬态伪影筛查 / 最终成片唇形复核 → 多平台导出 / 目标大小交付编码 / 重编码画质损失门禁 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
+它提供一条完整工作流：**项目启动/素材导入 → 手机/录屏 VFR 时基归一 → 个人/品牌剪辑风格 → 生产授权 → 手持防抖 / 绿蓝幕换背景 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 生成片有效运动窗口 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp / 关键帧 freeze-punch / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 锁定视觉 EDL 后重建最终声音分镜 → 最终旁白逐短语响度门禁 → 渲染前预检 / 真实画面字幕样式选择 / 字幕逐字符字体覆盖 → 单次编码渲染 → 质检 / 最终音视频轨覆盖 / 最终成片字幕像素复核 / 字幕与独立人声对齐 / 声道完整性 / 短促音频掉点 / 闪烁风险 / 单帧瞬态伪影筛查 / 最终成片唇形复核 → 多平台导出 / 目标大小交付编码 / 重编码画质损失门禁 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
 
 ## 适合做什么
 
@@ -40,6 +40,7 @@
 - **分段 TTS / 配音不会再被整片平均响度掩盖**：`narration_loudness_qa.py` 在最终独立旁白音轨上逐短语实测 LUFS / dBTP / LRA，并检查非例外段 spread；旁白、时间清单或现场 measurements 漂移会让旧报告失效，混音后仍要另跑全片 `audio_master_report.py`。
 - **最终声道错误不会被整片响度合格掩盖**：`audio_channel_qa.py` 现场检查左右声道活动、起始错位、能量平衡、相位相关和 mono fold-down 损失；source、媒体契约、阈值、算法或 measurements 漂移都会让旧报告失效。
 - **几十毫秒断音不会被长静音门槛漏掉**：`audio_dropout_qa.py` 用 20 ms 窗口查找活跃音频之间的短促近静音，导出正常速度 WAV 上下文；每个候选必须完整试听并标记为掉点、刻意停顿或不确定，源文件、测量、证据或 response 漂移都会阻断。
+- **MP4 能播放也要证明两条流完整**：`stream_coverage_qa.py` 完整解码最终文件，核对视频/音频首尾 PTS、各流对容器时间线的覆盖、视频 `nb_frames` 和可选的预期时长/帧数；重渲染、remux 或报告漂移都会让旧 gate 失效。
 - **数字人口型必须在最终成片上重新举证**：`lip_sync_review.py` 从最终 master 的完整短语导出 1× 带声和 0.25× 静音 proof clips，逐条复核爆破音闭唇、元音提前/滞后、讲话时冻嘴、说话人和音频质量；任何剪切、变速、换音或重编码都会让旧报告失效。
 - **参考片节奏先量化再借鉴**：`reference_edit_rhythm.py` 用同一套 hard-cut 检测比较参考片和成片的 cuts/minute、镜头时长、结尾 hold 与切点分布，同时绑定两条视频和 contact sheets；默认只提示差异，明确验收时才阻断。
 - **适合交给强推理模型做长流程代理执行**：在 [GPT-5.6 Sol](https://developers.openai.com/api/docs/models/gpt-5.6-sol)（OpenAI 当前旗舰；API 别名 `gpt-5.6` 指向 Sol）和 [Claude Opus 4.8](https://docs.anthropic.com/en/docs/about-claude/models) 这类面向复杂专业任务、agent 工作流的模型下，本 skill 对 **口播类短视频** 至少可以替代 **80% 的常规视频剪辑工作**。
@@ -270,6 +271,7 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    │
    ├─→ subtitle_render_review.py 最终 MP4 + subtitle_pack → 高风险字幕 1× clips / 原尺寸帧 / 完整审片 live gate
    ├─→ render_qa.py             渲染后黑屏/静帧/静音/尺寸质检 + review packet
+   ├─→ stream_coverage_qa.py    最终 MP4 decoded A/V 首尾 PTS / 帧数 / 容器覆盖 live gate
    ├─→ encode_quality_qa.py     同时间线 master vs 重编码件 → SSIM/PSNR / 最差帧 / live gate
    ├─→ audio_channel_qa.py      成片声道活动/起始/平衡/相位/mono fold-down live gate
    ├─→ audio_dropout_qa.py      最终人声/混音短促近静音候选 / 1× WAV 听审 live gate
@@ -2483,6 +2485,25 @@ python3 scripts/timeline_view.py output/day58_master.mp4 --at 42.5 --radius 1.5 
 
 `--review-dir` 会写 `render_qa_review.json` 和 `render_qa_review.md`，把黑屏、静帧、静音的可疑区间按 FAIL/WARN 排序；`--review-clips` 会额外抽取短 MP4 证据片段。只需要审阅清单时不加 `--review-clips`。
 
+### Stream Coverage QA — 最终音视频轨覆盖门禁
+[`scripts/stream_coverage_qa.py`](scripts/stream_coverage_qa.py) · [详细文档](docs/prompts/114-stream-coverage-qa.md)
+
+容器总时长会跟随较长的流，视频轨提前结束、音频仍覆盖全片时，MP4 依然可能正常打开。这个只读 gate 完整解码文件，再分别读取首条视频和音频流的 decoded frames：
+
+```bash
+python3 scripts/stream_coverage_qa.py analyze output/final.mp4 \
+  --project-dir . \
+  --output verify/stream_coverage_qa.json \
+  --markdown verify/stream_coverage_qa.md \
+  --strict
+python3 scripts/stream_coverage_qa.py verify \
+  --report verify/stream_coverage_qa.json \
+  --project-dir . --strict
+python3 scripts/pipeline_manifest.py . --require stream_coverage_qa --strict
+```
+
+默认检查全量解码、timestamp regression、音视频开头 80 ms / 结尾 100 ms 以内的一致性、各流对容器头尾 100 ms 以内的覆盖，并核对视频 `nb_frames`。render plan 有精确合同时追加 `--expected-duration 30 --expected-video-frames 900`。AAC priming/discard 使音频帧数不适合作为硬门禁，音频使用 decoded PTS 与样本时长。确实需要无声交付时显式传 `--allow-no-audio`。任何成片或派生字段漂移都会在 `verify` 现场重算时阻断；通过后仍要完整 1× 播放确切交付文件。
+
 ### 🎛️ Encode Quality QA — 同时间线重编码画质损失门禁
 [`scripts/encode_quality_qa.py`](scripts/encode_quality_qa.py) · [详细文档](docs/prompts/107-encode-quality-qa.md)
 
@@ -3318,6 +3339,7 @@ pytest tests/test_hdr_sdr.py -v             # PQ/HLG → Rec.709 SDR / color tag
 pytest tests/test_delivery_encode.py -v     # 硬大小上限 / 两遍编码 / 完整解码门禁
 pytest tests/test_encode_quality_qa.py -v   # 同时间线 SSIM/PSNR / P05 / 双输入 drift live gate
 pytest tests/test_render_qa.py -v           # 渲染后质检
+pytest tests/test_stream_coverage_qa.py -v  # decoded A/V 首尾、容器覆盖、帧数与 live gate
 pytest tests/test_flash_safety_qa.py -v     # 亮度/饱和红 flash、滚动窗口、source drift gate
 pytest tests/test_temporal_artifact_qa.py -v # 单帧/少数帧 spike、三帧证据、人工 audit / live gate
 pytest tests/test_shot_color_qa.py -v       # 成片镜头色彩 / 曝光 / broadcast-range 门禁
@@ -3392,6 +3414,41 @@ pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 pytest tests/test_review_dashboard.py -v    # 静态人工复核面板 + gate queue
 pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 gate
 ```
+
+### 2026-09-09 自动化升级记录（Source-bound Decoded Stream Coverage QA）
+
+本次联网研究的 GitHub 参考：
+
+| 项目 / 资料 | 借鉴点 | 本次处理 |
+|---|---|---|
+| [`Jane-xiaoer/paper-collage-ad-codex`](https://github.com/Jane-xiaoer/paper-collage-ad-codex/blob/main/SKILL.md) | 明确记录静态图循环、`zoompan` 与 `xfade` 组合可能生成“音频覆盖全片、视频轨很早结束”的可播放 MP4，并要求验证确切 stream duration 与 frame count | 新增 decoded frame timeline gate，逐流核对首尾 PTS、容器覆盖和视频帧数 |
+| [`Jaycheng1103/chatgpt-video-editing-skills`](https://github.com/Jaycheng1103/chatgpt-video-editing-skills/blob/main/skills/chatgpt-short-video-editor/references/production-rules.md) | 预览和正式成片都要求完整解码，并记录 duration、audio/video streams；修复后必须重新验证最终文件 | `analyze` 做全量 `ffmpeg -xerror` 解码，`verify` 对确切成片重新 hash、解码和计算 |
+| [`kajisho5/ffmpeg-skill`](https://github.com/kajisho5/ffmpeg-skill) | real-file probe、结构化结果、执行后验证和不覆盖原片组成统一工具合同 | 保持本地、只读、typed CLI 与 JSON/Markdown artifact；源文件和输出路径碰撞、symlink/hardlink 覆盖均拒绝 |
+| [`YaoFANGUK/video-subtitle-remover#102`](https://github.com/YaoFANGUK/video-subtitle-remover/issues/102) | 真实案例中处理后视频轨从 61 秒缩到 53.76 秒，音频时长保持，造成明显不同步 | 同时比较 A/V decoded end 与各流到 container end 的差值，直接定位被截短的轨道 |
+
+新增/调整能力：
+
+- 新增 [`scripts/stream_coverage_qa.py`](scripts/stream_coverage_qa.py) 的 `analyze → verify` 闭环。它完整解码最终文件，再用 `ffprobe -show_frames` 读取首条视频/音频流的 decoded PTS、帧时长、帧数、timestamp regressions 与 timeline digest。
+- 默认阻断缺失必需流、解码失败、音视频首端相差超过 80 ms、尾端相差超过 100 ms、任一流与容器头尾相差超过 100 ms，以及视频 `nb_frames` 与实际解码帧数不一致。render plan 有精确合同时可加 `--expected-duration`、`--expected-video-frames`；无声交付必须显式 `--allow-no-audio`。
+- AAC priming/discard 会改变音频 frame metadata，所以音频覆盖以 decoded PTS 和 `nb_samples/sample_rate` 为依据。报告绑定成片 SHA-256、媒体合同、算法、设置、现场解码结果、checks、limitations 与 canonical report id；成片或派生字段漂移都会阻断。
+- `pipeline_manifest.py` 新增存在即 live verify、可 `--require stream_coverage_qa` 的 gate；`edit_brief_plan.py` 新增中英文轨道截短/时长不一致/结尾丢帧路由，并把检查加入普通 render/QA/publish runbook。主 SKILL、daily workflow、prompts 导航和 [`docs/prompts/114-stream-coverage-qa.md`](docs/prompts/114-stream-coverage-qa.md) 已同步。
+
+使用方式：
+
+```bash
+python3 scripts/stream_coverage_qa.py analyze output/final.mp4 \
+  --project-dir . \
+  --output verify/stream_coverage_qa.json \
+  --markdown verify/stream_coverage_qa.md \
+  --strict
+python3 scripts/stream_coverage_qa.py verify \
+  --report verify/stream_coverage_qa.json --project-dir . --strict
+python3 scripts/pipeline_manifest.py . --require stream_coverage_qa --strict
+```
+
+若 render plan 已锁定 30 秒 / 900 帧，在 `analyze` 追加 `--expected-duration 30 --expected-video-frames 900`。平台版经过 remux、字幕烧录或交付重编码后，对每个确切交付文件重新生成报告。门禁通过后仍要完整 1× 播放；它不判断口型同步、创意留白或结尾节奏。
+
+验证结果：新增 **15 项** decoded PTS/样本时长/timestamp regression/AAC priming/轨道截短/预期时长与帧数/无声策略/漂移/路径/CLI/brief/manifest 回归；关联定向 `.venv/bin/python -m pytest tests/test_stream_coverage_qa.py tests/test_edit_brief_plan.py tests/test_pipeline_manifest.py -q` 通过 **159 passed in 3.07s**，最终全量 `.venv/bin/python -m pytest tests -q` 通过 **1181 passed in 26.49s**。真实 FFmpeg smoke 使用 2 秒 320×180、10 fps H.264/AAC：干净文件得到 `20` 个视频帧、`94` 个可解码 AAC frame、两条流均在 `2.000s` 结束，`analyze / verify` 都为 `ready`；视频轨截成 1 秒而音频保持 2 秒的文件准确阻断 `av_end_coverage`、`video_container_coverage`、`video_expected_duration` 与 `video_expected_frame_count`，strict 按预期退出 2。`compileall`、三组 CLI help、自然语言路由、pipeline category discovery、Skill Creator `quick_validate.py` 与 `git diff --check` 均通过。本轮没有改动媒体、上传素材、调用生成/TTS provider、消耗 credits 或发布。
 
 ### 2026-09-08 自动化升级记录（Source-bound Brief Audio Dropout QA）
 
@@ -4700,6 +4757,7 @@ python3 scripts/pipeline_manifest.py . --require freeze_punch_plan --strict
 | **61** | **[Project Bootstrap](docs/prompts/61-project-bootstrap.md)** | **原始素材目录 → source inventory + project memory** |
 | **112** | **[Frame-rate Conform](docs/prompts/112-frame-rate-conform.md)** | **手机/录屏 VFR → decoded PTS 检测、CFR 工作副本与 live gate** |
 | **113** | **[Audio Dropout QA](docs/prompts/113-audio-dropout-qa.md)** | **短促数字静音候选、正常速度 WAV 证据、人工听审与 live gate** |
+| **114** | **[Stream Coverage QA](docs/prompts/114-stream-coverage-qa.md)** | **最终音视频全量解码、首尾 PTS、帧数与容器覆盖 live gate** |
 | **62** | **[Hook Variants](docs/prompts/62-hook-variants.md)** | **同一视频批量生成前三秒 hook 角度** |
 | **67** | **[Speech Continuity QA](docs/prompts/67-speech-continuity-qa.md)** | **成片二次 ASR 检查复读、近重复 take 和句内口吃** |
 | **68** | **[Cover Variants](docs/prompts/68-cover-variants.md)** | **多套封面、feed-size 预览、标题协同和最终选择** |
@@ -4789,6 +4847,7 @@ scripts/
 ├── platform_safe_area_qa.py    字幕/PIP/CTA/marker 平台安全区 gate [V3]
 ├── render_final.py             单次编码渲染 + 可选口播降噪 + enrich_plan 接入（V3 强化）
 ├── render_qa.py                渲染后黑屏/静帧/静音/尺寸质检       [V3]
+├── stream_coverage_qa.py       最终音视频 decoded 首尾/帧数/容器覆盖 live gate [V3]
 ├── encode_quality_qa.py        同时间线 reference/candidate SSIM/PSNR live gate [V3]
 ├── flash_safety_qa.py          亮度/饱和红 flash + 1s/5s 滚动窗口 live gate [V3]
 ├── temporal_artifact_qa.py     单帧/少数帧瞬态伪影 + 三帧证据 / 人工 audit live gate [V3]

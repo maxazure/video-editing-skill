@@ -86,6 +86,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    │                            可选 --versioned-output 防覆盖旧成片
    ├─→ subtitle_render_review.py 最终 MP4 + subtitle_pack → 高风险字幕 1× clips / 原尺寸帧 / 完整审片 live gate
    ├─→ render_qa.py             渲染后黑屏/静帧/静音/尺寸质检 + review packet
+   ├─→ stream_coverage_qa.py    最终 MP4 → decoded 音视频首尾 PTS / 帧数 / 容器覆盖 live gate
    ├─→ encode_quality_qa.py     同时间线 master vs 重编码件 → SSIM/PSNR / 最差帧 / live gate
    ├─→ audio_channel_qa.py      成片声道活动/起始/平衡/相位/mono fold-down live gate
    ├─→ audio_dropout_qa.py      最终人声/混音短促近静音候选 / 1× WAV 听审 live gate
@@ -191,6 +192,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `render_final.py` | 单次编码渲染 + 可选个人风格默认值 / 口播降噪 / J-cut/L-cut / enrich_plan / 旁白驱动 BGM ducking | `--config render_config.json` `--style-profile work/edit_style_profile.json` `--audio-transition-plan audio_transition_plan.json` `--speech-denoise light` `--enrich-plan enrich_plan.json` `--bgm-ducking` `--output final.mp4` |
 | `subtitle_render_review.py` | 最终 MP4 + subtitle_pack → 高风险字幕上下文 clip / 中点原尺寸帧、完整 1× 人工审片与 source-bound live gate | `prepare --video --subtitle-pack --proof-dir` / `audit --request --response --strict` / `verify --report --strict` |
 | `render_qa.py` | 渲染后 QA：尺寸/音频/黑屏/静帧/静音 + review packet | `<video.mp4>` `--platform douyin` `--json qa.json` `--review-dir verify/qa` |
+| `stream_coverage_qa.py` | final MP4 → 全量解码、首尾 PTS、A/V 与容器覆盖、视频帧数 source-bound live gate | `analyze <video> --output --markdown [--expected-duration --expected-video-frames] --strict` / `verify --report --strict` |
 | `encode_quality_qa.py` | 同时间线参考 master vs 重编码件 → 全长 SSIM/PSNR、P05、最差帧时间码与双输入 live gate | `analyze <reference> <candidate> --output --markdown --strict` / `verify --report --strict` |
 | `flash_safety_qa.py` | final/platform video → 大面积亮度/饱和红 flash、滚动 1s/5s 风险窗口与 source-bound live gate | `analyze <video> --output --markdown --strict` / `verify --report --strict` |
 | `temporal_artifact_qa.py` | final/generated video → 单帧/少数帧局部突变筛查、before/suspect/after 证据与人工决定 live gate | `analyze <video> --evidence-dir --response-template --strict` / `audit --report --response` / `verify --strict` |
@@ -1698,6 +1700,20 @@ python3 scripts/render_qa.py final.mp4 \
 ```
 
 `render_qa.py` 会检查容器元数据、平台尺寸、视频/音频流、黑屏、长静帧和长静音。对小红书派生文件使用 `--platform xhs`，对抖音/视频号使用 `--platform douyin` 或 `--platform wxch`。`--review-dir` 会写 `render_qa_review.json` / `.md`，`--review-clips` 会为可疑区间抽取短 MP4；如果只想快速查元数据，可加 `--no-filters`。
+
+**6a00. 最终音视频轨覆盖（master 和每个重要平台版必跑）**：
+```bash
+python3 scripts/stream_coverage_qa.py analyze final.mp4 \
+  --project-dir . \
+  --output verify/stream_coverage_qa.json \
+  --markdown verify/stream_coverage_qa.md \
+  --strict
+python3 scripts/stream_coverage_qa.py verify \
+  --report verify/stream_coverage_qa.json \
+  --project-dir . --strict
+```
+
+该门禁完整解码成片，并对首条视频/音频流分别统计 decoded frame count、首帧 PTS、尾帧结束时间和 timeline digest；默认阻断音视频首尾偏移或各流未覆盖容器时间线。render plan 有确切时长/帧数时追加 `--expected-duration`、`--expected-video-frames`。AAC priming/discard 不使用 `nb_frames` 作硬门禁，视频帧数仍会核对。报告通过后完整 1× 播放确切交付文件。详见 [docs/prompts/114-stream-coverage-qa.md](docs/prompts/114-stream-coverage-qa.md)。
 
 **6a0. 同时间线重编码画质（压缩 / 转码衍生件必跑）**：
 ```bash

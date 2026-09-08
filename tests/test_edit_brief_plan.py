@@ -58,6 +58,35 @@ def test_subtitle_missing_glyph_brief_routes_font_coverage_gate(tmp_path):
     assert step["gate_category"] == "subtitle_glyph_qa"
 
 
+def test_stream_duration_mismatch_routes_decoded_coverage_gate(tmp_path):
+    source = tmp_path / "output" / "final.mp4"
+    source.parent.mkdir(parents=True)
+    source.write_text("fake video", encoding="utf-8")
+
+    plan = build_plan(
+        f"检查 {source} 有没有视频轨被截短、音频比视频长，并核对解码帧数",
+        project_dir=str(tmp_path),
+    )
+
+    step = next(step for step in plan["steps"] if step["id"] == "stream_coverage_qa")
+    assert step["script"] == "stream_coverage_qa.py"
+    assert f"stream_coverage_qa.py analyze {source}" in step["command"]
+    assert "verify/stream_coverage_qa.json" in step["command"]
+    assert step["gate_category"] == "stream_coverage_qa"
+
+
+def test_render_runbook_includes_stream_coverage_after_basic_render_qa(tmp_path):
+    source = tmp_path / "origin" / "talk.mp4"
+    source.parent.mkdir(parents=True)
+    source.write_text("fake video", encoding="utf-8")
+
+    plan = build_plan(f"把 {source} 渲染成最终视频", project_dir=str(tmp_path))
+    ids = [step["id"] for step in plan["steps"]]
+
+    assert ids.index("render_qa") < ids.index("stream_coverage_qa")
+    assert "stream_coverage_qa" in [gate["category"] for gate in plan["gates"]]
+
+
 def test_batch_short_brief_routes_highlights_before_batch(tmp_path):
     source = tmp_path / "origin" / "interview.mp4"
     source.parent.mkdir(parents=True)

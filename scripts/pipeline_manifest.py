@@ -414,6 +414,16 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         blocks_when_present=True,
     ),
     ArtifactDef(
+        "stream_coverage_qa",
+        "Stream Coverage QA",
+        (
+            "**/stream_coverage_qa.json",
+            "**/*_stream_coverage_qa.json",
+        ),
+        "Run stream_coverage_qa.py verify; rerender any truncated, offset, short, or stale decoded stream before publishing.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "encode_quality_qa",
         "Encode Quality QA",
         (
@@ -1300,6 +1310,48 @@ def evaluate_category(
             elif warnings:
                 status = "warn" if status != "blocked" else status
                 notes.append(f"temporal-artifact report contains approved intentional edits: {warnings} warning(s)")
+        return {
+            "category": definition.category,
+            "label": definition.label,
+            "status": status,
+            "artifact_count": len(artifacts),
+            "latest_path": artifacts[0].path,
+            "notes": sorted(set(notes)),
+            "next_action": definition.next_action if status in {"missing", "blocked", "warn"} else "",
+        }
+
+    if definition.category == "stream_coverage_qa":
+        from stream_coverage_qa import verify_report
+
+        for artifact in artifacts:
+            data = _load_json(artifact.path)
+            if data is None:
+                status = "blocked"
+                notes.append(f"unreadable stream coverage report: {artifact.path}")
+                continue
+            try:
+                verification = verify_report(
+                    data,
+                    str(project_dir) if project_dir is not None else None,
+                )
+            except Exception as exc:
+                status = "blocked"
+                notes.append(f"stream coverage live verification failed {artifact.path}: {exc}")
+                continue
+            blocking = _int_at(verification, "summary", "blocking")
+            warnings = _int_at(verification, "summary", "warnings")
+            if blocking:
+                status = "blocked"
+                notes.append(
+                    f"invalid or incomplete stream coverage report {artifact.path}: "
+                    f"{blocking} blocking item(s)"
+                )
+            elif warnings:
+                status = "warn" if status != "blocked" else status
+                notes.append(
+                    f"stream coverage report has scoped-stream warnings {artifact.path}: "
+                    f"{warnings} warning(s)"
+                )
         return {
             "category": definition.category,
             "label": definition.label,

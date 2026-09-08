@@ -177,6 +177,22 @@ SIGNAL_KEYWORDS: Mapping[str, Sequence[str]] = {
         "少数帧变形",
         "局部突变",
     ),
+    "stream_coverage_qa": (
+        "stream coverage qa",
+        "stream duration mismatch",
+        "truncated video stream",
+        "audio longer than video",
+        "video shorter than audio",
+        "missing ending frames",
+        "decoded frame count",
+        "音视频轨时长不一致",
+        "视频轨被截短",
+        "音频比视频长",
+        "视频比音频短",
+        "结尾画面丢失",
+        "解码帧数",
+        "流覆盖检查",
+    ),
     "narration_loudness_qa": (
         "narration loudness consistency",
         "phrase loudness",
@@ -674,6 +690,7 @@ SIGNAL_LABELS: Mapping[str, str] = {
     "framing_preview": "平台画幅 cover / contain / blur 预览与选择",
     "flash_safety_qa": "最终成片亮度 / 饱和红闪烁风险预检",
     "temporal_artifact_qa": "单帧 / 少数帧瞬态伪影筛查与逐帧复核",
+    "stream_coverage_qa": "最终音视频轨解码时间线 / 帧数覆盖门禁",
     "narration_loudness_qa": "最终旁白逐短语响度一致性门禁",
     "audio_channel_qa": "最终成片声道活动 / 平衡 / 相位 / mono fold-down 门禁",
     "audio_dropout_qa": "最终人声 / 混音短促数字掉点复核门禁",
@@ -859,7 +876,7 @@ def build_plan(
 
     if source_media and not Path(source_media).expanduser().exists():
         blockers.append(f"source media not found: {source_media}")
-    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy", "reference_edit_rhythm", "lip_sync_review", "subtitle_style_preview", "subtitle_render_review", "framing_preview", "flash_safety_qa", "temporal_artifact_qa", "audio_channel_qa", "audio_dropout_qa", "caption_speech_qa", "multimodal_dead_air", "video_stabilization", "chroma_key", "scoped_video_edit", "speed_ramp", "freeze_punch", "generated_motion_window", "frame_rate_conform", "hdr_sdr", "delivery_encode", "encode_quality_qa", "edit_style_profile"}):
+    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy", "reference_edit_rhythm", "lip_sync_review", "subtitle_style_preview", "subtitle_render_review", "framing_preview", "flash_safety_qa", "temporal_artifact_qa", "stream_coverage_qa", "audio_channel_qa", "audio_dropout_qa", "caption_speech_qa", "multimodal_dead_air", "video_stabilization", "chroma_key", "scoped_video_edit", "speed_ramp", "freeze_punch", "generated_motion_window", "frame_rate_conform", "hdr_sdr", "delivery_encode", "encode_quality_qa", "edit_style_profile"}):
         warnings.append("source media was not provided; commands use <source_media> placeholders")
 
     if transcript and not Path(transcript).expanduser().exists():
@@ -2445,6 +2462,41 @@ def build_plan(
                 gate_category="audio_master_report",
                 required=False,
             ),
+        )
+
+    if wants_render or "qa" in ids or "publish" in ids or "stream_coverage_qa" in ids:
+        coverage_input = "output/final.mp4" if wants_render else source
+        _add_step(
+            steps,
+            seen,
+            _step(
+                "stream_coverage_qa",
+                phase="qa",
+                script="stream_coverage_qa.py",
+                label="Verify decoded audio/video stream coverage and frame count",
+                reason="A playable container can hide a truncated picture or sound stream whose decoded timeline ends early.",
+                command=shell(
+                    [
+                        python_bin,
+                        "scripts/stream_coverage_qa.py",
+                        "analyze",
+                        coverage_input,
+                        "--project-dir",
+                        project_dir,
+                        "--output",
+                        "verify/stream_coverage_qa.json",
+                        "--markdown",
+                        "verify/stream_coverage_qa.md",
+                        "--strict",
+                    ]
+                ),
+                outputs=["verify/stream_coverage_qa.json", "verify/stream_coverage_qa.md"],
+                gate_category="stream_coverage_qa",
+            ),
+        )
+        notes.append(
+            "stream_coverage_qa.py hashes and fully decodes the final file, then compares decoded video/audio first and last PTS with the container timeline. "
+            "Pass --expected-duration and --expected-video-frames when the render plan defines exact values; watch the complete delivery at 1x after the gate passes."
         )
 
     if wants_render or "qa" in ids or "publish" in ids or "audio_dropout_qa" in ids:

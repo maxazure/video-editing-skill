@@ -553,6 +553,20 @@
      --platform douyin \
      --json output/day<NN>_master_qa.json
 
+7.0. # 完整解码最终文件，核对视频/音频首尾 PTS、容器覆盖和视频帧数。
+     python3 scripts/stream_coverage_qa.py analyze \
+       output/day<NN>_master.mp4 \
+       --project-dir . \
+       --output output/verify/day<NN>_stream_coverage_qa.json \
+       --markdown output/verify/day<NN>_stream_coverage_qa.md \
+       --strict
+     python3 scripts/stream_coverage_qa.py verify \
+       --report output/verify/day<NN>_stream_coverage_qa.json \
+       --project-dir . \
+       --strict
+     # render plan 已锁定时长/帧数时，analyze 追加 --expected-duration / --expected-video-frames。
+     # 平台版经过 remux、字幕烧录或交付转码后，应对每个确切文件重新运行。
+
 7a. # 对最终编码文件做镜头级亮度/色度/饱和度/broadcast-range 复核。
     python3 scripts/shot_color_qa.py \
       output/day<NN>_master.mp4 \
@@ -867,6 +881,7 @@
      --require shot_color_qa \
      --require flash_safety_qa \
      --require temporal_artifact_qa \
+     --require stream_coverage_qa \
      --require audio_channel_qa \
      --require audio_dropout_qa \
      --require subtitle_glyph_qa \
@@ -933,6 +948,7 @@
 - enrich_plan.json 里 broll/sticker/chapter 总数（确认丰富度足够）
 - content_guard 的输出（必须 ✅ 无违规）
 - render_qa 的输出（必须没有 FAIL；WARN 要解释）
+- stream_coverage_qa 的全量解码、decoded 音视频首尾 PTS、容器头尾覆盖、视频帧数和 live verify 状态
 - flash_safety_qa 的输出（BLOCK 必须修；clean 结果也不是医疗 / 法规认证）
 - temporal_artifact_qa 的输出、候选 before/suspect/after JPEG 与人工决定（artifact / uncertain 必须修）
 - shot_color_qa 的输出（broadcast-range / coverage BLOCK 必须修；切点 WARN 要看 master）
@@ -968,6 +984,7 @@
 - 有最终独立人声轨时，用 caption_speech_qa 检查孤立/offset/越界字幕；禁止把含 BGM/SFX 的完整混音当人声输入，ready 也不替代最终 1× 字幕审看
 - 发布前用 flash_safety_qa 筛查大面积亮度 / 饱和红高频闪烁；不要为清 gate 随意放宽阈值，高风险交付要升级到认可的专业 analyzer
 - 发布前用 temporal_artifact_qa 补查单帧 / 少数帧瞬态异常；候选是人工审片入口，不是自动坏帧结论，也不能替代完整 1× 播放
+- 发布前对 master 和重要平台版运行 stream_coverage_qa；秒级轨道差异要回到渲染或 mux 修复，不能靠放宽阈值隐藏
 - shot_color_qa 的亮度/色度跳变是审片提示，不是审美分；不要为了清 WARN 把有意的日夜/图形切换调平
 - subtitle_readability_qa 的 CPS / 行长 WARN 是人工复核提示，不要为了清零机械拆句
 - subtitle_glyph_qa 只证明显式字体 cmap 覆盖；不证明 shaping、彩色 emoji、ASS 布局或最终可读性，仍须完整 1× 审片
@@ -1076,6 +1093,8 @@ day<NN>/
     │   ├── day<NN>_retention_rhythm_qa.md   # 时间范围 + 修复建议
     │   ├── day<NN>_flash_safety_qa.json # 亮度/饱和红 flash + 滚动窗口 live gate
     │   ├── day<NN>_flash_safety_qa.md   # 风险区间、修复方向与非认证边界
+    │   ├── day<NN>_stream_coverage_qa.json # decoded A/V 首尾、容器覆盖、帧数 live gate
+    │   ├── day<NN>_stream_coverage_qa.md   # 覆盖表、blocker 与完整播放边界
     │   ├── day<NN>_audio_channel_qa.json # 声道活动/onset/balance/phase/mono fold-down live gate
     │   ├── day<NN>_audio_channel_qa.md   # 指标、blocker/warning 与完整试听边界
     │   ├── day<NN>_audio_dropout_qa.json # 短促近静音候选 / evidence / 人工听审 live gate

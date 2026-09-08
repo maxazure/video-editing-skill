@@ -19,6 +19,7 @@ import encode_quality_qa  # noqa: E402
 import freeze_punch  # noqa: E402
 import flash_safety_qa  # noqa: E402
 import temporal_artifact_qa  # noqa: E402
+import stream_coverage_qa  # noqa: E402
 import generated_clip_review  # noqa: E402
 import generated_motion_window  # noqa: E402
 import generated_sequence_review  # noqa: E402
@@ -221,6 +222,41 @@ def test_temporal_artifact_report_is_live_verified_and_can_be_required(tmp_path,
         required=["temporal_artifact_qa"],
     )
     assert "temporal_artifact_qa" in missing["missing_required"]
+
+
+def test_stream_coverage_report_is_live_verified_and_can_be_required(tmp_path, monkeypatch):
+    _publish_ready_project(tmp_path)
+    report_path = tmp_path / "verify" / "stream_coverage_qa.json"
+    _write(report_path, {"schema": "stream_coverage_qa.v1", "summary": {"blocking": 0}})
+
+    monkeypatch.setattr(
+        stream_coverage_qa,
+        "verify_report",
+        lambda _report, _project_dir: {"summary": {"blocking": 0, "warnings": 0}},
+    )
+    current = build_manifest(
+        str(tmp_path), target_stage="publish_ready", required=["stream_coverage_qa"]
+    )
+    gate = next(g for g in current["gates"] if g["category"] == "stream_coverage_qa")
+    assert gate["status"] == "ready"
+
+    monkeypatch.setattr(
+        stream_coverage_qa,
+        "verify_report",
+        lambda _report, _project_dir: {"summary": {"blocking": 1, "warnings": 0}},
+    )
+    stale = build_manifest(str(tmp_path), target_stage="publish_ready")
+    gate = next(g for g in stale["gates"] if g["category"] == "stream_coverage_qa")
+    assert gate["status"] == "blocked"
+    assert "stream_coverage_qa" in stale["blocked_gates"]
+
+    report_path.unlink()
+    missing = build_manifest(
+        str(tmp_path / "empty"),
+        target_stage="analysis",
+        required=["stream_coverage_qa"],
+    )
+    assert "stream_coverage_qa" in missing["missing_required"]
 
 
 def test_narration_loudness_report_is_live_verified_and_can_be_required(tmp_path, monkeypatch):
