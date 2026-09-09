@@ -49,6 +49,13 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         "Run project_bootstrap.py to create origin/, work/, output/, verify/, source inventory, and project memory.",
     ),
     ArtifactDef(
+        "runtime_preflight",
+        "Runtime Preflight",
+        ("**/runtime_preflight.json", "**/*_runtime_preflight.json"),
+        "Run runtime_preflight.py analyze for the selected workflow profiles; install or change any missing/unknown component, then live-verify the report.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "frame_rate_conform_plan",
         "Frame-rate Conform Plan",
         ("**/frame_rate_conform_plan.json", "**/*_frame_rate_conform_plan.json"),
@@ -866,6 +873,47 @@ def evaluate_category(
 
     status = "ready"
     notes: List[str] = []
+
+    if definition.category == "runtime_preflight":
+        from runtime_preflight import verify_report
+
+        for artifact in artifacts:
+            data = _load_json(artifact.path)
+            if data is None:
+                status = "blocked"
+                notes.append(f"unreadable runtime preflight: {artifact.path}")
+                continue
+            try:
+                verification = verify_report(
+                    data,
+                    str(project_dir) if project_dir is not None else None,
+                )
+            except Exception as exc:
+                status = "blocked"
+                notes.append(f"runtime preflight live verification failed {artifact.path}: {exc}")
+                continue
+            blocking = _int_at(verification, "summary", "blocking")
+            warnings = _int_at(verification, "summary", "warnings")
+            if blocking:
+                status = "blocked"
+                notes.append(
+                    f"missing, unknown, or stale runtime capability {artifact.path}: "
+                    f"{blocking} blocking item(s)"
+                )
+            elif warnings:
+                status = "warn" if status != "blocked" else status
+                notes.append(
+                    f"runtime preflight has {warnings} warning(s): {artifact.path}"
+                )
+        return {
+            "category": definition.category,
+            "label": definition.label,
+            "status": status,
+            "artifact_count": len(artifacts),
+            "latest_path": artifacts[0].path,
+            "notes": sorted(set(notes)),
+            "next_action": definition.next_action if status in {"missing", "blocked", "warn"} else "",
+        }
 
     if definition.category == "production_authorization":
         from production_authorization import verify_report

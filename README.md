@@ -2,7 +2,7 @@
 
 这是一个面向 **口播、教程、访谈、播客切片、录屏演示 / facecam demo** 的 AI 视频剪辑生产线：给它原始口播音频/视频、transcript、B-roll、摄像头小窗或素材目录，它可以把“还没整理的素材”推进到 **可发布的小红书 / 抖音 / 视频号短视频**。
 
-它提供一条完整工作流：**项目启动/素材导入 → 手机/录屏 VFR 时基归一 → 个人/品牌剪辑风格 → 生产授权 → 手持防抖 / 绿蓝幕换背景 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 生成片有效运动窗口 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp / 关键帧 freeze-punch / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 锁定视觉 EDL 后重建最终声音分镜 → 最终旁白逐短语响度门禁 → 渲染前预检 / 真实画面字幕样式选择 / 字幕逐字符字体覆盖 → 单次编码渲染 → 质检 / 最终音视频轨覆盖 / 最终成片字幕像素复核 / 字幕与独立人声对齐 / 声道完整性 / 短促音频掉点 / 闪烁风险 / 单帧瞬态伪影筛查 / 最终成片唇形复核 → 多平台导出 / 目标大小交付编码 / 重编码画质损失门禁 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
+它提供一条完整工作流：**项目启动/素材导入 → 本机工具链能力预检 → 手机/录屏 VFR 时基归一 → 个人/品牌剪辑风格 → 生产授权 → 手持防抖 / 绿蓝幕换背景 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 生成片有效运动窗口 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp / 关键帧 freeze-punch / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 锁定视觉 EDL 后重建最终声音分镜 → 最终旁白逐短语响度门禁 → 渲染前预检 / 真实画面字幕样式选择 / 字幕逐字符字体覆盖 → 单次编码渲染 → 质检 / 最终音视频轨覆盖 / 最终成片字幕像素复核 / 字幕与独立人声对齐 / 声道完整性 / 短促音频掉点 / 闪烁风险 / 单帧瞬态伪影筛查 / 最终成片唇形复核 → 多平台导出 / 目标大小交付编码 / 重编码画质损失门禁 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
 
 ## 适合做什么
 
@@ -11,6 +11,7 @@
 - **噪声口播可在单次编码内保守清理**：`render_final.py --speech-denoise light|medium|strong` 会在变速、压缩、响度规范化和 BGM ducking 前处理低频震动与稳态底噪；默认关闭，最大降噪限制为 12 dB。
 - **停顿删段可同时看声音和画面**：`multimodal_dead_air.py` 只有在静帧覆盖静音达到门槛时才提出候选，实际只删二者交集；源 hash、20% 删除预算、切点复盘、单次编码和完整解码都进入 gate。
 - **多机位先同步再剪辑**：`multicam_sync.py` 把两台以上相机/手机/录音设备对齐到同一参考时间线，记录每路 offset、置信度、有效音轨、公共重叠区间，并可用多窗口 probe 测量长片时钟漂移；原片不改、不重编码。
+- **开始媒体工作前先证明本机能跑**：`runtime_preflight.py` 按 `media_io / core_edit / captions / qa / hdr_sdr / stabilization / remotion` profile 检查命令版本、编码器和 FFmpeg filters；明确区分 missing 与 unknown，并让环境或报告漂移在 manifest 中失效。
 - **手机和录屏 VFR 可先变成可审计 CFR 工作副本**：`frame_rate_conform.py` 读取全部解码帧 PTS 间隔，绑定精确目标有理帧率；输出必须通过恒定 cadence、帧数、音画起止、显示方向、SHA-256 和完整解码验证，原片保持不变。
 - **手持防抖保留原片和 A/B 证据**：`video_stabilization.py` 把源 SHA-256、确切 FFmpeg 后端和人工决定写进计划；apply 只生成新工作副本与全长左右对照，完整 1× 复核并 confirm 后 manifest 才放行。
 - **绿幕/蓝幕换背景先看 matte 再渲染**：`chroma_key.py` 在前景早/中/晚生成 composite 与黑白 matte，人工逐项确认边缘、主体完整性、溢色和背景匹配后才允许完整 H.264/AAC 输出；源、背景、预览、filter 或成片漂移都会让旧 review 失效。
@@ -144,6 +145,7 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    │
    ├─→ project_bootstrap.py     原始素材目录 → origin/work/output/verify/edit + source inventory
    ├─→ edit_brief_plan.py       用户一句话需求 → 本地脚本 runbook / commands / gates
+   ├─→ runtime_preflight.py     workflow profile → FFmpeg/Node 命令、编码器、filters / live gate
    ├─→ frame_rate_conform.py    手机/录屏 VFR → 全量 PTS 检测 / CFR 工作副本 / live gate
    ├─→ edit_style_profile.py    个人/品牌创意方向、节奏与渲染/文案默认值 → 可移植 profile
    ├─→ production_authorization.py
@@ -332,11 +334,18 @@ pip install mlx-whisper Pillow
 git clone https://github.com/maxazure/video-editing-skill ~/projects/video-editing-skill
 cd ~/projects/video-editing-skill
 
-# 3. 环境自检（应该全 ✅ 或 ⚠️ 可选项）
+# 3. 按实际工作流检查本机命令、编码器和 FFmpeg filters
+python3 scripts/runtime_preflight.py analyze \
+  --profile core_edit --profile captions --profile qa \
+  --output work/runtime_preflight.json \
+  --markdown work/runtime_preflight.md \
+  --strict
+
+# 可选：查看 GPU / Whisper 建议
 python3 scripts/utils.py
 
 # 4. 跑一遍测试套件确认 OK
-pytest tests/           # 715 个测试，约 14 秒
+pytest tests/           # 当前 1197 个测试，约 27 秒
 ```
 
 每天做一条视频的完整模板：**[docs/prompts/15-xhs-daily-tech-video.md](docs/prompts/15-xhs-daily-tech-video.md)**
@@ -645,6 +654,32 @@ python3 scripts/project_bootstrap.py \
 ```
 
 默认 `--mode copy`，会按路径和扩展名把素材归入 `origin/raw`、`origin/broll`、`origin/audio`、`origin/bgm`、`origin/images`、`origin/assets` 或 `origin/sidecars`；同名文件自动加后缀，不覆盖已有文件。`pipeline_manifest.py` 会发现 `source_inventory.json`，需要把素材导入作为 analysis gate 时可加 `--require source_inventory`。脚本不转码、不渲染、不上传，也不调用 LLM 或生成服务。
+
+### 🩺 Runtime Preflight — 本机工具链能力门禁
+[`scripts/runtime_preflight.py`](scripts/runtime_preflight.py) · [详细文档](docs/prompts/115-runtime-preflight.md)
+
+新项目开始媒体处理前，按实际工作流确认本机能力，避免渲染到一半才发现缺少字幕、HDR、QA 或防抖 filter：
+
+```bash
+python3 scripts/runtime_preflight.py list-profiles
+python3 scripts/runtime_preflight.py analyze \
+  --profile core_edit \
+  --profile captions \
+  --profile qa \
+  --output work/runtime_preflight.json \
+  --markdown work/runtime_preflight.md \
+  --strict
+python3 scripts/runtime_preflight.py verify \
+  --report work/runtime_preflight.json --strict
+python3 scripts/pipeline_manifest.py . \
+  --require runtime_preflight --strict
+```
+
+内置 profile 为 `media_io / core_edit / captions / qa / hdr_sdr / stabilization / remotion`。`missing` 表示可解析清单明确缺组件；`unknown` 表示版本命令或 FFmpeg 清单失败、超时或无法解析，两者都 fail closed。防抖 profile 接受两遍 `vidstabdetect + vidstabtransform` 或明确的单遍 `deshake` fallback；其他 profile 的必需项全部逐项核验。
+
+报告绑定所选 profile、Python/FFmpeg/FFprobe/Node 相关版本、FFmpeg component listing 状态、逐能力结果、修复建议与 canonical `report_id`。`verify` 会在当前机器重跑，版本、组件或报告内容漂移后旧 artifact 立即失效。`edit_brief_plan.py` 默认把本步骤排在实际媒体工作前：只转写/抽流使用 `media_io`，渲染使用 `core_edit`，再按字幕、QA、HDR、防抖、Remotion 意图追加 profile。
+
+该检查不执行真实编码、GPU session 或字体渲染，不能替代项目输入 preflight、媒体 probe、完整解码和最终视听 QA。本轮在当前开发机实测 `core_edit / captions / qa / stabilization / remotion` 可用；`hdr_sdr` 准确报告 `filter:zscale` 缺失并以 strict 退出 2，证明 profile 能在运行 HDR 转换前给出可行动 blocker。
 
 ### 🎞️ Frame-rate Conform — VFR 源素材归一
 [`scripts/frame_rate_conform.py`](scripts/frame_rate_conform.py) · [详细文档](docs/prompts/112-frame-rate-conform.md)
@@ -3361,6 +3396,7 @@ pytest tests/test_beat_sync.py -v          # BGM → beat edit slots / fallback 
 pytest tests/test_freeze_punch.py -v       # source-bound 定格替换 / punch crop / unchanged audio / live gate
 pytest tests/test_takes_pack.py -v          # 多 take phrase-level 阅读视图
 pytest tests/test_project_bootstrap.py -v   # 项目启动与 source inventory
+pytest tests/test_runtime_preflight.py -v  # FFmpeg/Node workflow profiles / missing-vs-unknown / environment drift gate
 pytest tests/test_transcript_review.py -v  # 文本/HTML 同步视频 transcript 校稿回路
 pytest tests/test_semantic_transcript_review.py -v # 全篇上下文审校 / 最小补丁 / choices gate
 pytest tests/test_edit_brief_plan.py -v     # 自然语言剪辑需求 → 本地 runbook
@@ -3414,6 +3450,43 @@ pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 pytest tests/test_review_dashboard.py -v    # 静态人工复核面板 + gate queue
 pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 gate
 ```
+
+### 2026-09-10 自动化升级记录（Workflow-profile Runtime Preflight）
+
+本次联网研究的 GitHub 参考：
+
+| 项目 / 资料 | 借鉴点 | 本次处理 |
+|---|---|---|
+| [`kajisho5/ffmpeg-skill@ae36275`](https://github.com/kajisho5/ffmpeg-skill/blob/ae3627595b66497b5d247daffcae17f4a035cfbc/docs/contract.md) | `doctor` 按工具逐项探测 FFmpeg filters、encoders 与 bitstream filters，并把状态分成 available、missing、unknown | 新增 workflow profile 能力矩阵；命令清单失败、超时或无法解析时标成 `unknown` 并阻断，避免把探测异常当成组件缺失或可用 |
+| [`notque/vexjoy-agent@fb494eb`](https://github.com/notque/vexjoy-agent/blob/fb494eb25b4663be5c521a0850a293c75cedc120/skills/content/video-editing/references/preflight.md) | 在媒体阶段开始前区分 FFmpeg / Node 硬依赖和 Remotion 软依赖 | `edit_brief_plan.py` 把 runtime preflight 排到实际媒体工作前，并按任务只选择需要的 profiles |
+| [`Aaryan-Kapoor/video-production-skill@662738c`](https://github.com/Aaryan-Kapoor/video-production-skill/blob/662738c012174788d860fdee9627239e23cffef6/INSTALL_FOR_AGENTS.md) | Python、FFmpeg、FFprobe 是基础依赖，其他工具按任务能力安装 | `media_io` 保留最小基础检查；字幕、QA、HDR、防抖和 Remotion 依赖通过独立 profile 增量启用 |
+
+新增/调整能力：
+
+- 新增 [`scripts/runtime_preflight.py`](scripts/runtime_preflight.py) 的 `analyze → verify` 闭环，内置 `media_io / core_edit / captions / qa / hdr_sdr / stabilization / remotion` profiles。它核对 Python、FFmpeg、FFprobe、Node、npx、`libx264`、AAC 和各工作流必需 filters；防抖接受 `vidstabdetect + vidstabtransform` 或 `deshake` fallback。
+- 报告绑定所选 profiles、相关命令版本、FFmpeg component listing、逐能力状态、探测限制和 canonical `report_id`。`verify` 会重跑当前环境；报告内容、版本或能力漂移都会阻断。未选 profile 的 Node 状态不会让 FFmpeg-only 报告失效。
+- `pipeline_manifest.py` 新增存在即 live verify、可 `--require runtime_preflight` 的 gate；`edit_brief_plan.py` 会从中英文需求推导最小 profile 集，并把检查放在 probe、转写和渲染之前。主 SKILL、daily workflow、prompts 导航和 [`docs/prompts/115-runtime-preflight.md`](docs/prompts/115-runtime-preflight.md) 已同步。
+
+用法：
+
+```bash
+python3 scripts/runtime_preflight.py analyze \
+  --profile core_edit --profile captions --profile qa \
+  --output work/runtime_preflight.json \
+  --markdown work/runtime_preflight.md \
+  --strict
+python3 scripts/runtime_preflight.py verify \
+  --report work/runtime_preflight.json --strict
+python3 scripts/pipeline_manifest.py . \
+  --require runtime_preflight --strict
+```
+
+验证记录：
+
+- 新增 16 项自动化测试；runtime preflight、edit brief、manifest 三组定向回归为 `163 passed in 3.20s`，全量为 `1197 passed in 26.35s`。
+- `compileall`、三个 CLI help、manifest category listing、Skill Creator `quick_validate.py` 与 `git diff --check` 均通过。
+- 当前开发机实测 FFmpeg/FFprobe 8.1.1、Node 22.22.3、npx 10.9.8：`core_edit / captions / qa / stabilization / remotion` 共 25 项能力全部 ready；`hdr_sdr` 准确阻断缺失的 `filter:zscale`，strict 退出码为 2。
+- 本轮只做本机命令与组件清单探测，没有编码媒体、启动 GPU session、提交 provider 任务、消耗 credits 或上传文件。
 
 ### 2026-09-09 自动化升级记录（Source-bound Decoded Stream Coverage QA）
 
@@ -4758,6 +4831,7 @@ python3 scripts/pipeline_manifest.py . --require freeze_punch_plan --strict
 | **112** | **[Frame-rate Conform](docs/prompts/112-frame-rate-conform.md)** | **手机/录屏 VFR → decoded PTS 检测、CFR 工作副本与 live gate** |
 | **113** | **[Audio Dropout QA](docs/prompts/113-audio-dropout-qa.md)** | **短促数字静音候选、正常速度 WAV 证据、人工听审与 live gate** |
 | **114** | **[Stream Coverage QA](docs/prompts/114-stream-coverage-qa.md)** | **最终音视频全量解码、首尾 PTS、帧数与容器覆盖 live gate** |
+| **115** | **[Runtime Preflight](docs/prompts/115-runtime-preflight.md)** | **按 workflow profile 检查本机 FFmpeg/Node 命令、编码器、filters 与环境漂移** |
 | **62** | **[Hook Variants](docs/prompts/62-hook-variants.md)** | **同一视频批量生成前三秒 hook 角度** |
 | **67** | **[Speech Continuity QA](docs/prompts/67-speech-continuity-qa.md)** | **成片二次 ASR 检查复读、近重复 take 和句内口吃** |
 | **68** | **[Cover Variants](docs/prompts/68-cover-variants.md)** | **多套封面、feed-size 预览、标题协同和最终选择** |
@@ -4791,6 +4865,7 @@ python3 scripts/pipeline_manifest.py . --require freeze_punch_plan --strict
 scripts/
 ├── utils.py                    平台/字体/编码器自检
 ├── project_bootstrap.py        项目启动 + source inventory             [V3]
+├── runtime_preflight.py        workflow profiles / FFmpeg+Node capability live gate [V3]
 ├── frame_rate_conform.py       VFR 全量 PTS 检测 + source-bound CFR 工作副本/live gate [V3]
 ├── edit_brief_plan.py          自然语言剪辑需求 → 本地 runbook          [V3]
 ├── production_authorization.py 确切动作/provider/素材/权利依据授权 gate  [V3]

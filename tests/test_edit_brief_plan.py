@@ -19,6 +19,50 @@ def test_infer_source_media_from_brief():
     assert infer_source_media("use /tmp/raw/talk.MOV, add captions") == "/tmp/raw/talk.MOV"
 
 
+def test_render_brief_runs_runtime_profiles_before_render(tmp_path):
+    source = tmp_path / "origin" / "talk.mp4"
+    source.parent.mkdir(parents=True)
+    source.write_text("fake video", encoding="utf-8")
+
+    plan = build_plan(
+        f"把 {source} 转写、加字幕、渲染并完成 QA",
+        project_dir=str(tmp_path),
+    )
+
+    ids = [step["id"] for step in plan["steps"]]
+    runtime = next(step for step in plan["steps"] if step["id"] == "runtime_preflight")
+    assert ids.index("runtime_preflight") < ids.index("transcript") < ids.index("master_video")
+    assert "--profile core_edit" in runtime["command"]
+    assert "--profile captions" in runtime["command"]
+    assert "--profile qa" in runtime["command"]
+    assert runtime["gate_category"] == "runtime_preflight"
+
+
+def test_remotion_brief_adds_node_profile_to_runtime_preflight(tmp_path):
+    plan = build_plan(
+        "用 Remotion 做一个 motion graphics 视频，先检查运行环境和 FFmpeg 能力",
+        project_dir=str(tmp_path),
+    )
+
+    runtime = next(step for step in plan["steps"] if step["id"] == "runtime_preflight")
+    assert "--profile remotion" in runtime["command"]
+    assert "runtime_preflight" in {signal["id"] for signal in plan["signals"]}
+
+
+def test_transcript_only_brief_uses_media_io_without_render_profiles(tmp_path):
+    source = tmp_path / "origin" / "talk.mp4"
+    source.parent.mkdir(parents=True)
+    source.write_text("fake video", encoding="utf-8")
+
+    plan = build_plan(f"只转写 {source}，生成 SRT sidecar", project_dir=str(tmp_path))
+
+    runtime = next(step for step in plan["steps"] if step["id"] == "runtime_preflight")
+    assert "--profile media_io" in runtime["command"]
+    assert "--profile core_edit" not in runtime["command"]
+    assert "--profile captions" not in runtime["command"]
+    assert "--profile qa" not in runtime["command"]
+
+
 def test_vfr_brief_routes_cfr_working_copy_before_downstream_edits(tmp_path):
     source = tmp_path / "origin" / "phone.mp4"
     source.parent.mkdir(parents=True)

@@ -33,6 +33,23 @@ PLATFORM_ALIASES: Sequence[Tuple[str, Sequence[str]]] = (
 )
 
 SIGNAL_KEYWORDS: Mapping[str, Sequence[str]] = {
+    "runtime_preflight": (
+        "runtime preflight",
+        "toolchain preflight",
+        "ffmpeg capability",
+        "ffmpeg capabilities",
+        "ffmpeg filter check",
+        "missing ffmpeg filter",
+        "dependency check",
+        "environment check",
+        "运行环境预检",
+        "工具链预检",
+        "ffmpeg 能力",
+        "ffmpeg 滤镜检查",
+        "ffmpeg 缺少滤镜",
+        "依赖检查",
+        "环境检查",
+    ),
     "source_ingest": (
         "raw footage",
         "footage",
@@ -639,6 +656,7 @@ SIGNAL_KEYWORDS: Mapping[str, Sequence[str]] = {
 }
 
 SIGNAL_LABELS: Mapping[str, str] = {
+    "runtime_preflight": "本机 FFmpeg / Node 运行能力预检",
     "source_ingest": "素材导入 / 项目启动",
     "production_authorization": "外部上传 / 侵入性剪辑 / 生成 / 真人与 IP 生产授权",
     "transcript": "转写 / 字幕时间码",
@@ -937,6 +955,94 @@ def build_plan(
                 gate_category="source_inventory",
                 required=False,
             ),
+        )
+
+    if normalized:
+        generic_fallback_expected = (
+            "runtime_preflight" not in ids
+            and not ids.difference({"platform"})
+        )
+        needs_core_edit = wants_render or generic_fallback_expected or bool(
+            ids.intersection(
+                {
+                    "frame_rate_conform",
+                    "multimodal_dead_air",
+                    "cleanup_silence",
+                    "video_stabilization",
+                    "chroma_key",
+                    "speed_ramp",
+                    "freeze_punch",
+                    "audio_transition",
+                    "audio_sync",
+                    "generated_motion_window",
+                    "screen_focus",
+                    "pip",
+                    "color_grade",
+                    "review_proxy",
+                    "framing_preview",
+                    "hdr_sdr",
+                    "delivery_encode",
+                    "nle_handoff",
+                }
+            )
+        )
+        runtime_profiles = ["core_edit" if needs_core_edit else "media_io"]
+        if (wants_render and needs_transcript) or ids.intersection(
+            {
+                "subtitle_style_preview",
+                "subtitle_render_review",
+            }
+        ):
+            runtime_profiles.append("captions")
+        if wants_render or ids.intersection(
+            {
+                "qa",
+                "publish",
+                "stream_coverage_qa",
+                "encode_quality_qa",
+                "flash_safety_qa",
+                "temporal_artifact_qa",
+                "audio_channel_qa",
+                "audio_dropout_qa",
+                "caption_speech_qa",
+            }
+        ):
+            runtime_profiles.append("qa")
+        if "hdr_sdr" in ids:
+            runtime_profiles.append("hdr_sdr")
+        if "video_stabilization" in ids:
+            runtime_profiles.append("stabilization")
+        if _contains(normalized, "remotion"):
+            runtime_profiles.append("remotion")
+        runtime_command = [python_bin, "scripts/runtime_preflight.py", "analyze"]
+        for profile_name in runtime_profiles:
+            runtime_command.extend(["--profile", profile_name])
+        runtime_command.extend(
+            [
+                "--output",
+                "work/runtime_preflight.json",
+                "--markdown",
+                "work/runtime_preflight.md",
+                "--strict",
+            ]
+        )
+        _add_step(
+            steps,
+            seen,
+            _step(
+                "runtime_preflight",
+                phase="ingest",
+                script="runtime_preflight.py",
+                label="Verify local runtime capabilities before media work",
+                reason="The selected workflow should prove its FFmpeg/Node commands, encoders, and filters before a render or QA job starts.",
+                command=shell(runtime_command),
+                outputs=["work/runtime_preflight.json", "work/runtime_preflight.md"],
+                gate_category="runtime_preflight",
+            ),
+        )
+        notes.append(
+            "runtime_preflight.py only inspects command versions and declared component listings. "
+            "It does not run a real encode, hardware path, font render, or provider job; keep the later media and visual/audio QA gates."
         )
 
     if "frame_rate_conform" in ids:
@@ -3162,7 +3268,11 @@ def build_plan(
             ),
         )
 
-    if not steps and normalized:
+    if (
+        "runtime_preflight" not in ids
+        and not [step for step in steps if step.get("id") != "runtime_preflight"]
+        and normalized
+    ):
         warnings.append("no specific edit signals matched; emitted a minimal transcript-to-render path")
         _add_step(
             steps,

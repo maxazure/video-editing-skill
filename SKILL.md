@@ -1,6 +1,6 @@
 ---
 name: video-editing
-description: "Xiaohongshu/RED-tuned short-form video workflow for voice-over, talking-head, tutorials, interviews, podcasts, screen recordings, green/blue-screen compositing, B-roll, captions, and generated assets. Covers edit routing, creator-owned edit-style profiles, VFR/CFR source conformance, transcription, semantic review, multi-take/audio sync/stabilization/dead-air cleanup, highlights/shorts, story and source gates, enrichment and video-generation planning, generated clip/sequence and scoped AI video-edit review, locked-EDL final audio storyboards, phrase-level narration loudness, final channel-integrity and brief audio-dropout QA, color/speed/J-L cuts, reversible revisions and recipes, preflight/render/QA including flash/photosensitivity and encode-quality screening, subtitles, CapCut, platform/size exports, covers, captions, publish packages, dashboards, handoff formats, and Remotion."
+description: "Xiaohongshu/RED-tuned short-form video workflow for voice-over, talking-head, tutorials, interviews, podcasts, screen recordings, green/blue-screen compositing, B-roll, captions, and generated assets. Covers edit routing, local runtime capability profiles, creator-owned edit-style profiles, VFR/CFR source conformance, transcription, semantic review, multi-take/audio sync/stabilization/dead-air cleanup, highlights/shorts, story and source gates, enrichment and video-generation planning, generated clip/sequence and scoped AI video-edit review, locked-EDL final audio storyboards, phrase-level narration loudness, final channel-integrity and brief audio-dropout QA, color/speed/J-L cuts, reversible revisions and recipes, preflight/render/QA including flash/photosensitivity and encode-quality screening, subtitles, CapCut, platform/size exports, covers, captions, publish packages, dashboards, handoff formats, and Remotion."
 metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
 ---
 
@@ -15,6 +15,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    │
    ├─→ project_bootstrap.py     原始素材目录 → source inventory / project.md
    ├─→ edit_brief_plan.py       用户一句话需求 → 本地脚本 runbook / gates
+   ├─→ runtime_preflight.py     workflow profile → FFmpeg/Node 命令、编码器、filters / live gate
    ├─→ frame_rate_conform.py    手机/录屏 VFR → 全量 PTS 检测 / CFR 工作副本 / live gate
    ├─→ edit_style_profile.py    个人/品牌创意方向、节奏与渲染/文案默认值 → 可移植 profile
    ├─→ production_authorization.py
@@ -130,6 +131,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | 脚本 | 职责 | 关键 CLI |
 |---|---|---|
 | `project_bootstrap.py` | 原始素材目录 → 项目结构 / source inventory / project.md | `--source raw_dir` `--project-dir work/day61` `--mode copy|hardlink` `--strict` |
+| `runtime_preflight.py` | workflow profile → 本机 FFmpeg/Node 命令、编码器、filters、环境漂移 live gate | `list-profiles` / `analyze --profile ... --output --strict` / `verify --report --strict` |
 | `edit_brief_plan.py` | 自然语言剪辑需求 → 本地脚本 runbook / 命令 / manifest gate | `--brief` `--brief-file` `--source-media` `--platform` `--markdown` `--strict` |
 | `frame_rate_conform.py` | 手机/录屏 VFR → decoded PTS cadence、精确 CFR 工作副本、帧数/音画起止与 live gate | `plan <source> --fps 30 --delivery` / `apply <plan>` / `verify <plan> --strict` |
 | `edit_style_profile.py` | 个人/品牌创意方向、剪辑节奏、渲染/文案默认值 → 无路径可移植 profile / digest 验证 / defaults-only 合并 | `template` / `create --spec` / `verify --profile --strict` / `apply --config --receipt` |
@@ -485,7 +487,29 @@ python3 scripts/pipeline_manifest.py \
   --strict
 ```
 
-### Phase 0aa: Frame-rate Conform（手机 / 录屏 VFR 可选）
+### Phase 0aa: Runtime Preflight（按任务核验本机能力）
+
+在打开媒体或启动渲染前，运行 [runtime_preflight.py](./scripts/runtime_preflight.py)。只转写、probe 或抽流用 `media_io`；会编码最终画面的任务用 `core_edit`，再按需要追加 `captions / qa / hdr_sdr / stabilization / remotion`：
+
+```bash
+python3 scripts/runtime_preflight.py analyze \
+  --profile core_edit \
+  --profile captions \
+  --profile qa \
+  --output work/runtime_preflight.json \
+  --markdown work/runtime_preflight.md \
+  --strict
+python3 scripts/runtime_preflight.py verify \
+  --report work/runtime_preflight.json --strict
+python3 scripts/pipeline_manifest.py . \
+  --require runtime_preflight --strict
+```
+
+必须分别对待 `missing` 和 `unknown`：前者表示可解析清单中明确没有组件，后者表示版本命令或 FFmpeg listing 失败、超时或不可解析；两者都停止当前 workflow。按 Markdown 的 action 修好环境后重新 `analyze`，不要手改 JSON。报告会绑定所选 profile、相关命令版本、FFmpeg component states 和 `report_id`；`pipeline_manifest.py` 现场复验，环境或报告漂移后旧结果立即失效。
+
+这一步只做 introspection，不运行真实编码、GPU、字体或 provider job。通过后仍要执行项目输入 preflight、真实媒体 probe、完整解码和最终视听 QA。详见 [Runtime Preflight](./docs/prompts/115-runtime-preflight.md)。
+
+### Phase 0ab: Frame-rate Conform（手机 / 录屏 VFR 可选）
 
 当源素材已知是 VFR、`r_frame_rate` 与 `avg_frame_rate` 可疑，或多段裁切后出现累积音画漂移时，先创建项目内 CFR 工作副本：
 

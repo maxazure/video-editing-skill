@@ -116,6 +116,7 @@
 | 112 | [Frame-rate Conform 可变帧率源素材归一](112-frame-rate-conform.md) | 手机/录屏 VFR → 全量 PTS 检测、精确 CFR 工作副本、帧数/音画起止与 live gate |
 | 113 | [Audio Dropout QA 短促数字掉点复核](113-audio-dropout-qa.md) | 最终人声/混音 → 20 ms 窗口、短近静音候选、正常速度 WAV 证据、人工 audit 与 live gate |
 | 114 | [Stream Coverage QA 最终音视频轨覆盖门禁](114-stream-coverage-qa.md) | final MP4 → 全量解码、首尾 PTS、音视频/容器覆盖、帧数与 source-bound live gate |
+| 115 | [Runtime Preflight 本机工具链能力门禁](115-runtime-preflight.md) | workflow profile → FFmpeg/Node 命令、编码器、filters、明确 missing/unknown 与 live environment gate |
 
 ## 快速上手
 
@@ -179,6 +180,7 @@
 | 成片左右声道不一致、疑似反相，或要检查手机单声道兼容 | [106-Audio Channel QA](106-audio-channel-qa.md) |
 | 人声或成片疑似有几十到几百毫秒断音、吞音或数字静音 | [113-Audio Dropout QA](113-audio-dropout-qa.md) |
 | MP4 能播放但疑似视频轨提前结束、音频更长或结尾丢帧 | [114-Stream Coverage QA](114-stream-coverage-qa.md) |
+| 开始剪辑前检查 FFmpeg/Node 依赖、编码器、滤镜，或排查 No such filter | [115-Runtime Preflight](115-runtime-preflight.md) |
 | 已有 SRT 和保留/删除字幕编号，想生成剪辑方案 | [55-SRT Edit Plan](55-srt-edit-plan.md) |
 | 相机内录音和外录麦克风音频需要自动对齐 | [56-Audio Sync](56-audio-sync.md) |
 | 渲染或发布前想打开一个总复核面板 | [57-Review Dashboard](57-review-dashboard.md) |

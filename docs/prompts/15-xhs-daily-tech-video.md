@@ -38,6 +38,18 @@
      --platform xhs
    # 详见 docs/prompts/64-edit-brief-plan.md
 
+0p. # 必跑：按本次实际工作流检查本机命令、编码器和 FFmpeg filters：
+    python3 scripts/runtime_preflight.py analyze \
+      --profile core_edit \
+      --profile captions \
+      --profile qa \
+      --output work/runtime_preflight.json \
+      --markdown work/runtime_preflight.md \
+      --strict
+    # 用 HDR / 防抖 / Remotion 时分别追加 hdr_sdr / stabilization / remotion。
+    # missing 或 unknown 都停止；修好环境后重新 analyze，不手改 JSON。
+    # 详见 docs/prompts/115-runtime-preflight.md
+
 0v. # 条件 gate：手机/录屏源是 VFR，或剪切后音画逐渐漂移时，先做 CFR 工作副本：
     python3 scripts/frame_rate_conform.py plan origin/<phone-or-screen>.mp4 \
       --fps 30 \
@@ -1002,6 +1014,8 @@
 day<NN>/
 ├── origin/                 # 你提供的原始素材
 ├── work/
+│   ├── runtime_preflight.json # workflow profile → 本机命令/encoder/filter live gate
+│   ├── runtime_preflight.md
 │   ├── production_authorization_scope.json # 确切素材/动作/provider/权利范围
 │   ├── production_authorization_request.json # source hash-bound 复核请求
 │   ├── production_authorization_response.json # 逐 action/right 人工决定

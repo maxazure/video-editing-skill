@@ -18,6 +18,7 @@ import delivery_encode  # noqa: E402
 import encode_quality_qa  # noqa: E402
 import freeze_punch  # noqa: E402
 import flash_safety_qa  # noqa: E402
+import runtime_preflight  # noqa: E402
 import temporal_artifact_qa  # noqa: E402
 import stream_coverage_qa  # noqa: E402
 import generated_clip_review  # noqa: E402
@@ -64,6 +65,39 @@ def test_publish_ready_manifest_passes_when_required_artifacts_exist(tmp_path):
     assert manifest["status"] == "ready"
     assert manifest["summary"]["required_ready"] == manifest["summary"]["required"]
     assert manifest["missing_required"] == []
+
+
+def test_runtime_preflight_is_live_verified_and_can_be_required(tmp_path, monkeypatch):
+    _publish_ready_project(tmp_path)
+    report_path = tmp_path / "work" / "runtime_preflight.json"
+    _write(report_path, {"schema": "runtime_preflight.v1", "summary": {"blocking": 0}})
+
+    monkeypatch.setattr(
+        runtime_preflight,
+        "verify_report",
+        lambda _report, _project_dir: {"summary": {"blocking": 0, "warnings": 0}},
+    )
+    current = build_manifest(
+        str(tmp_path), target_stage="publish_ready", required=["runtime_preflight"]
+    )
+    gate = next(g for g in current["gates"] if g["category"] == "runtime_preflight")
+    assert gate["status"] == "ready"
+
+    monkeypatch.setattr(
+        runtime_preflight,
+        "verify_report",
+        lambda _report, _project_dir: {"summary": {"blocking": 1, "warnings": 0}},
+    )
+    stale = build_manifest(str(tmp_path), target_stage="publish_ready")
+    gate = next(g for g in stale["gates"] if g["category"] == "runtime_preflight")
+    assert gate["status"] == "blocked"
+    assert "runtime_preflight" in stale["blocked_gates"]
+
+    report_path.unlink()
+    missing = build_manifest(
+        str(tmp_path), target_stage="analysis", required=["runtime_preflight"]
+    )
+    assert "runtime_preflight" in missing["missing_required"]
 
 
 def test_subtitle_glyph_qa_is_live_verified_and_can_be_required(tmp_path, monkeypatch):

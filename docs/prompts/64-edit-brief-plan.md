@@ -1,6 +1,6 @@
 # Edit Brief Plan 自然语言剪辑需求路由
 
-把用户的一句话剪辑需求转成当前 skill 的本地执行 runbook：匹配平台、素材类型、手持防抖、字幕、长视频拆条、B-roll、生成素材、参考视频节奏、音频、PIP、调色、QA 和发布包等信号，然后输出现有脚本的建议顺序、命令、产物和 manifest gate。
+把用户的一句话剪辑需求转成当前 skill 的本地执行 runbook：匹配平台、素材类型、运行环境 profile、手持防抖、字幕、长视频拆条、B-roll、生成素材、参考视频节奏、音频、PIP、调色、QA 和发布包等信号，然后输出现有脚本的建议顺序、命令、产物和 manifest gate。
 
 ## 适用场景
 
@@ -41,6 +41,7 @@ python3 scripts/edit_brief_plan.py \
 
 | 用户提法 | 路由方向 |
 |---|---|
+| 任一本地媒体任务；或明确说运行环境、依赖、FFmpeg 能力 / No such filter | 先运行 `runtime_preflight.py`；只转写/抽流用 `media_io`，渲染用 `core_edit`，再按字幕、QA、HDR、防抖、Remotion 追加 profile |
 | 长视频、访谈、播客、拆短视频、精华 | `highlight_picker.py` → `audio_boundary_snap.py`，多条时接 `shorts_batch.py` |
 | 停顿、剪紧、jump cut | `jump_cut.py` |
 | 口头禅、卡壳、重复句 | `rough_cut.py` |
@@ -76,6 +77,7 @@ python3 scripts/pipeline_manifest.py \
 ## 使用建议
 
 - 先看 `work/edit_brief_plan.md`，不要盲跑所有命令；它是 runbook，不是自动执行器。
+- `runtime_preflight` 总是在实际媒体步骤前；它只证明 command/listing 能力，后续项目 preflight、真实 encode/decode 和完整审片仍要执行。
 - 对生成视频或 paid provider，只生成 prompt pack 和审批 gate；不会提交 Dreamina/即梦/Veo/Sora 任务。
 - VFR 路由会要求明确 `30`、`60` 或 `30000/1001` 等目标帧率；brief 未给 rate 时保留 `<target_fps>`，由素材运动和平台决定。
 - 如果实际项目已有 transcript、render_config 或 clean_script，可用 `--transcript` 指向现有文件，并删除 Markdown 里不需要的步骤。
