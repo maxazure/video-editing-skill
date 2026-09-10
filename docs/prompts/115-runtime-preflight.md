@@ -3,7 +3,7 @@
 ## 什么时候用
 
 - 开始新的本地剪辑、渲染或 QA 项目时。
-- 任务需要烧录字幕、HDR → SDR、防抖或 Remotion，担心本机 FFmpeg/Node 组件不完整时。
+- 任务需要烧录字幕、HDR → SDR、防抖、交错检测/去交错或 Remotion，担心本机 FFmpeg/Node 组件不完整时。
 - 报错提到 `No such filter`、`Unknown encoder`、找不到 `ffmpeg` / `ffprobe` / `node` / `npx` 时。
 - 切换电脑、FFmpeg 安装、虚拟环境或 Node 版本后，需要确认旧环境报告仍然有效时。
 
@@ -49,7 +49,7 @@ python3 scripts/pipeline_manifest.py . \
   --strict
 ```
 
-HDR 或防抖任务只追加对应 profile。Remotion 项目追加 `--profile remotion`。只做转写/抽流时选 `media_io`，避免把 libx264、字幕或 QA filters 误设为无关 blocker。
+HDR、防抖或交错任务只追加对应 profile；交错 profile 要求 `idet`，并接受 `bwdif` 或 `yadif`。Remotion 项目追加 `--profile remotion`。只做转写/抽流时选 `media_io`，避免把 libx264、字幕或 QA filters 误设为无关 blocker。
 
 `analyze` 输出 `runtime_preflight.v1`，绑定所选 profiles、Python/命令版本、FFmpeg listing 状态、逐能力结果、profile 结果、修复建议和 canonical `report_id`。`verify` 用原 profiles 与 timeout 现场重跑；版本、组件状态或报告内容变化都会让旧报告失效。`edit_brief_plan.py` 会按任务自动选择 profile，并把本步骤排在媒体处理前。
 
@@ -62,5 +62,5 @@ HDR 或防抖任务只追加对应 profile。Remotion 项目追加 `--profile re
 ## 可直接复制的提示词
 
 ```text
-开始剪辑前，先运行 runtime_preflight.py。按任务选择 media_io/core_edit/captions/qa/hdr_sdr/stabilization/remotion profile，把 JSON 和 Markdown 存进 work/。missing 或 unknown 都要停止并给出修复动作；环境变化后重新 verify，再继续媒体处理。
+开始剪辑前，先运行 runtime_preflight.py。按任务选择 media_io/core_edit/captions/qa/hdr_sdr/stabilization/interlace/remotion profile，把 JSON 和 Markdown 存进 work/。missing 或 unknown 都要停止并给出修复动作；环境变化后重新 verify，再继续媒体处理。
 ```

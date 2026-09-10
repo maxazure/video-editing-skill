@@ -527,6 +527,29 @@ SIGNAL_KEYWORDS: Mapping[str, Sequence[str]] = {
         "录屏音画漂移",
         "剪完音画漂移",
     ),
+    "interlace_conform": (
+        "deinterlace",
+        "de-interlace",
+        "interlaced footage",
+        "interlaced video",
+        "field order",
+        "top field first",
+        "bottom field first",
+        "telecine",
+        "3:2 pulldown",
+        "combing artifact",
+        "combing artifacts",
+        "去交错",
+        "反交错",
+        "隔行扫描",
+        "交错扫描",
+        "场序",
+        "上场优先",
+        "下场优先",
+        "电视电影转换",
+        "梳齿",
+        "梳状条纹",
+    ),
     "screen_focus": ("录屏", "screen recording", "demo", "cursor", "点击", "热点", "focus"),
     "pip": ("facecam", "webcam", "小窗", "pip", "camera overlay", "摄像头"),
     "color_grade": ("调色", "lut", "color grade", "cinematic", "色彩", "film look"),
@@ -688,6 +711,7 @@ SIGNAL_LABELS: Mapping[str, str] = {
     "audio_transition": "J-cut / L-cut 声画错位转场",
     "audio_sync": "外录音频对齐",
     "frame_rate_conform": "VFR 源素材检测 / CFR 工作副本",
+    "interlace_conform": "交错 / telecine 检测与逐行工作副本",
     "screen_focus": "录屏聚焦",
     "pip": "摄像头小窗",
     "color_grade": "调色计划",
@@ -882,7 +906,8 @@ def build_plan(
     ids = _signal_ids(signals)
     primary_platform = platforms[0]
     source_input = source_media or "<source_media>"
-    source = "work/source-cfr.mp4" if "frame_rate_conform" in ids else source_input
+    post_interlace_source = "work/source-progressive.mp4" if "interlace_conform" in ids else source_input
+    source = "work/source-cfr.mp4" if "frame_rate_conform" in ids else post_interlace_source
     transcript_path = _transcript_path(source_media, transcript)
     clean_script = _clean_script_path()
     blockers: List[str] = []
@@ -894,7 +919,7 @@ def build_plan(
 
     if source_media and not Path(source_media).expanduser().exists():
         blockers.append(f"source media not found: {source_media}")
-    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy", "reference_edit_rhythm", "lip_sync_review", "subtitle_style_preview", "subtitle_render_review", "framing_preview", "flash_safety_qa", "temporal_artifact_qa", "stream_coverage_qa", "audio_channel_qa", "audio_dropout_qa", "caption_speech_qa", "multimodal_dead_air", "video_stabilization", "chroma_key", "scoped_video_edit", "speed_ramp", "freeze_punch", "generated_motion_window", "frame_rate_conform", "hdr_sdr", "delivery_encode", "encode_quality_qa", "edit_style_profile"}):
+    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy", "reference_edit_rhythm", "lip_sync_review", "subtitle_style_preview", "subtitle_render_review", "framing_preview", "flash_safety_qa", "temporal_artifact_qa", "stream_coverage_qa", "audio_channel_qa", "audio_dropout_qa", "caption_speech_qa", "multimodal_dead_air", "video_stabilization", "chroma_key", "scoped_video_edit", "speed_ramp", "freeze_punch", "generated_motion_window", "frame_rate_conform", "interlace_conform", "hdr_sdr", "delivery_encode", "encode_quality_qa", "edit_style_profile"}):
         warnings.append("source media was not provided; commands use <source_media> placeholders")
 
     if transcript and not Path(transcript).expanduser().exists():
@@ -966,6 +991,7 @@ def build_plan(
             ids.intersection(
                 {
                     "frame_rate_conform",
+                    "interlace_conform",
                     "multimodal_dead_air",
                     "cleanup_silence",
                     "video_stabilization",
@@ -1012,6 +1038,8 @@ def build_plan(
             runtime_profiles.append("hdr_sdr")
         if "video_stabilization" in ids:
             runtime_profiles.append("stabilization")
+        if "interlace_conform" in ids:
+            runtime_profiles.append("interlace")
         if _contains(normalized, "remotion"):
             runtime_profiles.append("remotion")
         runtime_command = [python_bin, "scripts/runtime_preflight.py", "analyze"]
@@ -1045,6 +1073,52 @@ def build_plan(
             "It does not run a real encode, hardware path, font render, or provider job; keep the later media and visual/audio QA gates."
         )
 
+    if "interlace_conform" in ids:
+        _add_step(
+            steps,
+            seen,
+            _step(
+                "interlace_conform_plan",
+                phase="ingest",
+                script="interlace_conform.py",
+                label="Detect interlace/telecine and plan a progressive working copy",
+                reason="The brief identifies interlaced fields, combing, field-order risk, or telecine material.",
+                command=shell(
+                    [
+                        python_bin,
+                        "scripts/interlace_conform.py",
+                        "plan",
+                        source_input,
+                        "--delivery",
+                        post_interlace_source,
+                        "--comparison",
+                        "verify/interlace-source-vs-progressive.mp4",
+                        "--project-dir",
+                        project_dir,
+                        "--reviewed-by",
+                        "<reviewer>",
+                        "--note",
+                        "<field-structure evidence and decision>",
+                        "--output",
+                        "work/interlace_conform_plan.json",
+                        "--markdown",
+                        "work/interlace_conform_plan.md",
+                    ]
+                ),
+                outputs=[
+                    "work/interlace_conform_plan.json",
+                    "work/interlace_conform_plan.md",
+                    post_interlace_source,
+                    "verify/interlace-source-vs-progressive.mp4",
+                ],
+                gate_category="interlace_conform_plan",
+            ),
+        )
+        notes.append(
+            "Run interlace_conform.py analyze first when field structure is uncertain. A telecine candidate must stop for IVTC; "
+            "true interlaced footage continues through apply, full-length 1x A/B playback, confirm, and live verify."
+        )
+
     if "frame_rate_conform" in ids:
         target_fps = infer_target_fps(normalized)
         _add_step(
@@ -1061,7 +1135,7 @@ def build_plan(
                         python_bin,
                         "scripts/frame_rate_conform.py",
                         "plan",
-                        source_input,
+                        post_interlace_source,
                         "--fps",
                         target_fps or "<target_fps>",
                         "--delivery",

@@ -103,6 +103,17 @@ def test_stabilization_accepts_deshake_when_vidstab_is_missing():
     assert [item["status"] for item in check["alternatives"]] == ["missing", "available"]
 
 
+def test_interlace_profile_requires_idet_and_accepts_yadif_fallback():
+    report = build_report(
+        ["interlace"],
+        snapshot=snapshot(filters={"idet", "fps", "scale", "setfield", "hstack", "yadif"}),
+    )
+
+    assert report["status"] == "ready"
+    backend = next(item for item in report["checks"] if item["code"] == "interlace:backend")
+    assert [item["status"] for item in backend["alternatives"]] == ["missing", "available"]
+
+
 def test_remotion_profile_binds_only_node_and_npx_versions():
     report = build_report(["remotion"], snapshot=snapshot())
 

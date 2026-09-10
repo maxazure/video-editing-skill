@@ -98,6 +98,27 @@ PROFILE_SPECS: Mapping[str, Mapping[str, Any]] = {
             },
         ],
     },
+    "interlace": {
+        "label": "Interlace analysis and conform",
+        "description": "Sample field structure with idet and create a progressive working copy with bwdif or yadif.",
+        "required": [
+            "filter:idet",
+            "filter:fps",
+            "filter:scale",
+            "filter:setfield",
+            "filter:hstack",
+        ],
+        "alternatives": [
+            {
+                "label": "motion_adaptive_bwdif",
+                "required": ["filter:bwdif"],
+            },
+            {
+                "label": "yadif_fallback",
+                "required": ["filter:yadif"],
+            },
+        ],
+    },
     "remotion": {
         "label": "Remotion composition",
         "description": "Run the repository's TypeScript/Remotion composition workflow.",
@@ -120,6 +141,9 @@ REMEDIES: Mapping[str, str] = {
     "filter:vidstabdetect": "Install an FFmpeg build with libvidstab, or use a build that provides deshake.",
     "filter:vidstabtransform": "Install an FFmpeg build with libvidstab, or use a build that provides deshake.",
     "filter:deshake": "Install an FFmpeg build with deshake, or enable both vidstabdetect and vidstabtransform.",
+    "filter:idet": "Install an FFmpeg build with the idet field-detection filter enabled.",
+    "filter:bwdif": "Install an FFmpeg build with bwdif, or use a build that provides yadif.",
+    "filter:yadif": "Install an FFmpeg build with yadif, or use a build that provides bwdif.",
 }
 
 Runner = Callable[[Sequence[str], float], Mapping[str, Any]]

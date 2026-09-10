@@ -1,6 +1,6 @@
 ---
 name: video-editing
-description: "Xiaohongshu/RED-tuned short-form video workflow for voice-over, talking-head, tutorials, interviews, podcasts, screen recordings, green/blue-screen compositing, B-roll, captions, and generated assets. Covers edit routing, local runtime capability profiles, creator-owned edit-style profiles, VFR/CFR source conformance, transcription, semantic review, multi-take/audio sync/stabilization/dead-air cleanup, highlights/shorts, story and source gates, enrichment and video-generation planning, generated clip/sequence and scoped AI video-edit review, locked-EDL final audio storyboards, phrase-level narration loudness, final channel-integrity and brief audio-dropout QA, color/speed/J-L cuts, reversible revisions and recipes, preflight/render/QA including flash/photosensitivity and encode-quality screening, subtitles, CapCut, platform/size exports, covers, captions, publish packages, dashboards, handoff formats, and Remotion."
+description: "Xiaohongshu/RED-tuned short-form video workflow for voice-over, talking-head, tutorials, interviews, podcasts, screen recordings, green/blue-screen compositing, B-roll, captions, and generated assets. Covers edit routing, local runtime capability profiles, telecine-safe interlace detection/conformance, creator-owned edit-style profiles, VFR/CFR source conformance, transcription, semantic review, multi-take/audio sync/stabilization/dead-air cleanup, highlights/shorts, story and source gates, enrichment and video-generation planning, generated clip/sequence and scoped AI video-edit review, locked-EDL final audio storyboards, phrase-level narration loudness, final channel-integrity and brief audio-dropout QA, color/speed/J-L cuts, reversible revisions and recipes, preflight/render/QA including flash/photosensitivity and encode-quality screening, subtitles, CapCut, platform/size exports, covers, captions, publish packages, dashboards, handoff formats, and Remotion."
 metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
 ---
 
@@ -16,6 +16,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ project_bootstrap.py     原始素材目录 → source inventory / project.md
    ├─→ edit_brief_plan.py       用户一句话需求 → 本地脚本 runbook / gates
    ├─→ runtime_preflight.py     workflow profile → FFmpeg/Node 命令、编码器、filters / live gate
+   ├─→ interlace_conform.py     交错/telecine 采样 → progressive 工作副本 / 全长 A/B gate
    ├─→ frame_rate_conform.py    手机/录屏 VFR → 全量 PTS 检测 / CFR 工作副本 / live gate
    ├─→ edit_style_profile.py    个人/品牌创意方向、节奏与渲染/文案默认值 → 可移植 profile
    ├─→ production_authorization.py
@@ -133,6 +134,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `project_bootstrap.py` | 原始素材目录 → 项目结构 / source inventory / project.md | `--source raw_dir` `--project-dir work/day61` `--mode copy|hardlink` `--strict` |
 | `runtime_preflight.py` | workflow profile → 本机 FFmpeg/Node 命令、编码器、filters、环境漂移 live gate | `list-profiles` / `analyze --profile ... --output --strict` / `verify --report --strict` |
 | `edit_brief_plan.py` | 自然语言剪辑需求 → 本地脚本 runbook / 命令 / manifest gate | `--brief` `--brief-file` `--source-media` `--platform` `--markdown` `--strict` |
+| `interlace_conform.py` | 交错/telecine 多段检测 → bwdif/yadif progressive 工作副本、全长 A/B 人工确认与 live gate | `analyze` / `plan --mode frame|field --parity` / `apply` / `confirm` / `verify --strict` |
 | `frame_rate_conform.py` | 手机/录屏 VFR → decoded PTS cadence、精确 CFR 工作副本、帧数/音画起止与 live gate | `plan <source> --fps 30 --delivery` / `apply <plan>` / `verify <plan> --strict` |
 | `edit_style_profile.py` | 个人/品牌创意方向、剪辑节奏、渲染/文案默认值 → 无路径可移植 profile / digest 验证 / defaults-only 合并 | `template` / `create --spec` / `verify --profile --strict` / `apply --config --receipt` |
 | `production_authorization.py` | 外部上传、侵入性剪辑、付费生成、声音克隆、真人/IP 和发布 → source-bound 授权 gate | `prepare --scope --response-template` / `audit --request --response --strict` / `verify --report --strict` |
@@ -489,7 +491,7 @@ python3 scripts/pipeline_manifest.py \
 
 ### Phase 0aa: Runtime Preflight（按任务核验本机能力）
 
-在打开媒体或启动渲染前，运行 [runtime_preflight.py](./scripts/runtime_preflight.py)。只转写、probe 或抽流用 `media_io`；会编码最终画面的任务用 `core_edit`，再按需要追加 `captions / qa / hdr_sdr / stabilization / remotion`：
+在打开媒体或启动渲染前，运行 [runtime_preflight.py](./scripts/runtime_preflight.py)。只转写、probe 或抽流用 `media_io`；会编码最终画面的任务用 `core_edit`，再按需要追加 `captions / qa / hdr_sdr / stabilization / interlace / remotion`：
 
 ```bash
 python3 scripts/runtime_preflight.py analyze \
@@ -509,7 +511,13 @@ python3 scripts/pipeline_manifest.py . \
 
 这一步只做 introspection，不运行真实编码、GPU、字体或 provider job。通过后仍要执行项目输入 preflight、真实媒体 probe、完整解码和最终视听 QA。详见 [Runtime Preflight](./docs/prompts/115-runtime-preflight.md)。
 
-### Phase 0ab: Frame-rate Conform（手机 / 录屏 VFR 可选）
+### Phase 0ab: Interlace Conform（旧广播 / DV / DVD 条件 gate）
+
+素材出现梳齿、`TFF/BFF`、`1080i/576i/480i` 或 telecine 线索时，先运行 `interlace_conform.py analyze`。它对头、中、尾执行 FFmpeg `idet`，分类为 progressive、真实 TFF/BFF 交错、telecine candidate 或 mixed/uncertain。telecine 必须停下来走 IVTC；progressive 保持原样；不确定素材只能在逐帧证据支持下使用 classification override。
+
+确认是真实交错后，用 `plan --reviewed-by --note --delivery work/<name>-progressive.mp4 --comparison verify/<name>-interlace-compare.mp4` 绑定决定。默认优先 bwdif，yadif 是有 warning 的 fallback；`frame` 保持帧率，`field` 保留每个 field 的运动并精确加倍 rate。apply 通过 progressive field flag、live idet、尺寸/帧率/时长/音画起止和完整解码后才提升；随后完整 1× 看 A/B，并对 combing、motion、line detail、field order、audio sync 全部 `pass` 后 confirm。详见 [Interlace Conform](./docs/prompts/116-interlace-conform.md)。
+
+### Phase 0ac: Frame-rate Conform（手机 / 录屏 VFR 可选）
 
 当源素材已知是 VFR、`r_frame_rate` 与 `avg_frame_rate` 可疑，或多段裁切后出现累积音画漂移时，先创建项目内 CFR 工作副本：
 

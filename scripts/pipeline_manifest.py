@@ -63,6 +63,13 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         blocks_when_present=True,
     ),
     ArtifactDef(
+        "interlace_conform_plan",
+        "Interlace Conform Plan",
+        ("**/interlace_conform_plan.json", "**/*_interlace_conform_plan.json"),
+        "Run interlace_conform.py apply, review the full-length A/B at 1x, confirm every field/motion check, then live-verify the plan.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "edit_brief_plan",
         "Edit Brief Plan",
         ("**/edit_brief_plan.json", "**/*_edit_brief_plan.json"),
@@ -1903,6 +1910,45 @@ def evaluate_category(
                 status = "warn" if status != "blocked" else status
                 notes.append(
                     f"frame-rate conform requires full-speed motion review: {artifact.path}: "
+                    f"{warnings} warning(s)"
+                )
+        return {
+            "category": definition.category,
+            "label": definition.label,
+            "status": status,
+            "artifact_count": len(artifacts),
+            "latest_path": artifacts[0].path,
+            "notes": sorted(set(notes)),
+            "next_action": definition.next_action if status in {"missing", "blocked", "warn"} else "",
+        }
+
+    if definition.category == "interlace_conform_plan":
+        from interlace_conform import verify_plan
+
+        for artifact in artifacts:
+            data = _load_json(artifact.path)
+            if data is None:
+                status = "blocked"
+                notes.append(f"unreadable interlace conform plan: {artifact.path}")
+                continue
+            try:
+                verification = verify_plan(data)
+            except Exception as exc:
+                status = "blocked"
+                notes.append(f"interlace conform verification failed {artifact.path}: {exc}")
+                continue
+            blocking = _int_at(verification, "summary", "blocking")
+            warnings = _int_at(verification, "summary", "warnings")
+            if blocking:
+                status = "blocked"
+                notes.append(
+                    f"invalid, unapplied, or unconfirmed interlace conform {artifact.path}: "
+                    f"{blocking} blocking item(s)"
+                )
+            elif warnings:
+                status = "warn" if status != "blocked" else status
+                notes.append(
+                    f"interlace conform retains a reviewed fallback/override warning: {artifact.path}: "
                     f"{warnings} warning(s)"
                 )
         return {

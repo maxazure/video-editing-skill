@@ -2,7 +2,7 @@
 
 这是一个面向 **口播、教程、访谈、播客切片、录屏演示 / facecam demo** 的 AI 视频剪辑生产线：给它原始口播音频/视频、transcript、B-roll、摄像头小窗或素材目录，它可以把“还没整理的素材”推进到 **可发布的小红书 / 抖音 / 视频号短视频**。
 
-它提供一条完整工作流：**项目启动/素材导入 → 本机工具链能力预检 → 手机/录屏 VFR 时基归一 → 个人/品牌剪辑风格 → 生产授权 → 手持防抖 / 绿蓝幕换背景 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 生成片有效运动窗口 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp / 关键帧 freeze-punch / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 锁定视觉 EDL 后重建最终声音分镜 → 最终旁白逐短语响度门禁 → 渲染前预检 / 真实画面字幕样式选择 / 字幕逐字符字体覆盖 → 单次编码渲染 → 质检 / 最终音视频轨覆盖 / 最终成片字幕像素复核 / 字幕与独立人声对齐 / 声道完整性 / 短促音频掉点 / 闪烁风险 / 单帧瞬态伪影筛查 / 最终成片唇形复核 → 多平台导出 / 目标大小交付编码 / 重编码画质损失门禁 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
+它提供一条完整工作流：**项目启动/素材导入 → 本机工具链能力预检 → 交错/telecine 检测与逐行工作副本 → 手机/录屏 VFR 时基归一 → 个人/品牌剪辑风格 → 生产授权 → 手持防抖 / 绿蓝幕换背景 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 生成片有效运动窗口 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp / 关键帧 freeze-punch / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 锁定视觉 EDL 后重建最终声音分镜 → 最终旁白逐短语响度门禁 → 渲染前预检 / 真实画面字幕样式选择 / 字幕逐字符字体覆盖 → 单次编码渲染 → 质检 / 最终音视频轨覆盖 / 最终成片字幕像素复核 / 字幕与独立人声对齐 / 声道完整性 / 短促音频掉点 / 闪烁风险 / 单帧瞬态伪影筛查 / 最终成片唇形复核 → 多平台导出 / 目标大小交付编码 / 重编码画质损失门禁 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
 
 ## 适合做什么
 
@@ -11,7 +11,8 @@
 - **噪声口播可在单次编码内保守清理**：`render_final.py --speech-denoise light|medium|strong` 会在变速、压缩、响度规范化和 BGM ducking 前处理低频震动与稳态底噪；默认关闭，最大降噪限制为 12 dB。
 - **停顿删段可同时看声音和画面**：`multimodal_dead_air.py` 只有在静帧覆盖静音达到门槛时才提出候选，实际只删二者交集；源 hash、20% 删除预算、切点复盘、单次编码和完整解码都进入 gate。
 - **多机位先同步再剪辑**：`multicam_sync.py` 把两台以上相机/手机/录音设备对齐到同一参考时间线，记录每路 offset、置信度、有效音轨、公共重叠区间，并可用多窗口 probe 测量长片时钟漂移；原片不改、不重编码。
-- **开始媒体工作前先证明本机能跑**：`runtime_preflight.py` 按 `media_io / core_edit / captions / qa / hdr_sdr / stabilization / remotion` profile 检查命令版本、编码器和 FFmpeg filters；明确区分 missing 与 unknown，并让环境或报告漂移在 manifest 中失效。
+- **开始媒体工作前先证明本机能跑**：`runtime_preflight.py` 按 `media_io / core_edit / captions / qa / hdr_sdr / stabilization / interlace / remotion` profile 检查命令版本、编码器和 FFmpeg filters；明确区分 missing 与 unknown，并让环境或报告漂移在 manifest 中失效。
+- **旧电视 / DV 素材先分清 telecine 和真实交错**：`interlace_conform.py` 用 FFmpeg `idet` 多段采样；疑似 3:2 pulldown 会阻断直接去交错，真实 TFF/BFF 才能经 `bwdif` 或明确的 `yadif` fallback 生成逐行工作副本，并在完整 1× A/B 确认后放行。
 - **手机和录屏 VFR 可先变成可审计 CFR 工作副本**：`frame_rate_conform.py` 读取全部解码帧 PTS 间隔，绑定精确目标有理帧率；输出必须通过恒定 cadence、帧数、音画起止、显示方向、SHA-256 和完整解码验证，原片保持不变。
 - **手持防抖保留原片和 A/B 证据**：`video_stabilization.py` 把源 SHA-256、确切 FFmpeg 后端和人工决定写进计划；apply 只生成新工作副本与全长左右对照，完整 1× 复核并 confirm 后 manifest 才放行。
 - **绿幕/蓝幕换背景先看 matte 再渲染**：`chroma_key.py` 在前景早/中/晚生成 composite 与黑白 matte，人工逐项确认边缘、主体完整性、溢色和背景匹配后才允许完整 H.264/AAC 输出；源、背景、预览、filter 或成片漂移都会让旧 review 失效。
@@ -146,6 +147,7 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    ├─→ project_bootstrap.py     原始素材目录 → origin/work/output/verify/edit + source inventory
    ├─→ edit_brief_plan.py       用户一句话需求 → 本地脚本 runbook / commands / gates
    ├─→ runtime_preflight.py     workflow profile → FFmpeg/Node 命令、编码器、filters / live gate
+   ├─→ interlace_conform.py     交错/telecine 采样 → progressive 工作副本 / 全长 A/B gate
    ├─→ frame_rate_conform.py    手机/录屏 VFR → 全量 PTS 检测 / CFR 工作副本 / live gate
    ├─→ edit_style_profile.py    个人/品牌创意方向、节奏与渲染/文案默认值 → 可移植 profile
    ├─→ production_authorization.py
@@ -675,11 +677,39 @@ python3 scripts/pipeline_manifest.py . \
   --require runtime_preflight --strict
 ```
 
-内置 profile 为 `media_io / core_edit / captions / qa / hdr_sdr / stabilization / remotion`。`missing` 表示可解析清单明确缺组件；`unknown` 表示版本命令或 FFmpeg 清单失败、超时或无法解析，两者都 fail closed。防抖 profile 接受两遍 `vidstabdetect + vidstabtransform` 或明确的单遍 `deshake` fallback；其他 profile 的必需项全部逐项核验。
+内置 profile 为 `media_io / core_edit / captions / qa / hdr_sdr / stabilization / interlace / remotion`。`missing` 表示可解析清单明确缺组件；`unknown` 表示版本命令或 FFmpeg 清单失败、超时或无法解析，两者都 fail closed。防抖 profile 接受两遍 `vidstabdetect + vidstabtransform` 或明确的单遍 `deshake` fallback；交错处理要求 `idet`，并接受 `bwdif` 或 `yadif`；其他 profile 的必需项全部逐项核验。
 
-报告绑定所选 profile、Python/FFmpeg/FFprobe/Node 相关版本、FFmpeg component listing 状态、逐能力结果、修复建议与 canonical `report_id`。`verify` 会在当前机器重跑，版本、组件或报告内容漂移后旧 artifact 立即失效。`edit_brief_plan.py` 默认把本步骤排在实际媒体工作前：只转写/抽流使用 `media_io`，渲染使用 `core_edit`，再按字幕、QA、HDR、防抖、Remotion 意图追加 profile。
+报告绑定所选 profile、Python/FFmpeg/FFprobe/Node 相关版本、FFmpeg component listing 状态、逐能力结果、修复建议与 canonical `report_id`。`verify` 会在当前机器重跑，版本、组件或报告内容漂移后旧 artifact 立即失效。`edit_brief_plan.py` 默认把本步骤排在实际媒体工作前：只转写/抽流使用 `media_io`，渲染使用 `core_edit`，再按字幕、QA、HDR、防抖、交错、Remotion 意图追加 profile。
 
 该检查不执行真实编码、GPU session 或字体渲染，不能替代项目输入 preflight、媒体 probe、完整解码和最终视听 QA。本轮在当前开发机实测 `core_edit / captions / qa / stabilization / remotion` 可用；`hdr_sdr` 准确报告 `filter:zscale` 缺失并以 strict 退出 2，证明 profile 能在运行 HDR 转换前给出可行动 blocker。
+
+### 📺 Interlace Conform — 交错 / telecine 检测与逐行工作副本
+[`scripts/interlace_conform.py`](scripts/interlace_conform.py) · [详细文档](docs/prompts/116-interlace-conform.md)
+
+旧广播、DV、DVD/VOB 或采集卡素材出现梳齿、TFF/BFF 场序问题时，先检测再决定处理方式：
+
+```bash
+python3 scripts/interlace_conform.py analyze origin/broadcast.mkv \
+  --project-dir . \
+  --output work/interlace_analysis.json \
+  --markdown work/interlace_analysis.md
+
+python3 scripts/interlace_conform.py plan origin/broadcast.mkv \
+  --project-dir . \
+  --mode field \
+  --parity auto \
+  --reviewed-by editor \
+  --note "运动区域持续梳齿，确认是 TFF 真实交错" \
+  --delivery work/broadcast-progressive.mp4 \
+  --comparison verify/broadcast-interlace-compare.mp4 \
+  --output work/interlace_conform_plan.json \
+  --markdown work/interlace_conform_plan.md
+python3 scripts/interlace_conform.py apply work/interlace_conform_plan.json
+```
+
+`analyze` 在头、中、尾运行 `idet`，保存 repeated fields、single/multiple frame 统计、stream 场序、分类理由和限制。`telecine_candidate` 会停止并要求 IVTC；`progressive` 保留原片；`mixed_or_uncertain` 需要逐帧证据与显式 classification override。真实交错默认优先 `bwdif`，不可用时用带 warning 的 `yadif`。`frame` 模式保持帧率，`field` 模式精确加倍有理帧率以保留场时间运动。
+
+apply 只生成项目内 H.264/AAC progressive 工作副本和全长左右 A/B，验证输出场标记、live `idet`、目标帧率、尺寸、时长、音画起止、SHA-256 与全量解码。随后用 `confirm` 记录完整 1× 播放，以及 residual combing、motion smoothness、line detail、field order、audio sync 五项判断。任一项未通过或源片/输出/comparison/FFmpeg 能力漂移时，`pipeline_manifest.py --require interlace_conform_plan --strict` 会阻断。后续剪辑使用新工作副本，`origin/` 原片不覆盖。
 
 ### 🎞️ Frame-rate Conform — VFR 源素材归一
 [`scripts/frame_rate_conform.py`](scripts/frame_rate_conform.py) · [详细文档](docs/prompts/112-frame-rate-conform.md)
@@ -715,7 +745,7 @@ python3 scripts/edit_brief_plan.py \
   --strict
 ```
 
-它会识别 `origin/interview.mp4` 这类源素材路径、目标平台、VFR/CFR 源素材归一、手持防抖、绿幕/蓝幕换背景、目标脚本对齐、多 take、长视频拆条、批量短视频、字幕、B-roll、BGM、去停顿、J-cut/L-cut、生成素材、PIP、调色、QA、发布包等信号，并把它们映射到已有脚本，例如 `frame_rate_conform.py`、`video_stabilization.py`、`chroma_key.py`、`script_alignment.py`、`highlight_picker.py`、`shorts_batch.py`、`jump_cut.py`、`audio_transition.py`、`auto_enrich.py`、`render_final.py`、`render_qa.py` 和 `publish_package.py`。VFR 路由会把验证后的 `work/source-cfr.mp4` 传给后续步骤；brief 没有明确 30/60/NTSC rate 时会保留 `<target_fps>`。`pipeline_manifest.py` 会发现 `edit_brief_plan.json`；当 `summary.blocking > 0`（例如 brief 为空或显式 source 缺失）时会作为 blocker，也可以用 `--require edit_brief_plan` 把需求路由作为 analysis gate。
+它会识别 `origin/interview.mp4` 这类源素材路径、目标平台、交错/telecine、VFR/CFR 源素材归一、手持防抖、绿幕/蓝幕换背景、目标脚本对齐、多 take、长视频拆条、批量短视频、字幕、B-roll、BGM、去停顿、J-cut/L-cut、生成素材、PIP、调色、QA、发布包等信号，并把它们映射到已有脚本，例如 `interlace_conform.py`、`frame_rate_conform.py`、`video_stabilization.py`、`chroma_key.py`、`script_alignment.py`、`highlight_picker.py`、`shorts_batch.py`、`jump_cut.py`、`audio_transition.py`、`auto_enrich.py`、`render_final.py`、`render_qa.py` 和 `publish_package.py`。交错路由会先生成 `work/source-progressive.mp4`；VFR 路由再把验证后的 `work/source-cfr.mp4` 传给后续步骤，brief 没有明确 30/60/NTSC rate 时保留 `<target_fps>`。`pipeline_manifest.py` 会发现 `edit_brief_plan.json`；当 `summary.blocking > 0`（例如 brief 为空或显式 source 缺失）时会作为 blocker，也可以用 `--require edit_brief_plan` 把需求路由作为 analysis gate。
 
 ### 🛂 Production Authorization — 确切范围生产授权
 [`scripts/production_authorization.py`](scripts/production_authorization.py) · [详细文档](docs/prompts/97-production-authorization.md)
@@ -3369,6 +3399,7 @@ pytest tests/test_rewrite_script.py -v      # Story Engine
 pytest tests/test_auto_broll.py -v          # B-roll 调度
 pytest tests/test_multi_export.py -v        # 多平台比例转换
 pytest tests/test_framing_preview.py -v     # cover/contain/blur 真实帧预览 / 选择 / live gate
+pytest tests/test_interlace_conform.py -v   # idet / telecine 阻断 / progressive working copy / A/B gate
 pytest tests/test_frame_rate_conform.py -v  # VFR decoded PTS / CFR 工作副本 / 帧数与音画起止 live gate
 pytest tests/test_hdr_sdr.py -v             # PQ/HLG → Rec.709 SDR / color tags / 完整解码门禁
 pytest tests/test_delivery_encode.py -v     # 硬大小上限 / 两遍编码 / 完整解码门禁
@@ -3450,6 +3481,28 @@ pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 pytest tests/test_review_dashboard.py -v    # 静态人工复核面板 + gate queue
 pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 gate
 ```
+
+### 2026-09-11 自动化升级记录（Interlace / Telecine-Safe Conform）
+
+本次联网研究的 GitHub 参考：
+
+| 项目 / 资料 | 借鉴点 | 本次处理 |
+|---|---|---|
+| [`kajisho5/ffmpeg-skill@97a8db9`](https://github.com/kajisho5/ffmpeg-skill/blob/97a8db99e17c228122547cce65be125e8ae78d09/scripts/deinterlace.py) | yadif 的 frame/field 模式、显式 parity 和仅对交错帧处理；同时明确该工具本身不负责检测 | 保留 frame/field 与 TFF/BFF 控制，默认采用质量更好的 bwdif；检测、source binding、输出验证和人工 A/B gate 由本项目补齐 |
+| [`robbyt/claude-skills@1a7a8e7`](https://github.com/robbyt/claude-skills/blob/1a7a8e7a1f6768095364099127265610fcda7b8e/plugins/multimedia/skills/telecine-detect/SKILL.md) | 先区分可 IVTC 的 3:2 pulldown 与真实交错，避免把 telecine 直接去交错造成画质损失 | 新增 `telecine_candidate` 分类；NTSC rate + repeated-field pattern 默认阻断 apply，并明确转交 IVTC workflow |
+| [`calesthio/generative-media-skills@8c85352`](https://github.com/calesthio/generative-media-skills/blob/8c85352d5d75d4dcbe58480bd138e37b9742bab1/skills/providers/video-enhancement/topaz-video-enhancement/SKILL.md) | 恢复旧档案片时明确 `video_type` / `field_order`，并在运动中检查残留梳齿与增强伪影 | 本地 FFmpeg 路径绑定 field order；全长 A/B confirm 明确检查 combing、motion、line detail、field order 与 audio sync，不引入付费 Topaz 调用 |
+| [`kajisho5/video-production-agent@dbf046a`](https://github.com/kajisho5/video-production-agent/commit/dbf046ac16119ac37d8e5ca9d8e91588c9a8e14e) | 去交错属于整片有损重编码，应由 AUTO 提升到显式 CONFIRM | `plan` 强制保存 reviewer/note，apply 后仍保持 blocked；完整 1× A/B 五项全部 pass 才能 confirm 与通过 manifest |
+
+本次新增 / 调整能力：
+
+- 新增 [`scripts/interlace_conform.py`](scripts/interlace_conform.py) 的 `analyze → plan → apply → confirm → verify` 闭环。`analyze` 对头、中、尾运行 FFmpeg `idet`，保存 repeated/single/multiple field 统计、stream field order、分类置信度、理由与限制；分类包括 `progressive / interlaced_tff / interlaced_bff / telecine_candidate / mixed_or_uncertain`。
+- progressive 保留原片；telecine candidate 要求 IVTC；不确定素材需要带证据的 `--classification-override`。真实交错才可生成 source-bound H.264/AAC progressive 工作副本；优先 bwdif，yadif 作为显式 warning fallback，`frame` 保持帧率，`field` 精确加倍有理帧率。
+- apply 会核对输出 progressive 标记、live idet、尺寸、帧率、时长、音画起止、源/输出/comparison SHA-256 与 FFmpeg `-xerror` 全量解码，并生成完整左右 A/B。confirm 要求正常速度完整播放及 residual combing、motion smoothness、line detail、field order、audio sync 五项结论；任何字节、分析、FFmpeg 版本/filter 或 review 漂移都 fail closed。
+- `runtime_preflight.py` 新增 `interlace` profile（`idet` + `bwdif|yadif`）；`pipeline_manifest.py` 新增可 `--require interlace_conform_plan` 的 live gate；`edit_brief_plan.py` 新增中英文梳齿、场序、1080i/telecine 路由，并把验证后的 `work/source-progressive.mp4` 交给转写与后续剪辑。SKILL、daily workflow、prompts 索引和 [`docs/prompts/116-interlace-conform.md`](docs/prompts/116-interlace-conform.md) 已同步。
+
+使用方式：先运行 `python3 scripts/interlace_conform.py analyze origin/broadcast.mkv --project-dir . --output work/interlace_analysis.json --markdown work/interlace_analysis.md`。确认真实交错后运行 `plan ... --mode field --parity auto --reviewed-by editor --note "..." --delivery work/broadcast-progressive.mp4 --comparison verify/broadcast-interlace-compare.mp4 --output work/interlace_conform_plan.json`，再执行 `apply`。以 1× 播放完整 comparison 后，用 `confirm` 提交五项判断，最后运行 `verify --strict` 和 `pipeline_manifest.py . --require interlace_conform_plan --strict`。疑似 telecine 不进入该 apply，改走 IVTC。
+
+验证结果：新增 9 项 detection/classification/rational-rate/fallback/lifecycle/source-drift/path/CLI 测试，并扩展 runtime/brief/manifest 回归；定向 `.venv/bin/python -m pytest tests/test_interlace_conform.py tests/test_runtime_preflight.py tests/test_edit_brief_plan.py tests/test_pipeline_manifest.py -q` 通过 `174 passed in 3.29s`，最终全量 `.venv/bin/python -m pytest tests -q` 通过 `1208 passed in 25.19s`。真实 FFmpeg smoke 用 4 秒 320×180 H.264/AAC 合成 progressive、TFF true-interlaced 和 3:2 telecine：分类分别为 `progressive / interlaced_tff / telecine_candidate`；telecine plan 准确以退出 1 拒绝。true-interlaced 经 bwdif field mode 输出 `60000/1001`、H.264/yuv420p progressive + AAC/48 kHz，live idet 为 `233/238` progressive、完整解码通过，并生成全长左右 A/B；未伪造人工完整播放，smoke 的 strict verify 按预期因 pending confirm 退出 2。`.venv/bin/python -m compileall -q scripts tests`、主 CLI 与五个子命令 help、真实 `interlace` runtime profile、manifest category、Skill `quick_validate.py` 和 `git diff --check` 全部通过。
 
 ### 2026-09-10 自动化升级记录（Workflow-profile Runtime Preflight）
 
@@ -4832,6 +4885,7 @@ python3 scripts/pipeline_manifest.py . --require freeze_punch_plan --strict
 | **113** | **[Audio Dropout QA](docs/prompts/113-audio-dropout-qa.md)** | **短促数字静音候选、正常速度 WAV 证据、人工听审与 live gate** |
 | **114** | **[Stream Coverage QA](docs/prompts/114-stream-coverage-qa.md)** | **最终音视频全量解码、首尾 PTS、帧数与容器覆盖 live gate** |
 | **115** | **[Runtime Preflight](docs/prompts/115-runtime-preflight.md)** | **按 workflow profile 检查本机 FFmpeg/Node 命令、编码器、filters 与环境漂移** |
+| **116** | **[Interlace Conform](docs/prompts/116-interlace-conform.md)** | **交错/telecine 多段检测 → progressive 工作副本、全长 A/B confirm 与 live gate** |
 | **62** | **[Hook Variants](docs/prompts/62-hook-variants.md)** | **同一视频批量生成前三秒 hook 角度** |
 | **67** | **[Speech Continuity QA](docs/prompts/67-speech-continuity-qa.md)** | **成片二次 ASR 检查复读、近重复 take 和句内口吃** |
 | **68** | **[Cover Variants](docs/prompts/68-cover-variants.md)** | **多套封面、feed-size 预览、标题协同和最终选择** |
@@ -4866,6 +4920,7 @@ scripts/
 ├── utils.py                    平台/字体/编码器自检
 ├── project_bootstrap.py        项目启动 + source inventory             [V3]
 ├── runtime_preflight.py        workflow profiles / FFmpeg+Node capability live gate [V3]
+├── interlace_conform.py        idet / telecine-safe bwdif|yadif / full-length A/B gate [V3]
 ├── frame_rate_conform.py       VFR 全量 PTS 检测 + source-bound CFR 工作副本/live gate [V3]
 ├── edit_brief_plan.py          自然语言剪辑需求 → 本地 runbook          [V3]
 ├── production_authorization.py 确切动作/provider/素材/权利依据授权 gate  [V3]

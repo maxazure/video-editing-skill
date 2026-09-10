@@ -87,6 +87,30 @@ def test_vfr_brief_routes_cfr_working_copy_before_downstream_edits(tmp_path):
     assert infer_target_fps("conform to 30000/1001 fps") == "30000/1001"
 
 
+def test_interlace_brief_routes_progressive_working_copy_and_review_gate(tmp_path):
+    source = tmp_path / "origin" / "broadcast.mkv"
+    source.parent.mkdir(parents=True)
+    source.write_text("fake video", encoding="utf-8")
+
+    plan = build_plan(
+        f"把 {source} 的隔行扫描梳齿去交错，再转写和渲染",
+        project_dir=str(tmp_path),
+    )
+
+    ids = [step["id"] for step in plan["steps"]]
+    assert ids.index("interlace_conform_plan") < ids.index("transcript")
+    runtime = next(step for step in plan["steps"] if step["id"] == "runtime_preflight")
+    assert "--profile interlace" in runtime["command"]
+    step = next(step for step in plan["steps"] if step["id"] == "interlace_conform_plan")
+    assert step["script"] == "interlace_conform.py"
+    assert f"interlace_conform.py plan {source}" in step["command"]
+    assert "--delivery work/source-progressive.mp4" in step["command"]
+    assert step["gate_category"] == "interlace_conform_plan"
+    transcript = next(step for step in plan["steps"] if step["id"] == "transcript")
+    assert "transcribe.py work/source-progressive.mp4" in transcript["command"]
+    assert plan["source"]["working_source"] == "work/source-progressive.mp4"
+
+
 def test_subtitle_missing_glyph_brief_routes_font_coverage_gate(tmp_path):
     plan = build_plan(
         "检查最终字幕有没有生僻字缺字或豆腐块，并绑定实际字体",

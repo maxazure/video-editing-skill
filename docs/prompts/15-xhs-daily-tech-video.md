@@ -46,9 +46,19 @@
       --output work/runtime_preflight.json \
       --markdown work/runtime_preflight.md \
       --strict
-    # 用 HDR / 防抖 / Remotion 时分别追加 hdr_sdr / stabilization / remotion。
+    # 用 HDR / 防抖 / 交错素材 / Remotion 时分别追加 hdr_sdr / stabilization / interlace / remotion。
     # missing 或 unknown 都停止；修好环境后重新 analyze，不手改 JSON。
     # 详见 docs/prompts/115-runtime-preflight.md
+
+0i. # 条件 gate：旧广播/DV/DVD 素材有梳齿、TFF/BFF、1080i 或 telecine 线索时：
+    python3 scripts/interlace_conform.py analyze origin/<interlaced-source>.mkv \
+      --project-dir . \
+      --output work/interlace_analysis.json \
+      --markdown work/interlace_analysis.md
+    # progressive 保留原片；telecine candidate 停止并走 IVTC；uncertain 先逐帧复核。
+    # 确认真实交错后，以 plan --reviewed-by --note 明确决定、frame/field mode 和 parity，
+    # 再 apply 到 work/<source>-progressive.mp4，完整 1× 看 A/B，五项 pass 后 confirm/verify。
+    # 后续都使用逐行工作副本；详见 docs/prompts/116-interlace-conform.md
 
 0v. # 条件 gate：手机/录屏源是 VFR，或剪切后音画逐渐漂移时，先做 CFR 工作副本：
     python3 scripts/frame_rate_conform.py plan origin/<phone-or-screen>.mp4 \
@@ -1016,6 +1026,8 @@ day<NN>/
 ├── work/
 │   ├── runtime_preflight.json # workflow profile → 本机命令/encoder/filter live gate
 │   ├── runtime_preflight.md
+│   ├── interlace_analysis.json # progressive/interlaced/telecine/mixed idet 采样证据
+│   ├── interlace_conform_plan.json # progressive working copy + full A/B confirm live gate
 │   ├── production_authorization_scope.json # 确切素材/动作/provider/权利范围
 │   ├── production_authorization_request.json # source hash-bound 复核请求
 │   ├── production_authorization_response.json # 逐 action/right 人工决定

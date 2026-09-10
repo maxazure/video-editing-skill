@@ -1,6 +1,6 @@
 # Edit Brief Plan 自然语言剪辑需求路由
 
-把用户的一句话剪辑需求转成当前 skill 的本地执行 runbook：匹配平台、素材类型、运行环境 profile、手持防抖、字幕、长视频拆条、B-roll、生成素材、参考视频节奏、音频、PIP、调色、QA 和发布包等信号，然后输出现有脚本的建议顺序、命令、产物和 manifest gate。
+把用户的一句话剪辑需求转成当前 skill 的本地执行 runbook：匹配平台、素材类型、运行环境 profile、交错/telecine、手持防抖、字幕、长视频拆条、B-roll、生成素材、参考视频节奏、音频、PIP、调色、QA 和发布包等信号，然后输出现有脚本的建议顺序、命令、产物和 manifest gate。
 
 ## 适用场景
 
@@ -41,7 +41,7 @@ python3 scripts/edit_brief_plan.py \
 
 | 用户提法 | 路由方向 |
 |---|---|
-| 任一本地媒体任务；或明确说运行环境、依赖、FFmpeg 能力 / No such filter | 先运行 `runtime_preflight.py`；只转写/抽流用 `media_io`，渲染用 `core_edit`，再按字幕、QA、HDR、防抖、Remotion 追加 profile |
+| 任一本地媒体任务；或明确说运行环境、依赖、FFmpeg 能力 / No such filter | 先运行 `runtime_preflight.py`；只转写/抽流用 `media_io`，渲染用 `core_edit`，再按字幕、QA、HDR、防抖、交错、Remotion 追加 profile |
 | 长视频、访谈、播客、拆短视频、精华 | `highlight_picker.py` → `audio_boundary_snap.py`，多条时接 `shorts_batch.py` |
 | 停顿、剪紧、jump cut | `jump_cut.py` |
 | 口头禅、卡壳、重复句 | `rough_cut.py` |
@@ -52,6 +52,7 @@ python3 scripts/edit_brief_plan.py \
 | 多镜头/跨镜头连续性、镜头衔接、角色/道具连续性 | 先 `generated_clip_review.py`，再 `generated_sequence_review.py` 提取相邻边界证据并审计 |
 | 参考视频节奏、参考广告节奏、复刻剪辑结构 | 成片后用 `reference_edit_rhythm.py analyze` 量化 hard-cut 结构和 contact sheets；默认 WARN，明确验收时才加 `--require-match` |
 | VFR、可变帧率、固定帧率、手机/录屏音画漂移 | `frame_rate_conform.py plan` → `apply` → `verify`；工作副本会成为后续转写、切段与渲染输入 |
+| 隔行/交错扫描、梳齿、TFF/BFF、场序、telecine/3:2 pulldown | `interlace_conform.py analyze`；telecine 停止并转 IVTC，真实交错才 `plan` → `apply` → 完整 A/B `confirm` |
 | BGM、音效、声音设计 | `audio_cue_sheet.py` |
 | 左右声道、相位抵消、单声道兼容、mono fold-down | `audio_channel_qa.py analyze` → `verify` |
 | 压缩画质、重编码画质、SSIM、PSNR | `encode_quality_qa.py analyze` → `verify`；目标大小交付后自动安排 source → delivery 对照 |
@@ -80,5 +81,6 @@ python3 scripts/pipeline_manifest.py \
 - `runtime_preflight` 总是在实际媒体步骤前；它只证明 command/listing 能力，后续项目 preflight、真实 encode/decode 和完整审片仍要执行。
 - 对生成视频或 paid provider，只生成 prompt pack 和审批 gate；不会提交 Dreamina/即梦/Veo/Sora 任务。
 - VFR 路由会要求明确 `30`、`60` 或 `30000/1001` 等目标帧率；brief 未给 rate 时保留 `<target_fps>`，由素材运动和平台决定。
+- 交错路由把验证后的 `work/source-progressive.mp4` 交给后续步骤；如果还同时要求 VFR/CFR，先完成去交错，再从逐行工作副本生成 `work/source-cfr.mp4`。
 - 如果实际项目已有 transcript、render_config 或 clean_script，可用 `--transcript` 指向现有文件，并删除 Markdown 里不需要的步骤。
 - 复杂项目先跑这一步，再把确认后的 gate 交给 `review_dashboard.py` 或 `project_resume.py`。
