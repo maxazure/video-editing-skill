@@ -527,6 +527,24 @@ SIGNAL_KEYWORDS: Mapping[str, Sequence[str]] = {
         "录屏音画漂移",
         "剪完音画漂移",
     ),
+    "loop_fill": (
+        "loop clip",
+        "repeat clip",
+        "loop video",
+        "video loop",
+        "background loop",
+        "seamless loop",
+        "fill a fixed duration",
+        "fill the duration",
+        "循环视频",
+        "视频循环",
+        "重复视频",
+        "重复素材",
+        "循环背景",
+        "无缝循环",
+        "填满时长",
+        "补足时长",
+    ),
     "interlace_conform": (
         "deinterlace",
         "de-interlace",
@@ -711,6 +729,7 @@ SIGNAL_LABELS: Mapping[str, str] = {
     "audio_transition": "J-cut / L-cut 声画错位转场",
     "audio_sync": "外录音频对齐",
     "frame_rate_conform": "VFR 源素材检测 / CFR 工作副本",
+    "loop_fill": "短素材循环填满固定时长 / 接缝复核",
     "interlace_conform": "交错 / telecine 检测与逐行工作副本",
     "screen_focus": "录屏聚焦",
     "pip": "摄像头小窗",
@@ -857,6 +876,33 @@ def infer_target_fps(brief: str) -> Optional[str]:
     return match.group(1)
 
 
+def infer_loop_target(brief: str) -> Tuple[str, Optional[str]]:
+    times = re.search(
+        r"(?:loop|repeat|循环|重复).{0,16}?(\d+)\s*(?:times?|次|遍)\b",
+        brief,
+        re.IGNORECASE,
+    )
+    if times:
+        value = int(times.group(1))
+        if 2 <= value <= 10000:
+            return "times", str(value)
+    duration = re.search(
+        r"(?:loop|repeat|循环|重复|填满|补足).{0,20}?(?:to|到|至|为|成)?\s*"
+        r"(\d+(?:\.\d+)?)\s*(seconds?|secs?|s|秒|minutes?|mins?|m|分钟)\b",
+        brief,
+        re.IGNORECASE,
+    )
+    if not duration:
+        return "duration", None
+    value = float(duration.group(1))
+    unit = duration.group(2).lower()
+    if unit in {"minute", "minutes", "min", "mins", "m", "分钟"}:
+        value *= 60
+    if value <= 0 or value > 24 * 60 * 60:
+        return "duration", None
+    return "duration", f"{value:g}"
+
+
 def _add_step(steps: List[Dict[str, Any]], seen: set[str], step: Dict[str, Any]) -> None:
     if step["id"] in seen:
         return
@@ -919,7 +965,7 @@ def build_plan(
 
     if source_media and not Path(source_media).expanduser().exists():
         blockers.append(f"source media not found: {source_media}")
-    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy", "reference_edit_rhythm", "lip_sync_review", "subtitle_style_preview", "subtitle_render_review", "framing_preview", "flash_safety_qa", "temporal_artifact_qa", "stream_coverage_qa", "audio_channel_qa", "audio_dropout_qa", "caption_speech_qa", "multimodal_dead_air", "video_stabilization", "chroma_key", "scoped_video_edit", "speed_ramp", "freeze_punch", "generated_motion_window", "frame_rate_conform", "interlace_conform", "hdr_sdr", "delivery_encode", "encode_quality_qa", "edit_style_profile"}):
+    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy", "reference_edit_rhythm", "lip_sync_review", "subtitle_style_preview", "subtitle_render_review", "framing_preview", "flash_safety_qa", "temporal_artifact_qa", "stream_coverage_qa", "audio_channel_qa", "audio_dropout_qa", "caption_speech_qa", "multimodal_dead_air", "video_stabilization", "chroma_key", "scoped_video_edit", "speed_ramp", "freeze_punch", "generated_motion_window", "frame_rate_conform", "loop_fill", "interlace_conform", "hdr_sdr", "delivery_encode", "encode_quality_qa", "edit_style_profile"}):
         warnings.append("source media was not provided; commands use <source_media> placeholders")
 
     if transcript and not Path(transcript).expanduser().exists():
@@ -991,6 +1037,7 @@ def build_plan(
             ids.intersection(
                 {
                     "frame_rate_conform",
+                    "loop_fill",
                     "interlace_conform",
                     "multimodal_dead_air",
                     "cleanup_silence",
@@ -1160,6 +1207,56 @@ def build_plan(
             "Review the decoded cadence report, run frame_rate_conform.py apply/verify, then use "
             "work/source-cfr.mp4 for transcription, cuts, captions, sync, and rendering. Choose 30/60 fps "
             "from the intended motion and platform when the brief does not specify a rate."
+        )
+
+    if "loop_fill" in ids:
+        loop_kind, loop_value = infer_loop_target(normalized)
+        target_flag = "--times" if loop_kind == "times" else "--duration"
+        target_value = loop_value or ("<repeat_count>" if loop_kind == "times" else "<target_duration>")
+        _add_step(
+            steps,
+            seen,
+            _step(
+                "loop_fill_plan",
+                phase="ingest",
+                script="loop_fill.py",
+                label="Fill a fixed slot with a repeated clip and bind the real seam proof",
+                reason="The brief asks to repeat a short video or background until a count or target duration is reached.",
+                command=shell(
+                    [
+                        python_bin,
+                        "scripts/loop_fill.py",
+                        "plan",
+                        source,
+                        target_flag,
+                        target_value,
+                        "--audio-mode",
+                        "preserve",
+                        "--delivery",
+                        "work/source-loop-fill.mp4",
+                        "--seam-proof",
+                        "verify/source-loop-seam.mp4",
+                        "--project-dir",
+                        project_dir,
+                        "--output",
+                        "work/loop_fill_plan.json",
+                        "--markdown",
+                        "work/loop_fill_plan.md",
+                    ]
+                ),
+                outputs=[
+                    "work/loop_fill_plan.json",
+                    "work/loop_fill_plan.md",
+                    "work/source-loop-fill.mp4",
+                    "verify/source-loop-seam.mp4",
+                ],
+                gate_category="loop_fill_plan",
+            ),
+        )
+        notes.append(
+            "loop_fill.py performs a hard source repeat and never labels arbitrary endpoints seamless. "
+            "Run apply, watch the seam proof and full delivery at 1x, record every confirm check, then live-verify the plan. "
+            "Use --audio-mode drop for decorative background video whose source audio must not repeat."
         )
 
     if "production_authorization" in ids:

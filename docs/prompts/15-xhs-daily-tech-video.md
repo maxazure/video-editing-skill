@@ -72,6 +72,18 @@
     # 后续转写、切段、字幕和渲染都用 work/<source>-cfr.mp4；完整 1× 看 pan、滚动、口型和结尾。
     # 目标 30/60 fps 按素材运动和发布平台选择；详见 docs/prompts/112-frame-rate-conform.md
 
+0l. # 条件 gate：短背景/环境片需要循环到指定次数或固定时长时：
+    python3 scripts/loop_fill.py plan origin/<loop-source>.mp4 \
+      --duration 00:30 --audio-mode drop \
+      --delivery work/<source>-loop-fill.mp4 \
+      --seam-proof verify/<source>-loop-seam.mp4 \
+      --project-dir . \
+      --output work/loop_fill_plan.json \
+      --markdown work/loop_fill_plan.md
+    python3 scripts/loop_fill.py apply work/loop_fill_plan.json
+    # 正常速度看完 seam proof 与完整 delivery，五项复核通过后 confirm，再 verify --strict。
+    # hard repeat 不会自动修平首尾；VFR 先 conform，详见 docs/prompts/117-loop-fill.md
+
 0s. # 可选：同一个人/品牌需要跨项目维持风格时，先建可移植剪辑风格档案：
     python3 scripts/edit_style_profile.py template \
       --output work/edit_style_profile_spec.json
@@ -1028,6 +1040,7 @@ day<NN>/
 │   ├── runtime_preflight.md
 │   ├── interlace_analysis.json # progressive/interlaced/telecine/mixed idet 采样证据
 │   ├── interlace_conform_plan.json # progressive working copy + full A/B confirm live gate
+│   ├── loop_fill_plan.json # fixed-duration repeated clip + exact first-seam/full-playback live gate
 │   ├── production_authorization_scope.json # 确切素材/动作/provider/权利范围
 │   ├── production_authorization_request.json # source hash-bound 复核请求
 │   ├── production_authorization_response.json # 逐 action/right 人工决定

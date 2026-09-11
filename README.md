@@ -2,7 +2,7 @@
 
 这是一个面向 **口播、教程、访谈、播客切片、录屏演示 / facecam demo** 的 AI 视频剪辑生产线：给它原始口播音频/视频、transcript、B-roll、摄像头小窗或素材目录，它可以把“还没整理的素材”推进到 **可发布的小红书 / 抖音 / 视频号短视频**。
 
-它提供一条完整工作流：**项目启动/素材导入 → 本机工具链能力预检 → 交错/telecine 检测与逐行工作副本 → 手机/录屏 VFR 时基归一 → 个人/品牌剪辑风格 → 生产授权 → 手持防抖 / 绿蓝幕换背景 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 生成片有效运动窗口 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp / 关键帧 freeze-punch / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 锁定视觉 EDL 后重建最终声音分镜 → 最终旁白逐短语响度门禁 → 渲染前预检 / 真实画面字幕样式选择 / 字幕逐字符字体覆盖 → 单次编码渲染 → 质检 / 最终音视频轨覆盖 / 最终成片字幕像素复核 / 字幕与独立人声对齐 / 声道完整性 / 短促音频掉点 / 闪烁风险 / 单帧瞬态伪影筛查 / 最终成片唇形复核 → 多平台导出 / 目标大小交付编码 / 重编码画质损失门禁 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
+它提供一条完整工作流：**项目启动/素材导入 → 本机工具链能力预检 → 交错/telecine 检测与逐行工作副本 → 手机/录屏 VFR 时基归一 → 短素材循环填满固定时长与接缝复核 → 个人/品牌剪辑风格 → 生产授权 → 手持防抖 / 绿蓝幕换背景 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 生成片有效运动窗口 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp / 关键帧 freeze-punch / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 锁定视觉 EDL 后重建最终声音分镜 → 最终旁白逐短语响度门禁 → 渲染前预检 / 真实画面字幕样式选择 / 字幕逐字符字体覆盖 → 单次编码渲染 → 质检 / 最终音视频轨覆盖 / 最终成片字幕像素复核 / 字幕与独立人声对齐 / 声道完整性 / 短促音频掉点 / 闪烁风险 / 单帧瞬态伪影筛查 / 最终成片唇形复核 → 多平台导出 / 目标大小交付编码 / 重编码画质损失门禁 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
 
 ## 适合做什么
 
@@ -14,6 +14,7 @@
 - **开始媒体工作前先证明本机能跑**：`runtime_preflight.py` 按 `media_io / core_edit / captions / qa / hdr_sdr / stabilization / interlace / remotion` profile 检查命令版本、编码器和 FFmpeg filters；明确区分 missing 与 unknown，并让环境或报告漂移在 manifest 中失效。
 - **旧电视 / DV 素材先分清 telecine 和真实交错**：`interlace_conform.py` 用 FFmpeg `idet` 多段采样；疑似 3:2 pulldown 会阻断直接去交错，真实 TFF/BFF 才能经 `bwdif` 或明确的 `yadif` fallback 生成逐行工作副本，并在完整 1× A/B 确认后放行。
 - **手机和录屏 VFR 可先变成可审计 CFR 工作副本**：`frame_rate_conform.py` 读取全部解码帧 PTS 间隔，绑定精确目标有理帧率；输出必须通过恒定 cadence、帧数、音画起止、显示方向、SHA-256 和完整解码验证，原片保持不变。
+- **短背景可以按次数或固定时长安全重复**：`loop_fill.py` 只接受 progressive CFR SDR 源片，音画一起循环或显式丢弃源音频；首个真实接缝和完整交付件都要正常速度复核，源片、输出、proof、设置或人工结论漂移都会让 manifest gate 失效。
 - **手持防抖保留原片和 A/B 证据**：`video_stabilization.py` 把源 SHA-256、确切 FFmpeg 后端和人工决定写进计划；apply 只生成新工作副本与全长左右对照，完整 1× 复核并 confirm 后 manifest 才放行。
 - **绿幕/蓝幕换背景先看 matte 再渲染**：`chroma_key.py` 在前景早/中/晚生成 composite 与黑白 matte，人工逐项确认边缘、主体完整性、溢色和背景匹配后才允许完整 H.264/AAC 输出；源、背景、预览、filter 或成片漂移都会让旧 review 失效。
 - **局部慢动作先计划再渲染**：`speed_ramp.py` 把显式 impact frame 周围的 `snap/ease/s_curve`、hold 和可选 FFmpeg 插帧编译成 source-bound 计划；源 hash 或 piece 时间映射漂移会阻塞，apply 采用同目录临时文件事务式落盘。
@@ -149,6 +150,7 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    ├─→ runtime_preflight.py     workflow profile → FFmpeg/Node 命令、编码器、filters / live gate
    ├─→ interlace_conform.py     交错/telecine 采样 → progressive 工作副本 / 全长 A/B gate
    ├─→ frame_rate_conform.py    手机/录屏 VFR → 全量 PTS 检测 / CFR 工作副本 / live gate
+   ├─→ loop_fill.py             progressive CFR 短片 → 次数/目标时长 repeat / 接缝 proof + 完整审片 gate
    ├─→ edit_style_profile.py    个人/品牌创意方向、节奏与渲染/文案默认值 → 可移植 profile
    ├─→ production_authorization.py
    │                            确切素材/动作/provider/权利依据 → 显式授权 + live gate
@@ -3466,6 +3468,7 @@ pytest tests/test_script_alignment.py -v    # 目标稿 → 多 take 原话匹�
 pytest tests/test_audio_cue_sheet.py -v     # BGM/SFX 音频设计清单
 pytest tests/test_final_audio_storyboard.py -v # 锁定 EDL → 最终声音分镜 / voice ledger / live gate
 pytest tests/test_multicam_sync.py -v       # 多机位 offset / 最响音轨 / pairwise / 真实预览
+pytest tests/test_loop_fill.py -v           # 固定时长重复 / 首个真实接缝 proof / 完整审片 live gate
 pytest tests/test_speech_denoise.py -v      # 口播降噪 preset / 顺序 / 真实 FFmpeg SNR smoke
 pytest tests/test_bgm_ducking.py -v         # 旁白驱动 BGM sidechain + 真实 FFmpeg smoke
 pytest tests/test_audio_transition.py -v    # J-cut/L-cut source handle / hash / 单次编码 / receipt
@@ -3481,6 +3484,28 @@ pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 pytest tests/test_review_dashboard.py -v    # 静态人工复核面板 + gate queue
 pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 gate
 ```
+
+### 2026-09-12 自动化升级记录（Source-bound Loop Fill + Seam Review）
+
+本次联网研究的 GitHub 参考：
+
+| 项目 / 资料 | 借鉴点 | 本次处理 |
+|---|---|---|
+| [`kajisho5/ffmpeg-skill@69fd093`](https://github.com/kajisho5/ffmpeg-skill/blob/69fd093aceaac748c3eb149dc2a2774fc35f66d4/scripts/loop.py) | 用 `--times` 或 `--duration` 重复完整输入，音画在 demuxer 层一起推进；明确 hard repeat 无法自动修复可见接缝或爆音 | 保留按次数/固定时长两种入口与音画同步 repeat；增加 source binding、CFR/HDR 前置检查、完整解码、真实接缝 proof 和人工 gate |
+| [`Sogni-AI/sogni-creative-agent-skill@30781d5`](https://github.com/Sogni-AI/sogni-creative-agent-skill/blob/30781d5be336ada8f01ebb34ea2e75331d1e864f/references/loop-maker.md) | loop workflow 显式闭合 last → first，并把首尾 anchor、内部帧、实际尺寸、音轨覆盖和完整解码纳入最终验证 | 本地 repeat 输出第一个真实接缝的正常速度 proof，review 绑定 delivery/proof SHA-256；不引入该项目的付费生成模型和音乐调用 |
+| [`Bomx/super-video-maker-skill@3fec4aa`](https://github.com/Bomx/super-video-maker-skill/blob/3fec4aa66a1d4f8b249746eabc372547f67bba5c/tools/ffmpeg_qc.py) | 成片后继续做 black-frame、音轨与技术 QC，不把成功编码当成交付完成 | 本项目已有 `render_qa.py`、`stream_coverage_qa.py` 和完整解码门禁，本轮复用这些原则，不重复新增宽泛 QC 脚本 |
+
+本次新增 / 调整能力：
+
+- 新增 [`scripts/loop_fill.py`](scripts/loop_fill.py) 的 `plan → apply → confirm → verify` 闭环。`plan` 接受 `--times` 或 `--duration`，记录源 SHA-256、完整 decoded cadence、精确有理帧率、目标时长、source reads、内部 seam 数量、音频策略、交付件与 proof 路径。
+- progressive CFR SDR 是输入合同。VFR/非单调时间戳会转交 `frame_rate_conform.py`；HDR、BT.2020、>8-bit 会转交 `hdr_sdr.py`；保留音频时，源端音视频首尾超出容差会阻断。原片不覆盖，输出默认 H.264/yuv420p，音频可 `preserve` 为 AAC/48 kHz 或显式 `drop`。
+- apply 用 FFmpeg `-stream_loop` 生成精确 slot，验证尺寸、方向、恒定 cadence、目标时长、音画起止、codec/pixel format、SHA-256 与 `-xerror` 全量解码；随后从确切输出的第一处 seam 导出正常速度 proof，同样执行媒体合同与完整解码检查后才提升。
+- confirm 要求完整 1× 播放 delivery 和 seam proof，并逐项记录 visual transition、motion continuity、duplicate flash、audio transition、slot coverage；复核绑定当前 output/proof 字节。任一 `fail` / `unobservable`、未完整播放或后续漂移都会 fail closed。
+- `edit_brief_plan.py` 新增中英文循环/固定时长路由与次数/秒数提取；`pipeline_manifest.py` 新增存在即 live verify、可 `--require loop_fill_plan` 的 gate；`chroma_key.py` 的短背景循环 warning 会指向该 proof workflow。SKILL、daily workflow、prompts 索引和 [`docs/prompts/117-loop-fill.md`](docs/prompts/117-loop-fill.md) 已同步。
+
+使用方式：运行 `python3 scripts/loop_fill.py plan origin/ambient.mp4 --duration 00:30 --audio-mode drop --delivery work/ambient-30s.mp4 --seam-proof verify/ambient-loop-seam.mp4 --project-dir . --output work/loop_fill_plan.json --markdown work/loop_fill_plan.md`，再执行 `apply`。正常速度看完两条视频后，用 `confirm` 提交五项结论，最后运行 `verify --strict` 和 `pipeline_manifest.py . --require loop_fill_plan --strict`。需要保留完整周期时改用 `--times N`；保留环境声时用 `--audio-mode preserve` 并重点听接缝。
+
+验证结果：新增 7 项 loop plan/times-duration/audio/path/VFR-HDR/lifecycle/drift/CLI 测试，并扩展 edit brief 路由；定向 `.venv/bin/python -m pytest tests/test_loop_fill.py tests/test_edit_brief_plan.py tests/test_pipeline_manifest.py tests/test_chroma_key.py -q` 通过 `171 passed in 3.22s`，最终全量 `.venv/bin/python -m pytest tests -q` 通过 `1216 passed in 25.86s`。真实 FFmpeg 8.1.1 smoke 把 2 秒、320×180、30 fps、H.264/AAC 源片扩展为精确 5 秒、150 帧、30 fps、AAC/48 kHz，并生成 2 秒、60 帧的真实接缝 proof；两条输出均完成全量解码。未伪造人工完整播放，`verify --strict` 按预期保留 `pending confirm` 并退出 2。`compileall`、四个子命令 help、manifest category、Skill Creator `quick_validate.py` 与 `git diff --check` 全部通过。
 
 ### 2026-09-11 自动化升级记录（Interlace / Telecine-Safe Conform）
 
@@ -4922,6 +4947,7 @@ scripts/
 ├── runtime_preflight.py        workflow profiles / FFmpeg+Node capability live gate [V3]
 ├── interlace_conform.py        idet / telecine-safe bwdif|yadif / full-length A/B gate [V3]
 ├── frame_rate_conform.py       VFR 全量 PTS 检测 + source-bound CFR 工作副本/live gate [V3]
+├── loop_fill.py                progressive CFR 短片 repeat / fixed-duration / seam proof live gate [V3]
 ├── edit_brief_plan.py          自然语言剪辑需求 → 本地 runbook          [V3]
 ├── production_authorization.py 确切动作/provider/素材/权利依据授权 gate  [V3]
 ├── _internal_text_guard.py     内部 token 拦截器

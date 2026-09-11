@@ -9,6 +9,7 @@ sys.path.insert(0, os.path.join(REPO, "scripts"))
 from edit_brief_plan import (  # noqa: E402
     build_plan,
     emit_markdown,
+    infer_loop_target,
     infer_source_media,
     infer_target_fps,
 )
@@ -109,6 +110,25 @@ def test_interlace_brief_routes_progressive_working_copy_and_review_gate(tmp_pat
     transcript = next(step for step in plan["steps"] if step["id"] == "transcript")
     assert "transcribe.py work/source-progressive.mp4" in transcript["command"]
     assert plan["source"]["working_source"] == "work/source-progressive.mp4"
+
+
+def test_loop_fill_brief_routes_target_duration_and_seam_gate(tmp_path):
+    source = tmp_path / "origin" / "ambient.mp4"
+    source.parent.mkdir(parents=True)
+    source.write_bytes(b"source")
+
+    plan = build_plan(
+        f"把 {source} 这个循环背景填满到 30 秒，并检查接缝",
+        project_dir=str(tmp_path),
+    )
+
+    step = next(step for step in plan["steps"] if step["id"] == "loop_fill_plan")
+    assert step["script"] == "loop_fill.py"
+    assert f"loop_fill.py plan {source}" in step["command"]
+    assert "--duration 30" in step["command"]
+    assert "--seam-proof verify/source-loop-seam.mp4" in step["command"]
+    assert step["gate_category"] == "loop_fill_plan"
+    assert infer_loop_target("repeat this clip 4 times") == ("times", "4")
 
 
 def test_subtitle_missing_glyph_brief_routes_font_coverage_gate(tmp_path):

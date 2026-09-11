@@ -1,6 +1,6 @@
 ---
 name: video-editing
-description: "Xiaohongshu/RED-tuned short-form video workflow for voice-over, talking-head, tutorials, interviews, podcasts, screen recordings, green/blue-screen compositing, B-roll, captions, and generated assets. Covers edit routing, local runtime capability profiles, telecine-safe interlace detection/conformance, creator-owned edit-style profiles, VFR/CFR source conformance, transcription, semantic review, multi-take/audio sync/stabilization/dead-air cleanup, highlights/shorts, story and source gates, enrichment and video-generation planning, generated clip/sequence and scoped AI video-edit review, locked-EDL final audio storyboards, phrase-level narration loudness, final channel-integrity and brief audio-dropout QA, color/speed/J-L cuts, reversible revisions and recipes, preflight/render/QA including flash/photosensitivity and encode-quality screening, subtitles, CapCut, platform/size exports, covers, captions, publish packages, dashboards, handoff formats, and Remotion."
+description: "Xiaohongshu/RED-tuned short-form video workflow for voice-over, talking-head, tutorials, interviews, podcasts, screen recordings, green/blue-screen compositing, B-roll, captions, and generated assets. Covers edit routing, local runtime capability profiles, telecine-safe interlace detection/conformance, edit-style profiles, VFR/CFR source conformance, source-bound fixed-duration loop filling with seam review, transcription, semantic review, multi-take/audio sync/stabilization/dead-air cleanup, highlights/shorts, story and source gates, enrichment and video-generation planning, generated clip/sequence and scoped AI video-edit review, locked-EDL final audio storyboards, phrase-level narration loudness, final channel-integrity and brief audio-dropout QA, color/speed/J-L cuts, reversible revisions and recipes, preflight/render/QA including flash/photosensitivity and encode-quality screening, subtitles, CapCut, platform/size exports, covers, captions, publish packages, dashboards, handoff formats, and Remotion."
 metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
 ---
 
@@ -18,6 +18,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ runtime_preflight.py     workflow profile → FFmpeg/Node 命令、编码器、filters / live gate
    ├─→ interlace_conform.py     交错/telecine 采样 → progressive 工作副本 / 全长 A/B gate
    ├─→ frame_rate_conform.py    手机/录屏 VFR → 全量 PTS 检测 / CFR 工作副本 / live gate
+   ├─→ loop_fill.py             短片 → 次数/固定时长 hard repeat / 真实接缝 proof + 完整审片 gate
    ├─→ edit_style_profile.py    个人/品牌创意方向、节奏与渲染/文案默认值 → 可移植 profile
    ├─→ production_authorization.py
    │                            确切素材/动作/provider/权利依据 → 显式授权 + live gate
@@ -136,6 +137,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `edit_brief_plan.py` | 自然语言剪辑需求 → 本地脚本 runbook / 命令 / manifest gate | `--brief` `--brief-file` `--source-media` `--platform` `--markdown` `--strict` |
 | `interlace_conform.py` | 交错/telecine 多段检测 → bwdif/yadif progressive 工作副本、全长 A/B 人工确认与 live gate | `analyze` / `plan --mode frame|field --parity` / `apply` / `confirm` / `verify --strict` |
 | `frame_rate_conform.py` | 手机/录屏 VFR → decoded PTS cadence、精确 CFR 工作副本、帧数/音画起止与 live gate | `plan <source> --fps 30 --delivery` / `apply <plan>` / `verify <plan> --strict` |
+| `loop_fill.py` | progressive CFR 短素材 → 按次数/目标时长重复、首个真实接缝 1× proof、完整审片与 live gate | `plan --times|--duration --delivery --seam-proof` / `apply` / `confirm` / `verify --strict` |
 | `edit_style_profile.py` | 个人/品牌创意方向、剪辑节奏、渲染/文案默认值 → 无路径可移植 profile / digest 验证 / defaults-only 合并 | `template` / `create --spec` / `verify --profile --strict` / `apply --config --receipt` |
 | `production_authorization.py` | 外部上传、侵入性剪辑、付费生成、声音克隆、真人/IP 和发布 → source-bound 授权 gate | `prepare --scope --response-template` / `audit --request --response --strict` / `verify --report --strict` |
 | `transcript_review.py` | transcript → 文本或本地同步媒体 HTML 校稿 → reviewed transcript | `export` / `html --video --max-cps` / `apply --review --output` |
@@ -533,6 +535,24 @@ python3 scripts/frame_rate_conform.py verify work/frame_rate_conform_plan.json -
 ```
 
 脚本读取全部解码视频帧的 PTS 间隔，记录 variable/non-monotonic interval、精确目标有理帧率、源/输出 SHA-256、媒体合同和完整解码 receipt。apply 只有在输出帧间隔恒定、`frame_count ≈ duration × fps`、音画起止在容差内、显示尺寸/方向正确时才原子提升；之后所有转写、裁切、字幕、同步和渲染改用 `work/phone-cfr.mp4`。30/60 fps 需按真实运动和平台选择；升帧只复制画面，降帧会丢运动采样。HDR/BT.2020/>8-bit、明显既有音画 offset 或独立设备 clock drift 不在此工具的自动修复范围。详见 [Frame-rate Conform](./docs/prompts/112-frame-rate-conform.md)。
+
+### Phase 0ad: Loop Fill（短背景 / 环境片填满固定时长）
+
+需要把短视频重复到指定次数或固定 slot 时，用 `loop_fill.py plan` 绑定 progressive CFR 源片、目标、交付件和首个真实接缝 proof。它保留或显式丢弃源音频，重复时音画一起推进；不自动加 crossfade，也不会把任意首尾包装成无缝循环。
+
+```bash
+python3 scripts/loop_fill.py plan origin/ambient.mp4 \
+  --duration 00:30 \
+  --audio-mode drop \
+  --delivery work/ambient-30s.mp4 \
+  --seam-proof verify/ambient-loop-seam.mp4 \
+  --project-dir . \
+  --output work/loop_fill_plan.json \
+  --markdown work/loop_fill_plan.md
+python3 scripts/loop_fill.py apply work/loop_fill_plan.json
+```
+
+正常速度看完 seam proof 与完整 delivery；确认画面接缝、运动连续性、重复闪帧、声音接缝和 slot 覆盖后运行 `confirm`，再用 `verify --strict` 或 `pipeline_manifest.py --require loop_fill_plan --strict` 放行。VFR 先跑 `frame_rate_conform.py`，HDR/BT.2020/>8-bit 先确定 `hdr_sdr.py` 色彩路径。详见 [Loop Fill](./docs/prompts/117-loop-fill.md)。
 
 ### Phase 0b: Production Authorization（按确切范围授权）
 

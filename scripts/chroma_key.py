@@ -423,7 +423,10 @@ def _computed_warnings(report: Mapping[str, Any]) -> List[str]:
     if not bool((foreground.get("media") or {}).get("has_audio")):
         warnings.append("foreground has no audio; the composite will be silent because background audio is ignored")
     if (background.get("media") or {}).get("kind") == "video":
-        warnings.append("background video loops from its first frame for the foreground duration; review the loop seam")
+        warnings.append(
+            "background video loops from its first frame for the foreground duration; "
+            "pre-fill it with loop_fill.py when the seam needs a source-bound proof and live gate"
+        )
     return warnings
 
 

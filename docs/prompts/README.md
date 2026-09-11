@@ -118,6 +118,7 @@
 | 114 | [Stream Coverage QA 最终音视频轨覆盖门禁](114-stream-coverage-qa.md) | final MP4 → 全量解码、首尾 PTS、音视频/容器覆盖、帧数与 source-bound live gate |
 | 115 | [Runtime Preflight 本机工具链能力门禁](115-runtime-preflight.md) | workflow profile → FFmpeg/Node 命令、编码器、filters、明确 missing/unknown 与 live environment gate |
 | 116 | [Interlace Conform 交错扫描检测与逐行工作副本](116-interlace-conform.md) | source → idet 多段采样、telecine 阻断、bwdif/yadif、全长 A/B 人工确认与 live gate |
+| 117 | [Loop Fill 短素材循环填满固定时长](117-loop-fill.md) | progressive CFR source → 次数/目标时长 hard repeat、首个真实接缝 proof、完整审片与 live gate |
 
 ## 快速上手
 
@@ -183,6 +184,7 @@
 | MP4 能播放但疑似视频轨提前结束、音频更长或结尾丢帧 | [114-Stream Coverage QA](114-stream-coverage-qa.md) |
 | 开始剪辑前检查 FFmpeg/Node 依赖、编码器、滤镜，或排查 No such filter | [115-Runtime Preflight](115-runtime-preflight.md) |
 | 旧电视/DV/DVD 素材有梳齿、TFF/BFF、1080i，或要先排除 telecine | [116-Interlace Conform](116-interlace-conform.md) |
+| 短背景或环境片要循环到指定次数/时长，并确认接缝没有跳变或爆音 | [117-Loop Fill](117-loop-fill.md) |
 | 已有 SRT 和保留/删除字幕编号，想生成剪辑方案 | [55-SRT Edit Plan](55-srt-edit-plan.md) |
 | 相机内录音和外录麦克风音频需要自动对齐 | [56-Audio Sync](56-audio-sync.md) |
 | 渲染或发布前想打开一个总复核面板 | [57-Review Dashboard](57-review-dashboard.md) |
