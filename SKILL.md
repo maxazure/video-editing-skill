@@ -1,6 +1,6 @@
 ---
 name: video-editing
-description: "Xiaohongshu/RED-tuned short-form video workflow for voice-over, talking-head, tutorials, interviews, podcasts, screen recordings, green/blue-screen compositing, B-roll, captions, and generated assets. Covers edit routing, local runtime capability profiles, telecine-safe interlace detection/conformance, edit-style profiles, VFR/CFR source conformance, source-bound fixed-duration loop filling with seam review, transcription, semantic review, multi-take/audio sync/stabilization/dead-air cleanup, highlights/shorts, story and source gates, enrichment and video-generation planning, generated clip/sequence and scoped AI video-edit review, locked-EDL final audio storyboards, phrase-level narration loudness, final channel-integrity and brief audio-dropout QA, color/speed/J-L cuts, reversible revisions and recipes, preflight/render/QA including flash/photosensitivity and encode-quality screening, subtitles, CapCut, platform/size exports, covers, captions, publish packages, dashboards, handoff formats, and Remotion."
+description: "Xiaohongshu/RED-tuned short-form video workflow for voice-over, talking-head, tutorials, interviews, podcasts, screen recordings, chroma key, B-roll, captions, and generated assets. Covers edit routing, runtime profiles, interlace and VFR/CFR conformance, edit-style profiles, source-bound loop filling, heterogeneous multi-clip assembly with seam review, transcription, semantic review, multi-take/audio sync/stabilization/dead-air cleanup, highlights/shorts, story and source gates, enrichment and video-generation planning, generated clip/sequence and scoped AI video-edit review, locked-EDL audio storyboards, narration loudness, channel-integrity and audio-dropout QA, color/speed/J-L cuts, reversible revisions and recipes, preflight/render/QA including flash/photosensitivity and encode-quality screening, subtitles, CapCut, platform/size exports, covers, captions, publish packages, dashboards, handoff formats, and Remotion."
 metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
 ---
 
@@ -19,6 +19,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ interlace_conform.py     交错/telecine 采样 → progressive 工作副本 / 全长 A/B gate
    ├─→ frame_rate_conform.py    手机/录屏 VFR → 全量 PTS 检测 / CFR 工作副本 / live gate
    ├─→ loop_fill.py             短片 → 次数/固定时长 hard repeat / 真实接缝 proof + 完整审片 gate
+   ├─→ clip_assembly.py         多源片段 → 单次画布/CFR/SAR/音频归一 / 全接缝 proof + live gate
    ├─→ edit_style_profile.py    个人/品牌创意方向、节奏与渲染/文案默认值 → 可移植 profile
    ├─→ production_authorization.py
    │                            确切素材/动作/provider/权利依据 → 显式授权 + live gate
@@ -138,6 +139,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `interlace_conform.py` | 交错/telecine 多段检测 → bwdif/yadif progressive 工作副本、全长 A/B 人工确认与 live gate | `analyze` / `plan --mode frame|field --parity` / `apply` / `confirm` / `verify --strict` |
 | `frame_rate_conform.py` | 手机/录屏 VFR → decoded PTS cadence、精确 CFR 工作副本、帧数/音画起止与 live gate | `plan <source> --fps 30 --delivery` / `apply <plan>` / `verify <plan> --strict` |
 | `loop_fill.py` | progressive CFR 短素材 → 按次数/目标时长重复、首个真实接缝 1× proof、完整审片与 live gate | `plan --times|--duration --delivery --seam-proof` / `apply` / `confirm` / `verify --strict` |
+| `clip_assembly.py` | 多源视频 → 单次画布/CFR/SAR/时间戳/音频归一、全接缝 1× proof 与 live gate | `plan <clips...> --delivery --boundary-proof` / `apply` / `confirm` / `verify --strict` |
 | `edit_style_profile.py` | 个人/品牌创意方向、剪辑节奏、渲染/文案默认值 → 无路径可移植 profile / digest 验证 / defaults-only 合并 | `template` / `create --spec` / `verify --profile --strict` / `apply --config --receipt` |
 | `production_authorization.py` | 外部上传、侵入性剪辑、付费生成、声音克隆、真人/IP 和发布 → source-bound 授权 gate | `prepare --scope --response-template` / `audit --request --response --strict` / `verify --report --strict` |
 | `transcript_review.py` | transcript → 文本或本地同步媒体 HTML 校稿 → reviewed transcript | `export` / `html --video --max-cps` / `apply --review --output` |
@@ -553,6 +555,27 @@ python3 scripts/loop_fill.py apply work/loop_fill_plan.json
 ```
 
 正常速度看完 seam proof 与完整 delivery；确认画面接缝、运动连续性、重复闪帧、声音接缝和 slot 覆盖后运行 `confirm`，再用 `verify --strict` 或 `pipeline_manifest.py --require loop_fill_plan --strict` 放行。VFR 先跑 `frame_rate_conform.py`，HDR/BT.2020/>8-bit 先确定 `hdr_sdr.py` 色彩路径。详见 [Loop Fill](./docs/prompts/117-loop-fill.md)。
+
+### Phase 0ae: Clip Assembly（多源视频安全拼接）
+
+片头、主片、生成片和片尾来自不同画布、方向、帧率、SAR、时间戳、采样率或声道数时，用 `clip_assembly.py` 代替 concat copy。按最终播放顺序传入每条唯一源片；同一片重复使用 `loop_fill.py`。
+
+```bash
+python3 scripts/clip_assembly.py plan \
+  origin/intro.mp4 origin/main.mov origin/outro.mp4 \
+  --width 1080 --height 1920 --fps 30 \
+  --fit contain --audio-mode fill-silence \
+  --delivery output/assembled.mp4 \
+  --boundary-proof verify/clip-assembly-boundaries.mp4 \
+  --project-dir . \
+  --output work/clip_assembly_plan.json \
+  --markdown work/clip_assembly_plan.md
+python3 scripts/clip_assembly.py apply work/clip_assembly_plan.json
+```
+
+脚本在一条 FFmpeg filter graph 内统一 PTS、画布、rotation、CFR、SAR 1:1、`yuv420p` 和 48 kHz stereo，再 hard cut 输出 H.264/AAC。至少一段有音频时，无音轨片段用等长静音保持 A/V coverage；完全不需要声音时用 `--audio-mode drop`。已有音轨与视频首尾失配或 HDR/BT.2020/>8-bit 会在 plan 阶段停止。
+
+apply 通过总时长、尺寸、帧率、decoded cadence、SAR、音画首尾和完整解码后才原子提升，并从确切交付件生成覆盖所有接缝的正常速度 proof。完整播放 delivery 和 proof 后，对 clip order、visual seams、frame continuity、audio seams、complete coverage 全部做出可观察结论，再 `confirm` 和 `verify --strict`。本工具不发明转场或语义连续性；需要 J-cut/L-cut 时走独立 audio transition 计划。详见 [Clip Assembly](./docs/prompts/118-clip-assembly.md)。
 
 ### Phase 0b: Production Authorization（按确切范围授权）
 
@@ -2591,17 +2614,20 @@ sudo apt update && sudo apt install ffmpeg
 
 **根因**：DJI 素材为 30/1 fps，部分 DJI 和所有 iPhone MOV 文件为 30000/1001 (29.97fps)。`-c copy` 拼接不会重新编码，帧率不同导致时间戳不连续，播放器在切换点卡死。
 
-**解决**：拼接不同来源的 B-roll 素材前，先用 source-bound 计划统一帧率。对每段素材执行：
+**解决**：用 source-bound clip assembly 在同一条输出编码里统一每段的画布、CFR、SAR、时间戳、像素格式和音频布局：
 ```bash
-python3 scripts/frame_rate_conform.py plan origin/clip.MOV \
-  --fps 30 --delivery work/clip-cfr.mp4 --project-dir . \
-  --output work/clip_frame_rate_conform_plan.json
-python3 scripts/frame_rate_conform.py apply work/clip_frame_rate_conform_plan.json
-python3 scripts/frame_rate_conform.py verify work/clip_frame_rate_conform_plan.json --strict
+python3 scripts/clip_assembly.py plan \
+  origin/clip-a.MOV origin/clip-b.mp4 \
+  --width 1080 --height 1920 --fps 30 \
+  --delivery output/assembled.mp4 \
+  --boundary-proof verify/clip-assembly-boundaries.mp4 \
+  --project-dir . \
+  --output work/clip_assembly_plan.json
+python3 scripts/clip_assembly.py apply work/clip_assembly_plan.json
 ```
-然后用已验证的 CFR 工作副本拼接。**禁止对混合帧率或 VFR 素材使用 `-c copy` concat。**
+完整播放交付件和全部接缝 proof，确认后再运行 `confirm` / `verify --strict`。**禁止对混合帧率、画布、SAR、time base 或音频布局使用 `-c copy` concat。**
 
-**检测方法**：`frame_rate_conform.py plan` 会比较容器 rate，并读取全部 decoded `best_effort_timestamp_time` 计算帧间隔；只看 `r_frame_rate` 无法证明实际 cadence 恒定。
+**检测方法**：`clip_assembly.py plan` 会读取每条源片的完整 decoded `best_effort_timestamp_time`、媒体合同和源 hash；只看 `r_frame_rate` 或 FFmpeg 退出码无法证明拼接结果连续。
 
 ---
 

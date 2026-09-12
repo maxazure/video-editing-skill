@@ -131,6 +131,26 @@ def test_loop_fill_brief_routes_target_duration_and_seam_gate(tmp_path):
     assert infer_loop_target("repeat this clip 4 times") == ("times", "4")
 
 
+def test_clip_assembly_brief_routes_normalized_one_pass_join(tmp_path):
+    source = tmp_path / "origin" / "intro.mp4"
+    source.parent.mkdir(parents=True)
+    source.write_bytes(b"source")
+
+    plan = build_plan(
+        f"把 {source} 和另外两段不同分辨率的视频拼接成一个视频",
+        project_dir=str(tmp_path),
+    )
+
+    ids = [step["id"] for step in plan["steps"]]
+    assert ids.index("runtime_preflight") < ids.index("clip_assembly_plan")
+    step = next(step for step in plan["steps"] if step["id"] == "clip_assembly_plan")
+    assert step["script"] == "clip_assembly.py"
+    assert f"clip_assembly.py plan {source} '<next_clip>'" in step["command"]
+    assert "--audio-mode fill-silence" in step["command"]
+    assert "--boundary-proof verify/clip-assembly-boundaries.mp4" in step["command"]
+    assert step["gate_category"] == "clip_assembly_plan"
+
+
 def test_subtitle_missing_glyph_brief_routes_font_coverage_gate(tmp_path):
     plan = build_plan(
         "检查最终字幕有没有生僻字缺字或豆腐块，并绑定实际字体",

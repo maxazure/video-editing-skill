@@ -2,7 +2,7 @@
 
 这是一个面向 **口播、教程、访谈、播客切片、录屏演示 / facecam demo** 的 AI 视频剪辑生产线：给它原始口播音频/视频、transcript、B-roll、摄像头小窗或素材目录，它可以把“还没整理的素材”推进到 **可发布的小红书 / 抖音 / 视频号短视频**。
 
-它提供一条完整工作流：**项目启动/素材导入 → 本机工具链能力预检 → 交错/telecine 检测与逐行工作副本 → 手机/录屏 VFR 时基归一 → 短素材循环填满固定时长与接缝复核 → 个人/品牌剪辑风格 → 生产授权 → 手持防抖 / 绿蓝幕换背景 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 生成片有效运动窗口 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp / 关键帧 freeze-punch / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 锁定视觉 EDL 后重建最终声音分镜 → 最终旁白逐短语响度门禁 → 渲染前预检 / 真实画面字幕样式选择 / 字幕逐字符字体覆盖 → 单次编码渲染 → 质检 / 最终音视频轨覆盖 / 最终成片字幕像素复核 / 字幕与独立人声对齐 / 声道完整性 / 短促音频掉点 / 闪烁风险 / 单帧瞬态伪影筛查 / 最终成片唇形复核 → 多平台导出 / 目标大小交付编码 / 重编码画质损失门禁 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
+它提供一条完整工作流：**项目启动/素材导入 → 本机工具链能力预检 → 交错/telecine 检测与逐行工作副本 → 手机/录屏 VFR 时基归一 → 短素材循环填满固定时长与接缝复核 → 多源片段归一拼接与全接缝复核 → 个人/品牌剪辑风格 → 生产授权 → 手持防抖 / 绿蓝幕换背景 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 生成片有效运动窗口 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp / 关键帧 freeze-punch / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 锁定视觉 EDL 后重建最终声音分镜 → 最终旁白逐短语响度门禁 → 渲染前预检 / 真实画面字幕样式选择 / 字幕逐字符字体覆盖 → 单次编码渲染 → 质检 / 最终音视频轨覆盖 / 最终成片字幕像素复核 / 字幕与独立人声对齐 / 声道完整性 / 短促音频掉点 / 闪烁风险 / 单帧瞬态伪影筛查 / 最终成片唇形复核 → 多平台导出 / 目标大小交付编码 / 重编码画质损失门禁 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
 
 ## 适合做什么
 
@@ -15,6 +15,7 @@
 - **旧电视 / DV 素材先分清 telecine 和真实交错**：`interlace_conform.py` 用 FFmpeg `idet` 多段采样；疑似 3:2 pulldown 会阻断直接去交错，真实 TFF/BFF 才能经 `bwdif` 或明确的 `yadif` fallback 生成逐行工作副本，并在完整 1× A/B 确认后放行。
 - **手机和录屏 VFR 可先变成可审计 CFR 工作副本**：`frame_rate_conform.py` 读取全部解码帧 PTS 间隔，绑定精确目标有理帧率；输出必须通过恒定 cadence、帧数、音画起止、显示方向、SHA-256 和完整解码验证，原片保持不变。
 - **短背景可以按次数或固定时长安全重复**：`loop_fill.py` 只接受 progressive CFR SDR 源片，音画一起循环或显式丢弃源音频；首个真实接缝和完整交付件都要正常速度复核，源片、输出、proof、设置或人工结论漂移都会让 manifest gate 失效。
+- **不同规格的视频可以安全拼成一条**：`clip_assembly.py` 按最终顺序绑定每条源片，在一次编码中统一画布、rotation、CFR、SAR、像素格式、时间戳与 48 kHz stereo；无声片段可补等长静音，交付件和全部接缝 proof 都通过完整解码与 1× 人工复核后才放行。
 - **手持防抖保留原片和 A/B 证据**：`video_stabilization.py` 把源 SHA-256、确切 FFmpeg 后端和人工决定写进计划；apply 只生成新工作副本与全长左右对照，完整 1× 复核并 confirm 后 manifest 才放行。
 - **绿幕/蓝幕换背景先看 matte 再渲染**：`chroma_key.py` 在前景早/中/晚生成 composite 与黑白 matte，人工逐项确认边缘、主体完整性、溢色和背景匹配后才允许完整 H.264/AAC 输出；源、背景、预览、filter 或成片漂移都会让旧 review 失效。
 - **局部慢动作先计划再渲染**：`speed_ramp.py` 把显式 impact frame 周围的 `snap/ease/s_curve`、hold 和可选 FFmpeg 插帧编译成 source-bound 计划；源 hash 或 piece 时间映射漂移会阻塞，apply 采用同目录临时文件事务式落盘。
@@ -151,6 +152,7 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    ├─→ interlace_conform.py     交错/telecine 采样 → progressive 工作副本 / 全长 A/B gate
    ├─→ frame_rate_conform.py    手机/录屏 VFR → 全量 PTS 检测 / CFR 工作副本 / live gate
    ├─→ loop_fill.py             progressive CFR 短片 → 次数/目标时长 repeat / 接缝 proof + 完整审片 gate
+   ├─→ clip_assembly.py         多源片段 → 单次画布/CFR/SAR/音频归一 / 全接缝 proof + live gate
    ├─→ edit_style_profile.py    个人/品牌创意方向、节奏与渲染/文案默认值 → 可移植 profile
    ├─→ production_authorization.py
    │                            确切素材/动作/provider/权利依据 → 显式授权 + live gate
@@ -732,6 +734,28 @@ python3 scripts/pipeline_manifest.py . --require frame_rate_conform_plan --stric
 
 计划保存 source SHA-256、媒体合同、全部 PTS 间隔统计、精确目标有理帧率和 canonical encoding contract。apply 先写同目录临时 H.264/AAC MP4；只有 cadence 恒定且单调、帧数匹配 `duration × fps`、音画起止在容差内、显示尺寸/rotation 正确并完整解码成功时才原子提升。`29.97` 会规范成 `30000/1001`；30/60 fps 仍需按素材运动和平台选择。升帧只复制画面，降帧会丢运动采样。HDR/BT.2020/>8-bit 或明显既有音画 offset 会停止，避免静默改变色彩或同步决定。后续转写、切段、字幕和渲染都改用 `work/phone-cfr.mp4`。
 
+### 🧩 Clip Assembly — 多源片段归一拼接
+[`scripts/clip_assembly.py`](scripts/clip_assembly.py) · [详细文档](docs/prompts/118-clip-assembly.md)
+
+片头、主片、生成片和片尾来自不同分辨率、方向、帧率、SAR、时间戳或音频规格时，用 source-bound 计划代替未检查的 concat copy：
+
+```bash
+python3 scripts/clip_assembly.py plan \
+  origin/intro.mp4 origin/main.mov origin/outro.mp4 \
+  --width 1080 --height 1920 --fps 30 \
+  --fit contain --audio-mode fill-silence \
+  --delivery output/assembled.mp4 \
+  --boundary-proof verify/clip-assembly-boundaries.mp4 \
+  --project-dir . \
+  --output work/clip_assembly_plan.json \
+  --markdown work/clip_assembly_plan.md
+python3 scripts/clip_assembly.py apply work/clip_assembly_plan.json
+```
+
+脚本在一条 FFmpeg filter graph 内为每段重置 PTS、统一画布、rotation、CFR、SAR 1:1、`yuv420p` 和 48 kHz stereo，再 hard cut 成 H.264/AAC MP4；至少一段有声音时，无音轨片段默认补等长静音，也可用 `--audio-mode drop` 明确输出无声版。已有音轨与视频首尾失配、HDR/BT.2020/>8-bit、路径逃逸或重复源会在计划阶段停止。
+
+apply 只有在总时长、尺寸、帧率、decoded cadence、SAR、音画首尾、codec/pixel format、SHA-256 和 `-xerror` 全量解码通过后才原子提升交付件。它还会从确切输出按顺序抽取所有接缝窗口，生成一条正常速度 proof。完整看完 delivery 和 proof 后，用 `confirm` 记录 clip order、visual seams、frame continuity、audio seams、complete coverage，再用 `verify --strict` 或 `pipeline_manifest.py --require clip_assembly_plan --strict` 放行。该工具只做 hard cut，不判断语义连续性，也不替代 J-cut/L-cut 或最终完整审片。
+
 ### 🧭 Edit Brief Plan — 自然语言剪辑需求路由
 [`scripts/edit_brief_plan.py`](scripts/edit_brief_plan.py) · [详细文档](docs/prompts/64-edit-brief-plan.md)
 
@@ -747,7 +771,7 @@ python3 scripts/edit_brief_plan.py \
   --strict
 ```
 
-它会识别 `origin/interview.mp4` 这类源素材路径、目标平台、交错/telecine、VFR/CFR 源素材归一、手持防抖、绿幕/蓝幕换背景、目标脚本对齐、多 take、长视频拆条、批量短视频、字幕、B-roll、BGM、去停顿、J-cut/L-cut、生成素材、PIP、调色、QA、发布包等信号，并把它们映射到已有脚本，例如 `interlace_conform.py`、`frame_rate_conform.py`、`video_stabilization.py`、`chroma_key.py`、`script_alignment.py`、`highlight_picker.py`、`shorts_batch.py`、`jump_cut.py`、`audio_transition.py`、`auto_enrich.py`、`render_final.py`、`render_qa.py` 和 `publish_package.py`。交错路由会先生成 `work/source-progressive.mp4`；VFR 路由再把验证后的 `work/source-cfr.mp4` 传给后续步骤，brief 没有明确 30/60/NTSC rate 时保留 `<target_fps>`。`pipeline_manifest.py` 会发现 `edit_brief_plan.json`；当 `summary.blocking > 0`（例如 brief 为空或显式 source 缺失）时会作为 blocker，也可以用 `--require edit_brief_plan` 把需求路由作为 analysis gate。
+它会识别 `origin/interview.mp4` 这类源素材路径、目标平台、交错/telecine、VFR/CFR 源素材归一、多源视频拼接、手持防抖、绿幕/蓝幕换背景、目标脚本对齐、多 take、长视频拆条、批量短视频、字幕、B-roll、BGM、去停顿、J-cut/L-cut、生成素材、PIP、调色、QA、发布包等信号，并把它们映射到已有脚本，例如 `interlace_conform.py`、`frame_rate_conform.py`、`clip_assembly.py`、`video_stabilization.py`、`chroma_key.py`、`script_alignment.py`、`highlight_picker.py`、`shorts_batch.py`、`jump_cut.py`、`audio_transition.py`、`auto_enrich.py`、`render_final.py`、`render_qa.py` 和 `publish_package.py`。交错路由会先生成 `work/source-progressive.mp4`；VFR 路由再把验证后的 `work/source-cfr.mp4` 传给后续步骤；拼接路由留下按最终顺序填写的多源占位符，brief 没有明确 30/60/NTSC rate 时保留 `<target_fps>`。`pipeline_manifest.py` 会发现 `edit_brief_plan.json`；当 `summary.blocking > 0`（例如 brief 为空或显式 source 缺失）时会作为 blocker，也可以用 `--require edit_brief_plan` 把需求路由作为 analysis gate。
 
 ### 🛂 Production Authorization — 确切范围生产授权
 [`scripts/production_authorization.py`](scripts/production_authorization.py) · [详细文档](docs/prompts/97-production-authorization.md)
@@ -3469,6 +3493,7 @@ pytest tests/test_audio_cue_sheet.py -v     # BGM/SFX 音频设计清单
 pytest tests/test_final_audio_storyboard.py -v # 锁定 EDL → 最终声音分镜 / voice ledger / live gate
 pytest tests/test_multicam_sync.py -v       # 多机位 offset / 最响音轨 / pairwise / 真实预览
 pytest tests/test_loop_fill.py -v           # 固定时长重复 / 首个真实接缝 proof / 完整审片 live gate
+pytest tests/test_clip_assembly.py -v       # 多源画布/CFR/SAR/音频归一 / 全接缝 proof / live gate
 pytest tests/test_speech_denoise.py -v      # 口播降噪 preset / 顺序 / 真实 FFmpeg SNR smoke
 pytest tests/test_bgm_ducking.py -v         # 旁白驱动 BGM sidechain + 真实 FFmpeg smoke
 pytest tests/test_audio_transition.py -v    # J-cut/L-cut source handle / hash / 单次编码 / receipt
@@ -3484,6 +3509,27 @@ pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 pytest tests/test_review_dashboard.py -v    # 静态人工复核面板 + gate queue
 pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 gate
 ```
+
+### 2026-09-13 自动化升级记录（Source-bound Multi-clip Assembly + All-boundary Review）
+
+本次联网研究的 GitHub 参考：
+
+| 项目 / 资料 | 借鉴点 | 本次处理 |
+|---|---|---|
+| [`kajisho5/ffmpeg-skill@b979df3`](https://github.com/kajisho5/ffmpeg-skill/blob/b979df3d65a7b1df4814563cf6ebcf5d78a8983c/scripts/join.py) | 拼接前统一分辨率、FPS、SAR、像素格式、采样率和声道布局，并为缺音轨输入生成静音 | 采用单条 filter graph 归一全部输入；增加源顺序与字节绑定、完整 decoded cadence、输出合同和人工接缝 gate |
+| [`willylam2222-bot/cinematic-ai-film@a71d629`](https://github.com/willylam2222-bot/cinematic-ai-film/blob/a71d62903ed153d886cc3b9e409d9703735e6884/SKILL.md) | concat copy 只适用于 codec、画布、FPS、像素格式、SAR、time base 完全一致的片段；不同来源先 reset PTS 和归一 | 新工具不尝试 stream copy；每段先 `setpts/asetpts`、scale/pad 或 crop、CFR、SAR 和音频归一，再做 hard cut |
+| [`htekdev/copilot-home-assistant@dcfc99b`](https://github.com/htekdev/copilot-home-assistant/blob/dcfc99b0799e0e041c4cc55d54db6f59f53638fb/.github/skills/ffmpeg-video-editing/SKILL.md) | 混合 time base 的 stream copy 可能产生损坏或异常时长；重编码后应核对输出时长与输入总和 | 验证总时长、帧率、decoded cadence、音画首尾和完整解码，并生成覆盖每处最终接缝的 proof |
+
+本次新增 / 调整能力：
+
+- 新增 [`scripts/clip_assembly.py`](scripts/clip_assembly.py) 的 `plan → apply → confirm → verify` 闭环。计划按最终播放顺序绑定 2–500 条项目内唯一源片的绝对路径、SHA-256、媒体合同和完整 decoded cadence；目标画布、精确有理帧率、`contain/crop`、音频策略、总时长和全部接缝时间一起进入 canonical plan id。
+- apply 在一次 FFmpeg 编码中重置每段音视频 PTS，统一显示尺寸、rotation、CFR、SAR 1:1、`yuv420p` 和 48 kHz stereo，再输出 H.264/AAC MP4。混合有声/无声素材时默认补等长静音；`--audio-mode drop` 可明确生成无声版。HDR/BT.2020/>8-bit、音画首尾失配、重复源、路径逃逸和覆盖碰撞会提前阻断。
+- 临时交付件只有在 codec/pixel format、尺寸、rotation、SAR、精确平均帧率、恒定 decoded cadence、总时长、音轨存在性与首尾、源文件未变以及 `ffmpeg -xerror` 完整解码全部通过后才原子提升。随后从确切交付件提取所有接缝前后窗口，生成正常速度 boundary proof，并执行相同媒体合同与完整解码。
+- confirm 要求完整 1× 播放交付件和 proof，逐项记录 clip order、visual seams、frame continuity、audio seams、complete coverage；结论绑定当前 output/proof SHA-256。`pipeline_manifest.py` 新增 `clip_assembly_plan` live gate，`edit_brief_plan.py` 可从中英文拼接需求生成本地 runbook；SKILL、prompts 导航和 [`docs/prompts/118-clip-assembly.md`](docs/prompts/118-clip-assembly.md) 已同步。
+
+使用方式：运行 `python3 scripts/clip_assembly.py plan origin/intro.mp4 origin/main.mov origin/outro.mp4 --width 1080 --height 1920 --fps 30 --fit contain --audio-mode fill-silence --delivery output/assembled.mp4 --boundary-proof verify/clip-assembly-boundaries.mp4 --project-dir . --output work/clip_assembly_plan.json --markdown work/clip_assembly_plan.md`，再执行 `apply`。完整看完交付件和 proof 后运行 `confirm`，最后用 `verify --strict` 与 `pipeline_manifest.py --project-dir . --require clip_assembly_plan --strict` 放行。
+
+验证结果：新增 7 项 clip assembly plan/归一命令/静音补轨/安全边界/lifecycle/drift/CLI 测试，并扩展 edit brief 路由；定向 `.venv/bin/python -m pytest tests/test_clip_assembly.py tests/test_edit_brief_plan.py tests/test_pipeline_manifest.py -q` 通过 `161 passed in 3.31s`，最终全量 `.venv/bin/python -m pytest tests -q` 通过 `1224 passed in 29.05s`。真实 FFmpeg 8.1.1 smoke 将 `320×180/24fps/44.1kHz mono`、`640×360/30fps/无音轨`、`240×320/25fps/48kHz stereo` 三条素材归一为 `320×180 / 30fps / H.264 + 48kHz stereo AAC`：交付件 `3.533333s / 106 帧`，两处接缝 proof `2.266667s / 68 帧`，两条均通过完整解码。未伪造人工完整播放，`verify --strict` 按预期保留 `pending confirm` 并退出 2。`compileall`、CLI help、manifest category、Skill Creator `quick_validate.py` 与 `git diff --check` 全部通过。
 
 ### 2026-09-12 自动化升级记录（Source-bound Loop Fill + Seam Review）
 
@@ -4911,6 +4957,8 @@ python3 scripts/pipeline_manifest.py . --require freeze_punch_plan --strict
 | **114** | **[Stream Coverage QA](docs/prompts/114-stream-coverage-qa.md)** | **最终音视频全量解码、首尾 PTS、帧数与容器覆盖 live gate** |
 | **115** | **[Runtime Preflight](docs/prompts/115-runtime-preflight.md)** | **按 workflow profile 检查本机 FFmpeg/Node 命令、编码器、filters 与环境漂移** |
 | **116** | **[Interlace Conform](docs/prompts/116-interlace-conform.md)** | **交错/telecine 多段检测 → progressive 工作副本、全长 A/B confirm 与 live gate** |
+| **117** | **[Loop Fill](docs/prompts/117-loop-fill.md)** | **短素材按次数/目标时长重复、真实接缝 proof 与完整审片 live gate** |
+| **118** | **[Clip Assembly](docs/prompts/118-clip-assembly.md)** | **多源视频 → 单次画布/CFR/SAR/音频归一、全接缝 proof 与 live gate** |
 | **62** | **[Hook Variants](docs/prompts/62-hook-variants.md)** | **同一视频批量生成前三秒 hook 角度** |
 | **67** | **[Speech Continuity QA](docs/prompts/67-speech-continuity-qa.md)** | **成片二次 ASR 检查复读、近重复 take 和句内口吃** |
 | **68** | **[Cover Variants](docs/prompts/68-cover-variants.md)** | **多套封面、feed-size 预览、标题协同和最终选择** |
@@ -4948,6 +4996,7 @@ scripts/
 ├── interlace_conform.py        idet / telecine-safe bwdif|yadif / full-length A/B gate [V3]
 ├── frame_rate_conform.py       VFR 全量 PTS 检测 + source-bound CFR 工作副本/live gate [V3]
 ├── loop_fill.py                progressive CFR 短片 repeat / fixed-duration / seam proof live gate [V3]
+├── clip_assembly.py            多源视频单次归一拼接 / all-boundary proof / live gate [V3]
 ├── edit_brief_plan.py          自然语言剪辑需求 → 本地 runbook          [V3]
 ├── production_authorization.py 确切动作/provider/素材/权利依据授权 gate  [V3]
 ├── _internal_text_guard.py     内部 token 拦截器

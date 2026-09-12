@@ -119,6 +119,7 @@
 | 115 | [Runtime Preflight 本机工具链能力门禁](115-runtime-preflight.md) | workflow profile → FFmpeg/Node 命令、编码器、filters、明确 missing/unknown 与 live environment gate |
 | 116 | [Interlace Conform 交错扫描检测与逐行工作副本](116-interlace-conform.md) | source → idet 多段采样、telecine 阻断、bwdif/yadif、全长 A/B 人工确认与 live gate |
 | 117 | [Loop Fill 短素材循环填满固定时长](117-loop-fill.md) | progressive CFR source → 次数/目标时长 hard repeat、首个真实接缝 proof、完整审片与 live gate |
+| 118 | [Clip Assembly 多源视频安全拼接](118-clip-assembly.md) | ordered clips → 单次画布/CFR/SAR/音频归一、全接缝 proof 与 live gate |
 
 ## 快速上手
 

@@ -545,6 +545,23 @@ SIGNAL_KEYWORDS: Mapping[str, Sequence[str]] = {
         "填满时长",
         "补足时长",
     ),
+    "clip_assembly": (
+        "assemble clips",
+        "assemble videos",
+        "join clips",
+        "join videos",
+        "concat clips",
+        "concat videos",
+        "combine video clips",
+        "stitch clips",
+        "拼接视频",
+        "视频拼接",
+        "合并视频",
+        "合并多个视频",
+        "多段视频合并",
+        "多段素材拼接",
+        "片头片尾拼接",
+    ),
     "interlace_conform": (
         "deinterlace",
         "de-interlace",
@@ -730,6 +747,7 @@ SIGNAL_LABELS: Mapping[str, str] = {
     "audio_sync": "外录音频对齐",
     "frame_rate_conform": "VFR 源素材检测 / CFR 工作副本",
     "loop_fill": "短素材循环填满固定时长 / 接缝复核",
+    "clip_assembly": "多源片段归一拼接 / 全接缝复核",
     "interlace_conform": "交错 / telecine 检测与逐行工作副本",
     "screen_focus": "录屏聚焦",
     "pip": "摄像头小窗",
@@ -965,7 +983,7 @@ def build_plan(
 
     if source_media and not Path(source_media).expanduser().exists():
         blockers.append(f"source media not found: {source_media}")
-    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy", "reference_edit_rhythm", "lip_sync_review", "subtitle_style_preview", "subtitle_render_review", "framing_preview", "flash_safety_qa", "temporal_artifact_qa", "stream_coverage_qa", "audio_channel_qa", "audio_dropout_qa", "caption_speech_qa", "multimodal_dead_air", "video_stabilization", "chroma_key", "scoped_video_edit", "speed_ramp", "freeze_punch", "generated_motion_window", "frame_rate_conform", "loop_fill", "interlace_conform", "hdr_sdr", "delivery_encode", "encode_quality_qa", "edit_style_profile"}):
+    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy", "reference_edit_rhythm", "lip_sync_review", "subtitle_style_preview", "subtitle_render_review", "framing_preview", "flash_safety_qa", "temporal_artifact_qa", "stream_coverage_qa", "audio_channel_qa", "audio_dropout_qa", "caption_speech_qa", "multimodal_dead_air", "video_stabilization", "chroma_key", "scoped_video_edit", "speed_ramp", "freeze_punch", "generated_motion_window", "frame_rate_conform", "loop_fill", "clip_assembly", "interlace_conform", "hdr_sdr", "delivery_encode", "encode_quality_qa", "edit_style_profile"}):
         warnings.append("source media was not provided; commands use <source_media> placeholders")
 
     if transcript and not Path(transcript).expanduser().exists():
@@ -1038,6 +1056,7 @@ def build_plan(
                 {
                     "frame_rate_conform",
                     "loop_fill",
+                    "clip_assembly",
                     "interlace_conform",
                     "multimodal_dead_air",
                     "cleanup_silence",
@@ -1257,6 +1276,53 @@ def build_plan(
             "loop_fill.py performs a hard source repeat and never labels arbitrary endpoints seamless. "
             "Run apply, watch the seam proof and full delivery at 1x, record every confirm check, then live-verify the plan. "
             "Use --audio-mode drop for decorative background video whose source audio must not repeat."
+        )
+
+    if "clip_assembly" in ids:
+        assembly_sources = [source_input, "<next_clip>"] if source_media else ["<clip_1>", "<clip_2>"]
+        _add_step(
+            steps,
+            seen,
+            _step(
+                "clip_assembly_plan",
+                phase="edit",
+                script="clip_assembly.py",
+                label="Normalize and assemble ordered clips with an all-boundary proof",
+                reason="The brief asks to combine multiple video files whose geometry, cadence, timestamps, or audio layout may differ.",
+                command=shell(
+                    [
+                        python_bin,
+                        "scripts/clip_assembly.py",
+                        "plan",
+                        *assembly_sources,
+                        "--delivery",
+                        "output/assembled.mp4",
+                        "--boundary-proof",
+                        "verify/clip-assembly-boundaries.mp4",
+                        "--fit",
+                        "contain",
+                        "--audio-mode",
+                        "fill-silence",
+                        "--project-dir",
+                        project_dir,
+                        "--output",
+                        "work/clip_assembly_plan.json",
+                        "--markdown",
+                        "work/clip_assembly_plan.md",
+                    ]
+                ),
+                outputs=[
+                    "work/clip_assembly_plan.json",
+                    "work/clip_assembly_plan.md",
+                    "output/assembled.mp4",
+                    "verify/clip-assembly-boundaries.mp4",
+                ],
+                gate_category="clip_assembly_plan",
+            ),
+        )
+        notes.append(
+            "List every unique clip in final playback order. The tool normalizes all streams in one encode and never falls back to unchecked stream copy. "
+            "Run apply, watch the complete delivery and every boundary-proof window at 1x, confirm all checks, then live-verify the plan."
         )
 
     if "production_authorization" in ids:
