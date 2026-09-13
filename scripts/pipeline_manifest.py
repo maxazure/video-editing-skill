@@ -63,6 +63,13 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         blocks_when_present=True,
     ),
     ArtifactDef(
+        "black_edge_trim_plan",
+        "Edge-black Trim Plan",
+        ("**/black_edge_trim_plan.json", "**/*_black_edge_trim_plan.json"),
+        "Run black_edge_trim.py apply, watch the complete delivery and source-edge proof at 1x, confirm content/audio continuity, then live-verify the plan.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "clip_assembly_plan",
         "Clip Assembly Plan",
         ("**/clip_assembly_plan.json", "**/*_clip_assembly_plan.json"),
@@ -1926,6 +1933,42 @@ def evaluate_category(
                     f"frame-rate conform requires full-speed motion review: {artifact.path}: "
                     f"{warnings} warning(s)"
                 )
+        return {
+            "category": definition.category,
+            "label": definition.label,
+            "status": status,
+            "artifact_count": len(artifacts),
+            "latest_path": artifacts[0].path,
+            "notes": sorted(set(notes)),
+            "next_action": definition.next_action if status in {"missing", "blocked", "warn"} else "",
+        }
+
+    if definition.category == "black_edge_trim_plan":
+        from black_edge_trim import verify_plan
+
+        for artifact in artifacts:
+            data = _load_json(artifact.path)
+            if data is None:
+                status = "blocked"
+                notes.append(f"unreadable edge-black trim plan: {artifact.path}")
+                continue
+            try:
+                verification = verify_plan(data)
+            except Exception as exc:
+                status = "blocked"
+                notes.append(f"edge-black trim verification failed {artifact.path}: {exc}")
+                continue
+            blocking = _int_at(verification, "summary", "blocking")
+            warnings = _int_at(verification, "summary", "warnings")
+            if blocking:
+                status = "blocked"
+                notes.append(
+                    f"invalid or unreviewed edge-black trim {artifact.path}: "
+                    f"{blocking} blocking item(s)"
+                )
+            elif warnings:
+                status = "warn" if status != "blocked" else status
+                notes.append(f"edge-black trim retains {warnings} override/review warning(s): {artifact.path}")
         return {
             "category": definition.category,
             "label": definition.label,

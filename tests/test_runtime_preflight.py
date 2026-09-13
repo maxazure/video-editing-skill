@@ -114,6 +114,19 @@ def test_interlace_profile_requires_idet_and_accepts_yadif_fallback():
     assert [item["status"] for item in backend["alternatives"]] == ["missing", "available"]
 
 
+def test_edge_black_trim_profile_requires_both_detectors_and_trim_filters():
+    filters = {
+        "blackdetect", "silencedetect", "trim", "atrim", "setpts", "asetpts",
+        "fps", "setsar", "format", "aresample", "aformat", "apad", "concat",
+    }
+    report = build_report(["edge_black_trim"], snapshot=snapshot(filters=filters))
+
+    assert report["status"] == "ready"
+    assert report["summary"]["blocking"] == 0
+    assert "filter:blackdetect" in report["capabilities"]
+    assert "filter:silencedetect" in report["capabilities"]
+
+
 def test_remotion_profile_binds_only_node_and_npx_versions():
     report = build_report(["remotion"], snapshot=snapshot())
 

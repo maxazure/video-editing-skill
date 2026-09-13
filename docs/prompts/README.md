@@ -120,6 +120,7 @@
 | 116 | [Interlace Conform 交错扫描检测与逐行工作副本](116-interlace-conform.md) | source → idet 多段采样、telecine 阻断、bwdif/yadif、全长 A/B 人工确认与 live gate |
 | 117 | [Loop Fill 短素材循环填满固定时长](117-loop-fill.md) | progressive CFR source → 次数/目标时长 hard repeat、首个真实接缝 proof、完整审片与 live gate |
 | 118 | [Clip Assembly 多源视频安全拼接](118-clip-assembly.md) | ordered clips → 单次画布/CFR/SAR/音频归一、全接缝 proof 与 live gate |
+| 119 | [Edge-black Trim 首尾黑场安全裁切](119-black-edge-trim.md) | source edges → blackdetect + silencedetect、CFR working copy、边界 proof 与 live gate |
 
 ## 快速上手
 
@@ -155,6 +156,7 @@
 | 最终片疑似有闪帧、单帧撕裂或少数帧生成变形 | [108-Temporal Artifact QA](108-temporal-artifact-qa.md) |
 | 口播停顿太多想自动剪紧 | [21-Jump Cut](21-jump-cut.md) |
 | 只想删掉同时静音且画面静止的死区 | [88-Multimodal Dead-Air](88-multimodal-dead-air.md) |
+| 片头或片尾有黑屏，想确认没有声音再裁掉 | [119-Edge-black Trim](119-black-edge-trim.md) |
 | 想人工看源素材或成片切点附近画面和波形 | [22-Timeline View](22-timeline-view.md) |
 | 不想每次渲染覆盖上一版成片 | [23-Versioned Output](23-versioned-output.md) |
 | 生成图/生成视频前想先审分镜和路由 | [24-Storyboard Plan](24-storyboard-plan.md) |

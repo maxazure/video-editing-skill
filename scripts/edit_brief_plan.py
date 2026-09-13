@@ -545,6 +545,22 @@ SIGNAL_KEYWORDS: Mapping[str, Sequence[str]] = {
         "填满时长",
         "补足时长",
     ),
+    "black_edge_trim": (
+        "trim black edges",
+        "remove black intro",
+        "remove black outro",
+        "remove leading black",
+        "remove trailing black",
+        "black frame at start",
+        "black frame at end",
+        "片头黑场",
+        "片尾黑场",
+        "去掉开头黑屏",
+        "去掉结尾黑屏",
+        "裁掉首尾黑帧",
+        "删除首尾黑场",
+        "清理首尾黑屏",
+    ),
     "clip_assembly": (
         "assemble clips",
         "assemble videos",
@@ -747,6 +763,7 @@ SIGNAL_LABELS: Mapping[str, str] = {
     "audio_sync": "外录音频对齐",
     "frame_rate_conform": "VFR 源素材检测 / CFR 工作副本",
     "loop_fill": "短素材循环填满固定时长 / 接缝复核",
+    "black_edge_trim": "首尾黑场 + 静音交集裁切 / 边界复核",
     "clip_assembly": "多源片段归一拼接 / 全接缝复核",
     "interlace_conform": "交错 / telecine 检测与逐行工作副本",
     "screen_focus": "录屏聚焦",
@@ -971,7 +988,8 @@ def build_plan(
     primary_platform = platforms[0]
     source_input = source_media or "<source_media>"
     post_interlace_source = "work/source-progressive.mp4" if "interlace_conform" in ids else source_input
-    source = "work/source-cfr.mp4" if "frame_rate_conform" in ids else post_interlace_source
+    pre_black_trim_source = "work/source-cfr.mp4" if "frame_rate_conform" in ids else post_interlace_source
+    source = "work/source-edge-trimmed.mp4" if "black_edge_trim" in ids else pre_black_trim_source
     transcript_path = _transcript_path(source_media, transcript)
     clean_script = _clean_script_path()
     blockers: List[str] = []
@@ -983,7 +1001,7 @@ def build_plan(
 
     if source_media and not Path(source_media).expanduser().exists():
         blockers.append(f"source media not found: {source_media}")
-    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy", "reference_edit_rhythm", "lip_sync_review", "subtitle_style_preview", "subtitle_render_review", "framing_preview", "flash_safety_qa", "temporal_artifact_qa", "stream_coverage_qa", "audio_channel_qa", "audio_dropout_qa", "caption_speech_qa", "multimodal_dead_air", "video_stabilization", "chroma_key", "scoped_video_edit", "speed_ramp", "freeze_punch", "generated_motion_window", "frame_rate_conform", "loop_fill", "clip_assembly", "interlace_conform", "hdr_sdr", "delivery_encode", "encode_quality_qa", "edit_style_profile"}):
+    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy", "reference_edit_rhythm", "lip_sync_review", "subtitle_style_preview", "subtitle_render_review", "framing_preview", "flash_safety_qa", "temporal_artifact_qa", "stream_coverage_qa", "audio_channel_qa", "audio_dropout_qa", "caption_speech_qa", "multimodal_dead_air", "video_stabilization", "chroma_key", "scoped_video_edit", "speed_ramp", "freeze_punch", "generated_motion_window", "frame_rate_conform", "black_edge_trim", "loop_fill", "clip_assembly", "interlace_conform", "hdr_sdr", "delivery_encode", "encode_quality_qa", "edit_style_profile"}):
         warnings.append("source media was not provided; commands use <source_media> placeholders")
 
     if transcript and not Path(transcript).expanduser().exists():
@@ -1055,6 +1073,7 @@ def build_plan(
             ids.intersection(
                 {
                     "frame_rate_conform",
+                    "black_edge_trim",
                     "loop_fill",
                     "clip_assembly",
                     "interlace_conform",
@@ -1106,6 +1125,8 @@ def build_plan(
             runtime_profiles.append("stabilization")
         if "interlace_conform" in ids:
             runtime_profiles.append("interlace")
+        if "black_edge_trim" in ids:
+            runtime_profiles.append("edge_black_trim")
         if _contains(normalized, "remotion"):
             runtime_profiles.append("remotion")
         runtime_command = [python_bin, "scripts/runtime_preflight.py", "analyze"]
@@ -1226,6 +1247,50 @@ def build_plan(
             "Review the decoded cadence report, run frame_rate_conform.py apply/verify, then use "
             "work/source-cfr.mp4 for transcription, cuts, captions, sync, and rendering. Choose 30/60 fps "
             "from the intended motion and platform when the brief does not specify a rate."
+        )
+
+    if "black_edge_trim" in ids:
+        _add_step(
+            steps,
+            seen,
+            _step(
+                "black_edge_trim_plan",
+                phase="ingest",
+                script="black_edge_trim.py",
+                label="Trim silent leading/trailing black and bind exact edge proofs",
+                reason="The brief asks to remove black frames or black slugs at the start/end of the source.",
+                command=shell(
+                    [
+                        python_bin,
+                        "scripts/black_edge_trim.py",
+                        "plan",
+                        pre_black_trim_source,
+                        "--delivery",
+                        "work/source-edge-trimmed.mp4",
+                        "--edge-proof",
+                        "verify/source-edge-trim-proof.mp4",
+                        "--audio-policy",
+                        "silent_only",
+                        "--project-dir",
+                        project_dir,
+                        "--output",
+                        "work/black_edge_trim_plan.json",
+                        "--markdown",
+                        "work/black_edge_trim_plan.md",
+                    ]
+                ),
+                outputs=[
+                    "work/black_edge_trim_plan.json",
+                    "work/black_edge_trim_plan.md",
+                    "work/source-edge-trimmed.mp4",
+                    "verify/source-edge-trim-proof.mp4",
+                ],
+                gate_category="black_edge_trim_plan",
+            ),
+        )
+        notes.append(
+            "black_edge_trim.py only considers black ranges touching the source head/tail. The default silent_only policy also requires audio silence coverage. "
+            "Run apply, watch the proof and complete delivery at 1x, confirm content/audio continuity, then live-verify the plan."
         )
 
     if "loop_fill" in ids:

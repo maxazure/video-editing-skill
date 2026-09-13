@@ -77,6 +77,31 @@ PROFILE_SPECS: Mapping[str, Mapping[str, Any]] = {
         ],
         "alternatives": [],
     },
+    "edge_black_trim": {
+        "label": "Edge-black trim",
+        "description": "Detect black and silent source edges, then render and review a CFR working copy.",
+        "required": [
+            "runtime:python",
+            "command:ffmpeg",
+            "command:ffprobe",
+            "encoder:libx264",
+            "encoder:aac",
+            "filter:blackdetect",
+            "filter:silencedetect",
+            "filter:trim",
+            "filter:atrim",
+            "filter:setpts",
+            "filter:asetpts",
+            "filter:fps",
+            "filter:setsar",
+            "filter:format",
+            "filter:aresample",
+            "filter:aformat",
+            "filter:apad",
+            "filter:concat",
+        ],
+        "alternatives": [],
+    },
     "hdr_sdr": {
         "label": "HDR to Rec.709 SDR",
         "description": "Run the explicit zscale plus tonemap delivery path.",
@@ -144,6 +169,8 @@ REMEDIES: Mapping[str, str] = {
     "filter:idet": "Install an FFmpeg build with the idet field-detection filter enabled.",
     "filter:bwdif": "Install an FFmpeg build with bwdif, or use a build that provides yadif.",
     "filter:yadif": "Install an FFmpeg build with yadif, or use a build that provides bwdif.",
+    "filter:blackdetect": "Install an FFmpeg build with the blackdetect filter enabled.",
+    "filter:silencedetect": "Install an FFmpeg build with the silencedetect filter enabled.",
 }
 
 Runner = Callable[[Sequence[str], float], Mapping[str, Any]]

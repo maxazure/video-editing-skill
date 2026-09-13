@@ -2,7 +2,7 @@
 
 这是一个面向 **口播、教程、访谈、播客切片、录屏演示 / facecam demo** 的 AI 视频剪辑生产线：给它原始口播音频/视频、transcript、B-roll、摄像头小窗或素材目录，它可以把“还没整理的素材”推进到 **可发布的小红书 / 抖音 / 视频号短视频**。
 
-它提供一条完整工作流：**项目启动/素材导入 → 本机工具链能力预检 → 交错/telecine 检测与逐行工作副本 → 手机/录屏 VFR 时基归一 → 短素材循环填满固定时长与接缝复核 → 多源片段归一拼接与全接缝复核 → 个人/品牌剪辑风格 → 生产授权 → 手持防抖 / 绿蓝幕换背景 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 生成片有效运动窗口 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp / 关键帧 freeze-punch / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 锁定视觉 EDL 后重建最终声音分镜 → 最终旁白逐短语响度门禁 → 渲染前预检 / 真实画面字幕样式选择 / 字幕逐字符字体覆盖 → 单次编码渲染 → 质检 / 最终音视频轨覆盖 / 最终成片字幕像素复核 / 字幕与独立人声对齐 / 声道完整性 / 短促音频掉点 / 闪烁风险 / 单帧瞬态伪影筛查 / 最终成片唇形复核 → 多平台导出 / 目标大小交付编码 / 重编码画质损失门禁 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
+它提供一条完整工作流：**项目启动/素材导入 → 本机工具链能力预检 → 交错/telecine 检测与逐行工作副本 → 手机/录屏 VFR 时基归一 → 静音首尾黑场裁切与边界复核 → 短素材循环填满固定时长与接缝复核 → 多源片段归一拼接与全接缝复核 → 个人/品牌剪辑风格 → 生产授权 → 手持防抖 / 绿蓝幕换背景 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 生成片有效运动窗口 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp / 关键帧 freeze-punch / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 锁定视觉 EDL 后重建最终声音分镜 → 最终旁白逐短语响度门禁 → 渲染前预检 / 真实画面字幕样式选择 / 字幕逐字符字体覆盖 → 单次编码渲染 → 质检 / 最终音视频轨覆盖 / 最终成片字幕像素复核 / 字幕与独立人声对齐 / 声道完整性 / 短促音频掉点 / 闪烁风险 / 单帧瞬态伪影筛查 / 最终成片唇形复核 → 多平台导出 / 目标大小交付编码 / 重编码画质损失门禁 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
 
 ## 适合做什么
 
@@ -11,9 +11,10 @@
 - **噪声口播可在单次编码内保守清理**：`render_final.py --speech-denoise light|medium|strong` 会在变速、压缩、响度规范化和 BGM ducking 前处理低频震动与稳态底噪；默认关闭，最大降噪限制为 12 dB。
 - **停顿删段可同时看声音和画面**：`multimodal_dead_air.py` 只有在静帧覆盖静音达到门槛时才提出候选，实际只删二者交集；源 hash、20% 删除预算、切点复盘、单次编码和完整解码都进入 gate。
 - **多机位先同步再剪辑**：`multicam_sync.py` 把两台以上相机/手机/录音设备对齐到同一参考时间线，记录每路 offset、置信度、有效音轨、公共重叠区间，并可用多窗口 probe 测量长片时钟漂移；原片不改、不重编码。
-- **开始媒体工作前先证明本机能跑**：`runtime_preflight.py` 按 `media_io / core_edit / captions / qa / hdr_sdr / stabilization / interlace / remotion` profile 检查命令版本、编码器和 FFmpeg filters；明确区分 missing 与 unknown，并让环境或报告漂移在 manifest 中失效。
+- **开始媒体工作前先证明本机能跑**：`runtime_preflight.py` 按 `media_io / core_edit / captions / qa / edge_black_trim / hdr_sdr / stabilization / interlace / remotion` profile 检查命令版本、编码器和 FFmpeg filters；明确区分 missing 与 unknown，并让环境或报告漂移在 manifest 中失效。
 - **旧电视 / DV 素材先分清 telecine 和真实交错**：`interlace_conform.py` 用 FFmpeg `idet` 多段采样；疑似 3:2 pulldown 会阻断直接去交错，真实 TFF/BFF 才能经 `bwdif` 或明确的 `yadif` fallback 生成逐行工作副本，并在完整 1× A/B 确认后放行。
 - **手机和录屏 VFR 可先变成可审计 CFR 工作副本**：`frame_rate_conform.py` 读取全部解码帧 PTS 间隔，绑定精确目标有理帧率；输出必须通过恒定 cadence、帧数、音画起止、显示方向、SHA-256 和完整解码验证，原片保持不变。
+- **片头片尾黑场会先核对声音再裁切**：`black_edge_trim.py` 只接受接触源时间线两端的 `blackdetect` 区间，默认要求实际移除范围至少 95% 被静音覆盖；保留视觉 padding，生成原片边界 proof 和新的 CFR 工作副本，完整 1× 视听确认后才放行。
 - **短背景可以按次数或固定时长安全重复**：`loop_fill.py` 只接受 progressive CFR SDR 源片，音画一起循环或显式丢弃源音频；首个真实接缝和完整交付件都要正常速度复核，源片、输出、proof、设置或人工结论漂移都会让 manifest gate 失效。
 - **不同规格的视频可以安全拼成一条**：`clip_assembly.py` 按最终顺序绑定每条源片，在一次编码中统一画布、rotation、CFR、SAR、像素格式、时间戳与 48 kHz stereo；无声片段可补等长静音，交付件和全部接缝 proof 都通过完整解码与 1× 人工复核后才放行。
 - **手持防抖保留原片和 A/B 证据**：`video_stabilization.py` 把源 SHA-256、确切 FFmpeg 后端和人工决定写进计划；apply 只生成新工作副本与全长左右对照，完整 1× 复核并 confirm 后 manifest 才放行。
@@ -151,6 +152,7 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    ├─→ runtime_preflight.py     workflow profile → FFmpeg/Node 命令、编码器、filters / live gate
    ├─→ interlace_conform.py     交错/telecine 采样 → progressive 工作副本 / 全长 A/B gate
    ├─→ frame_rate_conform.py    手机/录屏 VFR → 全量 PTS 检测 / CFR 工作副本 / live gate
+   ├─→ black_edge_trim.py       首尾黑场 + 静音覆盖 → CFR 工作副本 / 原片边界 proof + live gate
    ├─→ loop_fill.py             progressive CFR 短片 → 次数/目标时长 repeat / 接缝 proof + 完整审片 gate
    ├─→ clip_assembly.py         多源片段 → 单次画布/CFR/SAR/音频归一 / 全接缝 proof + live gate
    ├─→ edit_style_profile.py    个人/品牌创意方向、节奏与渲染/文案默认值 → 可移植 profile
@@ -733,6 +735,26 @@ python3 scripts/pipeline_manifest.py . --require frame_rate_conform_plan --stric
 ```
 
 计划保存 source SHA-256、媒体合同、全部 PTS 间隔统计、精确目标有理帧率和 canonical encoding contract。apply 先写同目录临时 H.264/AAC MP4；只有 cadence 恒定且单调、帧数匹配 `duration × fps`、音画起止在容差内、显示尺寸/rotation 正确并完整解码成功时才原子提升。`29.97` 会规范成 `30000/1001`；30/60 fps 仍需按素材运动和平台选择。升帧只复制画面，降帧会丢运动采样。HDR/BT.2020/>8-bit 或明显既有音画 offset 会停止，避免静默改变色彩或同步决定。后续转写、切段、字幕和渲染都改用 `work/phone-cfr.mp4`。
+
+### ⬛ Edge-black Trim — 首尾黑场安全裁切
+[`scripts/black_edge_trim.py`](scripts/black_edge_trim.py) · [详细文档](docs/prompts/119-black-edge-trim.md)
+
+采集卡、相机预录或转码文件的首尾出现黑场时，可以在进入转写和剪辑前生成新的工作副本：
+
+```bash
+python3 scripts/black_edge_trim.py plan origin/capture.mp4 \
+  --delivery work/capture-edge-trimmed.mp4 \
+  --edge-proof verify/capture-edge-proof.mp4 \
+  --audio-policy silent_only \
+  --project-dir . \
+  --output work/black_edge_trim_plan.json \
+  --markdown work/black_edge_trim_plan.md
+python3 scripts/black_edge_trim.py apply work/black_edge_trim_plan.json
+```
+
+计划用 FFmpeg `blackdetect` 找首尾区间，并在有音轨时用 `silencedetect` 计算确切移除范围的静音覆盖。默认只接受接触源时间线两端的黑场，要求至少 95% 静音，并在内容边界内保留 0.08 秒视觉 padding；中间黑场完整保留。检测结果、source SHA-256、完整 decoded cadence、精确 trim、proof windows 和参数都写进 canonical plan。
+
+apply 对音画使用同一 source-time trim，输出 H.264/yuv420p CFR 和可选 48 kHz stereo AAC。临时交付件与原片边界 proof 通过尺寸、方向、帧率、时长、音画首尾和 `ffmpeg -xerror` 完整解码后才原子提升。完整 1× 播放 proof 与 delivery，确认首尾可见帧、内容覆盖和音频连续，再运行 `confirm` 与 `verify --strict`。黑画面里的声音也确定应删除时可显式使用 `--audio-policy allow_audible`；该模式保留 warning，不能跳过听审。`pipeline_manifest.py --require black_edge_trim_plan --strict` 会现场重跑检测并核对输出、proof 和 review。
 
 ### 🧩 Clip Assembly — 多源片段归一拼接
 [`scripts/clip_assembly.py`](scripts/clip_assembly.py) · [详细文档](docs/prompts/118-clip-assembly.md)
@@ -3427,6 +3449,7 @@ pytest tests/test_multi_export.py -v        # 多平台比例转换
 pytest tests/test_framing_preview.py -v     # cover/contain/blur 真实帧预览 / 选择 / live gate
 pytest tests/test_interlace_conform.py -v   # idet / telecine 阻断 / progressive working copy / A/B gate
 pytest tests/test_frame_rate_conform.py -v  # VFR decoded PTS / CFR 工作副本 / 帧数与音画起止 live gate
+pytest tests/test_black_edge_trim.py -v    # 首尾 black+silence 检测 / working copy / 边界 proof / live gate
 pytest tests/test_hdr_sdr.py -v             # PQ/HLG → Rec.709 SDR / color tags / 完整解码门禁
 pytest tests/test_delivery_encode.py -v     # 硬大小上限 / 两遍编码 / 完整解码门禁
 pytest tests/test_encode_quality_qa.py -v   # 同时间线 SSIM/PSNR / P05 / 双输入 drift live gate
@@ -3509,6 +3532,27 @@ pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 pytest tests/test_review_dashboard.py -v    # 静态人工复核面板 + gate queue
 pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 gate
 ```
+
+### 2026-09-14 自动化升级记录（Silent Edge-black Trim + Source-edge Review）
+
+本次联网研究的 GitHub 参考：
+
+| 项目 / 资料 | 借鉴点 | 本次处理 |
+|---|---|---|
+| [`WyattBlue/auto-editor@1647365`](https://github.com/WyattBlue/auto-editor/blob/1647365ff14fc60b04b872c8c2d658fc51235aee/skills/auto-editor/SKILL.md) | 把 `blackdetect` 作为可组合的画面 activity detector，并支持先 preview 再渲染 | 增加首尾黑场检测；缩小为 source edges，默认叠加静音覆盖约束和人工视听 gate，不自动删除中间黑场 |
+| [`slhck/ffmpeg-black-split@7bfd524`](https://github.com/slhck/ffmpeg-black-split/blob/7bfd5244634ce8a6b361042ce160275e20e166a9/src/ffmpeg_black_split/_black_split.py) | FFmpeg `blackdetect` 区间解析、JSON black/content periods 和 trailing open range | 采用结构化 black/silence intervals 与 EOF 收口；只生成一个工作副本和边界 proof，不按内部黑场批量切碎素材 |
+| [`kajisho5/ffmpeg-skill@3168141`](https://github.com/kajisho5/ffmpeg-skill/blob/31681413383674908ec0951ce5b4b7b9732b5644/README.md) | 固定 `probe → edit → check → verify` 流程，输出新文件并验证实际媒体 | 计划绑定源字节、媒体/cadence、参数和输出；临时渲染通过媒体合同与完整解码后才提升，原片不覆盖 |
+
+本次新增 / 调整能力：
+
+- 新增 [`scripts/black_edge_trim.py`](scripts/black_edge_trim.py) 的 `plan → apply → confirm → verify` 闭环。默认 `blackdetect=d=0.25:pic_th=0.98:pix_th=0.10`，只接受接触源头尾的区间，并保留 0.08 秒视觉 padding；解析器支持 EOF 前未显式结束的 black/silence range，并会先合并重叠区间，避免重复计算覆盖率。
+- 有音轨时默认执行 `silencedetect=noise=-45dB:d=0.15`，要求确切移除范围至少 95% 为静音。低覆盖会阻断；`--audio-policy allow_audible` 是显式 override，会留下 warning 和完整听审要求。中间黑场、黑标题、淡入淡出和叙事停顿不会自动删除。
+- apply 对音画执行同一 source-time `trim/atrim`，重置 PTS，输出 H.264/yuv420p CFR 和可选 48 kHz stereo AAC；尺寸、rotation、精确 rate、decoded cadence、目标时长、音画首尾和 `ffmpeg -xerror` 完整解码通过后才原子提升。原片边界 proof 保留拟议删除区和紧邻内容；确认必须绑定当前 delivery/proof SHA-256。
+- `runtime_preflight.py` 新增 `edge_black_trim` profile；`pipeline_manifest.py` 新增可 `--require black_edge_trim_plan` 的现场 detector/media/review gate；`edit_brief_plan.py` 可识别中英文片头/片尾黑场需求，把验证后的 `work/source-edge-trimmed.mp4` 交给转写和后续剪辑。SKILL、prompts 导航和 [`docs/prompts/119-black-edge-trim.md`](docs/prompts/119-black-edge-trim.md) 已同步。
+
+使用方式：运行 `python3 scripts/black_edge_trim.py plan origin/capture.mp4 --delivery work/capture-edge-trimmed.mp4 --edge-proof verify/capture-edge-proof.mp4 --audio-policy silent_only --project-dir . --output work/black_edge_trim_plan.json --markdown work/black_edge_trim_plan.md`，再执行 `apply`。完整 1× 播放交付件和 proof 后运行 `confirm`，最后用 `verify --strict` 与 `pipeline_manifest.py --require black_edge_trim_plan --strict` 放行。
+
+验证结果：新增 10 项 detector parser/EOF/overlap、silent-only/override、padding、transactional apply、人工确认、drift、runtime profile、brief routing 和 manifest live-gate 测试；定向 `.venv/bin/python -m pytest tests/test_black_edge_trim.py tests/test_edit_brief_plan.py tests/test_runtime_preflight.py tests/test_pipeline_manifest.py -q` 通过 `177 passed in 3.34s`，最终全量 `.venv/bin/python -m pytest tests -q` 通过 `1234 passed in 25.99s`。真实 FFmpeg 8.1.1 smoke 将 `1s 黑场 + 3s 有声内容 + 1s 黑场` 检测为 `trim 0.92s → 4.08s`，输出 `3.166667s / 95 帧 / 30fps / H.264 + AAC 48kHz`，原片边界 proof 为 `3.366667s / 101 帧`；两条均通过完整解码，真实 `edge_black_trim` runtime profile 为 ready。未伪造人工完整播放，`verify --strict` 按预期因 pending confirm 退出 2。`compileall`、CLI help、Skill Creator `quick_validate.py` 与 `git diff --check` 全部通过。
 
 ### 2026-09-13 自动化升级记录（Source-bound Multi-clip Assembly + All-boundary Review）
 
@@ -4959,6 +5003,7 @@ python3 scripts/pipeline_manifest.py . --require freeze_punch_plan --strict
 | **116** | **[Interlace Conform](docs/prompts/116-interlace-conform.md)** | **交错/telecine 多段检测 → progressive 工作副本、全长 A/B confirm 与 live gate** |
 | **117** | **[Loop Fill](docs/prompts/117-loop-fill.md)** | **短素材按次数/目标时长重复、真实接缝 proof 与完整审片 live gate** |
 | **118** | **[Clip Assembly](docs/prompts/118-clip-assembly.md)** | **多源视频 → 单次画布/CFR/SAR/音频归一、全接缝 proof 与 live gate** |
+| **119** | **[Edge-black Trim](docs/prompts/119-black-edge-trim.md)** | **首尾黑场 + 静音覆盖 → CFR working copy、原片边界 proof 与 live gate** |
 | **62** | **[Hook Variants](docs/prompts/62-hook-variants.md)** | **同一视频批量生成前三秒 hook 角度** |
 | **67** | **[Speech Continuity QA](docs/prompts/67-speech-continuity-qa.md)** | **成片二次 ASR 检查复读、近重复 take 和句内口吃** |
 | **68** | **[Cover Variants](docs/prompts/68-cover-variants.md)** | **多套封面、feed-size 预览、标题协同和最终选择** |
@@ -4995,6 +5040,7 @@ scripts/
 ├── runtime_preflight.py        workflow profiles / FFmpeg+Node capability live gate [V3]
 ├── interlace_conform.py        idet / telecine-safe bwdif|yadif / full-length A/B gate [V3]
 ├── frame_rate_conform.py       VFR 全量 PTS 检测 + source-bound CFR 工作副本/live gate [V3]
+├── black_edge_trim.py          首尾 black+silence 检测 / CFR working copy / source-edge proof [V3]
 ├── loop_fill.py                progressive CFR 短片 repeat / fixed-duration / seam proof live gate [V3]
 ├── clip_assembly.py            多源视频单次归一拼接 / all-boundary proof / live gate [V3]
 ├── edit_brief_plan.py          自然语言剪辑需求 → 本地 runbook          [V3]

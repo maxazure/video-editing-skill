@@ -131,6 +131,29 @@ def test_loop_fill_brief_routes_target_duration_and_seam_gate(tmp_path):
     assert infer_loop_target("repeat this clip 4 times") == ("times", "4")
 
 
+def test_black_edge_trim_routes_silent_edge_gate_before_downstream_work(tmp_path):
+    source = tmp_path / "origin" / "capture.mp4"
+    source.parent.mkdir(parents=True)
+    source.write_bytes(b"source")
+
+    plan = build_plan(
+        f"去掉 {source} 的片头黑场和片尾黑场，再转写和渲染",
+        project_dir=str(tmp_path),
+    )
+
+    ids = [step["id"] for step in plan["steps"]]
+    assert ids.index("black_edge_trim_plan") < ids.index("transcript")
+    runtime = next(step for step in plan["steps"] if step["id"] == "runtime_preflight")
+    assert "--profile edge_black_trim" in runtime["command"]
+    step = next(step for step in plan["steps"] if step["id"] == "black_edge_trim_plan")
+    assert f"black_edge_trim.py plan {source}" in step["command"]
+    assert "--audio-policy silent_only" in step["command"]
+    assert "--edge-proof verify/source-edge-trim-proof.mp4" in step["command"]
+    transcript = next(step for step in plan["steps"] if step["id"] == "transcript")
+    assert "transcribe.py work/source-edge-trimmed.mp4" in transcript["command"]
+    assert plan["source"]["working_source"] == "work/source-edge-trimmed.mp4"
+
+
 def test_clip_assembly_brief_routes_normalized_one_pass_join(tmp_path):
     source = tmp_path / "origin" / "intro.mp4"
     source.parent.mkdir(parents=True)
