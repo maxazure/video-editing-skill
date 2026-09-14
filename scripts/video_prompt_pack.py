@@ -9,6 +9,7 @@ generation job.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -21,6 +22,8 @@ from provider_capability import (
     profile_support_issues,
     verify_bundle as verify_capability_bundle,
 )
+from sequence_handoff import REPORT_VERSION as SEQUENCE_HANDOFF_VERSION
+from sequence_handoff import verify_report as verify_sequence_handoff_report
 from storyboard_plan import ROUTING_SENTENCE
 
 
@@ -249,6 +252,119 @@ def _character_sheet_prompt(characters: Sequence[str], brand_anchors: Sequence[s
     )
 
 
+def _sequence_handoff_index(
+    report: Optional[Mapping[str, Any]],
+    *,
+    shot_ids: Sequence[str],
+) -> Dict[str, Dict[str, Mapping[str, Any]]]:
+    index: Dict[str, Dict[str, Mapping[str, Any]]] = {"incoming": {}, "outgoing": {}}
+    if report is None:
+        return index
+    if report.get("version") != SEQUENCE_HANDOFF_VERSION:
+        raise ValueError("sequence handoff must be a sequence_handoff.v1 report")
+    if int((report.get("summary") or {}).get("blocking") or 0):
+        raise ValueError("sequence handoff report is blocked")
+    if not str(report.get("report_id") or "").startswith("sh_report_"):
+        raise ValueError("sequence handoff report has no valid report_id")
+    actual_pairs: List[tuple[str, str]] = []
+    for position, raw in enumerate(report.get("boundaries") or [], start=1):
+        if not isinstance(raw, Mapping):
+            raise ValueError(f"sequence handoff boundary #{position} is not an object")
+        from_shot = str(raw.get("from_shot") or "").strip()
+        to_shot = str(raw.get("to_shot") or "").strip()
+        if not from_shot or not to_shot:
+            raise ValueError(f"sequence handoff boundary #{position} has no shot pair")
+        if from_shot in index["outgoing"]:
+            raise ValueError(f"duplicate outgoing sequence handoff for {from_shot}")
+        if to_shot in index["incoming"]:
+            raise ValueError(f"duplicate incoming sequence handoff for {to_shot}")
+        index["outgoing"][from_shot] = raw
+        index["incoming"][to_shot] = raw
+        actual_pairs.append((from_shot, to_shot))
+    expected_pairs = list(zip(shot_ids, shot_ids[1:]))
+    if actual_pairs != expected_pairs:
+        raise ValueError(
+            "sequence handoff boundaries do not match the current storyboard shot order: "
+            f"expected {expected_pairs}, got {actual_pairs}"
+        )
+    return index
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _verify_sequence_handoff_storyboard(
+    report: Mapping[str, Any],
+    *,
+    storyboard_plan: str,
+    project_dir: str,
+) -> None:
+    root = Path(project_dir).expanduser().resolve(strict=True)
+    candidate = Path(storyboard_plan).expanduser()
+    if not candidate.is_absolute():
+        candidate = root / candidate
+    storyboard = candidate.resolve(strict=True)
+    try:
+        relative_path = storyboard.relative_to(root).as_posix()
+    except ValueError as exc:
+        raise ValueError("storyboard plan must be inside the project when sequence handoff is used") from exc
+    inputs = report.get("inputs") if isinstance(report.get("inputs"), Mapping) else {}
+    record = inputs.get("storyboard") if isinstance(inputs.get("storyboard"), Mapping) else {}
+    expected = {
+        "path": relative_path,
+        "size_bytes": storyboard.stat().st_size,
+        "sha256": _sha256_file(storyboard),
+    }
+    if record != expected:
+        raise ValueError("sequence handoff is bound to a different storyboard plan")
+
+
+def _handoff_prompt(shot_id: str, handoff: Mapping[str, Mapping[str, Any]]) -> str:
+    clauses: List[str] = []
+    incoming = handoff.get("incoming")
+    if incoming:
+        clauses.append(
+            "RECEIVE IN from {source}: {receive} Edit boundary: {edit}; {match} "
+            "Axis: {axis}; {axis_note} Screen direction: {direction}; {direction_note} "
+            "Preserve at least {handle:g}s of usable head handle.".format(
+                source=incoming.get("from_shot"),
+                receive=incoming.get("receive_in"),
+                edit=incoming.get("edit_type"),
+                match=incoming.get("match_requirement"),
+                axis=incoming.get("axis_decision"),
+                axis_note=incoming.get("axis_note"),
+                direction=incoming.get("screen_direction_decision"),
+                direction_note=incoming.get("screen_direction_note"),
+                handle=float(incoming.get("head_handle_seconds") or 0),
+            )
+        )
+    outgoing = handoff.get("outgoing")
+    if outgoing:
+        clauses.append(
+            "HANDOFF OUT to {target} via {carrier}: {offer} Planned edit: {edit}; {match} "
+            "Audio bridge: {audio} Axis: {axis}; {axis_note} Screen direction: {direction}; {direction_note} "
+            "Preserve at least {handle:g}s of usable tail handle.".format(
+                target=outgoing.get("to_shot"),
+                carrier=outgoing.get("carrier_type"),
+                offer=outgoing.get("offer_from"),
+                edit=outgoing.get("edit_type"),
+                match=outgoing.get("match_requirement"),
+                audio=outgoing.get("audio_bridge"),
+                axis=outgoing.get("axis_decision"),
+                axis_note=outgoing.get("axis_note"),
+                direction=outgoing.get("screen_direction_decision"),
+                direction_note=outgoing.get("screen_direction_note"),
+                handle=float(outgoing.get("tail_handle_seconds") or 0),
+            )
+        )
+    return f"SEQUENCE HANDOFF FOR {shot_id}: " + " ".join(clauses) if clauses else ""
+
+
 def build_video_prompt_pack(
     plan: Mapping[str, Any],
     *,
@@ -270,6 +386,7 @@ def build_video_prompt_pack(
     resolution: str = "",
     default_duration: float = 4.0,
     max_duration: float = 8.0,
+    sequence_handoff_report: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, Any]:
     if lesson_limit < 0 or lesson_limit > 10:
         raise ValueError("lesson_limit must be between 0 and 10")
@@ -281,6 +398,15 @@ def build_video_prompt_pack(
     target = plan.get("target") if isinstance(plan.get("target"), Mapping) else {}
     aspect = str(target.get("aspect") or "9:16")
     shared_style_reference = _explicit_reference(style_reference)
+    raw_shots = plan.get("shots") or []
+    shot_ids = [
+        str(shot.get("id") or f"shot_{pos + 1:03d}")
+        for pos, shot in enumerate(raw_shots)
+        if isinstance(shot, Mapping)
+    ]
+    if sequence_handoff_report is not None and len(set(shot_ids)) != len(shot_ids):
+        raise ValueError("storyboard shot ids must be unique when sequence handoff is used")
+    sequence_handoffs = _sequence_handoff_index(sequence_handoff_report, shot_ids=shot_ids)
     lesson_library_id = ""
     if lesson_library is not None:
         lesson_verification = verify_library(lesson_library)
@@ -317,7 +443,7 @@ def build_video_prompt_pack(
     applied_lesson_count = 0
     item_capability_blocking = 0
 
-    for pos, shot in enumerate(plan.get("shots") or []):
+    for pos, shot in enumerate(raw_shots):
         if not isinstance(shot, Mapping):
             continue
         shot_id = str(shot.get("id") or f"shot_{pos + 1:03d}")
@@ -374,6 +500,14 @@ def build_video_prompt_pack(
             prompt = f"{prompt} LEARNED CONSTRAINTS: {constraints}"
             applied_lesson_count += len(matched_lessons)
             applied_lesson_ids.update(str(entry.get("lesson_id") or "") for entry in matched_lessons)
+
+        shot_handoff = {
+            "incoming": sequence_handoffs["incoming"].get(shot_id),
+            "outgoing": sequence_handoffs["outgoing"].get(shot_id),
+        }
+        handoff_instruction = _handoff_prompt(shot_id, shot_handoff)
+        if handoff_instruction:
+            prompt = f"{prompt} {handoff_instruction}"
 
         profile_entry = capabilities_by_provider.get(selected_provider)
         capability_issues: List[str] = []
@@ -446,6 +580,10 @@ def build_video_prompt_pack(
             "capability_profile": capability_profile,
             "capability_issues": sorted(set(capability_issues)),
             "continuity_anchors": continuity,
+            "sequence_handoff": {
+                key: dict(value) if isinstance(value, Mapping) else None
+                for key, value in shot_handoff.items()
+            },
             "approval_required": requires_approval,
             "approval_status": "approved" if (requires_approval and approved) else ("needs_approval" if requires_approval else "not_required"),
             "approval_note": (
@@ -459,6 +597,7 @@ def build_video_prompt_pack(
                 "First and last frames are stable enough for editing.",
                 "Subject, palette, and framing stay consistent with adjacent shots.",
                 "Shared style reference is attached unchanged to every generated shot when configured.",
+                "Reviewed receive-in and handoff-out instructions are visible in the provider prompt when configured.",
             ],
         })
 
@@ -493,6 +632,10 @@ def build_video_prompt_pack(
             },
             "character_sheet_prompt": _character_sheet_prompt(characters, brand_anchors, aspect),
             "negative_prompt": DEFAULT_NEGATIVE_PROMPT,
+            "sequence_handoff": {
+                "report_id": str((sequence_handoff_report or {}).get("report_id") or ""),
+                "boundaries": len((sequence_handoff_report or {}).get("boundaries") or []),
+            },
         },
         "summary": {
             "items": len(items),
@@ -503,11 +646,13 @@ def build_video_prompt_pack(
             "style_reference_ready": int(bool(shared_style_reference["resolved_path"])),
             "generation_lessons_applied": applied_lesson_count,
             "unique_generation_lessons": len(applied_lesson_ids),
+            "sequence_handoff_boundaries": len((sequence_handoff_report or {}).get("boundaries") or []),
             **{f"provider_{key}": value for key, value in sorted(provider_counts.items())},
         },
         "items": items,
         "next_steps": [
             "Review prompts and reference paths before submitting any generated-video job.",
+            "Pass a live-verified sequence_handoff.v1 report so each adjacent shot receives and hands off an explicit edit baton.",
             "Verify the generation lesson library and review every learned constraint before reusing it.",
             "Verify dated provider capability profiles against the exact UI/API surface before selecting model settings.",
             "Use Codex image_gen first for still references and character sheets.",
@@ -663,6 +808,7 @@ def emit_markdown(pack: Mapping[str, Any]) -> str:
         f"- Learned constraints applied: {pack.get('summary', {}).get('generation_lessons_applied', 0)}",
         f"- Capability blockers: {pack.get('summary', {}).get('capability_blocking', 0)}",
         f"- Shared style reference: `{style_reference_path}`",
+        f"- Sequence handoff report: `{pack.get('global', {}).get('sequence_handoff', {}).get('report_id') or '-'}`",
         "",
         "## Character / Style Reference",
         "",
@@ -736,6 +882,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         description="Build provider-specific video generation prompts from storyboard_plan JSON."
     )
     parser.add_argument("--storyboard-plan", required=True, help="Input storyboard_plan.json.")
+    parser.add_argument("--project-dir", default=".", help="Project root used to live-verify sequence handoff inputs.")
     parser.add_argument("--output", required=True, help="Output prompt-pack JSON.")
     parser.add_argument("--markdown", help="Optional Markdown review file.")
     parser.add_argument(
@@ -756,6 +903,10 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     parser.add_argument(
         "--style-reference",
         help="Shared local style-key image attached unchanged to every generated shot.",
+    )
+    parser.add_argument(
+        "--sequence-handoff",
+        help="Reviewed sequence_handoff.v1 report; live-verified before its boundary instructions enter prompts.",
     )
     parser.add_argument("--lesson-library", help="Approved generation_lessons.json to apply to generated-video prompts.")
     parser.add_argument("--lesson-model", default="", help="Exact model scope; omitted applies provider-wide lessons only.")
@@ -789,6 +940,17 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     plan = load_plan(args.storyboard_plan)
     lesson_library = load_library(args.lesson_library) if args.lesson_library else None
     capability_bundles = [load_capability_bundle(path) for path in args.capability_profile]
+    sequence_handoff_report = None
+    if args.sequence_handoff:
+        sequence_handoff_report = verify_sequence_handoff_report(
+            args.sequence_handoff,
+            project_dir=args.project_dir,
+        )
+        _verify_sequence_handoff_storyboard(
+            sequence_handoff_report,
+            storyboard_plan=args.storyboard_plan,
+            project_dir=args.project_dir,
+        )
     pack = build_video_prompt_pack(
         plan,
         provider=args.provider,
@@ -809,6 +971,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         resolution=args.resolution,
         default_duration=args.default_duration,
         max_duration=args.max_duration,
+        sequence_handoff_report=sequence_handoff_report,
     )
 
     os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)

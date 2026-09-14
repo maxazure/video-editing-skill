@@ -13,12 +13,15 @@
 - 想在执行 paid video generation 前，用 `--strict` 拦住未审批任务。
 - 已经有经人工批准的 `generation_lessons.json`，想按 provider/model/category 把少量复盘经验带回下一次提示词。
 - 需要用带日期的 `provider_capabilities.json` 约束当前 UI/API 的 mode、时长、画幅、分辨率和参考上限。
+- 已审核 `sequence_handoff.json`，需要把相邻镜头的 receive-in / handoff-out、剪辑类型、轴线方向、音频桥和 edit handles 写进最终 prompt。
 
 ## 命令
 
 ```bash
 python3 scripts/video_prompt_pack.py \
+  --project-dir . \
   --storyboard-plan work/storyboard_plan.json \
+  --sequence-handoff work/sequence_handoff.json \
   --asset-root work \
   --character "same Chinese founder-host, navy jacket" \
   --brand-anchor "palette=charcoal,white,signal yellow" \
@@ -34,7 +37,9 @@ python3 scripts/video_prompt_pack.py \
 
 ```bash
 python3 scripts/video_prompt_pack.py \
+  --project-dir . \
   --storyboard-plan work/storyboard_plan.json \
+  --sequence-handoff work/sequence_handoff.json \
   --asset-root work \
   --provider dreamina_seedance \
   --capability-profile work/provider_capabilities.json \
@@ -66,7 +71,9 @@ python3 scripts/video_prompt_pack.py \
 
 - `global.character_sheet_prompt`：角色/品牌/风格参考 sheet 提示词。
 - `global.style_reference`：共享 style key 的 expected/resolved path。
+- `global.sequence_handoff`：已现场验证的 handoff report id 和边界数。
 - `items[].prompt`：按 provider 改写后的 shot 提示词。
+- `items[].sequence_handoff`：该镜头的 incoming/outgoing 边界；首镜只有 outgoing，末镜只有 incoming。
 - `items[].generation_lessons`：本 shot 命中的 approved lesson、scope、source evidence；prompt 只追加通用 `lesson`，不会自动复用旧片段专属 `prompt_fix`。
 - `global.lesson_library.library_id`：本次 prompt pack 使用的 canonical 经验库版本。
 - `items[].style_reference`：每个 shot 指向同一 style key；prompt 会追加一致的 `STYLE LOCK`。
@@ -97,6 +104,15 @@ python3 scripts/video_prompt_pack.py \
   --output work/video_prompt_pack.json \
   --markdown work/video_prompt_pack.md
 
+# 2b. 两条以上生成镜头先准备、审核并验证边界合同
+python3 scripts/sequence_handoff.py prepare \
+  --project-dir . \
+  --storyboard work/storyboard_plan.json \
+  --output work/sequence_handoff_request.json \
+  --markdown work/sequence_handoff_request.md \
+  --response-template work/sequence_handoff_response.json
+# 填写 response 后运行 audit 与 verify；详见 120-sequence-handoff.md。
+
 # 3. 按 video_prompt_pack.md 用 Codex image_gen 做 reference sheet / stills
 #    注意：Dreamina/即梦等视频生成可能消耗 credits，提交前先确认。
 
@@ -109,7 +125,9 @@ python3 scripts/generation_lessons.py verify \
   --library work/generation_lessons.json \
   --strict
 python3 scripts/video_prompt_pack.py \
+  --project-dir . \
   --storyboard-plan work/storyboard_plan.json \
+  --sequence-handoff work/sequence_handoff.json \
   --asset-root work \
   --style-reference work/imagegen/style-key.png \
   --capability-profile work/provider_capabilities.json \
@@ -148,4 +166,5 @@ python3 scripts/storyboard_assets.py \
 - 共享 style key 必须在所有生成 shot 中保持同一路径；提交前用 `reference_frame_preflight.py` 检查画幅和背景。
 - 经验库必须先经 `generation_lessons.py verify`；未传 `--lesson-model` 时只用 provider-wide 经验，默认每个 shot 最多 3 条，避免历史规则淹没当前创意意图。
 - provider 能力必须绑定 exact surface/model 和核验日期；profile 默认超过 30 天即失效，不能把一个 UI/API 的限制搬到另一个入口。完整 schema 与边界见 [96-Provider Capability Profile](96-provider-capability.md)。
+- `--sequence-handoff` 只接受无 blocker 且现场验证通过的报告；它把审核内容写进 prompt，最终效果仍要经过逐片和跨镜头复核。完整流程见 [120-Sequence Handoff](120-sequence-handoff.md)。
 - 生成视频仍要经过 `storyboard_assets.py`、`asset_provenance.py`、`render_qa.py` 和必要的 `timeline_view.py`。

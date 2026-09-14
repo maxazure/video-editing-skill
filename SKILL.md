@@ -1,6 +1,6 @@
 ---
 name: video-editing
-description: "Xiaohongshu/RED-tuned short-form video workflow for voice-over, talking-head, tutorials, interviews, podcasts, screen recordings, chroma key, B-roll, captions, and generated assets. Covers edit routing, runtime profiles, interlace and VFR/CFR conformance, silent edge-black trimming, edit-style profiles, source-bound loop filling, heterogeneous multi-clip assembly with seam review, transcription, semantic review, multi-take/audio sync/stabilization/dead-air cleanup, highlights/shorts, story and source gates, enrichment and video-generation planning, generated clip/sequence and scoped AI video-edit review, locked-EDL audio storyboards, narration loudness, channel-integrity and audio-dropout QA, color/speed/J-L cuts, reversible revisions and recipes, preflight/render/QA including flash/photosensitivity and encode-quality screening, subtitles, CapCut, platform/size exports, covers, captions, publish packages, dashboards, handoff formats, and Remotion."
+description: "Xiaohongshu/RED-tuned short-form video workflow for voice-over, talking-head, tutorials, interviews, podcasts, screen recordings, chroma key, B-roll, captions, and generated assets. Covers edit routing, runtime profiles, interlace and VFR/CFR conformance, silent edge-black trimming, edit-style profiles, source-bound loop filling, heterogeneous multi-clip assembly with seam review, transcription, semantic review, multi-take/audio sync/stabilization/dead-air cleanup, highlights/shorts, story and source gates, enrichment and video-generation planning, reviewed shot-to-shot handoff design, generated clip/sequence and scoped AI video-edit review, locked-EDL audio storyboards, narration loudness, channel-integrity and audio-dropout QA, color/speed/J-L cuts, reversible revisions and recipes, preflight/render/QA including flash/photosensitivity and encode-quality screening, subtitles, CapCut, platform/size exports, covers, captions, publish packages, dashboards, handoff formats, and Remotion."
 metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
 ---
 
@@ -54,6 +54,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    │       └─→ Codex imagegen   gpt-image-2 自动生图（抽象概念配图）
    ├─→ audio_cue_sheet.py       BGM / SFX 音频设计清单 / 生成审批 gate
    ├─→ storyboard_plan.py       分镜 shot cards / 生成路由 / 连续性锚点
+   ├─→ sequence_handoff.py      相邻镜头 receive/handoff / edit type / 轴线方向 / live gate
    ├─→ provider_capability.py   provider/surface/model 能力合同 / 核验日期 / live gate
    ├─→ video_prompt_pack.py     Dreamina/Veo/LTX/Wan/Sora 提示词包 / 审批 + capability gate
    ├─→ reference_frame_preflight.py
@@ -178,8 +179,9 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `audio_cue_sheet.py` | transcript → BGM/SFX cue、生成审批和音频门禁 | `--transcript` `--asset-root` `--require-local-music` `--require-local-sfx` `--strict` |
 | `final_audio_storyboard.py` | locked visual EDL + storyboard → 最终时间线声音分镜、voice ledger、omitted-story 决定和 live gate | `prepare --edl --storyboard` `audit --request --response` `verify --report --strict` |
 | `storyboard_plan.py` | transcript/clean_script → 分镜 shot cards + 生成路由 | `--transcript` `--clean-script` `--output` `--markdown` |
+| `sequence_handoff.py` | storyboard → 相邻镜头接力、剪辑边界、180° 轴/方向、音频桥、edit handles 与 source-bound live gate | `prepare --storyboard --response-template` `audit --request --response` `verify --report --strict` |
 | `provider_capability.py` | exact provider/surface/model → 带日期的 mode/画幅/时长/分辨率/参考上限能力合同 live gate | `verify --bundle --max-age-days --output --markdown --strict` |
-| `video_prompt_pack.py` | storyboard_plan → 多 provider 视频生成提示词包 + 角色/品牌/style lock + paid approval/capability gate | `--storyboard-plan` `--capability-profile` `--require-capability-profile` `--resolution` `--approved` `--strict` |
+| `video_prompt_pack.py` | storyboard_plan → 多 provider 视频生成提示词包 + 已审镜头接力 + 角色/品牌/style lock + paid approval/capability gate | `--storyboard-plan` `--project-dir` `--sequence-handoff` `--capability-profile` `--require-capability-profile` `--resolution` `--approved` `--strict` |
 | `reference_frame_preflight.py` | video_prompt_pack → 首帧/style key 存在性、解码、尺寸、方向、画幅、透明背景 gate | `--prompt-pack` `--require-style-reference` `--reference shot_id=...` `--strict` |
 | `generation_task_log.py` | 异步生成任务台账：submit_id/task id、轮询、下载、本地落盘 gate | `add` `update` `import-provider-decision` `report --strict` |
 | `generated_clip_review.py` | 生成视频片段 source-bound 视觉复核：contact sheet、评分、裁切范围、重生建议 | `prepare --clip/--asset-manifest` `audit --request --response` `verify --report --strict` |
@@ -1297,10 +1299,17 @@ python3 scripts/render_final.py --config script/render_config.json --output medi
 - `dreamina_video` 只表示适合视频生成，不会自动提交任务；提交 Dreamina/即梦前必须确认，因为可能消耗 credits
 - 生图优先使用 Codex 内置 `image_gen` 工具，即 OpenAI GPT Image 2（`gpt-image-2`）。
 
+**Sequence Handoff 生成前镜头接力与剪辑边界**（两条以上生成镜头时推荐）：
+- 运行 `sequence_handoff.py prepare --project-dir . --storyboard work/storyboard_plan.json --output work/sequence_handoff_request.json --markdown work/sequence_handoff_request.md --response-template work/sequence_handoff_response.json --strict`
+- 逐相邻镜头复核 `carrier_type / offer_from / receive_in / edit_type / match_requirement`，同时声明 180° 轴、屏幕运动方向、音频桥、头尾 edit handles、风险、fallback 和具体 review note；自动建议只读 storyboard 文本，不能代替人的空间/动作判断
+- 用 `audit --request work/sequence_handoff_request.json --response work/sequence_handoff_response.json --output work/sequence_handoff.json --markdown work/sequence_handoff.md --strict` 生成报告，再以 `verify --report work/sequence_handoff.json --strict` 现场重算；`revise`、缺字段、非法轴线/方向翻转、源分镜或决定漂移都 fail closed
+- 最终 prompt pack 加 `--project-dir . --sequence-handoff work/sequence_handoff.json`；工具会先 live-verify，再将首镜 handoff-out、末镜 receive-in 和中间镜头的双向合同写进对应 provider prompt
+- 文本合同不证明最终像素连续；生成后仍执行 `generated_clip_review.py` 和 `generated_sequence_review.py`，组装后正常速度复核所有边界。详见 [docs/prompts/120-sequence-handoff.md](docs/prompts/120-sequence-handoff.md)
+
 **Video Prompt Pack + Reference Frame Preflight 视频生成提示词与参考帧门禁**（生成视频前推荐）：
 - 先按 [docs/prompts/96-provider-capability.md](docs/prompts/96-provider-capability.md) 建立 `provider_capabilities.json`，再运行 `provider_capability.py verify --bundle work/provider_capabilities.json --max-age-days 30 --strict`；profile 绑定 exact provider/surface/model 和来源，默认超过 30 天就阻塞
-- 运行 `video_prompt_pack.py --storyboard-plan work/storyboard_plan.json --asset-root work --character "same host" --brand-anchor "palette=charcoal,white,signal yellow" --style-reference work/imagegen/style-key.png --capability-profile work/provider_capabilities.json --require-capability-profile --resolution 720p --output work/video_prompt_pack.json --markdown work/video_prompt_pack.md --strict`
-- 输出 `global.character_sheet_prompt`、`global.style_reference`、`items[].prompt`、`items[].negative_prompt`、`items[].surface/model/resolution`、`items[].capability_profile`、`items[].capability_issues`、`items[].approval_status` 和 `summary.blocking`
+- 运行 `video_prompt_pack.py --project-dir . --storyboard-plan work/storyboard_plan.json --sequence-handoff work/sequence_handoff.json --asset-root work --character "same host" --brand-anchor "palette=charcoal,white,signal yellow" --style-reference work/imagegen/style-key.png --capability-profile work/provider_capabilities.json --require-capability-profile --resolution 720p --output work/video_prompt_pack.json --markdown work/video_prompt_pack.md --strict`
+- 输出 `global.character_sheet_prompt`、`global.style_reference`、`global.sequence_handoff`、`items[].prompt`、`items[].sequence_handoff`、`items[].negative_prompt`、`items[].surface/model/resolution`、`items[].capability_profile`、`items[].capability_issues`、`items[].approval_status` 和 `summary.blocking`
 - `--style-reference` 会把同一 style key 绑定到所有 shot，并在每条 provider prompt 加同一条 `STYLE LOCK`
 - 参考图落盘后运行 `reference_frame_preflight.py --prompt-pack work/video_prompt_pack.json --output work/reference_frame_preflight.json --markdown work/reference_frame_preflight.md --require-style-reference --strict`
 - `reference_frame_preflight.v1` 检查首帧/style key 是否存在、可解码、方向/画幅是否匹配、分辨率是否过低和透明背景；阻塞项接入 `pipeline_manifest.py`

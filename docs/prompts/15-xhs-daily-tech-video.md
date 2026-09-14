@@ -328,6 +328,28 @@
     # codex_imagegen 用 Codex 内置 image_gen；dreamina_video 只是建议，提交 Dreamina/即梦前先确认 credits。
     # 详见 docs/prompts/24-storyboard-plan.md
 
+4c-1. # 两条以上生成镜头：在最终 prompt 前设计并审核每个相邻镜头的接力与剪辑边界：
+    python3 scripts/sequence_handoff.py prepare \
+      --project-dir . \
+      --storyboard work/storyboard_plan.json \
+      --output work/sequence_handoff_request.json \
+      --markdown work/sequence_handoff_request.md \
+      --response-template work/sequence_handoff_response.json \
+      --strict
+    # 逐条填写 carrier/offer/receive、edit type、180° 轴、屏幕方向、音频桥、头尾 handle、风险与 fallback。
+    python3 scripts/sequence_handoff.py audit \
+      --project-dir . \
+      --request work/sequence_handoff_request.json \
+      --response work/sequence_handoff_response.json \
+      --output work/sequence_handoff.json \
+      --markdown work/sequence_handoff.md \
+      --strict
+    python3 scripts/sequence_handoff.py verify \
+      --project-dir . \
+      --report work/sequence_handoff.json \
+      --strict
+    # 详见 docs/prompts/120-sequence-handoff.md；单镜头无需运行。
+
 4c-2. # 如果要用生成视频 provider，先核验具体 UI/API surface 的当前能力：
     python3 scripts/provider_capability.py verify \
       --bundle work/provider_capabilities.json \
@@ -340,7 +362,9 @@
 
 4d. # 可选：把分镜转成 Dreamina/Veo/LTX/Wan/Sora 视频生成提示词包：
     python3 scripts/video_prompt_pack.py \
+      --project-dir . \
       --storyboard-plan work/storyboard_plan.json \
+      --sequence-handoff work/sequence_handoff.json \
       --asset-root work \
       --style-reference work/imagegen/style-key.png \
       --capability-profile work/provider_capabilities.json \

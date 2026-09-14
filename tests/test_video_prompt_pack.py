@@ -4,6 +4,8 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 
+import pytest
+
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(REPO, "scripts"))
 
@@ -80,6 +82,58 @@ def _capability_bundle():
     }
 
 
+def _sequence_handoff_report():
+    return {
+        "version": "sequence_handoff.v1",
+        "report_id": "sh_report_" + "a" * 64,
+        "summary": {"boundaries": 2, "approved": 2, "blocking": 0, "warnings": 0},
+        "boundaries": [
+            {
+                "boundary_id": "boundary_001",
+                "from_shot": "shot_001",
+                "to_shot": "shot_002",
+                "decision": "approve",
+                "carrier_type": "prop",
+                "offer_from": "End with the laptop visible on frame right.",
+                "receive_in": "Open with the same laptop entering from frame right.",
+                "edit_type": "composition_match",
+                "match_requirement": "Match laptop scale and position.",
+                "audio_bridge": "Carry the keyboard click across the cut.",
+                "axis_decision": "maintain",
+                "axis_note": "Keep the presenter on the same side of the axis.",
+                "screen_direction_decision": "maintain",
+                "screen_direction_note": "Keep the laptop movement right to left.",
+                "head_handle_seconds": 0.5,
+                "tail_handle_seconds": 0.6,
+                "risk": "Laptop geometry may drift.",
+                "fallback_cut": "Use an insert of the screen.",
+                "review_note": "Approved for prompt generation.",
+            },
+            {
+                "boundary_id": "boundary_002",
+                "from_shot": "shot_002",
+                "to_shot": "shot_003",
+                "decision": "approve",
+                "carrier_type": "sound",
+                "offer_from": "End as the narration asks the final question.",
+                "receive_in": "Open the CTA on the last spoken word.",
+                "edit_type": "j_cut",
+                "match_requirement": "Let sound motivate the graphic change.",
+                "audio_bridge": "Begin CTA sound 0.2s before picture change.",
+                "axis_decision": "not_applicable",
+                "axis_note": "The CTA is a graphic card.",
+                "screen_direction_decision": "not_applicable",
+                "screen_direction_note": "The CTA has no travel direction.",
+                "head_handle_seconds": 0.5,
+                "tail_handle_seconds": 0.5,
+                "risk": "The CTA may feel early.",
+                "fallback_cut": "Use a clean hard cut after the sentence.",
+                "review_note": "Approved for prompt generation.",
+            },
+        ],
+    }
+
+
 def test_video_prompt_pack_auto_routes_and_blocks_paid_approval(tmp_path):
     plan = build_storyboard_plan(_sample_transcript(), max_shots=5)
     pack = build_video_prompt_pack(
@@ -125,6 +179,48 @@ def test_provider_override_builds_veo_prompts_for_all_shots():
     assert all(item["provider"] == "veo" for item in pack["items"])
     assert all(item["duration_seconds"] <= 6 for item in pack["items"])
     assert "Create a" in pack["items"][0]["prompt"]
+
+
+def test_reviewed_sequence_handoffs_enter_incoming_and_outgoing_prompts():
+    plan = build_storyboard_plan(_sample_transcript(), max_shots=3)
+    report = _sequence_handoff_report()
+
+    pack = build_video_prompt_pack(
+        plan,
+        provider="veo",
+        approved=True,
+        sequence_handoff_report=report,
+    )
+
+    first, middle, last = pack["items"]
+    assert "HANDOFF OUT to shot_002 via prop" in first["prompt"]
+    assert "Planned edit: composition_match" in first["prompt"]
+    assert "Keep the presenter on the same side of the axis" in first["prompt"]
+    assert "RECEIVE IN from shot_001" in middle["prompt"]
+    assert "Keep the laptop movement right to left" in middle["prompt"]
+    assert "HANDOFF OUT to shot_003 via sound" in middle["prompt"]
+    assert "RECEIVE IN from shot_002" in last["prompt"]
+    assert first["sequence_handoff"]["incoming"] is None
+    assert middle["sequence_handoff"]["incoming"]["boundary_id"] == "boundary_001"
+    assert pack["global"]["sequence_handoff"]["report_id"] == report["report_id"]
+    assert pack["summary"]["sequence_handoff_boundaries"] == 2
+
+
+def test_blocked_or_unidentified_sequence_handoff_is_rejected():
+    plan = build_storyboard_plan(_sample_transcript(), max_shots=3)
+    blocked = _sequence_handoff_report()
+    blocked["summary"]["blocking"] = 1
+    unidentified = _sequence_handoff_report()
+    unidentified["report_id"] = ""
+    wrong_order = _sequence_handoff_report()
+    wrong_order["boundaries"][1]["to_shot"] = "shot_999"
+
+    with pytest.raises(ValueError, match="blocked"):
+        build_video_prompt_pack(plan, sequence_handoff_report=blocked)
+    with pytest.raises(ValueError, match="report_id"):
+        build_video_prompt_pack(plan, sequence_handoff_report=unidentified)
+    with pytest.raises(ValueError, match="current storyboard shot order"):
+        build_video_prompt_pack(plan, sequence_handoff_report=wrong_order)
 
 
 def test_emit_markdown_includes_prompt_table_and_character_sheet(tmp_path):

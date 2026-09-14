@@ -264,6 +264,13 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         "Run storyboard_plan.py and review the Markdown shot cards.",
     ),
     ArtifactDef(
+        "sequence_handoff",
+        "Sequence Handoff",
+        ("**/sequence_handoff.json", "**/*_sequence_handoff_report.json"),
+        "Run sequence_handoff.py prepare/audit/verify and resolve every shot-to-shot handoff before final provider prompts.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "storyboard_assets",
         "Storyboard Assets",
         ("**/storyboard_assets.json", "**/*_storyboard_assets.json"),
@@ -974,6 +981,45 @@ def evaluate_category(
                 notes.append(
                     f"production authorization needs review {artifact.path}: {warnings} warning(s)"
                 )
+        return {
+            "category": definition.category,
+            "label": definition.label,
+            "status": status,
+            "artifact_count": len(artifacts),
+            "latest_path": artifacts[0].path,
+            "notes": sorted(set(notes)),
+            "next_action": definition.next_action if status in {"missing", "blocked", "warn"} else "",
+        }
+
+    if definition.category == "sequence_handoff":
+        from sequence_handoff import verify_report
+
+        for artifact in artifacts:
+            data = _load_json(artifact.path)
+            if data is None:
+                status = "blocked"
+                notes.append(f"unreadable sequence handoff report: {artifact.path}")
+                continue
+            if project_dir is None:
+                status = "blocked"
+                notes.append("project root unavailable for live sequence handoff verification")
+                continue
+            try:
+                verification = verify_report(artifact.path, project_dir=str(project_dir))
+            except Exception as exc:
+                status = "blocked"
+                notes.append(f"sequence handoff verification failed: {exc}")
+                continue
+            blocking = _int_at(verification, "summary", "blocking")
+            warnings = _int_at(verification, "summary", "warnings")
+            if blocking:
+                status = "blocked"
+                notes.append(
+                    f"invalid or stale sequence handoff {artifact.path}: {blocking} blocking item(s)"
+                )
+            elif warnings:
+                status = "warn" if status != "blocked" else status
+                notes.append(f"sequence handoff retains {warnings} edit-handle warning(s): {artifact.path}")
         return {
             "category": definition.category,
             "label": definition.label,

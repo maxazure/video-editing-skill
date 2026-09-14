@@ -970,12 +970,34 @@ def test_generated_video_sequence_continuity_runs_after_per_clip_review(tmp_path
     )
 
     ids = [step["id"] for step in plan["steps"]]
+    assert ids.index("storyboard_plan") < ids.index("sequence_handoff") < ids.index("video_prompt_pack")
     assert ids.index("generated_clip_review") < ids.index("generated_sequence_review")
+    handoff = next(step for step in plan["steps"] if step["id"] == "sequence_handoff")
+    assert "sequence_handoff.py prepare" in handoff["command"]
+    assert handoff["gate_category"] == "sequence_handoff"
+    prompt = next(step for step in plan["steps"] if step["id"] == "video_prompt_pack")
+    assert "--sequence-handoff work/sequence_handoff.json" in prompt["command"]
     step = next(step for step in plan["steps"] if step["id"] == "generated_sequence_review")
     assert step["script"] == "generated_sequence_review.py"
     assert "--clip-review work/generated_clip_review.json" in step["command"]
     assert "--storyboard-plan work/storyboard_plan.json" in step["command"]
     assert step["gate_category"] == "generated_sequence_review"
+
+
+def test_sequence_handoff_brief_routes_pre_generation_boundary_review(tmp_path):
+    plan = build_plan(
+        "为三段分镜先做镜头接力和剪辑边界矩阵，逐项检查 180度轴，再写生成提示词",
+        project_dir=str(tmp_path),
+    )
+
+    ids = [step["id"] for step in plan["steps"]]
+    assert "sequence_handoff" in {signal["id"] for signal in plan["signals"]}
+    assert ids.index("storyboard_plan") < ids.index("sequence_handoff")
+    step = next(step for step in plan["steps"] if step["id"] == "sequence_handoff")
+    assert step["script"] == "sequence_handoff.py"
+    assert "--response-template work/sequence_handoff_response.json" in step["command"]
+    assert "work/sequence_handoff.json" in step["outputs"]
+    assert any("180-degree axis" in note for note in plan["notes"])
 
 
 def test_reference_rhythm_brief_routes_measurement_after_render(tmp_path):

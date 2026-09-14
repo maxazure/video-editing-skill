@@ -2,7 +2,7 @@
 
 这是一个面向 **口播、教程、访谈、播客切片、录屏演示 / facecam demo** 的 AI 视频剪辑生产线：给它原始口播音频/视频、transcript、B-roll、摄像头小窗或素材目录，它可以把“还没整理的素材”推进到 **可发布的小红书 / 抖音 / 视频号短视频**。
 
-它提供一条完整工作流：**项目启动/素材导入 → 本机工具链能力预检 → 交错/telecine 检测与逐行工作副本 → 手机/录屏 VFR 时基归一 → 静音首尾黑场裁切与边界复核 → 短素材循环填满固定时长与接缝复核 → 多源片段归一拼接与全接缝复核 → 个人/品牌剪辑风格 → 生产授权 → 手持防抖 / 绿蓝幕换背景 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → B-roll/生图/生成视频规划 → 生成片有效运动窗口 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp / 关键帧 freeze-punch / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 锁定视觉 EDL 后重建最终声音分镜 → 最终旁白逐短语响度门禁 → 渲染前预检 / 真实画面字幕样式选择 / 字幕逐字符字体覆盖 → 单次编码渲染 → 质检 / 最终音视频轨覆盖 / 最终成片字幕像素复核 / 字幕与独立人声对齐 / 声道完整性 / 短促音频掉点 / 闪烁风险 / 单帧瞬态伪影筛查 / 最终成片唇形复核 → 多平台导出 / 目标大小交付编码 / 重编码画质损失门禁 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
+它提供一条完整工作流：**项目启动/素材导入 → 本机工具链能力预检 → 交错/telecine 检测与逐行工作副本 → 手机/录屏 VFR 时基归一 → 静音首尾黑场裁切与边界复核 → 短素材循环填满固定时长与接缝复核 → 多源片段归一拼接与全接缝复核 → 个人/品牌剪辑风格 → 生产授权 → 手持防抖 / 绿蓝幕换背景 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → 生成前逐镜接力与剪辑边界审核 → B-roll/生图/生成视频规划 → 生成片有效运动窗口 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp / 关键帧 freeze-punch / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 锁定视觉 EDL 后重建最终声音分镜 → 最终旁白逐短语响度门禁 → 渲染前预检 / 真实画面字幕样式选择 / 字幕逐字符字体覆盖 → 单次编码渲染 → 质检 / 最终音视频轨覆盖 / 最终成片字幕像素复核 / 字幕与独立人声对齐 / 声道完整性 / 短促音频掉点 / 闪烁风险 / 单帧瞬态伪影筛查 / 最终成片唇形复核 → 多平台导出 / 目标大小交付编码 / 重编码画质损失门禁 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
 
 ## 适合做什么
 
@@ -33,6 +33,7 @@
 - **个人/品牌剪辑偏好可跨项目复用**：`edit_style_profile.py` 把创意方向、节奏、受控渲染默认值、封面风格、标题拼写与发布时段存成无本地路径的 profile；`render_final.py` / `generate_caption.py` / `cover_variants.py` 直接消费它，项目 config 和 CLI 始终优先。
 - **生成式素材有明确审批和台账**：Codex `image_gen` / GPT Image 2 提示词、Dreamina/Veo/LTX/Wan/Sora 视频提示词、provider 决策、`submit_id` 轮询下载和本地落盘 gate 都先记录再执行。
 - **生成 provider 参数先绑定具体入口再使用**：`provider_capability.py` 把 provider、UI/API surface、model、核验日期、证据和 mode/画幅/时长/分辨率/参考上限落成 profile；`video_prompt_pack.py` 会拒绝缺失、过期或设置越界的 profile。
+- **多镜头生成前先逐边界设计接力**：`sequence_handoff.py` 把上一镜 offer、下一镜 receive、载体、edit type、180° 轴、屏幕方向、音频桥、头尾 handles、风险和 fallback 绑定到确切 storyboard；审核通过后 `video_prompt_pack.py` 会把双向接力合同写进对应 provider prompt。
 - **生成视频不会从冻帧起步**：`generated_motion_window.py` 以 0.25 秒 full-frame freeze evidence 找出 active intervals；人工确认 trim/keep/reject 后才生成新的 H.264/AAC 工作副本，source、检测参数、决定和输出字节都会 live verify。
 - **生成片段复核会反哺下一次提示词**：`generation_lessons.py` 只从 canonical clip review 提取人工明确批准的通用经验，绑定 source digests，并按 provider/model/category 精确筛选后交给 `video_prompt_pack.py`；不会把单片修复建议自动当成全局规则。
 - **字幕风格先在真实画面上选**：`subtitle_style_preview.py` 用最终 renderer 的同一 ASS builder、字体、字号和目标画幅，把 `normal / minimal / bold_pop` 渲染到源片早、中、晚代表帧；源片、字体、样式定义或 JPEG 漂移会让旧选择失效。
@@ -223,6 +224,9 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    │
    ├─→ storyboard_plan.py       transcript/clean_script → shot cards
    │                            生成路由 / 连续性锚点 / Dreamina 额度提醒
+   │
+   ├─→ sequence_handoff.py      相邻镜头 receive-in / handoff-out / edit boundary
+   │                            180° 轴 / 屏幕方向 / 音频桥 / edit handles / live gate
    │
    ├─→ provider_capability.py   exact provider/surface/model 能力合同
    │                            核验日期 / sources / modes / limits / live gate
@@ -1085,8 +1089,8 @@ python3 scripts/final_audio_storyboard.py verify \
 
 response 固定 `single_track / sectioned_tracks / stems` 策略、跨段 tone、最终时间线 section、voice ledger、stem 类型和原生声音保留理由。每个删掉的 beat 必须标成 `remove / rewrite_into_adjacent / offscreen_bridge`；重复 voiced line、漏填段落、时间字段手改、EDL/storyboard/source/response/report 漂移都会 fail closed。脚本不生成音频、不消费 credits，也不把 JSON 冒充 provider prompt；批准后仍应按目标音频工具的规则改写成 timed cue sheet。`pipeline_manifest.py --require final_audio_storyboard --strict` 可设为发布门禁。
 
-### 🎞️ Storyboard Plan — 分镜与生成路由
-[`scripts/storyboard_plan.py`](scripts/storyboard_plan.py) · [`scripts/video_prompt_pack.py`](scripts/video_prompt_pack.py) · [`scripts/storyboard_assets.py`](scripts/storyboard_assets.py) · [分镜文档](docs/prompts/24-storyboard-plan.md) · [视频提示词包文档](docs/prompts/45-video-prompt-pack.md) · [素材清单文档](docs/prompts/25-storyboard-assets.md)
+### 🎞️ Storyboard Plan — 分镜、镜头接力与生成路由
+[`scripts/storyboard_plan.py`](scripts/storyboard_plan.py) · [`scripts/sequence_handoff.py`](scripts/sequence_handoff.py) · [`scripts/video_prompt_pack.py`](scripts/video_prompt_pack.py) · [`scripts/storyboard_assets.py`](scripts/storyboard_assets.py) · [分镜文档](docs/prompts/24-storyboard-plan.md) · [镜头接力文档](docs/prompts/120-sequence-handoff.md) · [视频提示词包文档](docs/prompts/45-video-prompt-pack.md) · [素材清单文档](docs/prompts/25-storyboard-assets.md)
 
 借鉴 GitHub 上视频生成类项目的 storyboard / shot continuity / provider routing 思路，但保持本项目的轻量原则：脚本只做本地规划，不提交任何付费生成任务。
 
@@ -1096,7 +1100,8 @@ response 固定 `single_track / sectioned_tracks / stems` 策略、跨段 tone�
 | `generation_route` | `codex_imagegen` / `dreamina_video` / `remotion_hyperframes` / `media_library_broll` + fallback + why |
 | `continuity.anchors` | 系列色彩、比例、字幕安全区、上一镜头引用、关键词线索 |
 | `storyboard_plan.md` | 适合人工 review 的 shot cards，含 prompt 和检查项 |
-| `video_prompt_pack.json` | 每个 shot 的 Dreamina/即梦 Seedance、Veo、LTX、Wan、Sora 提示词、参考图路径、负面提示词和审批状态 |
+| `sequence_handoff.json` | 每个相邻 shot 的 offer/receive、载体、edit type、轴线/方向、音频桥、edit handles、风险、fallback 与 source-bound review |
+| `video_prompt_pack.json` | 每个 shot 的 Dreamina/即梦 Seedance、Veo、LTX、Wan、Sora 提示词、接力合同、参考图路径、负面提示词和审批状态 |
 | `reference_frame_preflight.json` | image-to-video 首帧和共享 style key 的存在性、解码、尺寸、方向、画幅、透明背景 gate |
 | `storyboard_assets.json` | 每个 shot 对应素材是否 ready、需要生成/审批/渲染/搜索；B-roll 可带 `candidate_scores` 排名理由 |
 
@@ -1109,6 +1114,24 @@ python3 scripts/storyboard_plan.py \
   --markdown work/storyboard_plan.md \
   --max-shots 8 \
   --target-aspect 9:16
+
+python3 scripts/sequence_handoff.py prepare \
+  --project-dir . \
+  --storyboard work/storyboard_plan.json \
+  --output work/sequence_handoff_request.json \
+  --markdown work/sequence_handoff_request.md \
+  --response-template work/sequence_handoff_response.json \
+  --strict
+# 填写 response 后运行 audit，再执行 verify --strict。
+
+python3 scripts/video_prompt_pack.py \
+  --project-dir . \
+  --storyboard-plan work/storyboard_plan.json \
+  --sequence-handoff work/sequence_handoff.json \
+  --provider dreamina_seedance \
+  --output work/video_prompt_pack.json \
+  --markdown work/video_prompt_pack.md \
+  --strict
 
 python3 scripts/storyboard_assets.py \
   --storyboard-plan work/storyboard_plan.json \
@@ -3491,6 +3514,7 @@ pytest tests/test_generate_caption.py -v    # 文案合成
 pytest tests/test_cover_variants.py -v      # 多套封面 + 小图预览 + 发布选择
 pytest tests/test_imagegen_hint.py -v       # gpt-image-2 提示词检测
 pytest tests/test_storyboard_plan.py -v     # 分镜 shot cards + 生成路由
+pytest tests/test_sequence_handoff.py -v   # 逐镜接力 / edit boundary / 轴线方向 / source-bound live gate
 pytest tests/test_video_prompt_pack.py -v   # 视频生成提示词包 + 审批 gate
 pytest tests/test_provider_capability.py -v # provider/surface/model 能力、freshness 和设置上限 gate
 pytest tests/test_reference_frame_preflight.py -v # 首帧/style key 尺寸/方向/透明背景 gate
@@ -3532,6 +3556,27 @@ pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 pytest tests/test_review_dashboard.py -v    # 静态人工复核面板 + gate queue
 pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 gate
 ```
+
+### 2026-09-15 自动化升级记录（Source-bound Sequence Handoff + Prompt Injection）
+
+本次联网研究的 GitHub 参考：
+
+| 项目 / 资料 | 借鉴点 | 本次处理 |
+|---|---|---|
+| [`TateZhouSiu/create-storyboard-skill@4b8662e`](https://github.com/TateZhouSiu/create-storyboard-skill/blob/4b8662e2fee51b37488c77952bbfa302bfeaf36c/skills/create-storyboard/SKILL.md) | 为每对相邻镜头编写 handoff design matrix 与 edit boundary matrix，让前镜头种下视觉、空间、运动或声音线索，后镜头明确承接；同时检查 180 度轴线、视线和屏幕方向 | 新增逐边界 offer/receive 合同、剪辑类型、轴线与屏幕方向决策、音频桥、头尾 handles、风险和 fallback；所有相邻镜头都必须完成审阅 |
+| [`seaartpublic/skills@a3edc17`](https://github.com/seaartpublic/skills/blob/a3edc17605d525b54b2a5f61a4800f2dd8dd8b30/storyboard-prompt-assistant/SKILL.md) | 连续性记录覆盖首尾帧、动作、道具、光线和剪辑点，修改镜头时至少检查相邻镜头 | 把当前 storyboard JSON 的路径、大小与 SHA-256 写入请求和报告；分镜变化会让 audit、verify 与 pipeline manifest 现场阻断 |
+| [`smixs/visual-skills@ae26d62`](https://github.com/smixs/visual-skills/blob/ae26d624edd747e719fa21528d18d39e68c04a0e/video/SKILL.md) | 在多片段生成前做 prompt audit，保持跨片段连续性，并让镜头运动与光线有叙事动机 | 审阅通过的 boundary 合同会注入每条生成提示词，首镜头收到 outgoing handoff，中间镜头同时收到 incoming/outgoing，末镜头收到 incoming |
+
+本次新增 / 调整能力：
+
+- 新增 [`scripts/sequence_handoff.py`](scripts/sequence_handoff.py) 的 `prepare → audit → verify` 闭环。`prepare` 读取 `storyboard_plan.v1`，为每对相邻镜头生成可编辑建议；`audit` 要求逐项填写 `approve/revise`、carrier、offer/receive、edit type、match requirement、audio bridge、axis/screen-direction decision、handles、风险、fallback 和 review note。任何缺项、`revise` 或不安全的轴线/方向反转都会阻断。
+- request、response 与 report 都采用稳定版本和 canonical ID。报告绑定分镜源文件、请求、人工响应和自身内容；`verify` 会现场重建并检查全部绑定。单镜头项目会保留 warning，零边界时不会伪造 readiness。
+- [`scripts/video_prompt_pack.py`](scripts/video_prompt_pack.py) 新增 `--sequence-handoff` 与 `--project-dir`。CLI 在生成 prompt pack 前现场验证报告，将每个镜头应接收和交出的边界合同写入实际提示词，并在 pack 内留下报告 ID 与逐镜头 handoff 记录。
+- [`scripts/pipeline_manifest.py`](scripts/pipeline_manifest.py) 新增 `sequence_handoff` live gate；[`scripts/edit_brief_plan.py`](scripts/edit_brief_plan.py) 可识别“镜头接力、剪辑边界矩阵、180 度轴”等中英文需求，并按 `storyboard → sequence handoff → video prompt pack` 排序。SKILL、daily workflow、prompts 导航和 [`docs/prompts/120-sequence-handoff.md`](docs/prompts/120-sequence-handoff.md) 已同步。
+
+使用方式：先运行 `python3 scripts/sequence_handoff.py prepare --project-dir . --storyboard work/storyboard_plan.json --output work/sequence_handoff_request.json --response-template work/sequence_handoff_response.json --markdown work/sequence_handoff_request.md`，编辑 response 后执行 `audit` 生成 `work/sequence_handoff.json`，再用 `verify` 现场检查。生成提示词时追加 `--project-dir . --sequence-handoff work/sequence_handoff.json`；发布前可运行 `pipeline_manifest.py . --require sequence_handoff --strict`。
+
+验证结果：新增 8 项 sequence handoff prepare/audit/axis-direction/single-shot/drift/Markdown/CLI 测试，并扩展 video prompt pack、manifest 与 edit brief 路由覆盖；最终定向测试通过 `178 passed in 3.70s`。真实本地 smoke 用 3 个分镜生成并审阅 2 个边界，`audit` 与 `verify` 均为 ready，3 条实际 prompt 全部带 handoff 指令；随后只改动 storyboard 字节，旧报告按预期退出 2。全量测试首轮通过 1245 项，既有 FFmpeg 降噪实测因 2.9 dB 低于 3.0 dB 阈值一项失败；该项单独复跑通过，最终全量通过 `1246 passed in 29.02s`。`compileall`、CLI help、manifest category、Skill Creator `quick_validate.py` 与 `git diff --check` 全部通过；全过程未调用付费生成服务、未消耗 credits、未上传素材。
 
 ### 2026-09-14 自动化升级记录（Silent Edge-black Trim + Source-edge Review）
 
@@ -5004,6 +5049,7 @@ python3 scripts/pipeline_manifest.py . --require freeze_punch_plan --strict
 | **117** | **[Loop Fill](docs/prompts/117-loop-fill.md)** | **短素材按次数/目标时长重复、真实接缝 proof 与完整审片 live gate** |
 | **118** | **[Clip Assembly](docs/prompts/118-clip-assembly.md)** | **多源视频 → 单次画布/CFR/SAR/音频归一、全接缝 proof 与 live gate** |
 | **119** | **[Edge-black Trim](docs/prompts/119-black-edge-trim.md)** | **首尾黑场 + 静音覆盖 → CFR working copy、原片边界 proof 与 live gate** |
+| **120** | **[Sequence Handoff](docs/prompts/120-sequence-handoff.md)** | **生成前逐镜 receive/handoff、edit type、轴线方向、音频桥与 live gate** |
 | **62** | **[Hook Variants](docs/prompts/62-hook-variants.md)** | **同一视频批量生成前三秒 hook 角度** |
 | **67** | **[Speech Continuity QA](docs/prompts/67-speech-continuity-qa.md)** | **成片二次 ASR 检查复读、近重复 take 和句内口吃** |
 | **68** | **[Cover Variants](docs/prompts/68-cover-variants.md)** | **多套封面、feed-size 预览、标题协同和最终选择** |
@@ -5079,6 +5125,7 @@ scripts/
 ├── imagegen_hint.py            抽象概念→gpt-image-2 提示词       [V3]
 ├── auto_enrich.py              丰富度编排（B-roll/贴纸/强调点）  [V3]
 ├── storyboard_plan.py          分镜 shot cards + 生成路由         [V3]
+├── sequence_handoff.py         生成前逐镜接力 / edit boundary / 轴线方向 live gate [V3]
 ├── video_prompt_pack.py        多模型视频生成提示词包 + 审批 gate  [V3]
 ├── reference_frame_preflight.py 首帧/style key 画幅与背景预检 gate [V3]
 ├── generation_task_log.py      异步生成任务台账 + 下载 gate         [V3]

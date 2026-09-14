@@ -390,6 +390,22 @@ SIGNAL_KEYWORDS: Mapping[str, Sequence[str]] = {
         "道具连续性",
         "组装前连续性",
     ),
+    "sequence_handoff": (
+        "sequence handoff",
+        "shot handoff",
+        "shot-to-shot handoff",
+        "handoff matrix",
+        "edit boundary matrix",
+        "receive in",
+        "handoff out",
+        "镜头接力",
+        "镜头交接",
+        "镜头衔接设计",
+        "生成前连续性设计",
+        "剪辑边界矩阵",
+        "180度轴",
+        "180°轴",
+    ),
     "audio_design": ("bgm", "music", "配乐", "音效", "sfx", "sound design", "声音设计"),
     "final_audio_storyboard": (
         "final audio storyboard",
@@ -751,6 +767,7 @@ SIGNAL_LABELS: Mapping[str, str] = {
     "provider_capabilities": "生成 provider / UI / API 能力核验",
     "generation_lessons": "生成视频复核经验库",
     "sequence_continuity": "生成视频跨镜头连续性复核",
+    "sequence_handoff": "生成前镜头接力 / 剪辑边界设计",
     "audio_design": "BGM / SFX 声音设计",
     "final_audio_storyboard": "锁定视觉 EDL 后重建最终声音分镜",
     "video_stabilization": "手持素材稳定化 / 防抖",
@@ -1025,6 +1042,7 @@ def build_plan(
                 "source_receipts",
                 "broll",
                 "generated_assets",
+                "sequence_handoff",
                 "audio_design",
                 "publish",
                 "subtitle_sidecar",
@@ -1033,7 +1051,7 @@ def build_plan(
     )
     wants_render = bool(ids.intersection({"render", "publish", "target_script", "long_to_short", "batch_shorts", "reference_edit_rhythm", "subtitle_style_preview", "multimodal_dead_air", "cleanup_silence", "cleanup_words", "broll", "screen_focus", "pip", "color_grade", "edit_recipe_replay", "edit_style_profile"}))
     wants_clean_script = bool(
-        ids.intersection({"story_rewrite", "hook", "content_guard", "source_receipts", "broll", "generated_assets", "publish"})
+        ids.intersection({"story_rewrite", "hook", "content_guard", "source_receipts", "broll", "generated_assets", "sequence_handoff", "publish"})
         and "target_script" not in ids
     )
 
@@ -1857,6 +1875,62 @@ def build_plan(
             ),
         )
 
+    if "sequence_handoff" in ids and "generated_assets" not in ids:
+        notes.append(IMAGEGEN_ROUTING)
+        _add_step(
+            steps,
+            seen,
+            _step(
+                "storyboard_plan",
+                phase="assets",
+                script="storyboard_plan.py",
+                label="Plan the shot sequence before designing adjacent boundaries",
+                reason="A sequence handoff matrix needs ordered storyboard shots and explicit first/motion/last-frame intent.",
+                command=shell([python_bin, "scripts/storyboard_plan.py", "--transcript", transcript_path, "--clean-script", clean_script, "--output", "work/storyboard_plan.json", "--markdown", "work/storyboard_plan.md"]),
+                outputs=["work/storyboard_plan.json", "work/storyboard_plan.md"],
+                gate_category="storyboard_plan",
+            ),
+        )
+        _add_step(
+            steps,
+            seen,
+            _step(
+                "sequence_handoff",
+                phase="assets",
+                script="sequence_handoff.py",
+                label="Design and review every adjacent shot handoff",
+                reason="The brief asks for a shot-to-shot handoff or edit-boundary matrix before generation.",
+                command=shell(
+                    [
+                        python_bin,
+                        "scripts/sequence_handoff.py",
+                        "prepare",
+                        "--project-dir",
+                        project_dir,
+                        "--storyboard",
+                        "work/storyboard_plan.json",
+                        "--output",
+                        "work/sequence_handoff_request.json",
+                        "--markdown",
+                        "work/sequence_handoff_request.md",
+                        "--response-template",
+                        "work/sequence_handoff_response.json",
+                        "--strict",
+                    ]
+                ),
+                outputs=[
+                    "work/sequence_handoff_request.json",
+                    "work/sequence_handoff_response.json",
+                    "work/sequence_handoff.json",
+                ],
+                gate_category="sequence_handoff",
+            ),
+        )
+        notes.append(
+            "Review every proposed carrier, receive-in, edit type, 180-degree axis, screen direction, audio bridge, "
+            "edit handle, risk, and fallback; then run sequence_handoff.py audit and verify."
+        )
+
     if "generated_assets" in ids:
         notes.append(IMAGEGEN_ROUTING)
         prompt_pack_command = [
@@ -1901,6 +1975,54 @@ def build_plan(
                 gate_category="storyboard_plan",
             ),
         )
+        if ids.intersection({"sequence_handoff", "sequence_continuity"}):
+            _add_step(
+                steps,
+                seen,
+                _step(
+                    "sequence_handoff",
+                    phase="assets",
+                    script="sequence_handoff.py",
+                    label="Design and review every adjacent shot handoff",
+                    reason="Multi-shot generation needs an explicit receive-in, handoff-out, and edit-boundary contract before final prompts.",
+                    command=shell(
+                        [
+                            python_bin,
+                            "scripts/sequence_handoff.py",
+                            "prepare",
+                            "--project-dir",
+                            project_dir,
+                            "--storyboard",
+                            "work/storyboard_plan.json",
+                            "--output",
+                            "work/sequence_handoff_request.json",
+                            "--markdown",
+                            "work/sequence_handoff_request.md",
+                            "--response-template",
+                            "work/sequence_handoff_response.json",
+                            "--strict",
+                        ]
+                    ),
+                    outputs=[
+                        "work/sequence_handoff_request.json",
+                        "work/sequence_handoff_response.json",
+                        "work/sequence_handoff.json",
+                    ],
+                    gate_category="sequence_handoff",
+                ),
+            )
+            prompt_pack_command.extend(
+                [
+                    "--project-dir",
+                    project_dir,
+                    "--sequence-handoff",
+                    "work/sequence_handoff.json",
+                ]
+            )
+            notes.append(
+                "Fill and audit sequence_handoff_response.json before video_prompt_pack.py; the live-verified report writes "
+                "receive-in, handoff-out, edit type, axis, direction, audio, and edit-handle instructions into each prompt."
+            )
         _add_step(
             steps,
             seen,
