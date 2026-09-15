@@ -1,6 +1,6 @@
 ---
 name: video-editing
-description: "Xiaohongshu/RED-tuned short-form video workflow for voice-over, talking-head, tutorials, interviews, podcasts, screen recordings, chroma key, B-roll, captions, and generated assets. Covers edit routing, runtime profiles, interlace and VFR/CFR conformance, silent edge-black trimming, edit-style profiles, source-bound loop filling, heterogeneous multi-clip assembly with seam review, transcription, semantic review, multi-take/audio sync/stabilization/dead-air cleanup, highlights/shorts, story and source gates, enrichment and video-generation planning, reviewed shot-to-shot handoff design, generated clip/sequence and scoped AI video-edit review, locked-EDL audio storyboards, narration loudness, channel-integrity and audio-dropout QA, color/speed/J-L cuts, reversible revisions and recipes, preflight/render/QA including flash/photosensitivity and encode-quality screening, subtitles, CapCut, platform/size exports, covers, captions, publish packages, dashboards, handoff formats, and Remotion."
+description: "Xiaohongshu/RED-tuned short-form video workflow for voice-over, talking-head, tutorials, interviews, podcasts, screen recordings, chroma key, B-roll, captions, and generated assets. Covers edit routing, runtime profiles, interlace and VFR/CFR conformance, silent edge-black trimming, edit-style profiles, loop filling, heterogeneous multi-clip assembly with seam review, transcription, semantic review, multi-take/audio sync/stabilization/dead-air cleanup, highlights/shorts, story and source gates, enrichment and video-generation planning, timed storyboard animatics, reviewed shot-to-shot handoff design, generated clip/sequence and scoped AI video-edit review, locked-EDL audio storyboards, narration loudness, channel-integrity and audio-dropout QA, color/speed/J-L cuts, reversible revisions and recipes, preflight/render/QA including flash/photosensitivity and encode-quality screening, subtitles, CapCut, platform/size exports, covers, captions, publish packages, dashboards, handoff formats, and Remotion."
 metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
 ---
 
@@ -54,6 +54,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    │       └─→ Codex imagegen   gpt-image-2 自动生图（抽象概念配图）
    ├─→ audio_cue_sheet.py       BGM / SFX 音频设计清单 / 生成审批 gate
    ├─→ storyboard_plan.py       分镜 shot cards / 生成路由 / 连续性锚点
+   ├─→ storyboard_animatic.py   每镜静帧 + 可选旁白 → timed MP4 / 1× review / live gate
    ├─→ sequence_handoff.py      相邻镜头 receive/handoff / edit type / 轴线方向 / live gate
    ├─→ provider_capability.py   provider/surface/model 能力合同 / 核验日期 / live gate
    ├─→ video_prompt_pack.py     Dreamina/Veo/LTX/Wan/Sora 提示词包 / 审批 + capability gate
@@ -179,6 +180,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `audio_cue_sheet.py` | transcript → BGM/SFX cue、生成审批和音频门禁 | `--transcript` `--asset-root` `--require-local-music` `--require-local-sfx` `--strict` |
 | `final_audio_storyboard.py` | locked visual EDL + storyboard → 最终时间线声音分镜、voice ledger、omitted-story 决定和 live gate | `prepare --edl --storyboard` `audit --request --response` `verify --report --strict` |
 | `storyboard_plan.py` | transcript/clean_script → 分镜 shot cards + 生成路由 | `--transcript` `--clean-script` `--output` `--markdown` |
+| `storyboard_animatic.py` | storyboard + 每镜静帧 + 可选旁白 → source-bound timed MP4、完整 1× 复核与 live gate | `plan --panel SHOT=PATH --delivery` / `apply` / `confirm` / `verify --strict` |
 | `sequence_handoff.py` | storyboard → 相邻镜头接力、剪辑边界、180° 轴/方向、音频桥、edit handles 与 source-bound live gate | `prepare --storyboard --response-template` `audit --request --response` `verify --report --strict` |
 | `provider_capability.py` | exact provider/surface/model → 带日期的 mode/画幅/时长/分辨率/参考上限能力合同 live gate | `verify --bundle --max-age-days --output --markdown --strict` |
 | `video_prompt_pack.py` | storyboard_plan → 多 provider 视频生成提示词包 + 已审镜头接力 + 角色/品牌/style lock + paid approval/capability gate | `--storyboard-plan` `--project-dir` `--sequence-handoff` `--capability-profile` `--require-capability-profile` `--resolution` `--approved` `--strict` |
@@ -499,7 +501,7 @@ python3 scripts/pipeline_manifest.py \
 
 ### Phase 0aa: Runtime Preflight（按任务核验本机能力）
 
-在打开媒体或启动渲染前，运行 [runtime_preflight.py](./scripts/runtime_preflight.py)。只转写、probe 或抽流用 `media_io`；会编码最终画面的任务用 `core_edit`，再按需要追加 `captions / qa / edge_black_trim / hdr_sdr / stabilization / interlace / remotion`：
+在打开媒体或启动渲染前，运行 [runtime_preflight.py](./scripts/runtime_preflight.py)。只转写、probe 或抽流用 `media_io`；会编码最终画面的任务用 `core_edit`，再按需要追加 `storyboard_animatic / captions / qa / edge_black_trim / hdr_sdr / stabilization / interlace / remotion`：
 
 ```bash
 python3 scripts/runtime_preflight.py analyze \
@@ -1298,6 +1300,12 @@ python3 scripts/render_final.py --config script/render_config.json --output medi
 - 再运行 `storyboard_assets.py --storyboard-plan work/storyboard_plan.json --asset-root work --media-library . --output work/storyboard_assets.json --markdown work/storyboard_assets.md --strict`，渲染前确认素材 `ready`
 - `dreamina_video` 只表示适合视频生成，不会自动提交任务；提交 Dreamina/即梦前必须确认，因为可能消耗 credits
 - 生图优先使用 Codex 内置 `image_gen` 工具，即 OpenAI GPT Image 2（`gpt-image-2`）。
+
+**Storyboard Animatic 分镜时长预演**（付费生成或正式剪辑前推荐）：
+- 为每个 storyboard shot 准备一张已审静帧，再运行 `storyboard_animatic.py plan --project-dir . --storyboard work/storyboard_plan.json --panel shot_001=work/storyboard/shot_001.png --panel shot_002=work/storyboard/shot_002.png --delivery verify/storyboard_animatic.mp4 --output work/storyboard_animatic.json --markdown work/storyboard_animatic.md`
+- `--panel SHOT_ID=PATH` 必须精确覆盖全部 shots；可选加 `--audio work/narration.wav`。工具绑定 storyboard、panels、音频的 SHA-256 和媒体元数据，按 shot starts 生成带镜头 ID/时间码的 CFR H.264 MP4
+- 执行 `apply` 后完整 1× 播放，检查 `shot_order / timing_rhythm / panel_legibility / visual_continuity / audio_sync`，再运行 `confirm`；无音频时 `audio_sync=not_applicable`
+- `verify --strict` 与 `pipeline_manifest.py --require storyboard_animatic --strict` 会现场重读全部输入、完整解码交付件并核对 review/output 绑定。Animatic 只验证静帧顺序和节奏，后续生成片与成片仍需各自 review。详见 [docs/prompts/121-storyboard-animatic.md](docs/prompts/121-storyboard-animatic.md)
 
 **Sequence Handoff 生成前镜头接力与剪辑边界**（两条以上生成镜头时推荐）：
 - 运行 `sequence_handoff.py prepare --project-dir . --storyboard work/storyboard_plan.json --output work/sequence_handoff_request.json --markdown work/sequence_handoff_request.md --response-template work/sequence_handoff_response.json --strict`

@@ -264,6 +264,13 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         "Run storyboard_plan.py and review the Markdown shot cards.",
     ),
     ArtifactDef(
+        "storyboard_animatic",
+        "Storyboard Animatic",
+        ("**/storyboard_animatic.json", "**/*_storyboard_animatic.json"),
+        "Run storyboard_animatic.py apply, watch the complete timed preview at 1x, confirm every review field, then live-verify the plan.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "sequence_handoff",
         "Sequence Handoff",
         ("**/sequence_handoff.json", "**/*_sequence_handoff_report.json"),
@@ -980,6 +987,38 @@ def evaluate_category(
                 status = "warn" if status != "blocked" else status
                 notes.append(
                     f"production authorization needs review {artifact.path}: {warnings} warning(s)"
+                )
+        return {
+            "category": definition.category,
+            "label": definition.label,
+            "status": status,
+            "artifact_count": len(artifacts),
+            "latest_path": artifacts[0].path,
+            "notes": sorted(set(notes)),
+            "next_action": definition.next_action if status in {"missing", "blocked", "warn"} else "",
+        }
+
+    if definition.category == "storyboard_animatic":
+        from storyboard_animatic import verify_plan
+
+        for artifact in artifacts:
+            data = _load_json(artifact.path)
+            if data is None:
+                status = "blocked"
+                notes.append(f"unreadable storyboard animatic plan: {artifact.path}")
+                continue
+            verification = verify_plan(data)
+            blocking = _int_at(verification, "summary", "blocking")
+            warnings = _int_at(verification, "summary", "warnings")
+            if blocking:
+                status = "blocked"
+                notes.append(
+                    f"invalid, unreviewed, or stale storyboard animatic {artifact.path}: {blocking} blocking item(s)"
+                )
+            elif warnings:
+                status = "warn" if status != "blocked" else status
+                notes.append(
+                    f"storyboard animatic retains {warnings} normalization warning(s): {artifact.path}"
                 )
         return {
             "category": definition.category,

@@ -122,6 +122,7 @@
 | 118 | [Clip Assembly 多源视频安全拼接](118-clip-assembly.md) | ordered clips → 单次画布/CFR/SAR/音频归一、全接缝 proof 与 live gate |
 | 119 | [Edge-black Trim 首尾黑场安全裁切](119-black-edge-trim.md) | source edges → blackdetect + silencedetect、CFR working copy、边界 proof 与 live gate |
 | 120 | [Sequence Handoff 生成前镜头接力与剪辑边界](120-sequence-handoff.md) | storyboard → 逐相邻镜头 receive/handoff、edit type、轴线/方向、音频桥与 source-bound live gate |
+| 121 | [Storyboard Animatic 分镜时长预演](121-storyboard-animatic.md) | storyboard + 每镜静帧 + 可选旁白 → timed MP4、完整 1× 复核与 source-bound live gate |
 
 ## 快速上手
 
@@ -156,6 +157,7 @@
 | 渲染后想确认没有黑屏/静帧/静音/尺寸错 | [20-Render QA](20-render-qa.md) |
 | 最终片疑似有闪帧、单帧撕裂或少数帧生成变形 | [108-Temporal Artifact QA](108-temporal-artifact-qa.md) |
 | 多镜头生成前要设计镜头接力、180° 轴和剪辑边界 | [120-Sequence Handoff](120-sequence-handoff.md) |
+| 付费生成前想把分镜静帧按真实时长完整播放一遍 | [121-Storyboard Animatic](121-storyboard-animatic.md) |
 | 口播停顿太多想自动剪紧 | [21-Jump Cut](21-jump-cut.md) |
 | 只想删掉同时静音且画面静止的死区 | [88-Multimodal Dead-Air](88-multimodal-dead-air.md) |
 | 片头或片尾有黑屏，想确认没有声音再裁掉 | [119-Edge-black Trim](119-black-edge-trim.md) |

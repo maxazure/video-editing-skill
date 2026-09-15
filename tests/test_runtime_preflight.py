@@ -71,6 +71,19 @@ def test_core_profile_passes_with_declared_commands_encoders_and_filters():
     assert set(report["runtime"]["detections"]) == {"encoder", "filter"}
 
 
+def test_storyboard_animatic_profile_requires_timing_label_and_audio_filters():
+    filters = {
+        "scale", "pad", "crop", "setsar", "fps", "format", "drawtext",
+        "concat", "apad", "atrim", "asetpts",
+    }
+    report = build_report(["storyboard_animatic"], snapshot=snapshot(filters=filters))
+
+    assert report["status"] == "ready"
+    assert report["summary"]["blocking"] == 0
+    assert "filter:drawtext" in report["capabilities"]
+    assert "filter:apad" in report["capabilities"]
+
+
 def test_caption_profile_blocks_a_proven_missing_subtitles_filter():
     report = build_report(["captions"], snapshot=snapshot(filters=CORE_FILTERS))
 

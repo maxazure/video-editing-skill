@@ -353,6 +353,16 @@ SIGNAL_KEYWORDS: Mapping[str, Sequence[str]] = {
         "生成视频",
         "generated video",
     ),
+    "storyboard_animatic": (
+        "storyboard animatic",
+        "timed storyboard",
+        "storyboard timing preview",
+        "animatic",
+        "动态分镜",
+        "分镜预演",
+        "分镜时长预览",
+        "故事板预演",
+    ),
     "provider_capabilities": (
         "provider capability",
         "provider capabilities",
@@ -764,6 +774,7 @@ SIGNAL_LABELS: Mapping[str, str] = {
     "source_receipts": "事实来源复核",
     "broll": "B-roll / stock 素材规划",
     "generated_assets": "生成式图片 / 视频素材",
+    "storyboard_animatic": "分镜静帧按真实时长预演 / 人工门禁",
     "provider_capabilities": "生成 provider / UI / API 能力核验",
     "generation_lessons": "生成视频复核经验库",
     "sequence_continuity": "生成视频跨镜头连续性复核",
@@ -1042,6 +1053,7 @@ def build_plan(
                 "source_receipts",
                 "broll",
                 "generated_assets",
+                "storyboard_animatic",
                 "sequence_handoff",
                 "audio_design",
                 "publish",
@@ -1051,7 +1063,7 @@ def build_plan(
     )
     wants_render = bool(ids.intersection({"render", "publish", "target_script", "long_to_short", "batch_shorts", "reference_edit_rhythm", "subtitle_style_preview", "multimodal_dead_air", "cleanup_silence", "cleanup_words", "broll", "screen_focus", "pip", "color_grade", "edit_recipe_replay", "edit_style_profile"}))
     wants_clean_script = bool(
-        ids.intersection({"story_rewrite", "hook", "content_guard", "source_receipts", "broll", "generated_assets", "sequence_handoff", "publish"})
+        ids.intersection({"story_rewrite", "hook", "content_guard", "source_receipts", "broll", "generated_assets", "storyboard_animatic", "sequence_handoff", "publish"})
         and "target_script" not in ids
     )
 
@@ -1103,6 +1115,7 @@ def build_plan(
                     "freeze_punch",
                     "audio_transition",
                     "audio_sync",
+                    "storyboard_animatic",
                     "generated_motion_window",
                     "screen_focus",
                     "pip",
@@ -1145,6 +1158,8 @@ def build_plan(
             runtime_profiles.append("interlace")
         if "black_edge_trim" in ids:
             runtime_profiles.append("edge_black_trim")
+        if "storyboard_animatic" in ids:
+            runtime_profiles.append("storyboard_animatic")
         if _contains(normalized, "remotion"):
             runtime_profiles.append("remotion")
         runtime_command = [python_bin, "scripts/runtime_preflight.py", "analyze"]
@@ -1931,6 +1946,63 @@ def build_plan(
             "edit handle, risk, and fallback; then run sequence_handoff.py audit and verify."
         )
 
+    if "storyboard_animatic" in ids and "generated_assets" not in ids:
+        notes.append(IMAGEGEN_ROUTING)
+        _add_step(
+            steps,
+            seen,
+            _step(
+                "storyboard_plan",
+                phase="assets",
+                script="storyboard_plan.py",
+                label="Plan ordered storyboard shots before animatic assembly",
+                reason="A timed animatic requires an ordered storyboard with explicit shot starts and ends.",
+                command=shell([python_bin, "scripts/storyboard_plan.py", "--transcript", transcript_path, "--clean-script", clean_script, "--output", "work/storyboard_plan.json", "--markdown", "work/storyboard_plan.md"]),
+                outputs=["work/storyboard_plan.json", "work/storyboard_plan.md"],
+                gate_category="storyboard_plan",
+            ),
+        )
+        _add_step(
+            steps,
+            seen,
+            _step(
+                "storyboard_animatic",
+                phase="assets",
+                script="storyboard_animatic.py",
+                label="Render and review the timed storyboard animatic",
+                reason="Still panels need a complete normal-speed timing and continuity preview before paid generation or final editing.",
+                command=shell(
+                    [
+                        python_bin,
+                        "scripts/storyboard_animatic.py",
+                        "plan",
+                        "--project-dir",
+                        project_dir,
+                        "--storyboard",
+                        "work/storyboard_plan.json",
+                        "--panel",
+                        "<repeat_SHOT_ID=PATH>",
+                        "--delivery",
+                        "verify/storyboard_animatic.mp4",
+                        "--output",
+                        "work/storyboard_animatic.json",
+                        "--markdown",
+                        "work/storyboard_animatic.md",
+                    ]
+                ),
+                outputs=[
+                    "work/storyboard_animatic.json",
+                    "work/storyboard_animatic.md",
+                    "verify/storyboard_animatic.mp4",
+                ],
+                gate_category="storyboard_animatic",
+            ),
+        )
+        notes.append(
+            "Repeat --panel SHOT_ID=PATH for every shot, then run storyboard_animatic.py apply. "
+            "Watch the complete MP4 at 1x, confirm all five review fields, and live-verify before generation."
+        )
+
     if "generated_assets" in ids:
         notes.append(IMAGEGEN_ROUTING)
         prompt_pack_command = [
@@ -2022,6 +2094,47 @@ def build_plan(
             notes.append(
                 "Fill and audit sequence_handoff_response.json before video_prompt_pack.py; the live-verified report writes "
                 "receive-in, handoff-out, edit type, axis, direction, audio, and edit-handle instructions into each prompt."
+            )
+        if "storyboard_animatic" in ids:
+            _add_step(
+                steps,
+                seen,
+                _step(
+                    "storyboard_animatic",
+                    phase="assets",
+                    script="storyboard_animatic.py",
+                    label="Render and review the timed storyboard animatic",
+                    reason="Still panels need a complete normal-speed timing and continuity preview before provider submission.",
+                    command=shell(
+                        [
+                            python_bin,
+                            "scripts/storyboard_animatic.py",
+                            "plan",
+                            "--project-dir",
+                            project_dir,
+                            "--storyboard",
+                            "work/storyboard_plan.json",
+                            "--panel",
+                            "<repeat_SHOT_ID=PATH>",
+                            "--delivery",
+                            "verify/storyboard_animatic.mp4",
+                            "--output",
+                            "work/storyboard_animatic.json",
+                            "--markdown",
+                            "work/storyboard_animatic.md",
+                        ]
+                    ),
+                    outputs=[
+                        "work/storyboard_animatic.json",
+                        "work/storyboard_animatic.md",
+                        "verify/storyboard_animatic.mp4",
+                    ],
+                    gate_category="storyboard_animatic",
+                ),
+            )
+            notes.append(
+                "Repeat --panel SHOT_ID=PATH for every shot, apply the animatic, watch it completely at 1x, "
+                "and confirm all review fields before submitting provider jobs."
             )
         _add_step(
             steps,

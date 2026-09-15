@@ -56,6 +56,29 @@ PROFILE_SPECS: Mapping[str, Mapping[str, Any]] = {
         ],
         "alternatives": [],
     },
+    "storyboard_animatic": {
+        "label": "Storyboard animatic",
+        "description": "Normalize still panels, burn shot/time labels, attach optional guide audio, and render a timed H.264 preview.",
+        "required": [
+            "runtime:python",
+            "command:ffmpeg",
+            "command:ffprobe",
+            "encoder:libx264",
+            "encoder:aac",
+            "filter:scale",
+            "filter:pad",
+            "filter:crop",
+            "filter:setsar",
+            "filter:fps",
+            "filter:format",
+            "filter:drawtext",
+            "filter:concat",
+            "filter:apad",
+            "filter:atrim",
+            "filter:asetpts",
+        ],
+        "alternatives": [],
+    },
     "captions": {
         "label": "Burned captions",
         "description": "Render SRT/ASS and the skill's subtitle presets through libass.",
@@ -171,6 +194,7 @@ REMEDIES: Mapping[str, str] = {
     "filter:yadif": "Install an FFmpeg build with yadif, or use a build that provides bwdif.",
     "filter:blackdetect": "Install an FFmpeg build with the blackdetect filter enabled.",
     "filter:silencedetect": "Install an FFmpeg build with the silencedetect filter enabled.",
+    "filter:drawtext": "Install an FFmpeg build with FreeType/drawtext support.",
 }
 
 Runner = Callable[[Sequence[str], float], Mapping[str, Any]]

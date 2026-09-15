@@ -328,7 +328,20 @@
     # codex_imagegen 用 Codex 内置 image_gen；dreamina_video 只是建议，提交 Dreamina/即梦前先确认 credits。
     # 详见 docs/prompts/24-storyboard-plan.md
 
-4c-1. # 两条以上生成镜头：在最终 prompt 前设计并审核每个相邻镜头的接力与剪辑边界：
+4c-1. # 可选：每镜已有一张已审静帧时，先按真实时长播放完整 animatic：
+    python3 scripts/storyboard_animatic.py plan \
+      --project-dir . \
+      --storyboard work/storyboard_plan.json \
+      --panel shot_001=work/storyboard/shot_001.png \
+      --panel shot_002=work/storyboard/shot_002.png \
+      --delivery verify/storyboard_animatic.mp4 \
+      --output work/storyboard_animatic.json \
+      --markdown work/storyboard_animatic.md
+    python3 scripts/storyboard_animatic.py apply work/storyboard_animatic.json
+    # 有完整旁白时可在 plan 加 --audio work/narration.wav。完整 1× 播放后逐项 confirm，再 verify --strict。
+    # 详见 docs/prompts/121-storyboard-animatic.md。
+
+4c-2. # 两条以上生成镜头：在最终 prompt 前设计并审核每个相邻镜头的接力与剪辑边界：
     python3 scripts/sequence_handoff.py prepare \
       --project-dir . \
       --storyboard work/storyboard_plan.json \
@@ -350,7 +363,7 @@
       --strict
     # 详见 docs/prompts/120-sequence-handoff.md；单镜头无需运行。
 
-4c-2. # 如果要用生成视频 provider，先核验具体 UI/API surface 的当前能力：
+4c-3. # 如果要用生成视频 provider，先核验具体 UI/API surface 的当前能力：
     python3 scripts/provider_capability.py verify \
       --bundle work/provider_capabilities.json \
       --max-age-days 30 \

@@ -1000,6 +1000,36 @@ def test_sequence_handoff_brief_routes_pre_generation_boundary_review(tmp_path):
     assert any("180-degree axis" in note for note in plan["notes"])
 
 
+def test_storyboard_animatic_brief_routes_timed_preview_after_storyboard(tmp_path):
+    plan = build_plan(
+        "把三张分镜图做成按真实时长播放的 animatic，完整审查节奏和连续性",
+        project_dir=str(tmp_path),
+    )
+
+    ids = [step["id"] for step in plan["steps"]]
+    assert "storyboard_animatic" in {signal["id"] for signal in plan["signals"]}
+    assert ids.index("storyboard_plan") < ids.index("storyboard_animatic")
+    step = next(step for step in plan["steps"] if step["id"] == "storyboard_animatic")
+    assert step["script"] == "storyboard_animatic.py"
+    assert "storyboard_animatic.py plan" in step["command"]
+    assert "--panel '<repeat_SHOT_ID=PATH>'" in step["command"]
+    assert step["gate_category"] == "storyboard_animatic"
+    assert any("five review fields" in note for note in plan["notes"])
+    runtime = next(step for step in plan["steps"] if step["id"] == "runtime_preflight")
+    assert "--profile storyboard_animatic" in runtime["command"]
+
+
+def test_generated_animatic_runs_before_provider_prompt_pack(tmp_path):
+    plan = build_plan(
+        "用即梦生成三镜头视频，提交前先做动态分镜预演",
+        project_dir=str(tmp_path),
+    )
+
+    ids = [step["id"] for step in plan["steps"]]
+    assert ids.index("storyboard_plan") < ids.index("storyboard_animatic")
+    assert ids.index("storyboard_animatic") < ids.index("video_prompt_pack")
+
+
 def test_reference_rhythm_brief_routes_measurement_after_render(tmp_path):
     source = tmp_path / "talk.mp4"
     source.write_text("fake video", encoding="utf-8")

@@ -20,6 +20,7 @@ import freeze_punch  # noqa: E402
 import flash_safety_qa  # noqa: E402
 import runtime_preflight  # noqa: E402
 import sequence_handoff  # noqa: E402
+import storyboard_animatic  # noqa: E402
 import temporal_artifact_qa  # noqa: E402
 import stream_coverage_qa  # noqa: E402
 import generated_clip_review  # noqa: E402
@@ -132,6 +133,39 @@ def test_sequence_handoff_is_live_verified_and_can_be_required(tmp_path, monkeyp
         str(tmp_path), target_stage="analysis", required=["sequence_handoff"]
     )
     assert "sequence_handoff" in missing["missing_required"]
+
+
+def test_storyboard_animatic_is_live_verified_and_can_be_required(tmp_path, monkeypatch):
+    _publish_ready_project(tmp_path)
+    plan_path = tmp_path / "work" / "storyboard_animatic.json"
+    _write(plan_path, {"version": "storyboard_animatic.v1", "summary": {"blocking": 0}})
+
+    monkeypatch.setattr(
+        storyboard_animatic,
+        "verify_plan",
+        lambda _plan: {"summary": {"blocking": 0, "warnings": 0}},
+    )
+    current = build_manifest(
+        str(tmp_path), target_stage="publish_ready", required=["storyboard_animatic"]
+    )
+    gate = next(g for g in current["gates"] if g["category"] == "storyboard_animatic")
+    assert gate["status"] == "ready"
+
+    monkeypatch.setattr(
+        storyboard_animatic,
+        "verify_plan",
+        lambda _plan: {"summary": {"blocking": 1, "warnings": 0}},
+    )
+    stale = build_manifest(str(tmp_path), target_stage="publish_ready")
+    gate = next(g for g in stale["gates"] if g["category"] == "storyboard_animatic")
+    assert gate["status"] == "blocked"
+    assert "storyboard_animatic" in stale["blocked_gates"]
+
+    plan_path.unlink()
+    missing = build_manifest(
+        str(tmp_path), target_stage="analysis", required=["storyboard_animatic"]
+    )
+    assert "storyboard_animatic" in missing["missing_required"]
 
 
 def test_subtitle_glyph_qa_is_live_verified_and_can_be_required(tmp_path, monkeypatch):
