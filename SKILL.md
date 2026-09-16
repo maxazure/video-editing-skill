@@ -185,6 +185,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `provider_capability.py` | exact provider/surface/model → 带日期的 mode/画幅/时长/分辨率/参考上限能力合同 live gate | `verify --bundle --max-age-days --output --markdown --strict` |
 | `video_prompt_pack.py` | storyboard_plan → 多 provider 视频生成提示词包 + 已审镜头接力 + 角色/品牌/style lock + paid approval/capability gate | `--storyboard-plan` `--project-dir` `--sequence-handoff` `--capability-profile` `--require-capability-profile` `--resolution` `--approved` `--strict` |
 | `reference_frame_preflight.py` | video_prompt_pack → 首帧/style key 存在性、解码、尺寸、方向、画幅、透明背景 gate | `--prompt-pack` `--require-style-reference` `--reference shot_id=...` `--strict` |
+| `generation_reference_preflight.py` | prompt pack + 图片/视频/音频 reference manifest + provider profile → 类型/数量/时长/模式/@标签角色 source-bound gate | `template --prompt-pack` / `analyze --references --capability-profile --strict` / `verify --report --strict` |
 | `generation_task_log.py` | 异步生成任务台账：submit_id/task id、轮询、下载、本地落盘 gate | `add` `update` `import-provider-decision` `report --strict` |
 | `generated_clip_review.py` | 生成视频片段 source-bound 视觉复核：contact sheet、评分、裁切范围、重生建议 | `prepare --clip/--asset-manifest` `audit --request --response` `verify --report --strict` |
 | `generated_motion_window.py` | 短生成片全帧 freeze → active intervals、人工 trim/keep/reject、帧准确 working copy 与 live gate | `analyze <clip>` `confirm --decision` `apply --output` `verify --strict` |
@@ -1324,6 +1325,13 @@ python3 scripts/render_final.py --config script/render_config.json --output medi
 - `--provider veo|ltx|wan|sora|dreamina_seedance` 可把同一分镜改写成指定模型提示词；`--animate-stills` 会把 `codex_imagegen` 参考图 route 转为 image-to-video 提示词
 - `--strict` 会在 generated-video provider 还没 `--approved`，或 capability profile 缺失/过期/设置越界时返回 2；脚本不提交 provider 任务、不消耗 credits
 - 生图优先使用 Codex 内置 `image_gen` 工具，即 OpenAI GPT Image 2（`gpt-image-2`）。
+
+**Generation Reference Preflight 图片 / 视频 / 音频生成参考门禁**（使用多模态 reference 时必跑）：
+- provider profile 的 `reference_media` 要记录 frame/reference 是否互斥、是否支持 audio-only、总文件数，以及图片/视频/音频的扩展名、字节、单条时长和总时长上限；未核验的限制不得靠猜测补齐
+- 先用 `generation_reference_preflight.py template --project-dir . --prompt-pack work/video_prompt_pack.json --output work/generation_references.json` 建清单；每个实际提交素材填写 `kind / path / role / exclude`，顺序就是各类型的 `@ImageN / @VideoN / @AudioN` 顺序
+- 运行 `generation_reference_preflight.py analyze --project-dir . --prompt-pack work/video_prompt_pack.json --references work/generation_references.json --capability-profile work/provider_capabilities.json --output work/generation_reference_preflight.json --markdown work/generation_reference_preflight.md --strict`
+- 报告会完整解码本地 reference，检查类型、扩展名、大小、单条/合计时长、数量、audio-only、frame/reference 模式互斥和 capability profile 绑定，并输出带明确角色与排除项的 `shots[].provider_prompt`
+- 提交时使用 ready 报告里的有序素材清单和 `provider_prompt`；之后以 `verify --report ... --strict` 或 `pipeline_manifest.py --require generation_reference_preflight --strict` 现场复查。详见 [docs/prompts/122-generation-reference-preflight.md](docs/prompts/122-generation-reference-preflight.md)
 
 **Generation Task Log 异步生成任务台账**（提交生成任务后推荐）：
 - 从 provider 决策生成待审批台账：`generation_task_log.py import-provider-decision --provider-decision work/provider_decision.json --log work/generation_tasks.json --markdown work/generation_tasks.md --strict`

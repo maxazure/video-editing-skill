@@ -135,6 +135,7 @@ def _mode_for_shot(
     route: str,
     reference: Mapping[str, str],
     animate_stills: bool,
+    style_reference: Optional[Mapping[str, str]] = None,
 ) -> str:
     if mode != "auto":
         return mode
@@ -144,7 +145,11 @@ def _mode_for_shot(
         return "broll_search"
     if provider == "codex_imagegen":
         return "still_reference"
-    if provider in GENERATED_VIDEO_PROVIDERS and (reference.get("resolved_path") or route == "codex_imagegen" or animate_stills):
+    if provider in GENERATED_VIDEO_PROVIDERS and (reference.get("resolved_path") or animate_stills):
+        return "image_to_video"
+    if provider in GENERATED_VIDEO_PROVIDERS and (style_reference or {}).get("resolved_path"):
+        return "reference_to_video"
+    if provider in GENERATED_VIDEO_PROVIDERS and route == "codex_imagegen":
         return "image_to_video"
     return "text_to_video"
 
@@ -456,6 +461,7 @@ def build_video_prompt_pack(
             route=route,
             reference=reference,
             animate_stills=animate_stills,
+            style_reference=shared_style_reference,
         )
         duration = _clamp_duration(shot.get("duration"), default=default_duration, max_duration=max_duration)
         continuity = _continuity_text(shot, brand_anchors)
@@ -531,7 +537,10 @@ def build_video_prompt_pack(
                 if (verification.get("summary") or {}).get("blocking"):
                     capability_issues.append("invalid_or_stale_capability_profile")
                 else:
-                    image_references = int(bool(reference.get("expected_path"))) + int(
+                    image_references = int(
+                        selected_mode in {"image_to_video", "first_last_frame"}
+                        and bool(reference.get("expected_path"))
+                    ) + int(
                         bool(shared_style_reference.get("expected_path"))
                     )
                     capability_issues.extend(
@@ -742,7 +751,10 @@ def verify_prompt_pack(
                 else:
                     reference = item.get("reference") or {}
                     style_reference = item.get("style_reference") or {}
-                    image_references = int(bool(reference.get("expected_path"))) + int(
+                    image_references = int(
+                        str(item.get("mode") or "") in {"image_to_video", "first_last_frame"}
+                        and bool(reference.get("expected_path"))
+                    ) + int(
                         bool(style_reference.get("expected_path"))
                     )
                     current_issues.extend(
@@ -894,7 +906,19 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     parser.add_argument(
         "--mode",
         default="auto",
-        choices=["auto", "text_to_video", "image_to_video", "still_reference", "motion_graphics", "broll_search"],
+        choices=[
+            "auto",
+            "text_to_video",
+            "image_to_video",
+            "first_last_frame",
+            "reference_to_video",
+            "video_edit",
+            "video_extension",
+            "clip_stitching",
+            "still_reference",
+            "motion_graphics",
+            "broll_search",
+        ],
         help="Generation mode override.",
     )
     parser.add_argument("--asset-root", default="work", help="Root containing imagegen/generated_video assets.")

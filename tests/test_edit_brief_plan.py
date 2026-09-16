@@ -960,6 +960,29 @@ def test_provider_capabilities_are_verified_before_prompt_pack(tmp_path):
     assert "--resolution '<verified_resolution>'" in prompt_step["command"]
 
 
+def test_multimodal_generation_references_route_through_capabilities_and_live_preflight(tmp_path):
+    source = tmp_path / "talk.mp4"
+    source.write_text("fake video", encoding="utf-8")
+
+    plan = build_plan(
+        f"把 {source} 用图片视频音频参考做多模态参考生成，提交前预检每个素材",
+        project_dir=str(tmp_path),
+    )
+
+    signal_ids = {signal["id"] for signal in plan["signals"]}
+    ids = [step["id"] for step in plan["steps"]]
+    assert "generation_references" in signal_ids
+    assert ids.index("provider_capabilities") < ids.index("video_prompt_pack")
+    assert ids.index("video_prompt_pack") < ids.index("generation_reference_template")
+    assert ids.index("generation_reference_template") < ids.index("generation_reference_preflight")
+    prompt = next(step for step in plan["steps"] if step["id"] == "video_prompt_pack")
+    preflight = next(step for step in plan["steps"] if step["id"] == "generation_reference_preflight")
+    assert "--mode reference_to_video" in prompt["command"]
+    assert "generation_reference_preflight.py analyze" in preflight["command"]
+    assert "--capability-profile work/provider_capabilities.json" in preflight["command"]
+    assert preflight["gate_category"] == "generation_reference_preflight"
+
+
 def test_generated_video_sequence_continuity_runs_after_per_clip_review(tmp_path):
     source = tmp_path / "talk.mp4"
     source.write_text("fake video", encoding="utf-8")

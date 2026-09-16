@@ -28,6 +28,7 @@ import generated_motion_window  # noqa: E402
 import generated_sequence_review  # noqa: E402
 import scoped_video_edit_review  # noqa: E402
 import generation_lessons  # noqa: E402
+import generation_reference_preflight  # noqa: E402
 import hdr_sdr  # noqa: E402
 import multimodal_dead_air  # noqa: E402
 import narration_loudness_qa  # noqa: E402
@@ -100,6 +101,41 @@ def test_runtime_preflight_is_live_verified_and_can_be_required(tmp_path, monkey
         str(tmp_path), target_stage="analysis", required=["runtime_preflight"]
     )
     assert "runtime_preflight" in missing["missing_required"]
+
+
+def test_generation_reference_preflight_is_live_verified(tmp_path, monkeypatch):
+    _publish_ready_project(tmp_path)
+    report_path = tmp_path / "work" / "generation_reference_preflight.json"
+    _write(report_path, {"version": "generation_reference_preflight.v1"})
+
+    monkeypatch.setattr(
+        generation_reference_preflight,
+        "verify_report",
+        lambda _report, project_dir=".": {
+            "status": "ready",
+            "summary": {"blocking": 0, "warnings": 0},
+        },
+    )
+    current = build_manifest(
+        str(tmp_path),
+        target_stage="publish_ready",
+        required=["generation_reference_preflight"],
+    )
+    gate = next(g for g in current["gates"] if g["category"] == "generation_reference_preflight")
+    assert gate["status"] == "ready"
+
+    monkeypatch.setattr(
+        generation_reference_preflight,
+        "verify_report",
+        lambda _report, project_dir=".": {
+            "status": "blocked",
+            "summary": {"blocking": 1, "warnings": 0},
+        },
+    )
+    stale = build_manifest(str(tmp_path), target_stage="publish_ready")
+    gate = next(g for g in stale["gates"] if g["category"] == "generation_reference_preflight")
+    assert gate["status"] == "blocked"
+    assert "generation_reference_preflight" in stale["blocked_gates"]
 
 
 def test_sequence_handoff_is_live_verified_and_can_be_required(tmp_path, monkeypatch):

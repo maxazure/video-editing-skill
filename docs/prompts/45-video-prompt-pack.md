@@ -13,6 +13,7 @@
 - 想在执行 paid video generation 前，用 `--strict` 拦住未审批任务。
 - 已经有经人工批准的 `generation_lessons.json`，想按 provider/model/category 把少量复盘经验带回下一次提示词。
 - 需要用带日期的 `provider_capabilities.json` 约束当前 UI/API 的 mode、时长、画幅、分辨率和参考上限。
+- 需要把共享 style image 自动路由成 `reference_to_video`，再交给多模态 reference 门禁绑定图片、视频和音频。
 - 已审核 `sequence_handoff.json`，需要把相邻镜头的 receive-in / handoff-out、剪辑类型、轴线方向、音频桥和 edit handles 写进最终 prompt。
 
 ## 命令
@@ -61,6 +62,9 @@ python3 scripts/video_prompt_pack.py \
 | `dreamina_video` | `dreamina_seedance` | 标记 `approval_required`，提交前确认 credits |
 | `codex_imagegen` | `codex_imagegen` | 先用 Codex `image_gen` 做静态参考图 |
 | `codex_imagegen + --animate-stills` | `dreamina_seedance` `image_to_video` | 把参考图转成视频生成提示词 |
+| generated-video provider + `--style-reference` | `reference_to_video` | 没有逐镜首帧时，共享 style reference 触发语义参考模式 |
+| `--mode reference_to_video` | 指定 provider | 使用图片/视频/音频做语义参考；提交前运行 `generation_reference_preflight.py` |
+| `--mode video_edit/video_extension/clip_stitching` | 指定 provider | 显式声明编辑、延长或拼接模式；仍以 exact surface capability profile 为准 |
 | `remotion_hyperframes` | `remotion_hyperframes` | 本地动效 brief，不需要 provider credits |
 | `media_library_broll` | `media_library_broll` | 本地素材搜索 query，不生成 |
 | `--provider veo/ltx/wan/sora` | 指定 provider | 同一分镜可导出不同模型提示词 |
@@ -86,6 +90,8 @@ python3 scripts/video_prompt_pack.py \
 - `summary.blocking`：未审批 paid video generation + capability blockers；`pipeline_manifest.py` 会读取它作为 gate。
 
 `pipeline_manifest.py` 还会用当前 `provider_capabilities.json` 重算 bundle/profile id 与每个 shot 的 capability issues；替换 profile 内容后必须重新生成 prompt pack，不能只手改旧 summary。
+
+当 prompt pack 使用 `reference_to_video / video_edit / video_extension / clip_stitching` 时，继续运行 [122-Generation Reference Preflight](122-generation-reference-preflight.md)。它会把实际提交的图片、视频、音频顺序、角色、排除项、完整解码结果和 provider 限额绑定到新的 live report；prompt pack 本身不探测这些外部 reference 文件。
 
 ## 推荐流程
 
@@ -149,6 +155,20 @@ python3 scripts/reference_frame_preflight.py \
   --require-style-reference \
   --strict
 
+# 5b. 语义/编辑类多模态 references：生成 manifest，填写后做完整解码与限额检查
+python3 scripts/generation_reference_preflight.py template \
+  --project-dir . \
+  --prompt-pack work/video_prompt_pack.json \
+  --output work/generation_references.json
+python3 scripts/generation_reference_preflight.py analyze \
+  --project-dir . \
+  --prompt-pack work/video_prompt_pack.json \
+  --references work/generation_references.json \
+  --capability-profile work/provider_capabilities.json \
+  --output work/generation_reference_preflight.json \
+  --markdown work/generation_reference_preflight.md \
+  --strict
+
 # 6. 生成视频落盘后，回到素材预检
 python3 scripts/storyboard_assets.py \
   --storyboard-plan work/storyboard_plan.json \
@@ -164,6 +184,7 @@ python3 scripts/storyboard_assets.py \
 - 默认小批量、逐 shot 审批，避免无意消耗 Dreamina/即梦或其他 provider credits。
 - 先用 Codex `image_gen` 做角色/风格/首帧参考，再进入 image-to-video，减少人物和品牌漂移。
 - 共享 style key 必须在所有生成 shot 中保持同一路径；提交前用 `reference_frame_preflight.py` 检查画幅和背景。
+- 多模态 reference 必须逐份填写一个窄角色和明确排除项，按 ready 报告里的 `@ImageN / @VideoN / @AudioN` 顺序提交；不要只靠文件名或自由文本猜绑定关系。
 - 经验库必须先经 `generation_lessons.py verify`；未传 `--lesson-model` 时只用 provider-wide 经验，默认每个 shot 最多 3 条，避免历史规则淹没当前创意意图。
 - provider 能力必须绑定 exact surface/model 和核验日期；profile 默认超过 30 天即失效，不能把一个 UI/API 的限制搬到另一个入口。完整 schema 与边界见 [96-Provider Capability Profile](96-provider-capability.md)。
 - `--sequence-handoff` 只接受无 blocker 且现场验证通过的报告；它把审核内容写进 prompt，最终效果仍要经过逐片和跨镜头复核。完整流程见 [120-Sequence Handoff](120-sequence-handoff.md)。

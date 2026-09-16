@@ -45,6 +45,29 @@
           "videos": 0,
           "audio": 1
         },
+        "reference_media": {
+          "frame_reference_exclusive": true,
+          "audio_only": false,
+          "total_files": 3,
+          "images": {
+            "extensions": [".png", ".jpg"],
+            "max_bytes": 30000000
+          },
+          "videos": {
+            "extensions": [".mp4", ".mov"],
+            "max_bytes": 200000000,
+            "min_seconds": 2,
+            "max_seconds": 15,
+            "max_total_seconds": 15
+          },
+          "audio": {
+            "extensions": [".wav", ".mp3"],
+            "max_bytes": 15000000,
+            "min_seconds": 2,
+            "max_seconds": 15,
+            "max_total_seconds": 15
+          }
+        },
         "audio": {
           "generate": true,
           "reference": true,
@@ -62,6 +85,8 @@
 - 固定档位：`{"kind":"fixed","values_seconds":[5,10]}`
 
 `audio.generate/reference/preserve_source` 只能是 `true`、`false` 或 `"unknown"`。未知就明确写 unknown，不要把“视频有音轨”误写成“provider 能保留源音频”。
+
+`reference_media` 是可选 schema；一旦要提交多模态 references，应按当前 surface 的证据填写。`frame_reference_exclusive` 与 `audio_only` 也只能是 `true`、`false` 或 `"unknown"`；`generation_reference_preflight.py` 会把未知的必要约束视为 blocker，不会把别的 surface 或模型上限搬过来。
 
 来源类型：`official_documentation`、`official_model_card`、`official_ui`、`provider_support`、`first_party_test`、`community`。只有 community 证据时允许继续研究，但验证结果会保留 warning；不能把它写成官方能力。
 
@@ -99,6 +124,7 @@ python3 scripts/video_prompt_pack.py \
 - profile 无效或超过 freshness 上限；
 - mode、画幅、时长、分辨率不在 profile 中；
 - 首帧 + style key 的图片引用数量超过 profile 上限；
+- 多模态 reference 的类型、扩展名、字节、单条/总时长、每类/总数量、audio-only 或 frame/reference 互斥不符合 `reference_media`；
 - 开启 capability gate 但没有明确选择 resolution。
 
 `summary.blocking` 同时包含 paid approval 和 capability blockers，所以 `--strict` 只有在两类问题都清零后才通过。

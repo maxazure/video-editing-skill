@@ -2,7 +2,7 @@
 
 这是一个面向 **口播、教程、访谈、播客切片、录屏演示 / facecam demo** 的 AI 视频剪辑生产线：给它原始口播音频/视频、transcript、B-roll、摄像头小窗或素材目录，它可以把“还没整理的素材”推进到 **可发布的小红书 / 抖音 / 视频号短视频**。
 
-它提供一条完整工作流：**项目启动/素材导入 → 本机工具链能力预检 → 交错/telecine 检测与逐行工作副本 → 手机/录屏 VFR 时基归一 → 静音首尾黑场裁切与边界复核 → 短素材循环填满固定时长与接缝复核 → 多源片段归一拼接与全接缝复核 → 个人/品牌剪辑风格 → 生产授权 → 手持防抖 / 绿蓝幕换背景 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → 分镜静帧时长预演 → 生成前逐镜接力与剪辑边界审核 → B-roll/生图/生成视频规划 → 生成片有效运动窗口 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp / 关键帧 freeze-punch / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 锁定视觉 EDL 后重建最终声音分镜 → 最终旁白逐短语响度门禁 → 渲染前预检 / 真实画面字幕样式选择 / 字幕逐字符字体覆盖 → 单次编码渲染 → 质检 / 最终音视频轨覆盖 / 最终成片字幕像素复核 / 字幕与独立人声对齐 / 声道完整性 / 短促音频掉点 / 闪烁风险 / 单帧瞬态伪影筛查 / 最终成片唇形复核 → 多平台导出 / 目标大小交付编码 / 重编码画质损失门禁 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
+它提供一条完整工作流：**项目启动/素材导入 → 本机工具链能力预检 → 交错/telecine 检测与逐行工作副本 → 手机/录屏 VFR 时基归一 → 静音首尾黑场裁切与边界复核 → 短素材循环填满固定时长与接缝复核 → 多源片段归一拼接与全接缝复核 → 个人/品牌剪辑风格 → 生产授权 → 手持防抖 / 绿蓝幕换背景 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → 分镜静帧时长预演 → 生成前逐镜接力与剪辑边界审核 → B-roll/生图/生成视频规划 → 图片/视频/音频生成参考素材预检与角色绑定 → 生成片有效运动窗口 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp / 关键帧 freeze-punch / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 锁定视觉 EDL 后重建最终声音分镜 → 最终旁白逐短语响度门禁 → 渲染前预检 / 真实画面字幕样式选择 / 字幕逐字符字体覆盖 → 单次编码渲染 → 质检 / 最终音视频轨覆盖 / 最终成片字幕像素复核 / 字幕与独立人声对齐 / 声道完整性 / 短促音频掉点 / 闪烁风险 / 单帧瞬态伪影筛查 / 最终成片唇形复核 → 多平台导出 / 目标大小交付编码 / 重编码画质损失门禁 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
 
 ## 适合做什么
 
@@ -33,6 +33,7 @@
 - **个人/品牌剪辑偏好可跨项目复用**：`edit_style_profile.py` 把创意方向、节奏、受控渲染默认值、封面风格、标题拼写与发布时段存成无本地路径的 profile；`render_final.py` / `generate_caption.py` / `cover_variants.py` 直接消费它，项目 config 和 CLI 始终优先。
 - **生成式素材有明确审批和台账**：Codex `image_gen` / GPT Image 2 提示词、Dreamina/Veo/LTX/Wan/Sora 视频提示词、provider 决策、`submit_id` 轮询下载和本地落盘 gate 都先记录再执行。
 - **生成 provider 参数先绑定具体入口再使用**：`provider_capability.py` 把 provider、UI/API surface、model、核验日期、证据和 mode/画幅/时长/分辨率/参考上限落成 profile；`video_prompt_pack.py` 会拒绝缺失、过期或设置越界的 profile。
+- **多模态生成参考素材先解码、限额和绑定角色**：`generation_reference_preflight.py` 把本地图片/视频/音频按 provider 顺序标成 `@ImageN / @VideoN / @AudioN`，要求每份素材只有明确角色与排除项；同时检查类型、扩展名、字节、单条/合计时长、数量、audio-only、frame/reference 互斥和 live profile/source 漂移。
 - **多镜头生成前先逐边界设计接力**：`sequence_handoff.py` 把上一镜 offer、下一镜 receive、载体、edit type、180° 轴、屏幕方向、音频桥、头尾 handles、风险和 fallback 绑定到确切 storyboard；审核通过后 `video_prompt_pack.py` 会把双向接力合同写进对应 provider prompt。
 - **付费生成前先按真实时长看完整分镜**：`storyboard_animatic.py` 把 `storyboard_plan.v1`、每镜一张静帧和可选旁白绑定成带 shot/time 标签的 CFR MP4；完整 1× 检查顺序、节奏、可读性、连续性和音画对齐后才放行，分镜、panel、音频或输出漂移会让旧 review 失效。
 - **生成视频不会从冻帧起步**：`generated_motion_window.py` 以 0.25 秒 full-frame freeze evidence 找出 active intervals；人工确认 trim/keep/reject 后才生成新的 H.264/AAC 工作副本，source、检测参数、决定和输出字节都会 live verify。
@@ -238,6 +239,8 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    │                            角色/品牌/style lock / paid approval + capability gate
    ├─→ reference_frame_preflight.py
    │                            首帧/style key 尺寸/方向/画幅/透明背景 gate
+   ├─→ generation_reference_preflight.py
+   │                            图片/视频/音频类型/限额/角色/@标签 / source-bound live gate
    │
    ├─→ generation_task_log.py   异步生成任务台账
    │                            submit_id / 轮询 / 下载 / 本地落盘 gate
@@ -1094,7 +1097,7 @@ python3 scripts/final_audio_storyboard.py verify \
 response 固定 `single_track / sectioned_tracks / stems` 策略、跨段 tone、最终时间线 section、voice ledger、stem 类型和原生声音保留理由。每个删掉的 beat 必须标成 `remove / rewrite_into_adjacent / offscreen_bridge`；重复 voiced line、漏填段落、时间字段手改、EDL/storyboard/source/response/report 漂移都会 fail closed。脚本不生成音频、不消费 credits，也不把 JSON 冒充 provider prompt；批准后仍应按目标音频工具的规则改写成 timed cue sheet。`pipeline_manifest.py --require final_audio_storyboard --strict` 可设为发布门禁。
 
 ### 🎞️ Storyboard Plan — 分镜、时长预演、镜头接力与生成路由
-[`scripts/storyboard_plan.py`](scripts/storyboard_plan.py) · [`scripts/storyboard_animatic.py`](scripts/storyboard_animatic.py) · [`scripts/sequence_handoff.py`](scripts/sequence_handoff.py) · [`scripts/video_prompt_pack.py`](scripts/video_prompt_pack.py) · [`scripts/storyboard_assets.py`](scripts/storyboard_assets.py) · [分镜文档](docs/prompts/24-storyboard-plan.md) · [时长预演文档](docs/prompts/121-storyboard-animatic.md) · [镜头接力文档](docs/prompts/120-sequence-handoff.md) · [视频提示词包文档](docs/prompts/45-video-prompt-pack.md) · [素材清单文档](docs/prompts/25-storyboard-assets.md)
+[`scripts/storyboard_plan.py`](scripts/storyboard_plan.py) · [`scripts/storyboard_animatic.py`](scripts/storyboard_animatic.py) · [`scripts/sequence_handoff.py`](scripts/sequence_handoff.py) · [`scripts/video_prompt_pack.py`](scripts/video_prompt_pack.py) · [`scripts/generation_reference_preflight.py`](scripts/generation_reference_preflight.py) · [`scripts/storyboard_assets.py`](scripts/storyboard_assets.py) · [分镜文档](docs/prompts/24-storyboard-plan.md) · [时长预演文档](docs/prompts/121-storyboard-animatic.md) · [镜头接力文档](docs/prompts/120-sequence-handoff.md) · [视频提示词包文档](docs/prompts/45-video-prompt-pack.md) · [多模态参考门禁文档](docs/prompts/122-generation-reference-preflight.md) · [素材清单文档](docs/prompts/25-storyboard-assets.md)
 
 借鉴 GitHub 上视频生成类项目的 storyboard / shot continuity / provider routing 思路，但保持本项目的轻量原则：脚本只做本地规划，不提交任何付费生成任务。
 
@@ -1108,6 +1111,7 @@ response 固定 `single_track / sectioned_tracks / stems` 策略、跨段 tone�
 | `sequence_handoff.json` | 每个相邻 shot 的 offer/receive、载体、edit type、轴线/方向、音频桥、edit handles、风险、fallback 与 source-bound review |
 | `video_prompt_pack.json` | 每个 shot 的 Dreamina/即梦 Seedance、Veo、LTX、Wan、Sora 提示词、接力合同、参考图路径、负面提示词和审批状态 |
 | `reference_frame_preflight.json` | image-to-video 首帧和共享 style key 的存在性、解码、尺寸、方向、画幅、透明背景 gate |
+| `generation_reference_preflight.json` | 图片/视频/音频 references 的有序标签、窄角色、排除项、媒体探测、provider 限额、source/profile 绑定与提交 prompt |
 | `storyboard_assets.json` | 每个 shot 对应素材是否 ready、需要生成/审批/渲染/搜索；B-roll 可带 `candidate_scores` 排名理由 |
 
 常用：
@@ -1150,6 +1154,20 @@ python3 scripts/video_prompt_pack.py \
   --markdown work/video_prompt_pack.md \
   --strict
 
+# 多模态 reference 模式：先生成并填写 manifest，再做本地完整解码与 provider 限额检查。
+python3 scripts/generation_reference_preflight.py template \
+  --project-dir . \
+  --prompt-pack work/video_prompt_pack.json \
+  --output work/generation_references.json
+python3 scripts/generation_reference_preflight.py analyze \
+  --project-dir . \
+  --prompt-pack work/video_prompt_pack.json \
+  --references work/generation_references.json \
+  --capability-profile work/provider_capabilities.json \
+  --output work/generation_reference_preflight.json \
+  --markdown work/generation_reference_preflight.md \
+  --strict
+
 python3 scripts/storyboard_assets.py \
   --storyboard-plan work/storyboard_plan.json \
   --asset-root work \
@@ -1174,7 +1192,7 @@ python3 scripts/provider_capability.py verify \
   --strict
 ```
 
-默认超过 30 天、未来日期、非法来源、重复 provider、无效 mode/duration/reference limit 都会阻塞；只有 community 来源时保留 warning，不冒充官方能力。脚本不联网、不访问 provider、不提交任务。`pipeline_manifest.py --require provider_capabilities --strict` 会现场重新验证 freshness。
+默认超过 30 天、未来日期、非法来源、重复 provider、无效 mode/duration/reference limit/reference media contract 都会阻塞；只有 community 来源时保留 warning，不冒充官方能力。多模态输入还应记录 `reference_media.frame_reference_exclusive / audio_only / total_files` 及三类媒体的扩展名、字节和时长限制。脚本不联网、不访问 provider、不提交任务。`pipeline_manifest.py --require provider_capabilities --strict` 会现场重新验证 freshness。
 
 ### 🎥 Video Prompt Pack — 视频生成提示词包
 [`scripts/video_prompt_pack.py`](scripts/video_prompt_pack.py) · [详细文档](docs/prompts/45-video-prompt-pack.md)
@@ -1223,6 +1241,34 @@ python3 scripts/reference_frame_preflight.py \
 ```
 
 脚本检查路径存在性、可解码性、尺寸、横竖方向、目标画幅、短边分辨率和透明背景。缺文件、损坏文件、横竖方向冲突或严重画幅冲突会写入 `summary.blocking` 并让 `--strict` 返回 2；低分辨率和透明背景写 warning 与修正建议。默认 20% 画幅容差会接受常见 1024×1536 → 9:16 参考工作流；需要临时改路径时可重复传 `--reference shot_001=/path/to/approved.png`。产物会被 `pipeline_manifest.py` 自动纳入 gate。
+
+### 🎛️ Generation Reference Preflight — 图片 / 视频 / 音频生成参考门禁
+[`scripts/generation_reference_preflight.py`](scripts/generation_reference_preflight.py) · [详细文档](docs/prompts/122-generation-reference-preflight.md)
+
+多模态 reference 要同时固定路径、顺序和用途。工具先从 prompt pack 建立逐 shot manifest，再要求每份实际提交素材填写 `kind / path / role / exclude`；列表顺序稳定映射为各类型的 `@ImageN / @VideoN / @AudioN`。`analyze` 会完整解码媒体并结合当前 surface 的 provider profile 检查类型、扩展名、字节、单条/总时长、每类/总数量、audio-only 支持和 exact frame/reference 互斥，最后输出可直接交接的有序素材清单与 `provider_prompt`。
+
+```bash
+python3 scripts/generation_reference_preflight.py template \
+  --project-dir . \
+  --prompt-pack work/video_prompt_pack.json \
+  --output work/generation_references.json
+
+# 填写 generation_references.json 后：
+python3 scripts/generation_reference_preflight.py analyze \
+  --project-dir . \
+  --prompt-pack work/video_prompt_pack.json \
+  --references work/generation_references.json \
+  --capability-profile work/provider_capabilities.json \
+  --output work/generation_reference_preflight.json \
+  --markdown work/generation_reference_preflight.md \
+  --strict
+python3 scripts/generation_reference_preflight.py verify \
+  --project-dir . \
+  --report work/generation_reference_preflight.json \
+  --strict
+```
+
+报告绑定 prompt pack、reference manifest、provider capability bundle 和每份 reference 的项目内路径、大小、SHA-256、媒体探测与完整解码结果。任一输入变化都会让旧报告失效。它不上传素材、不提交 provider、不判断权利或同意；外部上传、真人、品牌/IP 与付费生成继续使用 `production_authorization.py`。
 
 ### 🧾 Generation Task Log — 异步生成任务台账
 [`scripts/generation_task_log.py`](scripts/generation_task_log.py) · [详细文档](docs/prompts/46-generation-task-log.md)
@@ -3532,6 +3578,7 @@ pytest tests/test_cover_variants.py -v      # 多套封面 + 小图预览 + 发�
 pytest tests/test_imagegen_hint.py -v       # gpt-image-2 提示词检测
 pytest tests/test_storyboard_plan.py -v     # 分镜 shot cards + 生成路由
 pytest tests/test_storyboard_animatic.py -v # 分镜静帧 timed MP4 / 完整播放 review / source-bound live gate
+pytest tests/test_generation_reference_preflight.py -v # 多模态生成 reference 类型/限额/角色/prompt/source-bound live gate
 pytest tests/test_sequence_handoff.py -v   # 逐镜接力 / edit boundary / 轴线方向 / source-bound live gate
 pytest tests/test_video_prompt_pack.py -v   # 视频生成提示词包 + 审批 gate
 pytest tests/test_provider_capability.py -v # provider/surface/model 能力、freshness 和设置上限 gate
@@ -3574,6 +3621,22 @@ pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 pytest tests/test_review_dashboard.py -v    # 静态人工复核面板 + gate queue
 pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 gate
 ```
+
+### 2026-09-17 自动化升级记录（Source-bound Multimodal Generation References）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`bytedance/agentkit-samples` 的 Seedance video generate skill](https://github.com/bytedance/agentkit-samples/blob/91d43108856530384375ba90fdad95ffcb7cac00/skills/byted-seedance-video-generate/SKILL.md) | 把 image/video/audio references 分类型计数，记录单段与合计时长，并明确 camera/audio controls；多模态输入先检查再提交 | 扩展本地 provider profile 的 `reference_media` 合同，逐类验证扩展名、字节、单条/总时长、每类/总数量、audio-only 与 frame/reference 互斥；不固化该项目随时间变化的具体上限 |
+| [`ChatCut-Inc/agent-plugin` 的 video-gen skill](https://github.com/ChatCut-Inc/agent-plugin/blob/539beb53498f546e8242dd941b0519f6a526d43d/codex/skills/video-gen/SKILL.md) 及 [Seedance 2 参考文档](https://github.com/ChatCut-Inc/agent-plugin/blob/539beb53498f546e8242dd941b0519f6a526d43d/codex/skills/video-gen/references/seedance2.md) | 不同 model/surface 的 frame mode、reference mode、素材种类和限制不能混用；prompt 用 `@ImageN / @VideoN / @AudioN` 指向确切输入 | 把 exact provider/surface/model、mode 和稳定标签写入 source-bound report；当前 profile 缺事实、过期或绑定改变就 fail closed |
+| [`lukasersil/seedance-25`](https://github.com/lukasersil/seedance-25/blob/aa5dfc56e89e35defab851164959bcdf2f43198d/SKILL.md) | 每份素材只分配一个主要职责，并明确不能继承的属性；过多、无标签 references 会降低可控性 | manifest 强制每份实际提交素材填写 `kind / path / role / exclude`，输出按 provider 顺序排列的 reference 清单和带 `REFERENCE ROLES` 的最终 prompt |
+
+新增/调整能力：新增 [`scripts/generation_reference_preflight.py`](scripts/generation_reference_preflight.py)、[`tests/test_generation_reference_preflight.py`](tests/test_generation_reference_preflight.py) 和 [`docs/prompts/122-generation-reference-preflight.md`](docs/prompts/122-generation-reference-preflight.md)，提供 `template → analyze → verify`。`template` 从已批准的 `video_prompt_pack.v1` 建立完整逐镜 manifest；`analyze` 对项目内图片、视频和音频执行 FFprobe 与完整 FFmpeg decode，分类型稳定编号，检查 role/exclude、extension、bytes、单条/合计 duration、每类/总数量、audio reference/audio-only、exact-frame/reference 模式互斥，以及 prompt pack/profile id/freshness。报告绑定 prompt pack、manifest、capability bundles 和全部 reference 的相对路径、大小、SHA-256、媒体探测与派生 provider prompt；任何输入或素材字节漂移都会在 `verify` 中阻塞。`provider_capability.py` 新增可选 `reference_media` schema，`video_prompt_pack.py` 支持 semantic/edit/extension/stitching modes，并在只有共享 style reference 时自动选 `reference_to_video`。`pipeline_manifest.py` 新增 live gate，`edit_brief_plan.py` 新增中英文多模态 reference 路由。SKILL、daily workflow、provider/prompt 文档和索引已同步。
+
+使用方式：先以 [Provider Capability Profile](docs/prompts/96-provider-capability.md) 记录当前 surface 的 reference 事实，再生成带 `--approved --require-capability-profile` 的 prompt pack。运行 `python3 scripts/generation_reference_preflight.py template --project-dir . --prompt-pack work/video_prompt_pack.json --output work/generation_references.json`，逐份填写 `kind / path / role / exclude`；随后运行 `analyze --references work/generation_references.json --capability-profile work/provider_capabilities.json --output work/generation_reference_preflight.json --markdown work/generation_reference_preflight.md --strict`。提交前使用 ready 报告中的有序素材和 `provider_prompt`，再执行 `verify --report work/generation_reference_preflight.json --strict`；发布流水线可加 `pipeline_manifest.py . --require generation_reference_preflight --strict`。脚本不上传素材、不调用 provider、不消耗 credits；权利、同意、品牌/IP 与付费范围继续由 `production_authorization.py` 管理。
+
+验证结果：新增 9 项 generation-reference 单元/CLI/真实媒体/防覆盖测试，并扩展 provider-capability、video-prompt-pack、edit-brief 和 pipeline-manifest 回归；定向 `.venv/bin/python -m pytest -q tests/test_generation_reference_preflight.py tests/test_provider_capability.py tests/test_video_prompt_pack.py tests/test_edit_brief_plan.py tests/test_pipeline_manifest.py` 通过 **193 passed in 4.10s**。真实 FFmpeg smoke 生成 `96×128 PNG + 2.4s H.264 MP4 + 2.4s 48kHz WAV`，完成 analyze → strict live verify，三份素材完整解码、标签顺序和 provider prompt 均通过；报告输出也拒绝覆盖或 hard-link 覆盖任何 bound media。全量 `.venv/bin/python -m pytest tests -q` 通过 **1273 passed in 33.02s**；`.venv/bin/python -m compileall -q scripts tests`、新脚本四组 help、相关 CLI help、Skill `quick_validate.py` 与 `git diff --check` 全部通过。
 
 ### 2026-09-16 自动化升级记录（Source-bound Storyboard Animatic + Full-playback Gate）
 
@@ -5090,6 +5153,7 @@ python3 scripts/pipeline_manifest.py . --require freeze_punch_plan --strict
 | **119** | **[Edge-black Trim](docs/prompts/119-black-edge-trim.md)** | **首尾黑场 + 静音覆盖 → CFR working copy、原片边界 proof 与 live gate** |
 | **120** | **[Sequence Handoff](docs/prompts/120-sequence-handoff.md)** | **生成前逐镜 receive/handoff、edit type、轴线方向、音频桥与 live gate** |
 | **121** | **[Storyboard Animatic](docs/prompts/121-storyboard-animatic.md)** | **分镜静帧 + 可选旁白 → timed MP4、完整 1× 复核与 live gate** |
+| **122** | **[Generation Reference Preflight](docs/prompts/122-generation-reference-preflight.md)** | **图片/视频/音频 reference 解码、限额、角色/@标签与 live gate** |
 | **62** | **[Hook Variants](docs/prompts/62-hook-variants.md)** | **同一视频批量生成前三秒 hook 角度** |
 | **67** | **[Speech Continuity QA](docs/prompts/67-speech-continuity-qa.md)** | **成片二次 ASR 检查复读、近重复 take 和句内口吃** |
 | **68** | **[Cover Variants](docs/prompts/68-cover-variants.md)** | **多套封面、feed-size 预览、标题协同和最终选择** |
@@ -5169,6 +5233,7 @@ scripts/
 ├── sequence_handoff.py         生成前逐镜接力 / edit boundary / 轴线方向 live gate [V3]
 ├── video_prompt_pack.py        多模型视频生成提示词包 + 审批 gate  [V3]
 ├── reference_frame_preflight.py 首帧/style key 画幅与背景预检 gate [V3]
+├── generation_reference_preflight.py 图片/视频/音频 reference 解码/限额/角色绑定 live gate [V3]
 ├── generation_task_log.py      异步生成任务台账 + 下载 gate         [V3]
 ├── generated_clip_review.py    source-bound 生成片段评分/裁切/重生 gate [V3]
 ├── generated_motion_window.py  生成片 full-frame 冻帧 / active interval / trim live gate [V3]

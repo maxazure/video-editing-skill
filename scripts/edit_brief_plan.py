@@ -378,6 +378,23 @@ SIGNAL_KEYWORDS: Mapping[str, Sequence[str]] = {
         "生成参数上限",
         "参考素材上限",
     ),
+    "generation_references": (
+        "multimodal generation reference",
+        "multimodal references",
+        "reference-guided generation",
+        "reference video generation",
+        "reference audio generation",
+        "refimages",
+        "refvideos",
+        "refaudios",
+        "多模态参考生成",
+        "多模态参考素材",
+        "参考图参考视频参考音频",
+        "参考视频生成",
+        "参考音频生成",
+        "图片视频音频参考",
+        "生成参考素材预检",
+    ),
     "generation_lessons": (
         "generation lessons",
         "generation lesson",
@@ -776,6 +793,7 @@ SIGNAL_LABELS: Mapping[str, str] = {
     "generated_assets": "生成式图片 / 视频素材",
     "storyboard_animatic": "分镜静帧按真实时长预演 / 人工门禁",
     "provider_capabilities": "生成 provider / UI / API 能力核验",
+    "generation_references": "生成图片 / 视频 / 音频参考素材预检",
     "generation_lessons": "生成视频复核经验库",
     "sequence_continuity": "生成视频跨镜头连续性复核",
     "sequence_handoff": "生成前镜头接力 / 剪辑边界设计",
@@ -1013,6 +1031,8 @@ def build_plan(
     platforms = detect_platforms(normalized, platform)
     signals = detect_signals(normalized, platforms)
     ids = _signal_ids(signals)
+    if "generation_references" in ids:
+        ids.update({"generated_assets", "provider_capabilities"})
     primary_platform = platforms[0]
     source_input = source_media or "<source_media>"
     post_interlace_source = "work/source-progressive.mp4" if "interlace_conform" in ids else source_input
@@ -2018,6 +2038,8 @@ def build_plan(
             "work/video_prompt_pack.md",
             "--strict",
         ]
+        if "generation_references" in ids:
+            prompt_pack_command.extend(["--mode", "reference_to_video"])
         if "generation_lessons" in ids:
             prompt_pack_command.extend(["--lesson-library", "work/generation_lessons.json"])
         if "provider_capabilities" in ids:
@@ -2150,6 +2172,73 @@ def build_plan(
                 gate_category="video_prompt_pack",
             ),
         )
+
+        if "generation_references" in ids:
+            _add_step(
+                steps,
+                seen,
+                _step(
+                    "generation_reference_template",
+                    phase="assets",
+                    script="generation_reference_preflight.py",
+                    label="Create the shot-indexed multimodal reference manifest",
+                    reason="Every submitted image, video, and audio reference needs a stable order plus one narrow role and explicit exclusions.",
+                    command=shell(
+                        [
+                            python_bin,
+                            "scripts/generation_reference_preflight.py",
+                            "template",
+                            "--project-dir",
+                            project_dir,
+                            "--prompt-pack",
+                            "work/video_prompt_pack.json",
+                            "--output",
+                            "work/generation_references.json",
+                        ]
+                    ),
+                    outputs=["work/generation_references.json"],
+                    gate_category="generation_reference_preflight",
+                ),
+            )
+            _add_step(
+                steps,
+                seen,
+                _step(
+                    "generation_reference_preflight",
+                    phase="assets",
+                    script="generation_reference_preflight.py",
+                    label="Decode and verify multimodal generation references",
+                    reason="Provider submission needs live checks for media type, count, bytes, duration, mode exclusivity, and @Image/@Video/@Audio role binding.",
+                    command=shell(
+                        [
+                            python_bin,
+                            "scripts/generation_reference_preflight.py",
+                            "analyze",
+                            "--project-dir",
+                            project_dir,
+                            "--prompt-pack",
+                            "work/video_prompt_pack.json",
+                            "--references",
+                            "work/generation_references.json",
+                            "--capability-profile",
+                            "work/provider_capabilities.json",
+                            "--output",
+                            "work/generation_reference_preflight.json",
+                            "--markdown",
+                            "work/generation_reference_preflight.md",
+                            "--strict",
+                        ]
+                    ),
+                    outputs=[
+                        "work/generation_reference_preflight.json",
+                        "work/generation_reference_preflight.md",
+                    ],
+                    gate_category="generation_reference_preflight",
+                ),
+            )
+            notes.append(
+                "Fill generation_references.json with the exact local files in provider order. Every row needs kind, path, one narrow role, and explicit excluded properties. Submit with the bound provider_prompt from the ready preflight report."
+            )
 
         _add_step(
             steps,

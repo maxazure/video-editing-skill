@@ -313,6 +313,16 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         blocks_when_present=True,
     ),
     ArtifactDef(
+        "generation_reference_preflight",
+        "Generation Reference Preflight",
+        (
+            "**/generation_reference_preflight.json",
+            "**/*_generation_reference_preflight.json",
+        ),
+        "Run generation_reference_preflight.py verify; repair stale, mistyped, over-limit, or ambiguously scoped provider references before submission.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "provider_decision",
         "Provider Decision",
         ("**/provider_decision.json", "**/*_provider_decision.json"),
@@ -1910,6 +1920,41 @@ def evaluate_category(
             "next_action": definition.next_action if status in {"missing", "blocked", "warn"} else "",
         }
 
+    if definition.category == "generation_reference_preflight":
+        from generation_reference_preflight import verify_report
+
+        for artifact in artifacts:
+            try:
+                verification = verify_report(
+                    artifact.path,
+                    project_dir=str(project_dir) if project_dir is not None else ".",
+                )
+            except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+                status = "blocked"
+                notes.append(f"generation reference live verification failed: {exc}")
+                continue
+            blocking = _int_at(verification, "summary", "blocking")
+            warnings = _int_at(verification, "summary", "warnings")
+            if blocking:
+                status = "blocked"
+                notes.append(
+                    f"invalid or stale generation references {artifact.path}: {blocking} blocking item(s)"
+                )
+            elif warnings:
+                status = "warn" if status != "blocked" else status
+                notes.append(
+                    f"generation references need review {artifact.path}: {warnings} warning(s)"
+                )
+        return {
+            "category": definition.category,
+            "label": definition.label,
+            "status": status,
+            "artifact_count": len(artifacts),
+            "latest_path": artifacts[0].path,
+            "notes": sorted(set(notes)),
+            "next_action": definition.next_action if status in {"missing", "blocked", "warn"} else "",
+        }
+
     if definition.category == "video_prompt_pack":
         from video_prompt_pack import verify_prompt_pack
 
@@ -2371,6 +2416,7 @@ def evaluate_category(
             "storyboard_assets",
             "video_prompt_pack",
             "reference_frame_preflight",
+            "generation_reference_preflight",
             "generation_task_log",
             "transition_bridge",
             "motion_guard",

@@ -86,6 +86,54 @@ def _string_list(value: Any) -> Optional[List[str]]:
     return items
 
 
+def _validate_reference_media(value: Any) -> List[str]:
+    """Validate optional local-reference constraints captured from one surface."""
+    if value is None:
+        return []
+    if not isinstance(value, Mapping):
+        return ["invalid_reference_media"]
+
+    blockers: List[str] = []
+    for control in ("frame_reference_exclusive", "audio_only"):
+        if value.get(control) not in TRISTATE:
+            blockers.append(f"invalid_reference_media_control:{control}")
+
+    total_files = value.get("total_files")
+    if not isinstance(total_files, int) or isinstance(total_files, bool) or total_files < 0:
+        blockers.append("invalid_reference_media_total_files")
+
+    for media_type in ("images", "videos", "audio"):
+        rules = value.get(media_type)
+        if rules is None:
+            continue
+        if not isinstance(rules, Mapping):
+            blockers.append(f"invalid_reference_media_rules:{media_type}")
+            continue
+
+        extensions = _string_list(rules.get("extensions"))
+        if extensions is None or any(not item.startswith(".") for item in extensions):
+            blockers.append(f"invalid_reference_extensions:{media_type}")
+
+        max_bytes = rules.get("max_bytes")
+        if not isinstance(max_bytes, int) or isinstance(max_bytes, bool) or max_bytes <= 0:
+            blockers.append(f"invalid_reference_max_bytes:{media_type}")
+
+        if media_type == "images":
+            continue
+        minimum = rules.get("min_seconds")
+        maximum = rules.get("max_seconds")
+        total = rules.get("max_total_seconds")
+        if not (_is_number(minimum) and _is_number(maximum) and _is_number(total)):
+            blockers.append(f"invalid_reference_duration_rules:{media_type}")
+        elif (
+            float(minimum) <= 0
+            or float(maximum) < float(minimum)
+            or float(total) < float(minimum)
+        ):
+            blockers.append(f"invalid_reference_duration_rules:{media_type}")
+    return blockers
+
+
 def verify_profile(
     profile: Mapping[str, Any],
     *,
@@ -203,6 +251,8 @@ def verify_profile(
             for control in ("generate", "reference", "preserve_source"):
                 if audio.get(control) not in TRISTATE:
                     blockers.append(f"invalid_audio_control:{control}")
+
+        blockers.extend(_validate_reference_media(capabilities.get("reference_media")))
 
     expected_id = _profile_id(profile)
     stored_id = str(profile.get("profile_id") or "").strip()

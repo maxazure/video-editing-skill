@@ -41,6 +41,26 @@ def capability_bundle(*, verified_at="2026-08-21", source_type="official_documen
                         "max_seconds": 8,
                     },
                     "reference_limits": {"images": 2, "videos": 0, "audio": 1},
+                    "reference_media": {
+                        "frame_reference_exclusive": True,
+                        "audio_only": False,
+                        "total_files": 3,
+                        "images": {"extensions": [".png", ".jpg"], "max_bytes": 30000000},
+                        "videos": {
+                            "extensions": [".mp4", ".mov"],
+                            "max_bytes": 200000000,
+                            "min_seconds": 2,
+                            "max_seconds": 15,
+                            "max_total_seconds": 15,
+                        },
+                        "audio": {
+                            "extensions": [".wav", ".mp3"],
+                            "max_bytes": 15000000,
+                            "min_seconds": 2,
+                            "max_seconds": 15,
+                            "max_total_seconds": 15,
+                        },
+                    },
                     "audio": {
                         "generate": True,
                         "reference": True,
@@ -134,6 +154,32 @@ def test_fixed_duration_profile_accepts_only_declared_values():
 
     assert report["status"] == "ready"
     assert issues == ["unsupported_duration:5"]
+
+
+def test_reference_media_contract_rejects_invalid_controls_and_duration_rules():
+    bundle = capability_bundle()
+    contract = bundle["profiles"][0]["capabilities"]["reference_media"]
+    contract["frame_reference_exclusive"] = "maybe"
+    contract["videos"]["max_total_seconds"] = 1
+
+    report = verify_bundle(bundle, today=date(2026, 8, 21))
+
+    assert report["status"] == "blocked"
+    assert "dreamina_seedance:invalid_reference_media_control:frame_reference_exclusive" in report["blockers"]
+    assert "dreamina_seedance:invalid_reference_duration_rules:videos" in report["blockers"]
+
+
+def test_reference_media_contract_requires_total_and_byte_limits():
+    bundle = capability_bundle()
+    contract = bundle["profiles"][0]["capabilities"]["reference_media"]
+    contract.pop("total_files")
+    contract["audio"].pop("max_bytes")
+
+    report = verify_bundle(bundle, today=date(2026, 8, 21))
+
+    assert report["status"] == "blocked"
+    assert "dreamina_seedance:invalid_reference_media_total_files" in report["blockers"]
+    assert "dreamina_seedance:invalid_reference_max_bytes:audio" in report["blockers"]
 
 
 def test_cli_verifies_bundle_and_writes_reports(tmp_path):

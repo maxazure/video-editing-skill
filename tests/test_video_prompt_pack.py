@@ -70,7 +70,7 @@ def _capability_bundle():
                     }
                 ],
                 "capabilities": {
-                    "modes": ["text_to_video", "image_to_video"],
+                    "modes": ["text_to_video", "image_to_video", "reference_to_video"],
                     "aspect_ratios": ["9:16", "16:9"],
                     "resolutions": ["720p"],
                     "duration": {"kind": "range", "min_seconds": 2, "max_seconds": 8},
@@ -179,6 +179,24 @@ def test_provider_override_builds_veo_prompts_for_all_shots():
     assert all(item["provider"] == "veo" for item in pack["items"])
     assert all(item["duration_seconds"] <= 6 for item in pack["items"])
     assert "Create a" in pack["items"][0]["prompt"]
+
+
+def test_shared_style_reference_auto_selects_reference_mode(tmp_path):
+    style = tmp_path / "style.png"
+    style.write_bytes(b"style")
+    plan = build_storyboard_plan(_sample_transcript(), max_shots=2)
+    pack = build_video_prompt_pack(
+        plan,
+        provider="dreamina_seedance",
+        style_reference=str(style),
+        approved=True,
+        capability_bundles=[_capability_bundle()],
+        require_capability_profile=True,
+        resolution="720p",
+    )
+
+    assert all(item["mode"] == "reference_to_video" for item in pack["items"])
+    assert pack["summary"]["blocking"] == 0
 
 
 def test_reviewed_sequence_handoffs_enter_incoming_and_outgoing_prompts():

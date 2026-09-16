@@ -400,6 +400,22 @@
     # blocker 未清零时不要提交生成任务；本步骤不联网、不消耗 credits。
     # 详见 docs/prompts/71-reference-frame-preflight.md
 
+4e-2. # 如果使用图片 + 视频 + 音频多模态 reference，生成逐镜清单并做完整预检：
+    python3 scripts/generation_reference_preflight.py template \
+      --project-dir . \
+      --prompt-pack work/video_prompt_pack.json \
+      --output work/generation_references.json
+    # 填写每个 reference 的 kind/path/role/exclude，顺序就是各类型的 @ImageN/@VideoN/@AudioN。
+    python3 scripts/generation_reference_preflight.py analyze \
+      --project-dir . \
+      --prompt-pack work/video_prompt_pack.json \
+      --references work/generation_references.json \
+      --capability-profile work/provider_capabilities.json \
+      --output work/generation_reference_preflight.json \
+      --markdown work/generation_reference_preflight.md \
+      --strict
+    # 只使用 ready 报告中的有序素材和 provider_prompt；详见 docs/prompts/122-generation-reference-preflight.md。
+
 4f. # 如果已经提交 Dreamina/即梦或其他异步生成任务，保存 submit_id/task id 并跟踪下载：
     python3 scripts/generation_task_log.py add \
       --log work/generation_tasks.json \
