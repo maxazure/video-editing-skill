@@ -2,7 +2,7 @@
 
 这是一个面向 **口播、教程、访谈、播客切片、录屏演示 / facecam demo** 的 AI 视频剪辑生产线：给它原始口播音频/视频、transcript、B-roll、摄像头小窗或素材目录，它可以把“还没整理的素材”推进到 **可发布的小红书 / 抖音 / 视频号短视频**。
 
-它提供一条完整工作流：**项目启动/素材导入 → 本机工具链能力预检 → 交错/telecine 检测与逐行工作副本 → 手机/录屏 VFR 时基归一 → 静音首尾黑场裁切与边界复核 → 短素材循环填满固定时长与接缝复核 → 多源片段归一拼接与全接缝复核 → 个人/品牌剪辑风格 → 生产授权 → 手持防抖 / 绿蓝幕换背景 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → 分镜静帧时长预演 → 生成前逐镜接力与剪辑边界审核 → B-roll/生图/生成视频规划 → 图片/视频/音频生成参考素材预检与角色绑定 → 生成片有效运动窗口 → 字幕与声音设计 → BGM 卡点 / 局部 speed ramp / 关键帧 freeze-punch / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 锁定视觉 EDL 后重建最终声音分镜 → 最终旁白逐短语响度门禁 → 渲染前预检 / 真实画面字幕样式选择 / 字幕逐字符字体覆盖 → 单次编码渲染 → 质检 / 最终音视频轨覆盖 / 最终成片字幕像素复核 / 字幕与独立人声对齐 / 声道完整性 / 短促音频掉点 / 闪烁风险 / 单帧瞬态伪影筛查 / 最终成片唇形复核 → 多平台导出 / 目标大小交付编码 / 重编码画质损失门禁 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
+它提供一条完整工作流：**项目启动/素材导入 → 本机工具链能力预检 → 交错/telecine 检测与逐行工作副本 → 手机/录屏 VFR 时基归一 → 静音首尾黑场裁切与边界复核 → 短素材循环填满固定时长与接缝复核 → 多源片段归一拼接与全接缝复核 → 个人/品牌剪辑风格 → 生产授权 → 手持防抖 / 绿蓝幕换背景 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → 分镜静帧时长预演 → 生成前逐镜接力与剪辑边界审核 → B-roll/生图/生成视频规划 → 图片/视频/音频生成参考素材预检与角色绑定 → 生成片有效运动窗口 → 字幕与声音设计 → BGM/SFX cue 规划与 source-bound 音效单轨混音 → BGM 卡点 / 局部 speed ramp / 关键帧 freeze-punch / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 锁定视觉 EDL 后重建最终声音分镜 → 最终旁白逐短语响度门禁 → 渲染前预检 / 真实画面字幕样式选择 / 字幕逐字符字体覆盖 → 单次编码渲染 → 质检 / 最终音视频轨覆盖 / 最终成片字幕像素复核 / 字幕与独立人声对齐 / 声道完整性 / 短促音频掉点 / 闪烁风险 / 单帧瞬态伪影筛查 / 最终成片唇形复核 → 多平台导出 / 目标大小交付编码 / 重编码画质损失门禁 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
 
 ## 适合做什么
 
@@ -11,7 +11,7 @@
 - **噪声口播可在单次编码内保守清理**：`render_final.py --speech-denoise light|medium|strong` 会在变速、压缩、响度规范化和 BGM ducking 前处理低频震动与稳态底噪；默认关闭，最大降噪限制为 12 dB。
 - **停顿删段可同时看声音和画面**：`multimodal_dead_air.py` 只有在静帧覆盖静音达到门槛时才提出候选，实际只删二者交集；源 hash、20% 删除预算、切点复盘、单次编码和完整解码都进入 gate。
 - **多机位先同步再剪辑**：`multicam_sync.py` 把两台以上相机/手机/录音设备对齐到同一参考时间线，记录每路 offset、置信度、有效音轨、公共重叠区间，并可用多窗口 probe 测量长片时钟漂移；原片不改、不重编码。
-- **开始媒体工作前先证明本机能跑**：`runtime_preflight.py` 按 `media_io / core_edit / storyboard_animatic / captions / qa / edge_black_trim / hdr_sdr / stabilization / interlace / remotion` profile 检查命令版本、编码器和 FFmpeg filters；明确区分 missing 与 unknown，并让环境或报告漂移在 manifest 中失效。
+- **开始媒体工作前先证明本机能跑**：`runtime_preflight.py` 按 `media_io / core_edit / storyboard_animatic / audio_cue_mix / captions / qa / edge_black_trim / hdr_sdr / stabilization / interlace / remotion` profile 检查命令版本、编码器和 FFmpeg filters；明确区分 missing 与 unknown，并让环境或报告漂移在 manifest 中失效。
 - **旧电视 / DV 素材先分清 telecine 和真实交错**：`interlace_conform.py` 用 FFmpeg `idet` 多段采样；疑似 3:2 pulldown 会阻断直接去交错，真实 TFF/BFF 才能经 `bwdif` 或明确的 `yadif` fallback 生成逐行工作副本，并在完整 1× A/B 确认后放行。
 - **手机和录屏 VFR 可先变成可审计 CFR 工作副本**：`frame_rate_conform.py` 读取全部解码帧 PTS 间隔，绑定精确目标有理帧率；输出必须通过恒定 cadence、帧数、音画起止、显示方向、SHA-256 和完整解码验证，原片保持不变。
 - **片头片尾黑场会先核对声音再裁切**：`black_edge_trim.py` 只接受接触源时间线两端的 `blackdetect` 区间，默认要求实际移除范围至少 95% 被静音覆盖；保留视觉 padding，生成原片边界 proof 和新的 CFR 工作副本，完整 1× 视听确认后才放行。
@@ -24,6 +24,7 @@
 - **上传大小限制变成硬门禁**：`delivery_encode.py` 依据源片时长计算两遍 H.264/AAC 码率，绑定源与输出 SHA-256；完整解码、音视频契约或硬大小上限任一失败都不会提升成交付件。
 - **压缩后“能播放”不再等于“画质够用”**：`encode_quality_qa.py` 对同时间线、同构图的 master 与重编码衍生件做全长 SSIM/PSNR 比较，保存平均值、P05 低尾部和最差帧时间码；两条视频、媒体契约、阈值或现场复测漂移都会让报告失效。
 - **专业声画错位不再靠手写 FFmpeg**：`audio_transition.py` 对明确边界规划 J-cut/L-cut，验证真实音频 handle、config/transcript/source hash 和 compiled timing；`render_final.py` 在同一次编码中完成画面硬切、音频 pre-lap/overhang、字幕、overlay 与 BGM。
+- **音效 cue 可以落成一条可审母轨**：`audio_cue_mix.py` 把 `audio_cue_sheet.v1`、最终旁白和本地/程序化 SFX 绑定后输出 48 kHz stereo 单轨；完整解码与 1× 五项试听通过前保持阻塞，输入或输出漂移会让 review 失效。
 - **事实型内容有 proof deck**：新闻、数据、产品事实或来源页截图可用 `source_receipts.py` 生成 URL/截图复核包，作为发布前 gate。
 - **高影响动作先绑定确切授权范围**：`production_authorization.py` 把外部上传、侵入性重排/删除、付费生成、声音克隆、真人/未成年人/公众人物/品牌/IP 权利和发布决定绑定到具体素材 SHA-256、用途与 provider/surface；scope 或源字节变化会让旧授权失效。
 - **最终审批绑定到具体文件字节**：`approval_receipt.py` 为人工看过的视频、封面、文案、字幕和 QA 报告记录 SHA-256；任何重渲染、替换、删除或 symlink 漂移都会让旧审批过期并阻塞发布。
@@ -222,6 +223,7 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    │           Codex imagegen   注意力机制 / 复利 / 信息茧房 等自动配图
    │
    ├─→ audio_cue_sheet.py       transcript → BGM / SFX 音频设计清单
+   ├─→ audio_cue_mix.py         cue sheet + 最终旁白 → 本地/程序化 SFX 单轨 / 1× review gate
    │                            本地素材优先 / 生成审批 / pipeline gate
    │
    ├─→ storyboard_plan.py       transcript/clean_script → shot cards
@@ -694,7 +696,7 @@ python3 scripts/pipeline_manifest.py . \
   --require runtime_preflight --strict
 ```
 
-内置 profile 为 `media_io / core_edit / storyboard_animatic / captions / qa / edge_black_trim / hdr_sdr / stabilization / interlace / remotion`。`storyboard_animatic` 额外核对 panel scale/pad/crop、CFR、drawtext、concat、音频 trim/pad 和 H.264/AAC；`missing` 表示可解析清单明确缺组件；`unknown` 表示版本命令或 FFmpeg 清单失败、超时或无法解析，两者都 fail closed。防抖 profile 接受两遍 `vidstabdetect + vidstabtransform` 或明确的单遍 `deshake` fallback；交错处理要求 `idet`，并接受 `bwdif` 或 `yadif`；其他 profile 的必需项全部逐项核验。
+内置 profile 为 `media_io / core_edit / storyboard_animatic / audio_cue_mix / captions / qa / edge_black_trim / hdr_sdr / stabilization / interlace / remotion`。`storyboard_animatic` 额外核对 panel scale/pad/crop、CFR、drawtext、concat、音频 trim/pad 和 H.264/AAC；`audio_cue_mix` 核对本地 SFX 与合成音效所需的音频 source/filter、延迟混合、限幅和 PCM/AAC 编码能力；`missing` 表示可解析清单明确缺组件；`unknown` 表示版本命令或 FFmpeg 清单失败、超时或无法解析，两者都 fail closed。防抖 profile 接受两遍 `vidstabdetect + vidstabtransform` 或明确的单遍 `deshake` fallback；交错处理要求 `idet`，并接受 `bwdif` 或 `yadif`；其他 profile 的必需项全部逐项核验。
 
 报告绑定所选 profile、Python/FFmpeg/FFprobe/Node 相关版本、FFmpeg component listing 状态、逐能力结果、修复建议与 canonical `report_id`。`verify` 会在当前机器重跑，版本、组件或报告内容漂移后旧 artifact 立即失效。`edit_brief_plan.py` 默认把本步骤排在实际媒体工作前：只转写/抽流使用 `media_io`，渲染使用 `core_edit`，再按字幕、QA、HDR、防抖、交错、Remotion 意图追加 profile。
 
@@ -1064,6 +1066,49 @@ python3 scripts/audio_cue_sheet.py \
 ```
 
 也可给 `render_final.py` 加 `--bgm-ducking` 临时启用。它会用最终旁白轨触发 FFmpeg `sidechaincompress`，在说话时动态压低 BGM，在封面、停顿和片尾无旁白时恢复；默认 threshold `0.03`、ratio `8`、attack `20ms`、release `500ms`。旧配置默认关闭以保持兼容，配置已开启时可用 `--no-bgm-ducking` 覆盖。详细参数与试听检查见 [背景音乐、旁白 Ducking 和片尾](docs/prompts/09-bgm-endcard.md)。
+
+### Audio Cue Mix — 把 SFX cue 落成 source-bound 单轨
+
+[`scripts/audio_cue_mix.py`](scripts/audio_cue_mix.py) · [详细文档](docs/prompts/123-audio-cue-mix.md)
+
+`audio_cue_sheet.py` 负责规划，这一步负责实际混音。它绑定 cue sheet、最终独立旁白、本地音效和目标输出；缺少 `transition_whoosh / emphasis_ping / success_chime / warning_tick` 时，可显式使用 `--synthesize-missing` 走确定性 FFmpeg 配方。未知类别、素材丢失、cue 越过旁白末尾或非法增益都会阻塞。
+
+```bash
+python3 scripts/audio_cue_mix.py plan \
+  --project-dir . \
+  --cue-sheet work/audio_cue_sheet.json \
+  --voice work/final_narration.wav \
+  --delivery work/audio_cue_mix.wav \
+  --synthesize-missing \
+  --output work/audio_cue_mix.json \
+  --markdown work/audio_cue_mix.md
+
+python3 scripts/audio_cue_mix.py apply \
+  --plan work/audio_cue_mix.json \
+  --markdown work/audio_cue_mix.md
+
+python3 scripts/audio_cue_mix.py confirm \
+  --plan work/audio_cue_mix.json \
+  --reviewed-by editor \
+  --note "完整试听；音效落点和电平都不遮挡人声。" \
+  --full-playback completed \
+  --speech-intelligibility pass \
+  --cue-timing pass \
+  --sfx-level pass \
+  --creative-fit pass \
+  --clicks-or-clipping pass \
+  --markdown work/audio_cue_mix.md \
+  --strict
+
+python3 scripts/audio_cue_mix.py verify \
+  --plan work/audio_cue_mix.json \
+  --markdown work/audio_cue_mix.md \
+  --strict
+```
+
+每个音效会统一到 48 kHz stereo，按 cue trim/pad、短 fade、受限增益和毫秒级 `adelay` 进入时间线；`amix normalize=0` 不会因为音效数量增加而自动压低旁白，limiter 只做峰值保护。输出在完整解码后原子提升。必须正常速度听完整条旁白 + SFX，并确认人声清晰、落点、电平、创意适配和无 click/clipping；任何输入、计划、输出或 review 绑定漂移都会让 `pipeline_manifest.py --require audio_cue_mix --strict` 重新阻塞。
+
+这条单轨不含 BGM；音乐继续走现有 `render_final.py --bgm-ducking`。混入音乐后仍需完整 1× 看听成片，并运行最终响度、声道和掉点 QA。
 
 ### 🎚️ Final Audio Storyboard — 锁定视觉 EDL 后重建声音
 [`scripts/final_audio_storyboard.py`](scripts/final_audio_storyboard.py) · [详细文档](docs/prompts/95-final-audio-storyboard.md)
@@ -3602,6 +3647,7 @@ pytest tests/test_caption_speech_qa.py -v   # 字幕 cue / 独立人声活动覆
 pytest tests/test_srt_edit_plan.py -v       # SRT 编辑指令转 render_config/cut list
 pytest tests/test_script_alignment.py -v    # 目标稿 → 多 take 原话匹配 / choices / render_config
 pytest tests/test_audio_cue_sheet.py -v     # BGM/SFX 音频设计清单
+pytest tests/test_audio_cue_mix.py -v       # source-bound 旁白 + SFX 单轨 / 完整试听 live gate
 pytest tests/test_final_audio_storyboard.py -v # 锁定 EDL → 最终声音分镜 / voice ledger / live gate
 pytest tests/test_multicam_sync.py -v       # 多机位 offset / 最响音轨 / pairwise / 真实预览
 pytest tests/test_loop_fill.py -v           # 固定时长重复 / 首个真实接缝 proof / 完整审片 live gate
@@ -3621,6 +3667,22 @@ pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 pytest tests/test_review_dashboard.py -v    # 静态人工复核面板 + gate queue
 pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 gate
 ```
+
+### 2026-09-18 自动化升级记录（Source-bound Audio Cue Mix + Full-listen Gate）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`nopefallacy/vertical-video-editing-skills@8de3a87`](https://github.com/nopefallacy/vertical-video-editing-skills/blob/8de3a875a7856dba658027a8f64a6bdfe9800b9e/skills/video-editing/SKILL.md) | 用 FFmpeg `anoisesrc` / `sine` 生成轻量 SFX，再以 `adelay + amix normalize=0` 形成一条音频主轨；导出后继续做技术验证 | 为现有 audio cue sheet 增加确定性内置音效与单轨渲染，同时绑定旁白、cue sheet、本地素材、计划、输出和人工试听，避免生成成功就直接放行 |
+| [`tentenco/skills` 的 auto-clip workflow](https://github.com/tentenco/skills/blob/3bfb497adcc129ceda5826270c5950faab8a90f5/skills/content/codex-auto-clip-workflow/SKILL.md) | 缺素材时明确暴露缺口，并让使用者决定素材绑定，避免静默填入语义不匹配的替代项 | 默认要求每个 SFX cue 绑定项目内文件；只有显式传入 `--synthesize-missing` 且类别属于四种受支持短音效时才合成，未知类别继续阻塞 |
+| [`zhengxn1/auto-cut-skill@0391760`](https://github.com/zhengxn1/auto-cut-skill/blob/0391760c97708c4a70ca52e281f89a07bfbec374/SKILL.md) | 先把镜头、文案、素材和效果整理成可审表格，确认后再进入生成与剪辑 | 延续 `audio_cue_sheet.v1` 作为声音设计来源；计划先列出所有实际素材或 synthesis recipe，应用后要求完整 1× 五项听审，再由 live verifier 放行 |
+
+新增 [`scripts/audio_cue_mix.py`](scripts/audio_cue_mix.py)、[`tests/test_audio_cue_mix.py`](tests/test_audio_cue_mix.py) 和 [`docs/prompts/123-audio-cue-mix.md`](docs/prompts/123-audio-cue-mix.md)，提供 `plan → apply → confirm → verify` 闭环。`plan` 读取已审 cue sheet 与最终独立旁白，为每个 cue 绑定项目内音效的 SHA-256/媒体契约，或记录 `transition_whoosh / emphasis_ping / success_chime / warning_tick` 的固定 FFmpeg 合成配方；路径逃逸、symlink、输出碰撞、丢失素材、未知类别、非法增益和越过旁白末尾都会阻塞。`apply` 将输入统一成 48 kHz stereo，执行 trim/pad、短 fade、受限增益、毫秒延迟、`amix normalize=0` 与峰值限制，完整解码通过后才原子提升 WAV/M4A。`confirm` 要求完整 1× 播放，并逐项确认人声可懂度、cue 落点、SFX 电平、创意适配和 click/clipping；`verify` 现场重读全部输入和输出，任何字节、媒体合同、计划或 review 漂移都会失效。BGM 保持在 `render_final.py --bgm-ducking` 路径，最终成片仍需重新完整看听和音频 QA。
+
+运行时与流水线也已接通：`runtime_preflight.py --profile audio_cue_mix` 检查 19 项 Python/FFmpeg/PCM/AAC/source/filter 能力；`edit_brief_plan.py` 在声音设计 brief 中自动加入该 profile 与混音步骤；`pipeline_manifest.py --require audio_cue_mix --strict` 调用 live verifier。README、SKILL、audio cue sheet、daily workflow 和 prompts 导航已同步。使用时先跑 runtime preflight，再以最终旁白执行 `plan --synthesize-missing`、`apply`、完整试听和 `confirm`，最后运行 `verify --strict`；已有本地 SFX 时去掉 `--synthesize-missing` 并在 cue sheet 中填入素材路径。
+
+验证结果：新增 7 项 audio-cue-mix 单元/CLI/防覆盖/漂移/manifest/真实媒体测试，并扩展 runtime-preflight 与 edit-brief 回归；定向 `.venv/bin/python -m pytest tests/test_audio_cue_mix.py tests/test_audio_cue_sheet.py tests/test_edit_brief_plan.py tests/test_pipeline_manifest.py tests/test_runtime_preflight.py -q` 通过 **193 passed in 3.86s**。真实 FFmpeg smoke 用 3 秒旁白和两个程序化 cue 生成 48 kHz stereo `pcm_s24le` 单轨，时长误差不超过 0.05 秒并完整解码。全量 `.venv/bin/python -m pytest tests -q` 通过 **1282 passed in 29.47s**；本机 `audio_cue_mix` runtime profile 为 **19 capabilities / 0 blocking / 0 warnings**。Python compileall、新脚本四组子命令 help、Skill `quick_validate.py` 与 `git diff --check` 均通过。
 
 ### 2026-09-17 自动化升级记录（Source-bound Multimodal Generation References）
 
@@ -5154,6 +5216,7 @@ python3 scripts/pipeline_manifest.py . --require freeze_punch_plan --strict
 | **120** | **[Sequence Handoff](docs/prompts/120-sequence-handoff.md)** | **生成前逐镜 receive/handoff、edit type、轴线方向、音频桥与 live gate** |
 | **121** | **[Storyboard Animatic](docs/prompts/121-storyboard-animatic.md)** | **分镜静帧 + 可选旁白 → timed MP4、完整 1× 复核与 live gate** |
 | **122** | **[Generation Reference Preflight](docs/prompts/122-generation-reference-preflight.md)** | **图片/视频/音频 reference 解码、限额、角色/@标签与 live gate** |
+| **123** | **[Audio Cue Mix](docs/prompts/123-audio-cue-mix.md)** | **cue sheet + 最终旁白 → 本地/程序化 SFX 单轨、完整试听与 live gate** |
 | **62** | **[Hook Variants](docs/prompts/62-hook-variants.md)** | **同一视频批量生成前三秒 hook 角度** |
 | **67** | **[Speech Continuity QA](docs/prompts/67-speech-continuity-qa.md)** | **成片二次 ASR 检查复读、近重复 take 和句内口吃** |
 | **68** | **[Cover Variants](docs/prompts/68-cover-variants.md)** | **多套封面、feed-size 预览、标题协同和最终选择** |
@@ -5224,6 +5287,7 @@ scripts/
 ├── freeze_punch.py             source-bound 定格替换 / punch crop / live gate [V3]
 ├── audio_transition.py         J-cut/L-cut source handle / 单次编码 / receipt [V3]
 ├── audio_cue_sheet.py          BGM/SFX 音频设计清单               [V3]
+├── audio_cue_mix.py            source-bound 旁白+SFX 单轨 / 1× review live gate [V3]
 ├── auto_stickers.py            情绪→贴纸                        [V3]
 ├── auto_emphasis.py            问句/数字/转折/结论强调点          [V3]
 ├── imagegen_hint.py            抽象概念→gpt-image-2 提示词       [V3]

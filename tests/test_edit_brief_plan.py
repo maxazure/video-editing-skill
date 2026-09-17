@@ -50,6 +50,16 @@ def test_remotion_brief_adds_node_profile_to_runtime_preflight(tmp_path):
     assert "runtime_preflight" in {signal["id"] for signal in plan["signals"]}
 
 
+def test_audio_design_brief_adds_audio_cue_mix_runtime_profile(tmp_path):
+    plan = build_plan(
+        "给旁白配 BGM 和音效，先规划 cue 再生成可复核的混音",
+        project_dir=str(tmp_path),
+    )
+
+    runtime = next(step for step in plan["steps"] if step["id"] == "runtime_preflight")
+    assert "--profile audio_cue_mix" in runtime["command"]
+
+
 def test_transcript_only_brief_uses_media_io_without_render_profiles(tmp_path):
     source = tmp_path / "origin" / "talk.mp4"
     source.parent.mkdir(parents=True)
@@ -236,6 +246,11 @@ def test_batch_short_brief_routes_highlights_before_batch(tmp_path):
     assert ids.index("highlight_candidates") < ids.index("audio_boundary_plan") < ids.index("shorts_batch")
     assert "jump_cut" in ids
     assert "audio_cue_sheet" in ids
+    assert "audio_cue_mix" in ids
+    assert ids.index("audio_cue_sheet") < ids.index("audio_cue_mix")
+    cue_mix = next(step for step in plan["steps"] if step["id"] == "audio_cue_mix")
+    assert "<final_narration_audio>" in cue_mix["command"]
+    assert cue_mix["gate_category"] == "audio_cue_mix"
     assert "publish_package" in ids
     assert plan["source"]["source_media"] == str(source)
     highlight = next(step for step in plan["steps"] if step["id"] == "highlight_candidates")

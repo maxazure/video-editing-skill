@@ -712,6 +712,16 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         blocks_when_present=True,
     ),
     ArtifactDef(
+        "audio_cue_mix",
+        "Source-bound Audio Cue Mix",
+        (
+            "**/audio_cue_mix.json",
+            "**/*_audio_cue_mix.json",
+        ),
+        "Run audio_cue_mix.py apply, listen to the complete narration + SFX mix at 1x, confirm every review field, then live-verify the plan.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "final_audio_storyboard",
         "Locked-EDL Final Audio Storyboard",
         (
@@ -1029,6 +1039,43 @@ def evaluate_category(
                 status = "warn" if status != "blocked" else status
                 notes.append(
                     f"storyboard animatic retains {warnings} normalization warning(s): {artifact.path}"
+                )
+        return {
+            "category": definition.category,
+            "label": definition.label,
+            "status": status,
+            "artifact_count": len(artifacts),
+            "latest_path": artifacts[0].path,
+            "notes": sorted(set(notes)),
+            "next_action": definition.next_action if status in {"missing", "blocked", "warn"} else "",
+        }
+
+    if definition.category == "audio_cue_mix":
+        from audio_cue_mix import verify_plan
+
+        for artifact in artifacts:
+            data = _load_json(artifact.path)
+            if data is None:
+                status = "blocked"
+                notes.append(f"unreadable audio cue mix plan: {artifact.path}")
+                continue
+            try:
+                verification = verify_plan(data)
+            except Exception as exc:
+                status = "blocked"
+                notes.append(f"audio cue mix verification failed: {exc}")
+                continue
+            blocking = _int_at(verification, "summary", "blocking")
+            warnings = _int_at(verification, "summary", "warnings")
+            if blocking:
+                status = "blocked"
+                notes.append(
+                    f"invalid, unreviewed, or stale audio cue mix {artifact.path}: {blocking} blocking item(s)"
+                )
+            elif warnings:
+                status = "warn" if status != "blocked" else status
+                notes.append(
+                    f"audio cue mix retains {warnings} synthesis/provenance warning(s): {artifact.path}"
                 )
         return {
             "category": definition.category,

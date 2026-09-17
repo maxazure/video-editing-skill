@@ -35,6 +35,8 @@ python3 scripts/audio_cue_sheet.py \
 
 如果缺音乐或音效，`--strict` 返回退出码 2。需要 AI 生成音乐/音效时，先确认 provider credits 和素材授权，再提交生成任务。
 
+SFX 全部解决且最终独立旁白已经准备好后，继续运行 [Audio Cue Mix](123-audio-cue-mix.md) 的 `plan → apply → confirm → verify`，把 cue 真正混成一条 48 kHz stereo 母轨。缺少四类内置短音效时可显式使用 `--synthesize-missing`；BGM 仍由 `render_final.py --bgm-ducking` 负责。
+
 ## 输出内容
 
 | 字段 | 说明 |

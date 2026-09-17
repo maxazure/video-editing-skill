@@ -84,6 +84,24 @@ def test_storyboard_animatic_profile_requires_timing_label_and_audio_filters():
     assert "filter:apad" in report["capabilities"]
 
 
+def test_audio_cue_mix_profile_requires_synthesis_mix_and_output_capabilities():
+    filters = {
+        "aresample", "aformat", "atrim", "apad", "asetpts", "afade",
+        "volume", "adelay", "amix", "alimiter", "highpass", "lowpass",
+        "anoisesrc", "sine",
+    }
+    report = build_report(
+        ["audio_cue_mix"],
+        snapshot=snapshot(filters=filters, encoders=("pcm_s24le", "aac")),
+    )
+
+    assert report["status"] == "ready"
+    assert report["summary"]["blocking"] == 0
+    assert "filter:anoisesrc" in report["capabilities"]
+    assert "filter:amix" in report["capabilities"]
+    assert "encoder:pcm_s24le" in report["capabilities"]
+
+
 def test_caption_profile_blocks_a_proven_missing_subtitles_filter():
     report = build_report(["captions"], snapshot=snapshot(filters=CORE_FILTERS))
 

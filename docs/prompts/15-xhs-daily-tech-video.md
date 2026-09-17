@@ -597,6 +597,21 @@
    （没有足够源音频 handle 会直接阻塞；先用 `--primary-speed 1.0 --audio-transition-plan ...`
    渲染 1× 审片版，耳机和手机逐边界确认无吞字/复读/click，再渲染最终速度。详见 docs/prompts/86-audio-transition.md。）
 
+5d-1. # 可选：已有最终独立旁白和 audio_cue_sheet.v1 时，把 SFX cue 落成一条可审母轨：
+      python3 scripts/audio_cue_mix.py plan \
+        --project-dir . \
+        --cue-sheet work/audio_cue_sheet.json \
+        --voice work/final_narration.wav \
+        --delivery work/audio_cue_mix.wav \
+        --synthesize-missing \
+        --output work/audio_cue_mix.json \
+        --markdown work/audio_cue_mix.md
+      python3 scripts/audio_cue_mix.py apply \
+        --plan work/audio_cue_mix.json \
+        --markdown work/audio_cue_mix.md
+      # 完整 1× 听完后 confirm 五项 review，再 verify --strict；详见 docs/prompts/123-audio-cue-mix.md。
+      # 该输出不含 BGM；音乐仍在最终 render 中走 narration-driven ducking，并重新做完整混音试听。
+
 5e. # 在完整编码前，用真实源片早/中/晚画面对比最终 ASS 字幕预设：
      python3 scripts/subtitle_style_preview.py create \
        --project-dir . \

@@ -424,8 +424,12 @@ def build_next_actions(
     if int(summary.get("approval_required") or 0):
         actions.append("Review provider credits and asset provenance before submitting generated audio work.")
     actions.append(
-        "After audio assets are chosen, update render_config.json bgm fields, "
-        "enable bgm_ducking for speech-led renders, and keep this sheet with QA artifacts."
+        "After SFX assets are resolved, use audio_cue_mix.py with the finalized narration track, "
+        "listen to the complete mix at 1x, and live-verify the result."
+    )
+    actions.append(
+        "Update render_config.json BGM fields, enable bgm_ducking for speech-led renders, "
+        "and review the final video mix again after music is added."
     )
     return actions
 

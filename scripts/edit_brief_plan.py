@@ -1180,6 +1180,8 @@ def build_plan(
             runtime_profiles.append("edge_black_trim")
         if "storyboard_animatic" in ids:
             runtime_profiles.append("storyboard_animatic")
+        if "audio_design" in ids:
+            runtime_profiles.append("audio_cue_mix")
         if _contains(normalized, "remotion"):
             runtime_profiles.append("remotion")
         runtime_command = [python_bin, "scripts/runtime_preflight.py", "analyze"]
@@ -2393,6 +2395,48 @@ def build_plan(
                 outputs=["work/audio_cue_sheet.json", "work/audio_cue_sheet.md"],
                 gate_category="audio_cue_sheet",
             ),
+        )
+        _add_step(
+            steps,
+            seen,
+            _step(
+                "audio_cue_mix",
+                phase="assets",
+                script="audio_cue_mix.py",
+                label="Render and review one source-bound narration + SFX master",
+                reason="The cue sheet must become a timed, decoded audio artifact before final music mixing.",
+                command=shell(
+                    [
+                        python_bin,
+                        "scripts/audio_cue_mix.py",
+                        "plan",
+                        "--cue-sheet",
+                        "work/audio_cue_sheet.json",
+                        "--voice",
+                        "<final_narration_audio>",
+                        "--delivery",
+                        "work/audio_cue_mix.wav",
+                        "--project-dir",
+                        project_dir,
+                        "--synthesize-missing",
+                        "--output",
+                        "work/audio_cue_mix.json",
+                        "--markdown",
+                        "work/audio_cue_mix.md",
+                    ]
+                ),
+                outputs=[
+                    "work/audio_cue_mix.json",
+                    "work/audio_cue_mix.md",
+                    "work/audio_cue_mix.wav",
+                ],
+                gate_category="audio_cue_mix",
+            ),
+        )
+        notes.append(
+            "Replace <final_narration_audio> with the finalized project-local voice/dialogue track. "
+            "After plan, run audio_cue_mix.py apply, listen to the complete mix at 1x, confirm all five "
+            "review fields, and verify. BGM remains in render_final.py with narration-driven ducking."
         )
 
     if "video_stabilization" in ids:

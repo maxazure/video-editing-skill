@@ -1,6 +1,6 @@
 ---
 name: video-editing
-description: "Xiaohongshu/RED-tuned short-form video workflow for voice-over, talking-head, tutorials, interviews, podcasts, screen recordings, chroma key, B-roll, captions, and generated assets. Covers edit routing, runtime profiles, interlace and VFR/CFR conformance, silent edge-black trimming, edit-style profiles, loop filling, heterogeneous multi-clip assembly with seam review, transcription, semantic review, multi-take/audio sync/stabilization/dead-air cleanup, highlights/shorts, story and source gates, enrichment and video-generation planning, timed storyboard animatics, reviewed shot-to-shot handoff design, generated clip/sequence and scoped AI video-edit review, locked-EDL audio storyboards, narration loudness, channel-integrity and audio-dropout QA, color/speed/J-L cuts, reversible revisions and recipes, preflight/render/QA including flash/photosensitivity and encode-quality screening, subtitles, CapCut, platform/size exports, covers, captions, publish packages, dashboards, handoff formats, and Remotion."
+description: "Xiaohongshu/RED-tuned short-form video workflow for voice-over, talking-head, tutorials, interviews, podcasts, screen recordings, chroma key, B-roll, captions, and generated assets. Covers edit routing, runtime profiles, interlace and VFR/CFR conformance, silent edge-black trimming, edit-style profiles, loop filling, multi-clip assembly and seam review, transcription, semantic review, multi-take/audio sync/stabilization/dead-air cleanup, highlights/shorts, story and source gates, enrichment and video-generation planning, timed storyboard animatics, shot handoff design, generated clip/sequence and scoped AI video-edit review, locked-EDL audio storyboards, source-bound SFX cue mixdowns, narration loudness, channel-integrity and audio-dropout QA, color/speed/J-L cuts, reversible revisions and recipes, preflight/render/QA including flash/photosensitivity and encode-quality screening, subtitles, CapCut, platform/size exports, covers, captions, publish packages, dashboards, handoff formats, and Remotion."
 metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
 ---
 
@@ -53,6 +53,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ auto_enrich.py           B-roll / 章节卡 / 贴纸 / 强调点 / BGM 卡点 / imagegen 提示词
    │       └─→ Codex imagegen   gpt-image-2 自动生图（抽象概念配图）
    ├─→ audio_cue_sheet.py       BGM / SFX 音频设计清单 / 生成审批 gate
+   ├─→ audio_cue_mix.py         cue sheet + 最终旁白 → 本地/程序化 SFX 单轨 / 1× review gate
    ├─→ storyboard_plan.py       分镜 shot cards / 生成路由 / 连续性锚点
    ├─→ storyboard_animatic.py   每镜静帧 + 可选旁白 → timed MP4 / 1× review / live gate
    ├─→ sequence_handoff.py      相邻镜头 receive/handoff / edit type / 轴线方向 / live gate
@@ -178,6 +179,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `auto_enrich.py` | 编排 B-roll / 贴纸 / 强调点 / 章节卡 / imagegen cues | `--transcript` `--clean-script` `--bgm` `--output` |
 | `imagegen_hint.py` | 检测抽象概念 → 产 gpt-image-2 提示词 | `--transcript` `--clean-script` `--codex-md` |
 | `audio_cue_sheet.py` | transcript → BGM/SFX cue、生成审批和音频门禁 | `--transcript` `--asset-root` `--require-local-music` `--require-local-sfx` `--strict` |
+| `audio_cue_mix.py` | audio cue sheet + 最终旁白 → 本地/程序化 SFX、48 kHz stereo 单轨、完整试听 live gate | `plan --cue-sheet --voice --delivery [--synthesize-missing]` / `apply` / `confirm` / `verify --strict` |
 | `final_audio_storyboard.py` | locked visual EDL + storyboard → 最终时间线声音分镜、voice ledger、omitted-story 决定和 live gate | `prepare --edl --storyboard` `audit --request --response` `verify --report --strict` |
 | `storyboard_plan.py` | transcript/clean_script → 分镜 shot cards + 生成路由 | `--transcript` `--clean-script` `--output` `--markdown` |
 | `storyboard_animatic.py` | storyboard + 每镜静帧 + 可选旁白 → source-bound timed MP4、完整 1× 复核与 live gate | `plan --panel SHOT=PATH --delivery` / `apply` / `confirm` / `verify --strict` |
@@ -502,7 +504,7 @@ python3 scripts/pipeline_manifest.py \
 
 ### Phase 0aa: Runtime Preflight（按任务核验本机能力）
 
-在打开媒体或启动渲染前，运行 [runtime_preflight.py](./scripts/runtime_preflight.py)。只转写、probe 或抽流用 `media_io`；会编码最终画面的任务用 `core_edit`，再按需要追加 `storyboard_animatic / captions / qa / edge_black_trim / hdr_sdr / stabilization / interlace / remotion`：
+在打开媒体或启动渲染前，运行 [runtime_preflight.py](./scripts/runtime_preflight.py)。只转写、probe 或抽流用 `media_io`；会编码最终画面的任务用 `core_edit`，再按需要追加 `storyboard_animatic / audio_cue_mix / captions / qa / edge_black_trim / hdr_sdr / stabilization / interlace / remotion`：
 
 ```bash
 python3 scripts/runtime_preflight.py analyze \
@@ -1255,6 +1257,13 @@ python3 scripts/render_final.py --config script/render_config.json --output medi
 - 计划绑定 render config、transcript、源片/B-roll SHA-256 和 canonical plan id；`verify` 会从 live inputs 重新编译，手改 digest 不能隐藏漂移
 - 用 `audio_transition.py apply ... --output output/master.mp4 --receipt work/audio_transition_apply.json`，或给 `render_final.py` 加 `--audio-transition-plan`；字幕、overlay、BGM 和错位主音频仍在一次 FFmpeg 编码中完成
 - 必须在 1× 用耳机和手机逐个试听改变的边界，确认无吞字、复读、双人声、click、泵动和环境底噪跳变。机器只能验证时序/hash，不能判断交叠对白是否合适。详见 [docs/prompts/86-audio-transition.md](docs/prompts/86-audio-transition.md)
+
+**Audio Cue Mix 音效 cue 单轨混音**（`audio_cue_sheet.v1` 已审后运行）：
+- 用最终独立旁白执行 `audio_cue_mix.py plan --project-dir . --cue-sheet work/audio_cue_sheet.json --voice work/final_narration.wav --delivery work/audio_cue_mix.wav --output work/audio_cue_mix.json --markdown work/audio_cue_mix.md`；本地音效必须位于项目内并绑定 SHA-256/媒体契约
+- 缺少 `transition_whoosh / emphasis_ping / success_chime / warning_tick` 时，可显式加 `--synthesize-missing` 使用确定性 FFmpeg recipe；未知类别、显式素材丢失、cue 越界或非法增益保持阻塞
+- `apply` 统一 48 kHz stereo、trim/pad、短 fade、毫秒级 `adelay` 和受限增益；`amix normalize=0` 保持旁白电平，limiter 只做峰值保护，完整解码通过后才原子提升输出
+- 完整 1× 听完后运行 `confirm`，逐项确认 `speech_intelligibility / cue_timing / sfx_level / creative_fit / clicks_or_clipping`；随后 `verify --strict`。cue sheet、旁白、音效、输出或 review 绑定漂移都会重新阻塞
+- 该输出不含 BGM；音乐继续走 `render_final.py --bgm-ducking`，混入音乐后重新完整试听并运行最终音频 QA。详见 [docs/prompts/123-audio-cue-mix.md](docs/prompts/123-audio-cue-mix.md)
 
 **Video Stabilization source-bound 手持防抖**（仅用于不想要的抖动）：
 - 先运行 `video_stabilization.py doctor`。`plan --backend auto` 优先两遍 `vidstab`；缺少该 filter 时会把单遍 `deshake` 明确写进计划并保留降级 warning，不会在 apply 时静默换后端
