@@ -1038,6 +1038,27 @@ def test_sequence_handoff_brief_routes_pre_generation_boundary_review(tmp_path):
     assert any("180-degree axis" in note for note in plan["notes"])
 
 
+def test_generation_chain_handoff_routes_reviewed_tail_before_sequential_prompt(tmp_path):
+    plan = build_plan(
+        "用上一镜尾帧接力下一镜，按同一场景逐镜生成并保留原角色身份参考",
+        project_dir=str(tmp_path),
+    )
+
+    signal_ids = {signal["id"] for signal in plan["signals"]}
+    ids = [step["id"] for step in plan["steps"]]
+    assert "generation_chain_handoff" in signal_ids
+    assert ids.index("sequence_handoff") < ids.index("video_prompt_pack")
+    assert ids.index("generated_clip_review") < ids.index("generation_chain_handoff")
+    assert ids.index("generation_chain_handoff") < ids.index("video_prompt_pack_chained")
+    handoff = next(step for step in plan["steps"] if step["id"] == "generation_chain_handoff")
+    assert "generation_chain_handoff.py prepare" in handoff["command"]
+    assert "--boundary '<boundary_id>'" in handoff["command"]
+    assert handoff["gate_category"] == "generation_chain_handoff"
+    chained = next(step for step in plan["steps"] if step["id"] == "video_prompt_pack_chained")
+    assert "--generation-chain-handoff work/generation_chain_handoff.json" in chained["command"]
+    assert "work/video_prompt_pack.chained.json" in chained["outputs"]
+
+
 def test_storyboard_animatic_brief_routes_timed_preview_after_storyboard(tmp_path):
     plan = build_plan(
         "把三张分镜图做成按真实时长播放的 animatic，完整审查节奏和连续性",

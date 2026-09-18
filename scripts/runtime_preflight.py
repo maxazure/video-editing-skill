@@ -105,6 +105,18 @@ PROFILE_SPECS: Mapping[str, Mapping[str, Any]] = {
         ],
         "alternatives": [],
     },
+    "generation_chain_handoff": {
+        "label": "Source-bound generation chain handoff",
+        "description": "Decode an approved generated clip, extract its exact terminal frame, and verify the PNG before sequential generation.",
+        "required": [
+            "runtime:python",
+            "command:ffmpeg",
+            "command:ffprobe",
+            "encoder:png",
+            "filter:select",
+        ],
+        "alternatives": [],
+    },
     "captions": {
         "label": "Burned captions",
         "description": "Render SRT/ASS and the skill's subtitle presets through libass.",

@@ -433,6 +433,22 @@ SIGNAL_KEYWORDS: Mapping[str, Sequence[str]] = {
         "180度轴",
         "180°轴",
     ),
+    "generation_chain_handoff": (
+        "generation chain handoff",
+        "clip tail handoff",
+        "tail frame handoff",
+        "last frame handoff",
+        "sequential generation",
+        "chain generated clips",
+        "上一镜末帧",
+        "上一镜尾帧",
+        "末帧接力",
+        "尾帧接力",
+        "连续生成",
+        "顺序生成",
+        "逐镜生成",
+        "生成片接力",
+    ),
     "audio_design": ("bgm", "music", "配乐", "音效", "sfx", "sound design", "声音设计"),
     "final_audio_storyboard": (
         "final audio storyboard",
@@ -797,6 +813,7 @@ SIGNAL_LABELS: Mapping[str, str] = {
     "generation_lessons": "生成视频复核经验库",
     "sequence_continuity": "生成视频跨镜头连续性复核",
     "sequence_handoff": "生成前镜头接力 / 剪辑边界设计",
+    "generation_chain_handoff": "已审生成片末帧 → 下一镜精确首帧接力",
     "audio_design": "BGM / SFX 声音设计",
     "final_audio_storyboard": "锁定视觉 EDL 后重建最终声音分镜",
     "video_stabilization": "手持素材稳定化 / 防抖",
@@ -1033,6 +1050,8 @@ def build_plan(
     ids = _signal_ids(signals)
     if "generation_references" in ids:
         ids.update({"generated_assets", "provider_capabilities"})
+    if "generation_chain_handoff" in ids:
+        ids.update({"generated_assets", "sequence_handoff"})
     primary_platform = platforms[0]
     source_input = source_media or "<source_media>"
     post_interlace_source = "work/source-progressive.mp4" if "interlace_conform" in ids else source_input
@@ -2274,6 +2293,76 @@ def build_plan(
                 gate_category="generated_clip_review",
             ),
         )
+        if "generation_chain_handoff" in ids:
+            _add_step(
+                steps,
+                seen,
+                _step(
+                    "generation_chain_handoff",
+                    phase="review",
+                    script="generation_chain_handoff.py",
+                    label="Bind an approved predecessor tail to the next generated shot",
+                    reason="A genuinely continuous generated boundary must use the reviewed predecessor pixels instead of restarting from a planned keyframe.",
+                    command=shell(
+                        [
+                            python_bin,
+                            "scripts/generation_chain_handoff.py",
+                            "prepare",
+                            "--project-dir",
+                            project_dir,
+                            "--clip-review",
+                            "work/generated_clip_review.json",
+                            "--sequence-handoff",
+                            "work/sequence_handoff.json",
+                            "--boundary",
+                            "<boundary_id>",
+                            "--frame-output",
+                            "work/generation_chain/<boundary_id>_tail.png",
+                            "--output",
+                            "work/generation_chain_handoff.plan.json",
+                            "--markdown",
+                            "work/generation_chain_handoff.plan.md",
+                        ]
+                    ),
+                    outputs=[
+                        "work/generation_chain/<boundary_id>_tail.png",
+                        "work/generation_chain_handoff.plan.json",
+                        "work/generation_chain_handoff.json",
+                    ],
+                    gate_category="generation_chain_handoff",
+                ),
+            )
+            chained_prompt_command = list(prompt_pack_command)
+            output_index = chained_prompt_command.index("--output") + 1
+            chained_prompt_command[output_index] = "work/video_prompt_pack.chained.json"
+            markdown_index = chained_prompt_command.index("--markdown") + 1
+            chained_prompt_command[markdown_index] = "work/video_prompt_pack.chained.md"
+            chained_prompt_command.extend(
+                [
+                    "--generation-chain-handoff",
+                    "work/generation_chain_handoff.json",
+                ]
+            )
+            _add_step(
+                steps,
+                seen,
+                _step(
+                    "video_prompt_pack_chained",
+                    phase="review",
+                    script="video_prompt_pack.py",
+                    label="Rebuild the next-shot prompt with the approved exact first frame",
+                    reason="The next provider request must be rebound to the reviewed tail-frame artifact immediately before sequential submission.",
+                    command=shell(chained_prompt_command),
+                    outputs=[
+                        "work/video_prompt_pack.chained.json",
+                        "work/video_prompt_pack.chained.md",
+                    ],
+                    gate_category="video_prompt_pack",
+                ),
+            )
+            notes.append(
+                "Run generation_chain_handoff.py once per genuinely continuous boundary. View the PNG, confirm same-scene continuity, tail suitability, and original identity/product/style anchors; then rebuild the prompt pack and submit the next shot sequentially."
+            )
         _add_step(
             steps,
             seen,

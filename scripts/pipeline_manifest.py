@@ -344,6 +344,13 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         blocks_when_present=True,
     ),
     ArtifactDef(
+        "generation_chain_handoff",
+        "Generation Chain Handoff",
+        ("**/generation_chain_handoff.json", "**/*_generation_chain_handoff.json"),
+        "Run generation_chain_handoff.py prepare/confirm/verify, then rebuild video_prompt_pack.py with the approved predecessor tail before submitting the next sequential shot.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "generated_motion_window",
         "Generated Motion Window",
         (
@@ -1809,6 +1816,43 @@ def evaluate_category(
             elif _int_at(verification, "summary", "warnings"):
                 status = "warn" if status != "blocked" else status
                 notes.append(f"generated clip review retains approved trim-only edits: {artifact.path}")
+        return {
+            "category": definition.category,
+            "label": definition.label,
+            "status": status,
+            "artifact_count": len(artifacts),
+            "latest_path": artifacts[0].path,
+            "notes": sorted(set(notes)),
+            "next_action": definition.next_action if status in {"missing", "blocked", "warn"} else "",
+        }
+
+    if definition.category == "generation_chain_handoff":
+        from generation_chain_handoff import verify_report
+
+        for artifact in artifacts:
+            if project_dir is None:
+                status = "blocked"
+                notes.append("project root unavailable for live generation chain handoff verification")
+                continue
+            try:
+                verification = verify_report(artifact.path, project_dir=str(project_dir))
+            except Exception as exc:
+                status = "blocked"
+                notes.append(f"generation chain handoff verification failed: {exc}")
+                continue
+            blocking = _int_at(verification, "summary", "blocking")
+            warnings = _int_at(verification, "summary", "warnings")
+            if blocking:
+                status = "blocked"
+                notes.append(
+                    f"invalid, unconfirmed, or stale generation chain handoff {artifact.path}: "
+                    f"{blocking} blocking item(s)"
+                )
+            elif warnings:
+                status = "warn" if status != "blocked" else status
+                notes.append(
+                    f"generation chain handoff retains {warnings} warning(s): {artifact.path}"
+                )
         return {
             "category": definition.category,
             "label": definition.label,

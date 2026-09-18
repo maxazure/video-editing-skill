@@ -125,6 +125,7 @@
 | 121 | [Storyboard Animatic 分镜时长预演](121-storyboard-animatic.md) | storyboard + 每镜静帧 + 可选旁白 → timed MP4、完整 1× 复核与 source-bound live gate |
 | 122 | [Generation Reference Preflight 多模态生成参考门禁](122-generation-reference-preflight.md) | prompt pack + 图片/视频/音频 references + provider profile → 解码、限额、角色/@标签与 live gate |
 | 123 | [Audio Cue Mix 音效 cue 单轨混音](123-audio-cue-mix.md) | audio cue sheet + 最终旁白 → 本地/程序化 SFX、48 kHz stereo 单轨、完整试听与 live gate |
+| 124 | [Generation Chain Handoff 生成片末帧接力](124-generation-chain-handoff.md) | 已审生成片 + 已审相邻边界 → 精确末帧 PNG、下一镜首帧提示词与 live gate |
 
 ## 快速上手
 
@@ -162,6 +163,7 @@
 | 付费生成前想把分镜静帧按真实时长完整播放一遍 | [121-Storyboard Animatic](121-storyboard-animatic.md) |
 | 生成时要同时引用图片、视频或音频，想先检查类型、时长、数量和每份素材的角色 | [122-Generation Reference Preflight](122-generation-reference-preflight.md) |
 | 已规划音效 cue，想把本地或程序化 SFX 真正混进单一旁白母轨 | [123-Audio Cue Mix](123-audio-cue-mix.md) |
+| 两个生成镜头属于同一场景，想用上一条已审成片的真实末帧接力下一条 | [124-Generation Chain Handoff](124-generation-chain-handoff.md) |
 | 口播停顿太多想自动剪紧 | [21-Jump Cut](21-jump-cut.md) |
 | 只想删掉同时静音且画面静止的死区 | [88-Multimodal Dead-Air](88-multimodal-dead-air.md) |
 | 片头或片尾有黑屏，想确认没有声音再裁掉 | [119-Edge-black Trim](119-black-edge-trim.md) |

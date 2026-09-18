@@ -11,7 +11,7 @@
 - **噪声口播可在单次编码内保守清理**：`render_final.py --speech-denoise light|medium|strong` 会在变速、压缩、响度规范化和 BGM ducking 前处理低频震动与稳态底噪；默认关闭，最大降噪限制为 12 dB。
 - **停顿删段可同时看声音和画面**：`multimodal_dead_air.py` 只有在静帧覆盖静音达到门槛时才提出候选，实际只删二者交集；源 hash、20% 删除预算、切点复盘、单次编码和完整解码都进入 gate。
 - **多机位先同步再剪辑**：`multicam_sync.py` 把两台以上相机/手机/录音设备对齐到同一参考时间线，记录每路 offset、置信度、有效音轨、公共重叠区间，并可用多窗口 probe 测量长片时钟漂移；原片不改、不重编码。
-- **开始媒体工作前先证明本机能跑**：`runtime_preflight.py` 按 `media_io / core_edit / storyboard_animatic / audio_cue_mix / captions / qa / edge_black_trim / hdr_sdr / stabilization / interlace / remotion` profile 检查命令版本、编码器和 FFmpeg filters；明确区分 missing 与 unknown，并让环境或报告漂移在 manifest 中失效。
+- **开始媒体工作前先证明本机能跑**：`runtime_preflight.py` 按 `media_io / core_edit / storyboard_animatic / audio_cue_mix / generation_chain_handoff / captions / qa / edge_black_trim / hdr_sdr / stabilization / interlace / remotion` profile 检查命令版本、编码器和 FFmpeg filters；明确区分 missing 与 unknown，并让环境或报告漂移在 manifest 中失效。
 - **旧电视 / DV 素材先分清 telecine 和真实交错**：`interlace_conform.py` 用 FFmpeg `idet` 多段采样；疑似 3:2 pulldown 会阻断直接去交错，真实 TFF/BFF 才能经 `bwdif` 或明确的 `yadif` fallback 生成逐行工作副本，并在完整 1× A/B 确认后放行。
 - **手机和录屏 VFR 可先变成可审计 CFR 工作副本**：`frame_rate_conform.py` 读取全部解码帧 PTS 间隔，绑定精确目标有理帧率；输出必须通过恒定 cadence、帧数、音画起止、显示方向、SHA-256 和完整解码验证，原片保持不变。
 - **片头片尾黑场会先核对声音再裁切**：`black_edge_trim.py` 只接受接触源时间线两端的 `blackdetect` 区间，默认要求实际移除范围至少 95% 被静音覆盖；保留视觉 padding，生成原片边界 proof 和新的 CFR 工作副本，完整 1× 视听确认后才放行。
@@ -25,6 +25,7 @@
 - **压缩后“能播放”不再等于“画质够用”**：`encode_quality_qa.py` 对同时间线、同构图的 master 与重编码衍生件做全长 SSIM/PSNR 比较，保存平均值、P05 低尾部和最差帧时间码；两条视频、媒体契约、阈值或现场复测漂移都会让报告失效。
 - **专业声画错位不再靠手写 FFmpeg**：`audio_transition.py` 对明确边界规划 J-cut/L-cut，验证真实音频 handle、config/transcript/source hash 和 compiled timing；`render_final.py` 在同一次编码中完成画面硬切、音频 pre-lap/overhang、字幕、overlay 与 BGM。
 - **音效 cue 可以落成一条可审母轨**：`audio_cue_mix.py` 把 `audio_cue_sheet.v1`、最终旁白和本地/程序化 SFX 绑定后输出 48 kHz stereo 单轨；完整解码与 1× 五项试听通过前保持阻塞，输入或输出漂移会让 review 失效。
+- **连续生成可以用真实末帧接力**：`generation_chain_handoff.py` 从已审上一镜的完整片段或最后一个 approved keep range 选择确切 decoded 末帧，验证源帧/PNG 像素一致并经人工确认后，将它绑定为下一镜 exact first frame；原角色、产品和 style anchors 继续保留。
 - **事实型内容有 proof deck**：新闻、数据、产品事实或来源页截图可用 `source_receipts.py` 生成 URL/截图复核包，作为发布前 gate。
 - **高影响动作先绑定确切授权范围**：`production_authorization.py` 把外部上传、侵入性重排/删除、付费生成、声音克隆、真人/未成年人/公众人物/品牌/IP 权利和发布决定绑定到具体素材 SHA-256、用途与 provider/surface；scope 或源字节变化会让旧授权失效。
 - **最终审批绑定到具体文件字节**：`approval_receipt.py` 为人工看过的视频、封面、文案、字幕和 QA 报告记录 SHA-256；任何重渲染、替换、删除或 symlink 漂移都会让旧审批过期并阻塞发布。
@@ -247,6 +248,8 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    ├─→ generation_task_log.py   异步生成任务台账
    │                            submit_id / 轮询 / 下载 / 本地落盘 gate
    ├─→ generated_clip_review.py 下载后的生成视频片段复核
+   ├─→ generation_chain_handoff.py
+   │                            已审上一镜末帧 → 下一镜精确首帧 / 顺序生成 live gate
    │                            contact sheet / 常识物理 / 身份道具 / 裁切与重生 gate
    ├─→ generated_motion_window.py 生成片有效运动窗口
    │                            0.25s 冻帧检测 / 人工 trim|keep|reject / 新工作副本 live gate
@@ -696,7 +699,7 @@ python3 scripts/pipeline_manifest.py . \
   --require runtime_preflight --strict
 ```
 
-内置 profile 为 `media_io / core_edit / storyboard_animatic / audio_cue_mix / captions / qa / edge_black_trim / hdr_sdr / stabilization / interlace / remotion`。`storyboard_animatic` 额外核对 panel scale/pad/crop、CFR、drawtext、concat、音频 trim/pad 和 H.264/AAC；`audio_cue_mix` 核对本地 SFX 与合成音效所需的音频 source/filter、延迟混合、限幅和 PCM/AAC 编码能力；`missing` 表示可解析清单明确缺组件；`unknown` 表示版本命令或 FFmpeg 清单失败、超时或无法解析，两者都 fail closed。防抖 profile 接受两遍 `vidstabdetect + vidstabtransform` 或明确的单遍 `deshake` fallback；交错处理要求 `idet`，并接受 `bwdif` 或 `yadif`；其他 profile 的必需项全部逐项核验。
+内置 profile 为 `media_io / core_edit / storyboard_animatic / audio_cue_mix / generation_chain_handoff / captions / qa / edge_black_trim / hdr_sdr / stabilization / interlace / remotion`。`storyboard_animatic` 额外核对 panel scale/pad/crop、CFR、drawtext、concat、音频 trim/pad 和 H.264/AAC；`audio_cue_mix` 核对本地 SFX 与合成音效所需的音频 source/filter、延迟混合、限幅和 PCM/AAC 编码能力；`generation_chain_handoff` 核对 FFprobe、PNG encoder 和逐帧 `select` 提取能力；`missing` 表示可解析清单明确缺组件；`unknown` 表示版本命令或 FFmpeg 清单失败、超时或无法解析，两者都 fail closed。防抖 profile 接受两遍 `vidstabdetect + vidstabtransform` 或明确的单遍 `deshake` fallback；交错处理要求 `idet`，并接受 `bwdif` 或 `yadif`；其他 profile 的必需项全部逐项核验。
 
 报告绑定所选 profile、Python/FFmpeg/FFprobe/Node 相关版本、FFmpeg component listing 状态、逐能力结果、修复建议与 canonical `report_id`。`verify` 会在当前机器重跑，版本、组件或报告内容漂移后旧 artifact 立即失效。`edit_brief_plan.py` 默认把本步骤排在实际媒体工作前：只转写/抽流使用 `media_io`，渲染使用 `core_edit`，再按字幕、QA、HDR、防抖、交错、Remotion 意图追加 profile。
 
@@ -1269,7 +1272,7 @@ python3 scripts/video_prompt_pack.py \
   --markdown work/video_prompt_pack.md
 ```
 
-输出 `global.character_sheet_prompt`、`global.style_reference`、`items[].prompt`、`items[].negative_prompt`、`items[].surface/model/resolution`、`items[].capability_profile`、`items[].capability_issues`、`items[].approval_status` 和 `summary.blocking`。`--style-reference` 会把同一 style key 绑定到每个生成 shot，并给 provider prompt 追加统一 `STYLE LOCK`。启用 `--require-capability-profile` 后，缺 profile、profile 过期、mode/画幅/时长/分辨率不支持或参考图超限都会进入 `summary.capability_blocking`；`--strict` 同时要求 capability 和 paid approval blocker 清零。Dreamina/即梦、Veo、LTX、Wan、Sora 等视频生成可能消耗 credits，提交前先确认并保持小批量。
+输出 `global.character_sheet_prompt`、`global.style_reference`、`items[].prompt`、`items[].negative_prompt`、`items[].surface/model/resolution`、`items[].capability_profile`、`items[].capability_issues`、`items[].approval_status` 和 `summary.blocking`。`--style-reference` 会把同一 style key 绑定到每个生成 shot，并给 provider prompt 追加统一 `STYLE LOCK`；重复传入 live-verified `--generation-chain-handoff` 会把已审上一镜末帧绑定到对应下一镜的 `reference`，强制使用 `image_to_video` 并记录 `items[].generation_chain_handoff`。启用 `--require-capability-profile` 后，缺 profile、profile 过期、mode/画幅/时长/分辨率不支持或参考图超限都会进入 `summary.capability_blocking`；`--strict` 同时要求 capability 和 paid approval blocker 清零。Dreamina/即梦、Veo、LTX、Wan、Sora 等视频生成可能消耗 credits，提交前先确认并保持小批量。
 
 ### 🖼️ Reference Frame Preflight — 生成参考帧预检
 [`scripts/reference_frame_preflight.py`](scripts/reference_frame_preflight.py) · [详细文档](docs/prompts/71-reference-frame-preflight.md)
@@ -1379,6 +1382,65 @@ python3 scripts/generated_clip_review.py verify \
 ```
 
 `pass` 要求加权分至少 80、故事清晰、没有 hard fail 且无需删段；`pass_with_edits` 要求至少 65，并让 `keep_ranges` / `remove_ranges` 无缝覆盖整条片段；身份断裂、错误/缺失动作、肢体或物理失败、多余主体、关键道具消失、生成文字/水印、连续性矛盾、音画矛盾和 explicit must-avoid 都会越过高分直接 `fail`，要求 `regenerate=true + prompt_fix`。clip/contact sheet 漂移、漏审、区间重叠/缺口和报告派生状态篡改都会 fail closed；`pipeline_manifest.py --require generated_clip_review --strict` 可设为发布门禁。reviewer label 不是身份认证或数字签名，contact sheet 也不能替代完整播放。
+
+### 🔗 Generation Chain Handoff — 已审生成片末帧接力
+
+[`scripts/generation_chain_handoff.py`](scripts/generation_chain_handoff.py) · [详细文档](docs/prompts/124-generation-chain-handoff.md)
+
+两个生成镜头确实属于同一场景或一个连续动作 beat 时，先让上一镜通过 `generated_clip_review.py`，并让该边界通过 `sequence_handoff.py`。随后从上一镜完整片段或最后一个 approved keep range 提取真实末帧：
+
+```bash
+python3 scripts/runtime_preflight.py analyze \
+  --profile generation_chain_handoff \
+  --output work/runtime_preflight.json \
+  --strict
+
+python3 scripts/generation_chain_handoff.py prepare \
+  --project-dir . \
+  --clip-review work/generated_clip_review.json \
+  --sequence-handoff work/sequence_handoff.json \
+  --boundary boundary_001 \
+  --frame-output work/generation_chain/boundary_001_tail.png \
+  --output work/generation_chain_handoff.plan.json \
+  --markdown work/generation_chain_handoff.plan.md
+```
+
+工具用 FFprobe 枚举 decoded frames，选择批准范围内最后一个可解码帧，再按 exact frame index 导出 PNG；源帧和 PNG 都解码为 RGB24，像素 SHA-256 与字节数必须相同。看完上一镜和 PNG，确认同一场景、尾帧适合作为首帧、原始角色/产品/style references 继续保留后：
+
+```bash
+python3 scripts/generation_chain_handoff.py confirm \
+  --project-dir . \
+  --plan work/generation_chain_handoff.plan.json \
+  --output work/generation_chain_handoff.json \
+  --decision use_exact_start_frame \
+  --reviewed-by "<reviewer-label>" \
+  --same-scene-confirmed \
+  --tail-frame-accepted \
+  --original-anchors-preserved \
+  --notes "同一场景连续动作；保留原角色、产品和风格锚点。" \
+  --markdown work/generation_chain_handoff.md \
+  --strict
+
+python3 scripts/generation_chain_handoff.py verify \
+  --project-dir . \
+  --plan work/generation_chain_handoff.json \
+  --strict
+
+python3 scripts/video_prompt_pack.py \
+  --project-dir . \
+  --storyboard-plan work/storyboard_plan.json \
+  --provider dreamina_seedance \
+  --sequence-handoff work/sequence_handoff.json \
+  --generation-chain-handoff work/generation_chain_handoff.json \
+  --character "<approved character identity>" \
+  --style-reference work/imagegen/style-key.png \
+  --approved \
+  --output work/video_prompt_pack.chained.json \
+  --markdown work/video_prompt_pack.chained.md \
+  --strict
+```
+
+目标镜头自动切到 `image_to_video`，reference 指向审核后的 PNG；prompt 明确继续真实姿态、物体状态、环境、光线和空间关系，同时让原身份/产品/style anchors 保持权威，并把短片限制为一个主动作和一种机位行为。换场、时间跳跃、故意跳切或普通剪辑匹配应使用 `reject` 或直接沿用 `sequence_handoff` 的剪辑方案。上游报告、clip、approved range、frame index/PTS、PNG bytes/pixels 或人工决定漂移都会让 `pipeline_manifest.py --require generation_chain_handoff --strict` 阻塞。脚本不上传素材、不调用 provider、不消费 credits；下一条生成片仍需逐片和跨镜头复核。
 
 ### 🏃 Generated Motion Window — 生成片有效运动窗口
 [`scripts/generated_motion_window.py`](scripts/generated_motion_window.py) · [详细文档](docs/prompts/102-generated-motion-window.md)
@@ -3630,6 +3692,7 @@ pytest tests/test_provider_capability.py -v # provider/surface/model 能力、fr
 pytest tests/test_reference_frame_preflight.py -v # 首帧/style key 尺寸/方向/透明背景 gate
 pytest tests/test_generation_task_log.py -v # 异步生成任务台账 + 下载 gate
 pytest tests/test_generated_clip_review.py -v # 生成视频 contact sheet / 评分 / 裁切 / 重生 / stale gate
+pytest tests/test_generation_chain_handoff.py -v # 已审末帧精确提取 / 人工确认 / 下一镜首帧注入 / drift gate
 pytest tests/test_generated_motion_window.py -v # 生成片冻帧 evidence / 有效运动窗口 / trim working copy / live gate
 pytest tests/test_scoped_video_edit_review.py -v # 局部 AI edit change/preserve A-B 证据 / live gate
 pytest tests/test_generated_sequence_review.py -v # 已审生成片段相邻边界证据 / 连续性 / stale gate
@@ -3667,6 +3730,25 @@ pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 pytest tests/test_review_dashboard.py -v    # 静态人工复核面板 + gate queue
 pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 gate
 ```
+
+### 2026-09-19 自动化升级记录（Source-bound Generation Chain Handoff）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`uriva/ad-creator@45b8021`](https://github.com/uriva/ad-creator/blob/45b8021d0d7cd6ef44e6d92ceb7473b3db772c78/SKILL.md) | 同一场景连续生成时，先完成上一镜，再提取真实末帧作为下一镜 start frame；人物可见时仍回挂原始角色 reference，避免末帧链条累积身份漂移 | 新增已审 clip + 已审 boundary 双上游门禁；从批准范围选择 exact decoded terminal frame，保留原角色/产品/style anchors，并强制顺序提交 |
+| [`cheercheung/minimax-h3-video-gen-skill@4e39cbf`](https://github.com/cheercheung/minimax-h3-video-gen-skill/blob/4e39cbff7b084e3a4ba4ad53f9df8c141f1e644c/SKILL.md) | 短生成片应明确 opening/action/camera/continuity/ending；5 秒通常只安排一个主动作和一种机位行为，并在付费调用前 dry-run | 接力 prompt 写入真实 opening state、receive/match rule 和“一项主动作 + 一种机位行为”预算；本地 verify 完成前不进入 provider 提交 |
+| [`agentara/skills@a529df8`](https://github.com/agentara/skills/blob/a529df80920bb3162f91f7df71c03a2abeb66232/skills/aigc/video-storyboard/SKILL.md) | 有角色图时持续作为视觉 reference，分镜每个 beat 只推进一项动作，同时维持人物、服装、道具、场景与光线连续 | 人工确认明确要求原始身份/产品/style anchors 继续有效；tail frame 只负责姿态、物体状态、空间、环境和光线，不替代身份权威 |
+| [`Alon17-12/remotion-ad-video-skill@802314a`](https://github.com/Alon17-12/remotion-ad-video-skill/blob/802314a5e23fc5892b0f0d431145451638ba76c6/skill/SKILL.md) | 把事件量化到 beat/frame，并要求对修改后的真实渲染帧做 QC | 本项目已有 `beat_sync.py`、source-bound 各类像素/时序 QA 和上一轮音效混音门禁，本轮不重复实现；继续沿用真实帧证据与 live verification 约束新接力 artifact |
+
+新增/调整能力：新增 [`scripts/generation_chain_handoff.py`](scripts/generation_chain_handoff.py)、[`tests/test_generation_chain_handoff.py`](tests/test_generation_chain_handoff.py) 和 [`docs/prompts/124-generation-chain-handoff.md`](docs/prompts/124-generation-chain-handoff.md)，提供 `prepare → confirm → verify`。`prepare` 现场验证 `generated_clip_review.v1` 与 `sequence_handoff.v1`，只接受已批准相邻边界和 `pass/pass_with_edits` 上一镜；完整通过时使用全片，trim-only 通过时使用最后一个 approved keep range。脚本用 FFprobe 枚举 decoded frame PTS，选择范围内最后一帧，再由 FFmpeg 按 frame index 导出 PNG；源帧和 PNG 都解码为 RGB24，像素 SHA-256/字节数必须一致。`confirm` 要求 reviewer 明确确认 same-scene、tail suitability、原始身份/产品/style anchors 保留；换场或不适合的尾帧以 `reject` 保持阻塞。`verify` 现场重读两份上游报告、原 clip、批准区间、frame index/PTS、PNG bytes/pixels、人工决定与 canonical artifact ID，任一漂移都会失效。
+
+`video_prompt_pack.py` 新增可重复的 `--generation-chain-handoff`：live-verified artifact 只允许绑定当前 storyboard 的相邻目标镜头，自动切为 `image_to_video`，把 PNG 作为 exact first frame，并加入真实起始状态、original-anchor policy、receive-in/match rule 和动作/机位预算；非生成 provider、语义-only mode、重复目标或 stale artifact 会直接拒绝。`runtime_preflight.py` 新增 5 项 `generation_chain_handoff` profile；`edit_brief_plan.py` 可识别中英文 tail-frame/sequential-generation 需求，并把接力安排在上一镜逐片 review 后、下一版 prompt pack 前；`pipeline_manifest.py --require generation_chain_handoff --strict` 会调用 live verifier。README、SKILL、Video Prompt Pack 文档和 prompts 导航均已同步。
+
+使用方式：先完成 `sequence_handoff.py` 与上一镜 `generated_clip_review.py`；运行 `generation_chain_handoff.py prepare --clip-review work/generated_clip_review.json --sequence-handoff work/sequence_handoff.json --boundary boundary_001 --frame-output work/generation_chain/boundary_001_tail.png --output work/generation_chain_handoff.plan.json`。查看上一镜与 PNG 后执行 `confirm --decision use_exact_start_frame --same-scene-confirmed --tail-frame-accepted --original-anchors-preserved ... --output work/generation_chain_handoff.json --strict`，再 `verify --strict`，最后重建 `video_prompt_pack.py --generation-chain-handoff work/generation_chain_handoff.json ...` 并顺序提交下一镜。脚本不上传素材、不调用 provider、不消费 credits；新生成片仍需逐片与跨镜头复核。
+
+验证结果：新增 6 项 exact terminal frame、人工确认、拒绝/anchor fail-closed、live pixel drift、prompt 注入、非法边界/mode 与真实 CLI round-trip 测试，并扩展 edit-brief、pipeline-manifest、video-prompt-pack 和 runtime-preflight 回归；定向 `.venv/bin/python -m pytest tests/test_generation_chain_handoff.py tests/test_video_prompt_pack.py tests/test_edit_brief_plan.py tests/test_pipeline_manifest.py tests/test_runtime_preflight.py -q` 通过 **201 passed in 6.53s**。真实 FFmpeg 路径用 1 秒、160×90、24fps H.264 样片选择 decoded frame index 23（PTS 约 0.958333s），并完成 `prepare → confirm → verify` ready round trip；导出 PNG 与源 decoded frame 的 RGB24 像素摘要一致。本机 runtime profile 为 **5 capabilities / 0 blocking / 0 warnings**。全量 `.venv/bin/python -m pytest tests -q` 通过 **1290 passed in 35.23s**；Python compileall、四组相关 CLI help、Skill Creator `quick_validate.py` 与 `git diff --check` 均通过。
 
 ### 2026-09-18 自动化升级记录（Source-bound Audio Cue Mix + Full-listen Gate）
 
@@ -5217,6 +5299,7 @@ python3 scripts/pipeline_manifest.py . --require freeze_punch_plan --strict
 | **121** | **[Storyboard Animatic](docs/prompts/121-storyboard-animatic.md)** | **分镜静帧 + 可选旁白 → timed MP4、完整 1× 复核与 live gate** |
 | **122** | **[Generation Reference Preflight](docs/prompts/122-generation-reference-preflight.md)** | **图片/视频/音频 reference 解码、限额、角色/@标签与 live gate** |
 | **123** | **[Audio Cue Mix](docs/prompts/123-audio-cue-mix.md)** | **cue sheet + 最终旁白 → 本地/程序化 SFX 单轨、完整试听与 live gate** |
+| **124** | **[Generation Chain Handoff](docs/prompts/124-generation-chain-handoff.md)** | **已审生成片 + 已审边界 → 精确末帧 PNG、下一镜首帧提示词与 live gate** |
 | **62** | **[Hook Variants](docs/prompts/62-hook-variants.md)** | **同一视频批量生成前三秒 hook 角度** |
 | **67** | **[Speech Continuity QA](docs/prompts/67-speech-continuity-qa.md)** | **成片二次 ASR 检查复读、近重复 take 和句内口吃** |
 | **68** | **[Cover Variants](docs/prompts/68-cover-variants.md)** | **多套封面、feed-size 预览、标题协同和最终选择** |
@@ -5300,6 +5383,7 @@ scripts/
 ├── generation_reference_preflight.py 图片/视频/音频 reference 解码/限额/角色绑定 live gate [V3]
 ├── generation_task_log.py      异步生成任务台账 + 下载 gate         [V3]
 ├── generated_clip_review.py    source-bound 生成片段评分/裁切/重生 gate [V3]
+├── generation_chain_handoff.py 已审上一镜末帧 → 下一镜 exact first-frame / live gate [V3]
 ├── generated_motion_window.py  生成片 full-frame 冻帧 / active interval / trim live gate [V3]
 ├── scoped_video_edit_review.py 原片/局部 AI edit 同时间点 A-B / preserve gate [V3]
 ├── generated_sequence_review.py 已审生成片段相邻尾帧/首帧/预览连续性 gate [V3]

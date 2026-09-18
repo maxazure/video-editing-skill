@@ -16,6 +16,9 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
 
 from generation_lessons import load_library, select_lessons, verify_library
+from generation_chain_handoff import VERSION as GENERATION_CHAIN_HANDOFF_VERSION
+from generation_chain_handoff import verify_plan as verify_generation_chain_handoff_plan
+from generation_chain_handoff import verify_report as verify_generation_chain_handoff_report
 from provider_capability import (
     load_bundle as load_capability_bundle,
     profile_index,
@@ -295,6 +298,65 @@ def _sequence_handoff_index(
     return index
 
 
+def _generation_chain_handoff_index(
+    reports: Sequence[Mapping[str, Any]],
+    *,
+    shot_ids: Sequence[str],
+) -> Dict[str, Mapping[str, Any]]:
+    indexed: Dict[str, Mapping[str, Any]] = {}
+    adjacent_pairs = set(zip(shot_ids, shot_ids[1:]))
+    for position, report in enumerate(reports, start=1):
+        if report.get("version") != GENERATION_CHAIN_HANDOFF_VERSION:
+            raise ValueError(
+                f"generation chain handoff #{position} must be a {GENERATION_CHAIN_HANDOFF_VERSION} report"
+            )
+        verification = verify_generation_chain_handoff_plan(report)
+        if int((verification.get("summary") or {}).get("blocking") or 0):
+            raise ValueError(
+                f"generation chain handoff #{position} is blocked: "
+                + "; ".join(verification.get("blockers") or [])
+            )
+        if str(report.get("status") or "") != "ready":
+            raise ValueError(f"generation chain handoff #{position} is not ready")
+        if not str(report.get("artifact_id") or "").startswith("gch_"):
+            raise ValueError(f"generation chain handoff #{position} has no valid artifact_id")
+        review = report.get("review") if isinstance(report.get("review"), Mapping) else {}
+        if review.get("decision") != "use_exact_start_frame":
+            raise ValueError(f"generation chain handoff #{position} is not approved for exact-frame use")
+        boundary = report.get("boundary") if isinstance(report.get("boundary"), Mapping) else {}
+        pair = (str(boundary.get("from_shot") or ""), str(boundary.get("to_shot") or ""))
+        if pair not in adjacent_pairs:
+            raise ValueError(
+                f"generation chain handoff #{position} does not match the current storyboard order: {pair}"
+            )
+        target = pair[1]
+        if target in indexed:
+            raise ValueError(f"duplicate generation chain handoff for {target}")
+        frame = report.get("handoff_frame") if isinstance(report.get("handoff_frame"), Mapping) else {}
+        root = Path(str(report.get("project_root") or "")).expanduser()
+        frame_path = root / str(frame.get("path") or "")
+        if not frame.get("path") or not frame_path.is_file():
+            raise ValueError(f"generation chain handoff #{position} has no live handoff frame")
+        indexed[target] = report
+    return indexed
+
+
+def _chain_handoff_prompt(report: Mapping[str, Any]) -> str:
+    boundary = report.get("boundary") or {}
+    contract = report.get("prompt_contract") or {}
+    return (
+        "EXACT CHAIN START from {source}: use the supplied reviewed tail frame as the exact opening "
+        "composition; continue its pose, object state, environment, lighting, and spatial relationships "
+        "without resetting the scene. {identity} {motion} Receive-in: {receive} Match rule: {match}"
+    ).format(
+        source=boundary.get("from_shot", ""),
+        identity=contract.get("identity_policy", ""),
+        motion=contract.get("motion_budget", ""),
+        receive=boundary.get("receive_in", ""),
+        match=boundary.get("match_requirement", ""),
+    )
+
+
 def _sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -392,6 +454,7 @@ def build_video_prompt_pack(
     default_duration: float = 4.0,
     max_duration: float = 8.0,
     sequence_handoff_report: Optional[Mapping[str, Any]] = None,
+    generation_chain_handoff_reports: Optional[Sequence[Mapping[str, Any]]] = None,
 ) -> Dict[str, Any]:
     if lesson_limit < 0 or lesson_limit > 10:
         raise ValueError("lesson_limit must be between 0 and 10")
@@ -400,6 +463,7 @@ def build_video_prompt_pack(
     characters = list(characters or [])
     brand_anchors = list(brand_anchors or [])
     capability_bundles = list(capability_bundles or [])
+    generation_chain_handoff_reports = list(generation_chain_handoff_reports or [])
     target = plan.get("target") if isinstance(plan.get("target"), Mapping) else {}
     aspect = str(target.get("aspect") or "9:16")
     shared_style_reference = _explicit_reference(style_reference)
@@ -412,6 +476,10 @@ def build_video_prompt_pack(
     if sequence_handoff_report is not None and len(set(shot_ids)) != len(shot_ids):
         raise ValueError("storyboard shot ids must be unique when sequence handoff is used")
     sequence_handoffs = _sequence_handoff_index(sequence_handoff_report, shot_ids=shot_ids)
+    generation_chain_handoffs = _generation_chain_handoff_index(
+        generation_chain_handoff_reports,
+        shot_ids=shot_ids,
+    )
     lesson_library_id = ""
     if lesson_library is not None:
         lesson_verification = verify_library(lesson_library)
@@ -455,6 +523,25 @@ def build_video_prompt_pack(
         route = _route(shot)
         selected_provider = _provider_for_shot(shot, provider, animate_stills=animate_stills)
         reference = _expected_reference(asset_root, shot_id)
+        chain_handoff = generation_chain_handoffs.get(shot_id)
+        if chain_handoff is not None:
+            if selected_provider not in GENERATED_VIDEO_PROVIDERS:
+                raise ValueError(
+                    f"generation chain handoff target {shot_id} requires a generated-video provider"
+                )
+            if mode not in {"auto", "image_to_video"}:
+                raise ValueError(
+                    f"generation chain handoff target {shot_id} requires mode=auto or image_to_video"
+                )
+            frame = chain_handoff.get("handoff_frame") or {}
+            frame_path = (
+                Path(str(chain_handoff.get("project_root") or ""))
+                / str(frame.get("path") or "")
+            ).resolve()
+            reference = {
+                "expected_path": str(frame_path),
+                "resolved_path": str(frame_path),
+            }
         selected_mode = _mode_for_shot(
             mode=mode,
             provider=selected_provider,
@@ -463,6 +550,8 @@ def build_video_prompt_pack(
             animate_stills=animate_stills,
             style_reference=shared_style_reference,
         )
+        if chain_handoff is not None:
+            selected_mode = "image_to_video"
         duration = _clamp_duration(shot.get("duration"), default=default_duration, max_duration=max_duration)
         continuity = _continuity_text(shot, brand_anchors)
         requires_approval = selected_provider in GENERATED_VIDEO_PROVIDERS
@@ -514,6 +603,8 @@ def build_video_prompt_pack(
         handoff_instruction = _handoff_prompt(shot_id, shot_handoff)
         if handoff_instruction:
             prompt = f"{prompt} {handoff_instruction}"
+        if chain_handoff is not None:
+            prompt = f"{prompt} {_chain_handoff_prompt(chain_handoff)}"
 
         profile_entry = capabilities_by_provider.get(selected_provider)
         capability_issues: List[str] = []
@@ -593,6 +684,20 @@ def build_video_prompt_pack(
                 key: dict(value) if isinstance(value, Mapping) else None
                 for key, value in shot_handoff.items()
             },
+            "generation_chain_handoff": (
+                {
+                    "artifact_id": chain_handoff.get("artifact_id"),
+                    "boundary_id": (chain_handoff.get("boundary") or {}).get("boundary_id"),
+                    "from_shot": (chain_handoff.get("boundary") or {}).get("from_shot"),
+                    "to_shot": (chain_handoff.get("boundary") or {}).get("to_shot"),
+                    "selected_frame_index": (chain_handoff.get("selected_frame") or {}).get("index"),
+                    "selected_frame_pts_seconds": (chain_handoff.get("selected_frame") or {}).get("pts_seconds"),
+                    "frame_sha256": (chain_handoff.get("handoff_frame") or {}).get("sha256"),
+                    "reviewed_by": (chain_handoff.get("review") or {}).get("reviewed_by"),
+                }
+                if chain_handoff is not None
+                else None
+            ),
             "approval_required": requires_approval,
             "approval_status": "approved" if (requires_approval and approved) else ("needs_approval" if requires_approval else "not_required"),
             "approval_note": (
@@ -607,6 +712,7 @@ def build_video_prompt_pack(
                 "Subject, palette, and framing stay consistent with adjacent shots.",
                 "Shared style reference is attached unchanged to every generated shot when configured.",
                 "Reviewed receive-in and handoff-out instructions are visible in the provider prompt when configured.",
+                "A reviewed predecessor tail is the exact first frame and original identity/product/style anchors remain in force when chain handoff is configured.",
             ],
         })
 
@@ -645,6 +751,10 @@ def build_video_prompt_pack(
                 "report_id": str((sequence_handoff_report or {}).get("report_id") or ""),
                 "boundaries": len((sequence_handoff_report or {}).get("boundaries") or []),
             },
+            "generation_chain_handoffs": [
+                str(report.get("artifact_id") or "")
+                for report in generation_chain_handoff_reports
+            ],
         },
         "summary": {
             "items": len(items),
@@ -656,12 +766,14 @@ def build_video_prompt_pack(
             "generation_lessons_applied": applied_lesson_count,
             "unique_generation_lessons": len(applied_lesson_ids),
             "sequence_handoff_boundaries": len((sequence_handoff_report or {}).get("boundaries") or []),
+            "generation_chain_handoffs": len(generation_chain_handoffs),
             **{f"provider_{key}": value for key, value in sorted(provider_counts.items())},
         },
         "items": items,
         "next_steps": [
             "Review prompts and reference paths before submitting any generated-video job.",
             "Pass a live-verified sequence_handoff.v1 report so each adjacent shot receives and hands off an explicit edit baton.",
+            "For genuinely continuous shots, pass a live-verified generation_chain_handoff.v1 report so the approved predecessor tail becomes the next exact first frame.",
             "Verify the generation lesson library and review every learned constraint before reusing it.",
             "Verify dated provider capability profiles against the exact UI/API surface before selecting model settings.",
             "Use Codex image_gen first for still references and character sheets.",
@@ -821,6 +933,7 @@ def emit_markdown(pack: Mapping[str, Any]) -> str:
         f"- Capability blockers: {pack.get('summary', {}).get('capability_blocking', 0)}",
         f"- Shared style reference: `{style_reference_path}`",
         f"- Sequence handoff report: `{pack.get('global', {}).get('sequence_handoff', {}).get('report_id') or '-'}`",
+        f"- Generation chain handoffs: {pack.get('summary', {}).get('generation_chain_handoffs', 0)}",
         "",
         "## Character / Style Reference",
         "",
@@ -871,6 +984,16 @@ def emit_markdown(pack: Mapping[str, Any]) -> str:
                 "**Capability blockers**",
                 "",
                 *[f"- `{issue}`" for issue in item.get("capability_issues") or []],
+                "",
+            ])
+        if item.get("generation_chain_handoff"):
+            chain = item.get("generation_chain_handoff") or {}
+            lines.extend([
+                "**Generation chain handoff**",
+                "",
+                f"- `{chain.get('from_shot', '')}` → `{chain.get('to_shot', '')}` via `{chain.get('boundary_id', '')}`",
+                f"- Artifact: `{chain.get('artifact_id', '')}`",
+                f"- Approved source frame: #{chain.get('selected_frame_index', '')} at {chain.get('selected_frame_pts_seconds', '')}s",
                 "",
             ])
         lines.extend([
@@ -932,6 +1055,12 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         "--sequence-handoff",
         help="Reviewed sequence_handoff.v1 report; live-verified before its boundary instructions enter prompts.",
     )
+    parser.add_argument(
+        "--generation-chain-handoff",
+        action="append",
+        default=[],
+        help="Reviewed generation_chain_handoff.v1 report; repeat for each sequential boundary to inject an exact next-shot first frame.",
+    )
     parser.add_argument("--lesson-library", help="Approved generation_lessons.json to apply to generated-video prompts.")
     parser.add_argument("--lesson-model", default="", help="Exact model scope; omitted applies provider-wide lessons only.")
     parser.add_argument("--lesson-category", action="append", default=[], help="Lesson category filter; can repeat.")
@@ -975,6 +1104,22 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
             storyboard_plan=args.storyboard_plan,
             project_dir=args.project_dir,
         )
+    generation_chain_handoff_reports = []
+    project_root = Path(args.project_dir).expanduser().resolve(strict=True)
+    for raw_path in args.generation_chain_handoff:
+        verification = verify_generation_chain_handoff_report(
+            raw_path,
+            project_dir=str(project_root),
+        )
+        if int((verification.get("summary") or {}).get("blocking") or 0):
+            raise ValueError(
+                "generation chain handoff is blocked: "
+                + "; ".join(verification.get("blockers") or [])
+            )
+        candidate = Path(raw_path).expanduser()
+        if not candidate.is_absolute():
+            candidate = project_root / candidate
+        generation_chain_handoff_reports.append(load_plan(str(candidate.resolve(strict=True))))
     pack = build_video_prompt_pack(
         plan,
         provider=args.provider,
@@ -996,6 +1141,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         default_duration=args.default_duration,
         max_duration=args.max_duration,
         sequence_handoff_report=sequence_handoff_report,
+        generation_chain_handoff_reports=generation_chain_handoff_reports,
     )
 
     os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)

@@ -63,6 +63,8 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    │                            首帧/style key 尺寸/方向/透明背景/画幅 gate
    ├─→ generation_task_log.py   异步生成任务台账 / submit_id / 下载 gate
    ├─→ generated_clip_review.py 生成片段 contact sheet / 常识物理 / 连续性 / 重生 gate
+   ├─→ generation_chain_handoff.py
+   │                            已审上一镜末帧 → 下一镜精确首帧 / 顺序生成 live gate
    ├─→ generated_motion_window.py
    │                            短生成片 0.25s freeze → active intervals / 人工裁切 / live gate
    ├─→ scoped_video_edit_review.py
@@ -185,11 +187,12 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `storyboard_animatic.py` | storyboard + 每镜静帧 + 可选旁白 → source-bound timed MP4、完整 1× 复核与 live gate | `plan --panel SHOT=PATH --delivery` / `apply` / `confirm` / `verify --strict` |
 | `sequence_handoff.py` | storyboard → 相邻镜头接力、剪辑边界、180° 轴/方向、音频桥、edit handles 与 source-bound live gate | `prepare --storyboard --response-template` `audit --request --response` `verify --report --strict` |
 | `provider_capability.py` | exact provider/surface/model → 带日期的 mode/画幅/时长/分辨率/参考上限能力合同 live gate | `verify --bundle --max-age-days --output --markdown --strict` |
-| `video_prompt_pack.py` | storyboard_plan → 多 provider 视频生成提示词包 + 已审镜头接力 + 角色/品牌/style lock + paid approval/capability gate | `--storyboard-plan` `--project-dir` `--sequence-handoff` `--capability-profile` `--require-capability-profile` `--resolution` `--approved` `--strict` |
+| `video_prompt_pack.py` | storyboard_plan → 多 provider 视频生成提示词包 + 已审边界/真实末帧接力 + 角色/品牌/style lock + paid approval/capability gate | `--storyboard-plan` `--project-dir` `--sequence-handoff` `--generation-chain-handoff` `--capability-profile` `--approved` `--strict` |
 | `reference_frame_preflight.py` | video_prompt_pack → 首帧/style key 存在性、解码、尺寸、方向、画幅、透明背景 gate | `--prompt-pack` `--require-style-reference` `--reference shot_id=...` `--strict` |
 | `generation_reference_preflight.py` | prompt pack + 图片/视频/音频 reference manifest + provider profile → 类型/数量/时长/模式/@标签角色 source-bound gate | `template --prompt-pack` / `analyze --references --capability-profile --strict` / `verify --report --strict` |
 | `generation_task_log.py` | 异步生成任务台账：submit_id/task id、轮询、下载、本地落盘 gate | `add` `update` `import-provider-decision` `report --strict` |
 | `generated_clip_review.py` | 生成视频片段 source-bound 视觉复核：contact sheet、评分、裁切范围、重生建议 | `prepare --clip/--asset-manifest` `audit --request --response` `verify --report --strict` |
+| `generation_chain_handoff.py` | 已审生成片 + 已审相邻边界 → 精确末帧 PNG、人工确认、下一镜 exact first-frame live gate | `prepare --clip-review --sequence-handoff --boundary` / `confirm --decision use_exact_start_frame` / `verify --strict` |
 | `generated_motion_window.py` | 短生成片全帧 freeze → active intervals、人工 trim/keep/reject、帧准确 working copy 与 live gate | `analyze <clip>` `confirm --decision` `apply --output` `verify --strict` |
 | `scoped_video_edit_review.py` | 原片 + 局部 AI 编辑结果 → 同时间点 A/B 证据、唯一变更目标、保护项逐项复核和 live gate | `prepare --source --edited --change --preserve` `audit --request --response` `verify --report --strict` |
 | `generated_sequence_review.py` | 已审生成片段跨镜头连续性复核：真实尾帧/首帧、并排图、无声边界预览和 live gate | `prepare --clip-review [--storyboard-plan]` `audit --request --response` `verify --report --strict` |
@@ -504,7 +507,7 @@ python3 scripts/pipeline_manifest.py \
 
 ### Phase 0aa: Runtime Preflight（按任务核验本机能力）
 
-在打开媒体或启动渲染前，运行 [runtime_preflight.py](./scripts/runtime_preflight.py)。只转写、probe 或抽流用 `media_io`；会编码最终画面的任务用 `core_edit`，再按需要追加 `storyboard_animatic / audio_cue_mix / captions / qa / edge_black_trim / hdr_sdr / stabilization / interlace / remotion`：
+在打开媒体或启动渲染前，运行 [runtime_preflight.py](./scripts/runtime_preflight.py)。只转写、probe 或抽流用 `media_io`；会编码最终画面的任务用 `core_edit`，再按需要追加 `storyboard_animatic / audio_cue_mix / generation_chain_handoff / captions / qa / edge_black_trim / hdr_sdr / stabilization / interlace / remotion`：
 
 ```bash
 python3 scripts/runtime_preflight.py analyze \
@@ -1356,6 +1359,13 @@ python3 scripts/render_final.py --config script/render_config.json --output medi
 - `pass` 要求加权分 ≥80 且无删段；`pass_with_edits` 要求 ≥65，并由 keep/remove 精确覆盖全片；常识/物理、身份、道具、文字水印、连续性或音画 hard fail 无论总分多高都必须 `fail`
 - 填完 response 后运行 `generated_clip_review.py audit --request work/generated_clip_review_request.json --response work/generated_clip_review_response.json --output work/generated_clip_review.json --markdown work/generated_clip_review.md --strict`；任何 clip/contact sheet 漂移、缺审、非法区间或需重生都会阻塞
 - 组装/发布前再运行 `generated_clip_review.py verify --report work/generated_clip_review.json --strict`，也可用 `pipeline_manifest.py --require generated_clip_review --strict`。reviewer label 不是身份认证或数字签名
+
+**Generation Chain Handoff 已审生成片末帧接力**（同一场景连续生成时运行）：
+- 仅在 `sequence_handoff.v1` 已批准该相邻边界、上一镜 `generated_clip_review.v1` 为 `pass` 或 `pass_with_edits` 时使用；换场、时间跳跃、故意跳切和普通剪辑匹配不要强行接力
+- 运行 `generation_chain_handoff.py prepare --project-dir . --clip-review work/generated_clip_review.json --sequence-handoff work/sequence_handoff.json --boundary boundary_001 --frame-output work/generation_chain/boundary_001_tail.png --output work/generation_chain_handoff.plan.json --markdown work/generation_chain_handoff.plan.md`；脚本枚举 decoded frames，从完整 clip 或最后一个 approved keep range 取确切末帧，并要求源帧/PNG 的 RGB24 像素摘要一致
+- 看完上一镜和 PNG 后执行 `confirm --decision use_exact_start_frame --reviewed-by ... --same-scene-confirmed --tail-frame-accepted --original-anchors-preserved --notes ... --output work/generation_chain_handoff.json --strict`；尾帧不适合时用 `reject` 并返回分镜、生成或普通剪辑边界
+- 提交下一镜前运行 `verify --plan work/generation_chain_handoff.json --strict`，再给 `video_prompt_pack.py` 加 `--generation-chain-handoff work/generation_chain_handoff.json`。目标镜头改为 `image_to_video`，已审末帧成为 exact first frame；prompt 同时保留原角色/产品/style anchors，并限制为一个主动作和一种机位行为
+- 上游报告、clip、批准区间、frame index/PTS、PNG bytes/pixels、人工决定或 canonical artifact ID 漂移都会阻塞；每条新生成片仍需逐片 review，全部完成后再跑跨镜头 review。详见 [docs/prompts/124-generation-chain-handoff.md](docs/prompts/124-generation-chain-handoff.md)
 
 **Generated Motion Window 生成视频有效运动窗口**（逐片视觉 review 之后、跨镜头组装前运行）：
 - contact sheet 可能漏掉 0.25–1 秒的冻结开头或短暂运动；对每条通过视觉复核的生成片运行 `generated_motion_window.py analyze work/generated_video/shot_001.mp4 --project-dir . --output work/generated_motion_window/shot_001.json --markdown work/generated_motion_window/shot_001.md`

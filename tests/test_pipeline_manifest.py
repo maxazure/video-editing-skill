@@ -24,6 +24,7 @@ import storyboard_animatic  # noqa: E402
 import temporal_artifact_qa  # noqa: E402
 import stream_coverage_qa  # noqa: E402
 import generated_clip_review  # noqa: E402
+import generation_chain_handoff  # noqa: E402
 import generated_motion_window  # noqa: E402
 import generated_sequence_review  # noqa: E402
 import scoped_video_edit_review  # noqa: E402
@@ -169,6 +170,39 @@ def test_sequence_handoff_is_live_verified_and_can_be_required(tmp_path, monkeyp
         str(tmp_path), target_stage="analysis", required=["sequence_handoff"]
     )
     assert "sequence_handoff" in missing["missing_required"]
+
+
+def test_generation_chain_handoff_is_live_verified_and_can_be_required(tmp_path, monkeypatch):
+    _publish_ready_project(tmp_path)
+    report_path = tmp_path / "work" / "generation_chain_handoff.json"
+    _write(report_path, {"version": "generation_chain_handoff.v1"})
+
+    monkeypatch.setattr(
+        generation_chain_handoff,
+        "verify_report",
+        lambda _report, project_dir=".": {
+            "status": "ready",
+            "summary": {"blocking": 0, "warnings": 0},
+        },
+    )
+    current = build_manifest(
+        str(tmp_path), target_stage="publish_ready", required=["generation_chain_handoff"]
+    )
+    gate = next(g for g in current["gates"] if g["category"] == "generation_chain_handoff")
+    assert gate["status"] == "ready"
+
+    monkeypatch.setattr(
+        generation_chain_handoff,
+        "verify_report",
+        lambda _report, project_dir=".": {
+            "status": "blocked",
+            "summary": {"blocking": 1, "warnings": 0},
+        },
+    )
+    stale = build_manifest(str(tmp_path), target_stage="publish_ready")
+    gate = next(g for g in stale["gates"] if g["category"] == "generation_chain_handoff")
+    assert gate["status"] == "blocked"
+    assert "generation_chain_handoff" in stale["blocked_gates"]
 
 
 def test_storyboard_animatic_is_live_verified_and_can_be_required(tmp_path, monkeypatch):
