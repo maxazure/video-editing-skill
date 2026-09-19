@@ -16,6 +16,7 @@
 - 需要把共享 style image 自动路由成 `reference_to_video`，再交给多模态 reference 门禁绑定图片、视频和音频。
 - 已审核 `sequence_handoff.json`，需要把相邻镜头的 receive-in / handoff-out、剪辑类型、轴线方向、音频桥和 edit handles 写进最终 prompt。
 - 已审核上一条生成片，且同一场景的下一镜要用真实末帧作为精确首帧；先完成 [124-Generation Chain Handoff](124-generation-chain-handoff.md)，再把报告传给 prompt pack。
+- 已审核参考片的情绪/叙事机制和目标镜头映射；先完成 [125-Reference Story Formula](125-reference-story-formula.md)，再把报告作为 structure-only guidance 传给 prompt pack。
 
 ## 命令
 
@@ -23,6 +24,7 @@
 python3 scripts/video_prompt_pack.py \
   --project-dir . \
   --storyboard-plan work/storyboard_plan.json \
+  --reference-story-formula work/reference_story_formula.json \
   --sequence-handoff work/sequence_handoff.json \
   --asset-root work \
   --character "same Chinese founder-host, navy jacket" \
@@ -64,6 +66,7 @@ python3 scripts/video_prompt_pack.py \
 | `codex_imagegen` | `codex_imagegen` | 先用 Codex `image_gen` 做静态参考图 |
 | `codex_imagegen + --animate-stills` | `dreamina_seedance` `image_to_video` | 把参考图转成视频生成提示词 |
 | generated-video provider + `--style-reference` | `reference_to_video` | 没有逐镜首帧时，共享 style reference 触发语义参考模式 |
+| `--reference-story-formula` | 保持原 provider/mode | live-verify 参考片故事公式，并把机制、观众状态变化、目标内容锚点和复制排除合同注入对应 shot |
 | `--generation-chain-handoff` | `image_to_video` | 已审上一镜真实末帧覆盖下一镜 reference；只接受当前 storyboard 的相邻边界，可重复传入 |
 | `--mode reference_to_video` | 指定 provider | 使用图片/视频/音频做语义参考；提交前运行 `generation_reference_preflight.py` |
 | `--mode video_edit/video_extension/clip_stitching` | 指定 provider | 显式声明编辑、延长或拼接模式；仍以 exact surface capability profile 为准 |
@@ -78,9 +81,11 @@ python3 scripts/video_prompt_pack.py \
 - `global.character_sheet_prompt`：角色/品牌/风格参考 sheet 提示词。
 - `global.style_reference`：共享 style key 的 expected/resolved path。
 - `global.sequence_handoff`：已现场验证的 handoff report id 和边界数。
+- `global.reference_story_formula`：已现场验证的公式 report id、参考源和目标 storyboard 绑定。
 - `global.generation_chain_handoffs`：本次使用的 live-verified 真实末帧接力 artifact ids。
 - `items[].prompt`：按 provider 改写后的 shot 提示词。
 - `items[].sequence_handoff`：该镜头的 incoming/outgoing 边界；首镜只有 outgoing，末镜只有 incoming。
+- `items[].reference_story_formula`：该镜头对应的 beat、mechanism、viewer-state shift、target content anchor、surface change、visual action 与复制排除合同。
 - `items[].generation_chain_handoff`：上一镜、边界、确切 decoded frame index/PTS、frame hash 与 reviewer label；该镜头的 reference 已切到 handoff PNG。
 - `items[].generation_lessons`：本 shot 命中的 approved lesson、scope、source evidence；prompt 只追加通用 `lesson`，不会自动复用旧片段专属 `prompt_fix`。
 - `global.lesson_library.library_id`：本次 prompt pack 使用的 canonical 经验库版本。
@@ -123,6 +128,18 @@ python3 scripts/sequence_handoff.py prepare \
   --response-template work/sequence_handoff_response.json
 # 填写 response 后运行 audit 与 verify；详见 120-sequence-handoff.md。
 
+# 2c. 要迁移参考片故事机制时，先建立并审核 source-bound 公式
+python3 scripts/reference_story_formula.py prepare \
+  --project-dir . \
+  --reference-video origin/reference.mp4 \
+  --reference-transcript origin/reference_transcript.json \
+  --target-storyboard work/storyboard_plan.json \
+  --output work/reference_story_formula_request.json \
+  --markdown work/reference_story_formula_request.md \
+  --response-template work/reference_story_formula_response.json \
+  --strict
+# 完整看听参考片并填写 response 后，运行 audit 与 verify；详见 125-reference-story-formula.md。
+
 # 3. 按 video_prompt_pack.md 用 Codex image_gen 做 reference sheet / stills
 #    注意：Dreamina/即梦等视频生成可能消耗 credits，提交前先确认。
 
@@ -137,6 +154,7 @@ python3 scripts/generation_lessons.py verify \
 python3 scripts/video_prompt_pack.py \
   --project-dir . \
   --storyboard-plan work/storyboard_plan.json \
+  --reference-story-formula work/reference_story_formula.json \
   --sequence-handoff work/sequence_handoff.json \
   --asset-root work \
   --style-reference work/imagegen/style-key.png \

@@ -36,6 +36,7 @@
 - **生成式素材有明确审批和台账**：Codex `image_gen` / GPT Image 2 提示词、Dreamina/Veo/LTX/Wan/Sora 视频提示词、provider 决策、`submit_id` 轮询下载和本地落盘 gate 都先记录再执行。
 - **生成 provider 参数先绑定具体入口再使用**：`provider_capability.py` 把 provider、UI/API surface、model、核验日期、证据和 mode/画幅/时长/分辨率/参考上限落成 profile；`video_prompt_pack.py` 会拒绝缺失、过期或设置越界的 profile。
 - **多模态生成参考素材先解码、限额和绑定角色**：`generation_reference_preflight.py` 把本地图片/视频/音频按 provider 顺序标成 `@ImageN / @VideoN / @AudioN`，要求每份素材只有明确角色与排除项；同时检查类型、扩展名、字节、单条/合计时长、数量、audio-only、frame/reference 互斥和 live profile/source 漂移。
+- **参考片的故事公式可以安全迁移**：`reference_story_formula.py` 把参考视频、timecoded transcript 和目标 storyboard 绑定起来，要求人工标注情绪机制、观众状态变化、触发点和逐镜 content anchor；原画面、音频、原话、品牌及具体情节全部进入显式复制排除合同，通过 live gate 后才注入 `video_prompt_pack.py`。
 - **多镜头生成前先逐边界设计接力**：`sequence_handoff.py` 把上一镜 offer、下一镜 receive、载体、edit type、180° 轴、屏幕方向、音频桥、头尾 handles、风险和 fallback 绑定到确切 storyboard；审核通过后 `video_prompt_pack.py` 会把双向接力合同写进对应 provider prompt。
 - **付费生成前先按真实时长看完整分镜**：`storyboard_animatic.py` 把 `storyboard_plan.v1`、每镜一张静帧和可选旁白绑定成带 shot/time 标签的 CFR MP4；完整 1× 检查顺序、节奏、可读性、连续性和音画对齐后才放行，分镜、panel、音频或输出漂移会让旧 review 失效。
 - **生成视频不会从冻帧起步**：`generated_motion_window.py` 以 0.25 秒 full-frame freeze evidence 找出 active intervals；人工确认 trim/keep/reject 后才生成新的 H.264/AAC 工作副本，source、检测参数、决定和输出字节都会 live verify。
@@ -232,6 +233,9 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    │
    ├─→ storyboard_animatic.py  每镜静帧 + 可选旁白 → timed MP4
    │                            镜头 ID/时间码 / 完整 1× review / source-bound live gate
+   │
+   ├─→ reference_story_formula.py
+   │                            参考片情绪机制 → 目标镜头 content anchors / 复制排除 live gate
    │
    ├─→ sequence_handoff.py      相邻镜头 receive-in / handoff-out / edit boundary
    │                            180° 轴 / 屏幕方向 / 音频桥 / edit handles / live gate
@@ -1144,8 +1148,8 @@ python3 scripts/final_audio_storyboard.py verify \
 
 response 固定 `single_track / sectioned_tracks / stems` 策略、跨段 tone、最终时间线 section、voice ledger、stem 类型和原生声音保留理由。每个删掉的 beat 必须标成 `remove / rewrite_into_adjacent / offscreen_bridge`；重复 voiced line、漏填段落、时间字段手改、EDL/storyboard/source/response/report 漂移都会 fail closed。脚本不生成音频、不消费 credits，也不把 JSON 冒充 provider prompt；批准后仍应按目标音频工具的规则改写成 timed cue sheet。`pipeline_manifest.py --require final_audio_storyboard --strict` 可设为发布门禁。
 
-### 🎞️ Storyboard Plan — 分镜、时长预演、镜头接力与生成路由
-[`scripts/storyboard_plan.py`](scripts/storyboard_plan.py) · [`scripts/storyboard_animatic.py`](scripts/storyboard_animatic.py) · [`scripts/sequence_handoff.py`](scripts/sequence_handoff.py) · [`scripts/video_prompt_pack.py`](scripts/video_prompt_pack.py) · [`scripts/generation_reference_preflight.py`](scripts/generation_reference_preflight.py) · [`scripts/storyboard_assets.py`](scripts/storyboard_assets.py) · [分镜文档](docs/prompts/24-storyboard-plan.md) · [时长预演文档](docs/prompts/121-storyboard-animatic.md) · [镜头接力文档](docs/prompts/120-sequence-handoff.md) · [视频提示词包文档](docs/prompts/45-video-prompt-pack.md) · [多模态参考门禁文档](docs/prompts/122-generation-reference-preflight.md) · [素材清单文档](docs/prompts/25-storyboard-assets.md)
+### 🎞️ Storyboard Plan — 分镜、时长预演、故事公式、镜头接力与生成路由
+[`scripts/storyboard_plan.py`](scripts/storyboard_plan.py) · [`scripts/storyboard_animatic.py`](scripts/storyboard_animatic.py) · [`scripts/reference_story_formula.py`](scripts/reference_story_formula.py) · [`scripts/sequence_handoff.py`](scripts/sequence_handoff.py) · [`scripts/video_prompt_pack.py`](scripts/video_prompt_pack.py) · [`scripts/generation_reference_preflight.py`](scripts/generation_reference_preflight.py) · [`scripts/storyboard_assets.py`](scripts/storyboard_assets.py) · [分镜文档](docs/prompts/24-storyboard-plan.md) · [时长预演文档](docs/prompts/121-storyboard-animatic.md) · [参考片故事公式文档](docs/prompts/125-reference-story-formula.md) · [镜头接力文档](docs/prompts/120-sequence-handoff.md) · [视频提示词包文档](docs/prompts/45-video-prompt-pack.md) · [多模态参考门禁文档](docs/prompts/122-generation-reference-preflight.md) · [素材清单文档](docs/prompts/25-storyboard-assets.md)
 
 借鉴 GitHub 上视频生成类项目的 storyboard / shot continuity / provider routing 思路，但保持本项目的轻量原则：脚本只做本地规划，不提交任何付费生成任务。
 
@@ -1156,8 +1160,9 @@ response 固定 `single_track / sectioned_tracks / stems` 策略、跨段 tone�
 | `continuity.anchors` | 系列色彩、比例、字幕安全区、上一镜头引用、关键词线索 |
 | `storyboard_plan.md` | 适合人工 review 的 shot cards，含 prompt 和检查项 |
 | `storyboard_animatic.json/mp4` | 绑定分镜、每镜静帧和可选旁白的 timed preview、完整播放决定与 live gate |
+| `reference_story_formula.json` | 绑定参考片、timecoded transcript 与目标分镜的情绪/叙事机制、观众状态迁移、逐镜 content anchor、复制排除合同和 live gate |
 | `sequence_handoff.json` | 每个相邻 shot 的 offer/receive、载体、edit type、轴线/方向、音频桥、edit handles、风险、fallback 与 source-bound review |
-| `video_prompt_pack.json` | 每个 shot 的 Dreamina/即梦 Seedance、Veo、LTX、Wan、Sora 提示词、接力合同、参考图路径、负面提示词和审批状态 |
+| `video_prompt_pack.json` | 每个 shot 的 Dreamina/即梦 Seedance、Veo、LTX、Wan、Sora 提示词、故事公式、接力合同、参考图路径、负面提示词和审批状态 |
 | `reference_frame_preflight.json` | image-to-video 首帧和共享 style key 的存在性、解码、尺寸、方向、画幅、透明背景 gate |
 | `generation_reference_preflight.json` | 图片/视频/音频 references 的有序标签、窄角色、排除项、媒体探测、provider 限额、source/profile 绑定与提交 prompt |
 | `storyboard_assets.json` | 每个 shot 对应素材是否 ready、需要生成/审批/渲染/搜索；B-roll 可带 `candidate_scores` 排名理由 |
@@ -1184,6 +1189,18 @@ python3 scripts/storyboard_animatic.py plan \
 python3 scripts/storyboard_animatic.py apply work/storyboard_animatic.json
 # 完整 1× 播放后执行 confirm，再运行 verify --strict。
 
+python3 scripts/reference_story_formula.py prepare \
+  --project-dir . \
+  --reference-video origin/reference.mp4 \
+  --reference-transcript origin/reference_transcript.json \
+  --target-storyboard work/storyboard_plan.json \
+  --beat-count 5 \
+  --output work/reference_story_formula_request.json \
+  --markdown work/reference_story_formula_request.md \
+  --response-template work/reference_story_formula_response.json \
+  --strict
+# 完整看听参考片并填写 response 后，运行 audit 与 verify --strict。
+
 python3 scripts/sequence_handoff.py prepare \
   --project-dir . \
   --storyboard work/storyboard_plan.json \
@@ -1196,6 +1213,7 @@ python3 scripts/sequence_handoff.py prepare \
 python3 scripts/video_prompt_pack.py \
   --project-dir . \
   --storyboard-plan work/storyboard_plan.json \
+  --reference-story-formula work/reference_story_formula.json \
   --sequence-handoff work/sequence_handoff.json \
   --provider dreamina_seedance \
   --output work/video_prompt_pack.json \
@@ -1226,6 +1244,49 @@ python3 scripts/storyboard_assets.py \
 
 路由规则：抽象概念优先 `codex_imagegen`；数字/指标优先 `remotion_hyperframes`；动作/场景变化推荐 `dreamina_video` 但只标记为需确认，因为 Dreamina/即梦生成可能消耗 credits；其他先走本地素材库 B-roll。传 `--media-library <project_dir>` 时，`storyboard_assets.py` 会从 `media_index.json` / `media_index.db` 里按标签、文件名、时长和画幅推荐候选，并在 Markdown 表里显示分数。`storyboard_assets.py --strict` 会在素材未 ready 时返回退出码 2，适合渲染前拦截。生图优先使用 Codex 内置 `image_gen` 工具，即 OpenAI GPT Image 2（`gpt-image-2`）。
 
+### 🧠 Reference Story Formula — 参考片情绪机制迁移
+[`scripts/reference_story_formula.py`](scripts/reference_story_formula.py) · [详细文档](docs/prompts/125-reference-story-formula.md)
+
+当 brief 要求借鉴参考广告、短片或 UGC 的“情绪公式”“叙事机制”时，先把参考视频、与时间线一致的 transcript 和目标 `storyboard_plan.v1` 绑定成 source-bound 请求。Reviewer 必须完整看听参考片，为每个 beat 填写 mechanism、观众前后状态、trigger、camera function、可迁移规则与 `do_not_copy`；每个目标 shot 还要填写新主题的 `content_anchor`、`viewer_shift`、`surface_change` 和可拍摄的 `visual_action`。
+
+```bash
+python3 scripts/reference_story_formula.py prepare \
+  --project-dir . \
+  --reference-video origin/reference.mp4 \
+  --reference-transcript origin/reference_transcript.json \
+  --target-storyboard work/storyboard_plan.json \
+  --beat-count 5 \
+  --output work/reference_story_formula_request.json \
+  --markdown work/reference_story_formula_request.md \
+  --response-template work/reference_story_formula_response.json \
+  --strict
+
+# 填写 response：每个 beat/shot 决定 approve，并确认五项 copy_policy。
+python3 scripts/reference_story_formula.py audit \
+  --project-dir . \
+  --request work/reference_story_formula_request.json \
+  --response work/reference_story_formula_response.json \
+  --output work/reference_story_formula.json \
+  --markdown work/reference_story_formula.md \
+  --strict
+python3 scripts/reference_story_formula.py verify \
+  --project-dir . \
+  --report work/reference_story_formula.json \
+  --strict
+
+python3 scripts/video_prompt_pack.py \
+  --project-dir . \
+  --storyboard-plan work/storyboard_plan.json \
+  --reference-story-formula work/reference_story_formula.json \
+  --provider dreamina_seedance \
+  --approved \
+  --output work/video_prompt_pack.json \
+  --markdown work/video_prompt_pack.md \
+  --strict
+```
+
+五项 copy policy 固定排除 reference pixels、audio、words、branding 和 specific plot。全部 transcript segment 必须恰好出现一次并保持顺序；目标 shot 也必须完整映射，公式阶段只能向前推进或停留。脚本会提示达到 18 个规范化连续字符的原文重合，供人工改写判断；它不证明版权、原创度、留存效果或生成质量。`verify` 会现场重读全部输入、媒体参数、request/response 字节及 canonical ID。`pipeline_manifest.py --require reference_story_formula --strict` 可作为生成前门禁。
+
 ### 🧭 Provider Capability Profile — 生成供应商能力契约
 [`scripts/provider_capability.py`](scripts/provider_capability.py) · [详细文档](docs/prompts/96-provider-capability.md)
 
@@ -1250,7 +1311,9 @@ python3 scripts/provider_capability.py verify \
 常用：
 ```bash
 python3 scripts/video_prompt_pack.py \
+  --project-dir . \
   --storyboard-plan work/storyboard_plan.json \
+  --reference-story-formula work/reference_story_formula.json \
   --asset-root work \
   --character "same Chinese founder-host, navy jacket" \
   --brand-anchor "palette=charcoal,white,signal yellow" \
@@ -1272,7 +1335,7 @@ python3 scripts/video_prompt_pack.py \
   --markdown work/video_prompt_pack.md
 ```
 
-输出 `global.character_sheet_prompt`、`global.style_reference`、`items[].prompt`、`items[].negative_prompt`、`items[].surface/model/resolution`、`items[].capability_profile`、`items[].capability_issues`、`items[].approval_status` 和 `summary.blocking`。`--style-reference` 会把同一 style key 绑定到每个生成 shot，并给 provider prompt 追加统一 `STYLE LOCK`；重复传入 live-verified `--generation-chain-handoff` 会把已审上一镜末帧绑定到对应下一镜的 `reference`，强制使用 `image_to_video` 并记录 `items[].generation_chain_handoff`。启用 `--require-capability-profile` 后，缺 profile、profile 过期、mode/画幅/时长/分辨率不支持或参考图超限都会进入 `summary.capability_blocking`；`--strict` 同时要求 capability 和 paid approval blocker 清零。Dreamina/即梦、Veo、LTX、Wan、Sora 等视频生成可能消耗 credits，提交前先确认并保持小批量。
+输出 `global.character_sheet_prompt`、`global.style_reference`、`global.reference_story_formula`、`items[].prompt`、`items[].reference_story_formula`、`items[].negative_prompt`、`items[].surface/model/resolution`、`items[].capability_profile`、`items[].capability_issues`、`items[].approval_status` 和 `summary.blocking`。`--reference-story-formula` 会先 live-verify 报告及其 target storyboard 字节，再按 shot 注入已审机制、观众状态迁移、目标内容锚点、surface change、visual action 和复制排除合同；`--style-reference` 会把同一 style key 绑定到每个生成 shot，并给 provider prompt 追加统一 `STYLE LOCK`；重复传入 live-verified `--generation-chain-handoff` 会把已审上一镜末帧绑定到对应下一镜的 `reference`，强制使用 `image_to_video` 并记录 `items[].generation_chain_handoff`。启用 `--require-capability-profile` 后，缺 profile、profile 过期、mode/画幅/时长/分辨率不支持或参考图超限都会进入 `summary.capability_blocking`；`--strict` 同时要求 capability 和 paid approval blocker 清零。Dreamina/即梦、Veo、LTX、Wan、Sora 等视频生成可能消耗 credits，提交前先确认并保持小批量。
 
 ### 🖼️ Reference Frame Preflight — 生成参考帧预检
 [`scripts/reference_frame_preflight.py`](scripts/reference_frame_preflight.py) · [详细文档](docs/prompts/71-reference-frame-preflight.md)
@@ -3685,6 +3748,7 @@ pytest tests/test_cover_variants.py -v      # 多套封面 + 小图预览 + 发�
 pytest tests/test_imagegen_hint.py -v       # gpt-image-2 提示词检测
 pytest tests/test_storyboard_plan.py -v     # 分镜 shot cards + 生成路由
 pytest tests/test_storyboard_animatic.py -v # 分镜静帧 timed MP4 / 完整播放 review / source-bound live gate
+pytest tests/test_reference_story_formula.py -v # 参考片故事机制 / 目标镜头映射 / 复制排除 / live gate
 pytest tests/test_generation_reference_preflight.py -v # 多模态生成 reference 类型/限额/角色/prompt/source-bound live gate
 pytest tests/test_sequence_handoff.py -v   # 逐镜接力 / edit boundary / 轴线方向 / source-bound live gate
 pytest tests/test_video_prompt_pack.py -v   # 视频生成提示词包 + 审批 gate
@@ -3730,6 +3794,25 @@ pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 pytest tests/test_review_dashboard.py -v    # 静态人工复核面板 + gate queue
 pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 gate
 ```
+
+### 2026-09-20 自动化升级记录（Source-bound Reference Story Formula）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`riffkit/skill@4ae7c30`](https://github.com/riffkit/skill/blob/4ae7c307dbec58517953a3f31daf2efe89792bea/SKILL.md) | 从参考内容提炼“情绪公式”，再用目标产品或账号的具体 content anchor 承接同一心理路径；锁定抽象机制，换掉表层表达 | 新增 source-bound beat 审核、观众状态前后变化和逐目标镜头 content anchor；把原画面、音频、文字、品牌、具体情节设为强制排除项 |
+| [`MakeMyClip/editor@8673339`](https://github.com/MakeMyClip/editor/tree/867333981a5bfa4fead1b12f5c96f9cdc34fb68b) | 确定性本地编辑器配合 append-only forward/inverse operation log，方便回放和撤销 | 本项目已有 `edit_revision.py` 与 `edit_recipe.py` 覆盖 source-bound 修订、undo/redo 和跨素材回放，本轮不再增加另一套操作日志 |
+| [`agentino-pipeline-script-to-video@24a81e1`](https://github.com/agentino-os/agentino-pipeline-script-to-video/tree/24a81e199dadd38cfd753c9f45c882701445061a) | script → storyboard/image → TTS → slideshow → caption 的每个中间产物都可见，便于逐段检查 | 本项目已有 storyboard、Remotion、音频和字幕 artifact；本轮沿用可见中间产物原则，把参考分析和目标映射分别落盘并绑定 |
+| [`heygen-com/skills@1bd5e4d`](https://github.com/heygen-com/skills/blob/1bd5e4d33a028dfed3abf504c5e3dd644fb9ea8a/heygen-video/SKILL.md) | 生成前明确画幅、脚本概念和 frame check，减少提交后的构图与内容偏差 | 本项目已有 `reference_frame_preflight.py`、provider capability 和多模态 reference 门禁，本轮不重复实现；故事公式报告接入既有 prompt 与 live verification 链路 |
+
+新增/调整能力：新增 [`scripts/reference_story_formula.py`](scripts/reference_story_formula.py)、[`tests/test_reference_story_formula.py`](tests/test_reference_story_formula.py) 和 [`docs/prompts/125-reference-story-formula.md`](docs/prompts/125-reference-story-formula.md)，提供 `prepare → audit → verify`。`prepare` 绑定参考视频媒体契约、timecoded transcript、目标 `storyboard_plan.v1` 及全部 SHA-256，并生成 1–12 个连续 beat 的人工审核模板。`audit` 要求逐 beat 填写 mechanism、viewer-state shift、trigger、camera function、transferable rule 和 `do_not_copy`，再把每个目标 shot 映射到目标主题的 content anchor、viewer shift、surface change 与 visual action；五项 copy policy、完整 segment 覆盖、完整 shot 覆盖和单调公式推进全部 fail closed。默认 18 字符的 normalized longest-span 只作为原文重合 warning，交给人工判断。
+
+`video_prompt_pack.py` 新增 `--reference-story-formula`：它会现场验证报告、当前 storyboard 路径与字节，再将结构性 guidance 和明确的防复制合同注入每镜 provider prompt，同时记录全局 report ID 和逐镜映射。`edit_brief_plan.py` 可识别“参考片情绪公式 / narrative mechanism / content anchor”等中英文需求，并把 prepare/audit/verify 安排在 prompt pack 之前；`pipeline_manifest.py --require reference_story_formula --strict` 会调用 live verifier。README、SKILL、Video Prompt Pack 文档和 prompts 导航均已同步。
+
+使用方式：运行 `reference_story_formula.py prepare --reference-video origin/reference.mp4 --reference-transcript origin/reference_transcript.json --target-storyboard work/storyboard_plan.json --response-template work/reference_story_formula_response.json ...`；完整看听参考片并填写 response 后执行 `audit --strict` 与 `verify --strict`；最后重建 `video_prompt_pack.py --reference-story-formula work/reference_story_formula.json ...`。报告只迁移经审核的抽象结构，发布前仍需完成素材权利确认、逐片复核、跨镜头复核和最终成片 QA。
+
+验证结果：新增 6 项 request scaffold、ready report、copy-policy/倒序映射阻断、transcript drift、原文长 span warning 和 Markdown 测试，并扩展 video-prompt-pack、edit-brief 与 pipeline-manifest 回归；定向 `.venv/bin/python -m pytest -q tests/test_edit_brief_plan.py tests/test_pipeline_manifest.py tests/test_reference_story_formula.py tests/test_video_prompt_pack.py` 通过 **189 passed in 4.24s**。真实 FFmpeg smoke 用 6 秒、180×320、24fps H.264/AAC 参考片完成 `prepare → audit → verify → video_prompt_pack → pipeline_manifest`，得到 **3 beats / 3 mapped shots / 3 prompts / 0 blocking / 0 warnings**；修改 transcript 后 live verify 以退出码 2 检出字节漂移，恢复原文后重新 ready。全量 `.venv/bin/python -m pytest tests -q` 通过 **1300 passed in 37.60s**；Python compileall、四组相关 CLI help/category、Skill Creator `quick_validate.py` 和 `git diff --check` 全部通过。
 
 ### 2026-09-19 自动化升级记录（Source-bound Generation Chain Handoff）
 
@@ -5300,6 +5383,7 @@ python3 scripts/pipeline_manifest.py . --require freeze_punch_plan --strict
 | **122** | **[Generation Reference Preflight](docs/prompts/122-generation-reference-preflight.md)** | **图片/视频/音频 reference 解码、限额、角色/@标签与 live gate** |
 | **123** | **[Audio Cue Mix](docs/prompts/123-audio-cue-mix.md)** | **cue sheet + 最终旁白 → 本地/程序化 SFX 单轨、完整试听与 live gate** |
 | **124** | **[Generation Chain Handoff](docs/prompts/124-generation-chain-handoff.md)** | **已审生成片 + 已审边界 → 精确末帧 PNG、下一镜首帧提示词与 live gate** |
+| **125** | **[Reference Story Formula](docs/prompts/125-reference-story-formula.md)** | **参考视频 + transcript + 目标分镜 → 情绪机制、content anchors、复制排除与 live gate** |
 | **62** | **[Hook Variants](docs/prompts/62-hook-variants.md)** | **同一视频批量生成前三秒 hook 角度** |
 | **67** | **[Speech Continuity QA](docs/prompts/67-speech-continuity-qa.md)** | **成片二次 ASR 检查复读、近重复 take 和句内口吃** |
 | **68** | **[Cover Variants](docs/prompts/68-cover-variants.md)** | **多套封面、feed-size 预览、标题协同和最终选择** |
@@ -5377,6 +5461,7 @@ scripts/
 ├── auto_enrich.py              丰富度编排（B-roll/贴纸/强调点）  [V3]
 ├── storyboard_plan.py          分镜 shot cards + 生成路由         [V3]
 ├── storyboard_animatic.py      分镜静帧 timed MP4 + 1× review gate [V3]
+├── reference_story_formula.py  参考片情绪机制 → 目标镜头映射 / 复制排除 live gate [V3]
 ├── sequence_handoff.py         生成前逐镜接力 / edit boundary / 轴线方向 live gate [V3]
 ├── video_prompt_pack.py        多模型视频生成提示词包 + 审批 gate  [V3]
 ├── reference_frame_preflight.py 首帧/style key 画幅与背景预检 gate [V3]

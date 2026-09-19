@@ -449,6 +449,19 @@ SIGNAL_KEYWORDS: Mapping[str, Sequence[str]] = {
         "逐镜生成",
         "生成片接力",
     ),
+    "reference_story_formula": (
+        "reference story formula",
+        "story formula transfer",
+        "emotion formula transfer",
+        "transfer emotional arc",
+        "reference narrative mechanism",
+        "参考故事公式",
+        "参考叙事公式",
+        "情绪公式迁移",
+        "迁移情绪机制",
+        "复刻情绪结构",
+        "只学结构不复制画面",
+    ),
     "audio_design": ("bgm", "music", "配乐", "音效", "sfx", "sound design", "声音设计"),
     "final_audio_storyboard": (
         "final audio storyboard",
@@ -814,6 +827,7 @@ SIGNAL_LABELS: Mapping[str, str] = {
     "sequence_continuity": "生成视频跨镜头连续性复核",
     "sequence_handoff": "生成前镜头接力 / 剪辑边界设计",
     "generation_chain_handoff": "已审生成片末帧 → 下一镜精确首帧接力",
+    "reference_story_formula": "参考片情绪 / 叙事机制提取与目标分镜映射",
     "audio_design": "BGM / SFX 声音设计",
     "final_audio_storyboard": "锁定视觉 EDL 后重建最终声音分镜",
     "video_stabilization": "手持素材稳定化 / 防抖",
@@ -1052,6 +1066,8 @@ def build_plan(
         ids.update({"generated_assets", "provider_capabilities"})
     if "generation_chain_handoff" in ids:
         ids.update({"generated_assets", "sequence_handoff"})
+    if "reference_story_formula" in ids:
+        ids.add("generated_assets")
     primary_platform = platforms[0]
     source_input = source_media or "<source_media>"
     post_interlace_source = "work/source-progressive.mp4" if "interlace_conform" in ids else source_input
@@ -2137,6 +2153,58 @@ def build_plan(
             notes.append(
                 "Fill and audit sequence_handoff_response.json before video_prompt_pack.py; the live-verified report writes "
                 "receive-in, handoff-out, edit type, axis, direction, audio, and edit-handle instructions into each prompt."
+            )
+        if "reference_story_formula" in ids:
+            _add_step(
+                steps,
+                seen,
+                _step(
+                    "reference_story_formula",
+                    phase="assets",
+                    script="reference_story_formula.py",
+                    label="Extract and review a transferable story formula from the reference",
+                    reason="The brief asks to preserve the reference's emotional or narrative mechanism while replacing its expression and subject matter.",
+                    command=shell(
+                        [
+                            python_bin,
+                            "scripts/reference_story_formula.py",
+                            "prepare",
+                            "--project-dir",
+                            project_dir,
+                            "--reference-video",
+                            "<reference_video>",
+                            "--reference-transcript",
+                            "<reference_transcript.json>",
+                            "--target-storyboard",
+                            "work/storyboard_plan.json",
+                            "--output",
+                            "work/reference_story_formula_request.json",
+                            "--markdown",
+                            "work/reference_story_formula_request.md",
+                            "--response-template",
+                            "work/reference_story_formula_response.json",
+                            "--strict",
+                        ]
+                    ),
+                    outputs=[
+                        "work/reference_story_formula_request.json",
+                        "work/reference_story_formula_response.json",
+                        "work/reference_story_formula.json",
+                    ],
+                    gate_category="reference_story_formula",
+                ),
+            )
+            if "--project-dir" not in prompt_pack_command:
+                prompt_pack_command.extend(["--project-dir", project_dir])
+            prompt_pack_command.extend(
+                [
+                    "--reference-story-formula",
+                    "work/reference_story_formula.json",
+                ]
+            )
+            notes.append(
+                "Fill every timecoded beat and target-shot mapping, confirm the copy-exclusion policy, then run "
+                "reference_story_formula.py audit and verify. Provider prompts inherit only the reviewed mechanism and target-specific content anchors."
             )
         if "storyboard_animatic" in ids:
             _add_step(

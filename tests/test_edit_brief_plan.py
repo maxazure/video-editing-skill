@@ -1059,6 +1059,27 @@ def test_generation_chain_handoff_routes_reviewed_tail_before_sequential_prompt(
     assert "work/video_prompt_pack.chained.json" in chained["outputs"]
 
 
+def test_reference_story_formula_routes_before_provider_prompt_pack(tmp_path):
+    plan = build_plan(
+        "提取参考片的情绪公式迁移到新主题，只学结构不复制画面，再生成三镜头视频",
+        project_dir=str(tmp_path),
+    )
+
+    signal_ids = {signal["id"] for signal in plan["signals"]}
+    ids = [step["id"] for step in plan["steps"]]
+    assert "reference_story_formula" in signal_ids
+    assert ids.index("storyboard_plan") < ids.index("reference_story_formula")
+    assert ids.index("reference_story_formula") < ids.index("video_prompt_pack")
+    formula = next(step for step in plan["steps"] if step["id"] == "reference_story_formula")
+    prompt = next(step for step in plan["steps"] if step["id"] == "video_prompt_pack")
+    assert "reference_story_formula.py prepare" in formula["command"]
+    assert "--reference-video '<reference_video>'" in formula["command"]
+    assert "--response-template work/reference_story_formula_response.json" in formula["command"]
+    assert formula["gate_category"] == "reference_story_formula"
+    assert "--reference-story-formula work/reference_story_formula.json" in prompt["command"]
+    assert any("copy-exclusion policy" in note for note in plan["notes"])
+
+
 def test_storyboard_animatic_brief_routes_timed_preview_after_storyboard(tmp_path):
     plan = build_plan(
         "把三张分镜图做成按真实时长播放的 animatic，完整审查节奏和连续性",

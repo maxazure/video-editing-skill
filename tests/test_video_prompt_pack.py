@@ -134,6 +134,60 @@ def _sequence_handoff_report():
     }
 
 
+def _story_formula_report():
+    return {
+        "version": "reference_story_formula.v1",
+        "report_id": "rsf_" + "b" * 64,
+        "summary": {"formula_beats": 3, "target_shots": 3, "blocking": 0, "warnings": 0},
+        "formula": {
+            "name": "assumption to reveal to control",
+            "summary": "Move from a familiar belief through proof to a useful action.",
+            "beats": [
+                {
+                    "beat_id": "beat_001",
+                    "mechanism": "hook",
+                    "viewer_state_before": "comfortable",
+                    "viewer_state_after": "curious",
+                    "trigger": "a familiar assumption is questioned",
+                    "transferable_rule": "open on the audience's current belief",
+                    "do_not_copy": "reference wording, product, brand, and scene",
+                },
+                {
+                    "beat_id": "beat_002",
+                    "mechanism": "reveal",
+                    "viewer_state_before": "curious",
+                    "viewer_state_after": "concerned",
+                    "trigger": "visible evidence contradicts the assumption",
+                    "transferable_rule": "show proof before explaining it",
+                    "do_not_copy": "reference wording, product, brand, and scene",
+                },
+                {
+                    "beat_id": "beat_003",
+                    "mechanism": "payoff",
+                    "viewer_state_before": "concerned",
+                    "viewer_state_after": "in control",
+                    "trigger": "one practical action resolves the risk",
+                    "transferable_rule": "end with one concrete next action",
+                    "do_not_copy": "reference wording, product, brand, and scene",
+                },
+            ],
+        },
+        "target": {
+            "shot_mappings": [
+                {
+                    "shot_id": f"shot_{index:03d}",
+                    "beat_id": f"beat_{index:03d}",
+                    "content_anchor": f"AI workflow proof point {index}",
+                    "viewer_shift": f"target viewer shift {index}",
+                    "surface_change": "use the target AI workflow and its own facts",
+                    "visual_action": "show one target-specific action",
+                }
+                for index in range(1, 4)
+            ]
+        },
+    }
+
+
 def test_video_prompt_pack_auto_routes_and_blocks_paid_approval(tmp_path):
     plan = build_storyboard_plan(_sample_transcript(), max_shots=5)
     pack = build_video_prompt_pack(
@@ -239,6 +293,34 @@ def test_blocked_or_unidentified_sequence_handoff_is_rejected():
         build_video_prompt_pack(plan, sequence_handoff_report=unidentified)
     with pytest.raises(ValueError, match="current storyboard shot order"):
         build_video_prompt_pack(plan, sequence_handoff_report=wrong_order)
+
+
+def test_reference_story_formula_enters_every_prompt_as_structure_only():
+    plan = build_storyboard_plan(_sample_transcript(), max_shots=3)
+    report = _story_formula_report()
+
+    pack = build_video_prompt_pack(
+        plan,
+        provider="veo",
+        approved=True,
+        story_formula_report=report,
+    )
+
+    assert pack["summary"]["reference_story_formula_shots"] == 3
+    assert pack["global"]["reference_story_formula"]["report_id"] == report["report_id"]
+    assert "REFERENCE STORY FORMULA — STRUCTURE ONLY" in pack["items"][0]["prompt"]
+    assert "Do not reuse reference pixels, audio, wording, branding" in pack["items"][0]["prompt"]
+    assert pack["items"][1]["reference_story_formula"]["beat_id"] == "beat_002"
+    assert "Reference story formula" in emit_markdown(pack)
+
+
+def test_reference_story_formula_must_match_storyboard_order():
+    plan = build_storyboard_plan(_sample_transcript(), max_shots=3)
+    report = _story_formula_report()
+    report["target"]["shot_mappings"][1]["shot_id"] = "shot_999"
+
+    with pytest.raises(ValueError, match="current storyboard shot order"):
+        build_video_prompt_pack(plan, story_formula_report=report)
 
 
 def test_emit_markdown_includes_prompt_table_and_character_sheet(tmp_path):

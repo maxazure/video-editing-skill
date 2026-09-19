@@ -278,6 +278,13 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         blocks_when_present=True,
     ),
     ArtifactDef(
+        "reference_story_formula",
+        "Reference Story Formula",
+        ("**/reference_story_formula.json", "**/*_reference_story_formula.json"),
+        "Run reference_story_formula.py prepare/audit/verify; resolve every beat and target-shot mapping before reusing a reference's story structure.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "storyboard_assets",
         "Storyboard Assets",
         ("**/storyboard_assets.json", "**/*_storyboard_assets.json"),
@@ -1123,6 +1130,43 @@ def evaluate_category(
             elif warnings:
                 status = "warn" if status != "blocked" else status
                 notes.append(f"sequence handoff retains {warnings} edit-handle warning(s): {artifact.path}")
+        return {
+            "category": definition.category,
+            "label": definition.label,
+            "status": status,
+            "artifact_count": len(artifacts),
+            "latest_path": artifacts[0].path,
+            "notes": sorted(set(notes)),
+            "next_action": definition.next_action if status in {"missing", "blocked", "warn"} else "",
+        }
+
+    if definition.category == "reference_story_formula":
+        from reference_story_formula import verify_report
+
+        for artifact in artifacts:
+            if project_dir is None:
+                status = "blocked"
+                notes.append("project root unavailable for live reference story formula verification")
+                continue
+            try:
+                verification = verify_report(artifact.path, project_dir=str(project_dir))
+            except Exception as exc:
+                status = "blocked"
+                notes.append(f"reference story formula verification failed: {exc}")
+                continue
+            blocking = _int_at(verification, "summary", "blocking")
+            warnings = _int_at(verification, "summary", "warnings")
+            if blocking:
+                status = "blocked"
+                notes.append(
+                    f"invalid, unreviewed, or stale reference story formula {artifact.path}: "
+                    f"{blocking} blocking item(s)"
+                )
+            elif warnings:
+                status = "warn" if status != "blocked" else status
+                notes.append(
+                    f"reference story formula retains {warnings} wording-overlap warning(s): {artifact.path}"
+                )
         return {
             "category": definition.category,
             "label": definition.label,

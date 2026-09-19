@@ -57,6 +57,8 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ storyboard_plan.py       分镜 shot cards / 生成路由 / 连续性锚点
    ├─→ storyboard_animatic.py   每镜静帧 + 可选旁白 → timed MP4 / 1× review / live gate
    ├─→ sequence_handoff.py      相邻镜头 receive/handoff / edit type / 轴线方向 / live gate
+   ├─→ reference_story_formula.py
+   │                            参考片时间码情绪机制 → 目标分镜 content anchors / live gate
    ├─→ provider_capability.py   provider/surface/model 能力合同 / 核验日期 / live gate
    ├─→ video_prompt_pack.py     Dreamina/Veo/LTX/Wan/Sora 提示词包 / 审批 + capability gate
    ├─→ reference_frame_preflight.py
@@ -184,10 +186,11 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `audio_cue_mix.py` | audio cue sheet + 最终旁白 → 本地/程序化 SFX、48 kHz stereo 单轨、完整试听 live gate | `plan --cue-sheet --voice --delivery [--synthesize-missing]` / `apply` / `confirm` / `verify --strict` |
 | `final_audio_storyboard.py` | locked visual EDL + storyboard → 最终时间线声音分镜、voice ledger、omitted-story 决定和 live gate | `prepare --edl --storyboard` `audit --request --response` `verify --report --strict` |
 | `storyboard_plan.py` | transcript/clean_script → 分镜 shot cards + 生成路由 | `--transcript` `--clean-script` `--output` `--markdown` |
+| `reference_story_formula.py` | 参考视频 + timecoded transcript + 目标 storyboard → 情绪/叙事机制、逐镜 content anchor、复制排除策略与 source-bound live gate | `prepare --reference-video --reference-transcript --target-storyboard --response-template` / `audit --request --response` / `verify --report --strict` |
 | `storyboard_animatic.py` | storyboard + 每镜静帧 + 可选旁白 → source-bound timed MP4、完整 1× 复核与 live gate | `plan --panel SHOT=PATH --delivery` / `apply` / `confirm` / `verify --strict` |
 | `sequence_handoff.py` | storyboard → 相邻镜头接力、剪辑边界、180° 轴/方向、音频桥、edit handles 与 source-bound live gate | `prepare --storyboard --response-template` `audit --request --response` `verify --report --strict` |
 | `provider_capability.py` | exact provider/surface/model → 带日期的 mode/画幅/时长/分辨率/参考上限能力合同 live gate | `verify --bundle --max-age-days --output --markdown --strict` |
-| `video_prompt_pack.py` | storyboard_plan → 多 provider 视频生成提示词包 + 已审边界/真实末帧接力 + 角色/品牌/style lock + paid approval/capability gate | `--storyboard-plan` `--project-dir` `--sequence-handoff` `--generation-chain-handoff` `--capability-profile` `--approved` `--strict` |
+| `video_prompt_pack.py` | storyboard_plan → 多 provider 视频生成提示词包 + 已审故事公式/边界/真实末帧接力 + 角色/品牌/style lock + paid approval/capability gate | `--storyboard-plan` `--project-dir` `--reference-story-formula` `--sequence-handoff` `--generation-chain-handoff` `--capability-profile` `--approved` `--strict` |
 | `reference_frame_preflight.py` | video_prompt_pack → 首帧/style key 存在性、解码、尺寸、方向、画幅、透明背景 gate | `--prompt-pack` `--require-style-reference` `--reference shot_id=...` `--strict` |
 | `generation_reference_preflight.py` | prompt pack + 图片/视频/音频 reference manifest + provider profile → 类型/数量/时长/模式/@标签角色 source-bound gate | `template --prompt-pack` / `analyze --references --capability-profile --strict` / `verify --report --strict` |
 | `generation_task_log.py` | 异步生成任务台账：submit_id/task id、轮询、下载、本地落盘 gate | `add` `update` `import-provider-decision` `report --strict` |
@@ -1313,6 +1316,13 @@ python3 scripts/render_final.py --config script/render_config.json --output medi
 - 再运行 `storyboard_assets.py --storyboard-plan work/storyboard_plan.json --asset-root work --media-library . --output work/storyboard_assets.json --markdown work/storyboard_assets.md --strict`，渲染前确认素材 `ready`
 - `dreamina_video` 只表示适合视频生成，不会自动提交任务；提交 Dreamina/即梦前必须确认，因为可能消耗 credits
 - 生图优先使用 Codex 内置 `image_gen` 工具，即 OpenAI GPT Image 2（`gpt-image-2`）。
+
+**Reference Story Formula 参考片故事公式迁移**（用户要求借鉴参考片情绪机制时运行）：
+- 把参考视频和其 timecoded transcript 放进项目，再运行 `reference_story_formula.py prepare --project-dir . --reference-video origin/reference.mp4 --reference-transcript origin/reference_transcript.json --target-storyboard work/storyboard_plan.json --output work/reference_story_formula_request.json --markdown work/reference_story_formula_request.md --response-template work/reference_story_formula_response.json --strict`
+- 完整看参考片并填写每个 beat 的 `mechanism / viewer_state_before / viewer_state_after / trigger / camera_function / transferable_rule / do_not_copy`；每个 reference transcript segment 必须恰好属于一个有序 beat
+- 为目标 storyboard 的每个 shot 填 `beat_id / content_anchor / viewer_shift / surface_change / visual_action`，顺序不能倒退；同时明确排除参考片 pixels、audio、wording、branding 和 specific plot
+- 运行 `audit --request ... --response ... --output work/reference_story_formula.json --markdown work/reference_story_formula.md --strict`，再执行 `verify --report work/reference_story_formula.json --strict`。输入、response 或派生报告漂移会 fail closed；长原文重合进入可见 warning
+- 给 `video_prompt_pack.py` 加 `--reference-story-formula work/reference_story_formula.json`。脚本会 live-verify 与当前 storyboard 的 byte binding，并给每条 prompt 注入对应的结构、目标内容锚点和禁止复制合同。它不证明版权、原创度、留存效果或生成质量。详见 [docs/prompts/125-reference-story-formula.md](docs/prompts/125-reference-story-formula.md)
 
 **Storyboard Animatic 分镜时长预演**（付费生成或正式剪辑前推荐）：
 - 为每个 storyboard shot 准备一张已审静帧，再运行 `storyboard_animatic.py plan --project-dir . --storyboard work/storyboard_plan.json --panel shot_001=work/storyboard/shot_001.png --panel shot_002=work/storyboard/shot_002.png --delivery verify/storyboard_animatic.mp4 --output work/storyboard_animatic.json --markdown work/storyboard_animatic.md`

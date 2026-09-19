@@ -19,6 +19,7 @@ import encode_quality_qa  # noqa: E402
 import freeze_punch  # noqa: E402
 import flash_safety_qa  # noqa: E402
 import runtime_preflight  # noqa: E402
+import reference_story_formula  # noqa: E402
 import sequence_handoff  # noqa: E402
 import storyboard_animatic  # noqa: E402
 import temporal_artifact_qa  # noqa: E402
@@ -170,6 +171,39 @@ def test_sequence_handoff_is_live_verified_and_can_be_required(tmp_path, monkeyp
         str(tmp_path), target_stage="analysis", required=["sequence_handoff"]
     )
     assert "sequence_handoff" in missing["missing_required"]
+
+
+def test_reference_story_formula_is_live_verified_and_can_be_required(tmp_path, monkeypatch):
+    _publish_ready_project(tmp_path)
+    report_path = tmp_path / "work" / "reference_story_formula.json"
+    _write(report_path, {"version": "reference_story_formula.v1", "summary": {"blocking": 0}})
+
+    monkeypatch.setattr(
+        reference_story_formula,
+        "verify_report",
+        lambda _report, project_dir=".": {"summary": {"blocking": 0, "warnings": 0}},
+    )
+    current = build_manifest(
+        str(tmp_path), target_stage="publish_ready", required=["reference_story_formula"]
+    )
+    gate = next(g for g in current["gates"] if g["category"] == "reference_story_formula")
+    assert gate["status"] == "ready"
+
+    monkeypatch.setattr(
+        reference_story_formula,
+        "verify_report",
+        lambda _report, project_dir=".": {"summary": {"blocking": 1, "warnings": 0}},
+    )
+    stale = build_manifest(str(tmp_path), target_stage="publish_ready")
+    gate = next(g for g in stale["gates"] if g["category"] == "reference_story_formula")
+    assert gate["status"] == "blocked"
+    assert "reference_story_formula" in stale["blocked_gates"]
+
+    report_path.unlink()
+    missing = build_manifest(
+        str(tmp_path), target_stage="analysis", required=["reference_story_formula"]
+    )
+    assert "reference_story_formula" in missing["missing_required"]
 
 
 def test_generation_chain_handoff_is_live_verified_and_can_be_required(tmp_path, monkeypatch):

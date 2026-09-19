@@ -25,6 +25,8 @@ from provider_capability import (
     profile_support_issues,
     verify_bundle as verify_capability_bundle,
 )
+from reference_story_formula import REPORT_VERSION as REFERENCE_STORY_FORMULA_VERSION
+from reference_story_formula import verify_report as verify_reference_story_formula_report
 from sequence_handoff import REPORT_VERSION as SEQUENCE_HANDOFF_VERSION
 from sequence_handoff import verify_report as verify_sequence_handoff_report
 from storyboard_plan import ROUTING_SENTENCE
@@ -357,6 +359,66 @@ def _chain_handoff_prompt(report: Mapping[str, Any]) -> str:
     )
 
 
+def _story_formula_index(
+    report: Optional[Mapping[str, Any]],
+    *,
+    shot_ids: Sequence[str],
+) -> Dict[str, Dict[str, Any]]:
+    if report is None:
+        return {}
+    if report.get("version") != REFERENCE_STORY_FORMULA_VERSION:
+        raise ValueError(f"reference story formula must be a {REFERENCE_STORY_FORMULA_VERSION} report")
+    if int((report.get("summary") or {}).get("blocking") or 0):
+        raise ValueError("reference story formula report is blocked")
+    if not str(report.get("report_id") or "").startswith("rsf_"):
+        raise ValueError("reference story formula report has no valid report_id")
+    beats = {
+        str(row.get("beat_id") or ""): dict(row)
+        for row in (report.get("formula") or {}).get("beats") or []
+        if isinstance(row, Mapping) and row.get("beat_id")
+    }
+    mappings = [
+        dict(row)
+        for row in (report.get("target") or {}).get("shot_mappings") or []
+        if isinstance(row, Mapping)
+    ]
+    if [str(row.get("shot_id") or "") for row in mappings] != list(shot_ids):
+        raise ValueError("reference story formula does not match the current storyboard shot order")
+    indexed: Dict[str, Dict[str, Any]] = {}
+    for mapping in mappings:
+        shot_id = str(mapping.get("shot_id") or "")
+        beat_id = str(mapping.get("beat_id") or "")
+        beat = beats.get(beat_id)
+        if beat is None:
+            raise ValueError(f"reference story formula shot {shot_id} maps to unknown beat {beat_id}")
+        indexed[shot_id] = {"mapping": mapping, "beat": beat}
+    return indexed
+
+
+def _story_formula_prompt(entry: Mapping[str, Any]) -> str:
+    mapping = entry.get("mapping") or {}
+    beat = entry.get("beat") or {}
+    return (
+        "REFERENCE STORY FORMULA — STRUCTURE ONLY: beat {beat_id} uses {mechanism}; move the viewer "
+        "from '{before}' to '{after}' through {trigger}. Transferable rule: {rule} Target content "
+        "anchor: {anchor}. Target viewer shift: {shift}. Surface change: {surface}. Visual action: "
+        "{action}. Do not copy: {excluded}. Do not reuse reference pixels, audio, wording, branding, "
+        "or specific plot events."
+    ).format(
+        beat_id=beat.get("beat_id", ""),
+        mechanism=beat.get("mechanism", ""),
+        before=beat.get("viewer_state_before", ""),
+        after=beat.get("viewer_state_after", ""),
+        trigger=beat.get("trigger", ""),
+        rule=beat.get("transferable_rule", ""),
+        anchor=mapping.get("content_anchor", ""),
+        shift=mapping.get("viewer_shift", ""),
+        surface=mapping.get("surface_change", ""),
+        action=mapping.get("visual_action", ""),
+        excluded=beat.get("do_not_copy", ""),
+    )
+
+
 def _sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -389,6 +451,33 @@ def _verify_sequence_handoff_storyboard(
     }
     if record != expected:
         raise ValueError("sequence handoff is bound to a different storyboard plan")
+
+
+def _verify_story_formula_storyboard(
+    report: Mapping[str, Any],
+    *,
+    storyboard_plan: str,
+    project_dir: str,
+) -> None:
+    root = Path(project_dir).expanduser().resolve(strict=True)
+    candidate = Path(storyboard_plan).expanduser()
+    if not candidate.is_absolute():
+        candidate = root / candidate
+    storyboard = candidate.resolve(strict=True)
+    try:
+        relative_path = storyboard.relative_to(root).as_posix()
+    except ValueError as exc:
+        raise ValueError("storyboard plan must be inside the project when reference story formula is used") from exc
+    inputs = report.get("inputs") if isinstance(report.get("inputs"), Mapping) else {}
+    record = inputs.get("target_storyboard") if isinstance(inputs.get("target_storyboard"), Mapping) else {}
+    expected = {
+        "path": relative_path,
+        "size_bytes": storyboard.stat().st_size,
+        "sha256": _sha256_file(storyboard),
+    }
+    actual = {key: record.get(key) for key in expected}
+    if actual != expected:
+        raise ValueError("reference story formula is bound to a different storyboard plan")
 
 
 def _handoff_prompt(shot_id: str, handoff: Mapping[str, Mapping[str, Any]]) -> str:
@@ -455,6 +544,7 @@ def build_video_prompt_pack(
     max_duration: float = 8.0,
     sequence_handoff_report: Optional[Mapping[str, Any]] = None,
     generation_chain_handoff_reports: Optional[Sequence[Mapping[str, Any]]] = None,
+    story_formula_report: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, Any]:
     if lesson_limit < 0 or lesson_limit > 10:
         raise ValueError("lesson_limit must be between 0 and 10")
@@ -480,6 +570,7 @@ def build_video_prompt_pack(
         generation_chain_handoff_reports,
         shot_ids=shot_ids,
     )
+    story_formula = _story_formula_index(story_formula_report, shot_ids=shot_ids)
     lesson_library_id = ""
     if lesson_library is not None:
         lesson_verification = verify_library(lesson_library)
@@ -524,6 +615,7 @@ def build_video_prompt_pack(
         selected_provider = _provider_for_shot(shot, provider, animate_stills=animate_stills)
         reference = _expected_reference(asset_root, shot_id)
         chain_handoff = generation_chain_handoffs.get(shot_id)
+        formula_entry = story_formula.get(shot_id)
         if chain_handoff is not None:
             if selected_provider not in GENERATED_VIDEO_PROVIDERS:
                 raise ValueError(
@@ -605,6 +697,8 @@ def build_video_prompt_pack(
             prompt = f"{prompt} {handoff_instruction}"
         if chain_handoff is not None:
             prompt = f"{prompt} {_chain_handoff_prompt(chain_handoff)}"
+        if formula_entry is not None:
+            prompt = f"{prompt} {_story_formula_prompt(formula_entry)}"
 
         profile_entry = capabilities_by_provider.get(selected_provider)
         capability_issues: List[str] = []
@@ -698,6 +792,18 @@ def build_video_prompt_pack(
                 if chain_handoff is not None
                 else None
             ),
+            "reference_story_formula": (
+                {
+                    "report_id": story_formula_report.get("report_id"),
+                    "formula_name": (story_formula_report.get("formula") or {}).get("name"),
+                    "beat_id": (formula_entry.get("beat") or {}).get("beat_id"),
+                    "mechanism": (formula_entry.get("beat") or {}).get("mechanism"),
+                    "content_anchor": (formula_entry.get("mapping") or {}).get("content_anchor"),
+                    "viewer_shift": (formula_entry.get("mapping") or {}).get("viewer_shift"),
+                }
+                if formula_entry is not None and story_formula_report is not None
+                else None
+            ),
             "approval_required": requires_approval,
             "approval_status": "approved" if (requires_approval and approved) else ("needs_approval" if requires_approval else "not_required"),
             "approval_note": (
@@ -713,6 +819,7 @@ def build_video_prompt_pack(
                 "Shared style reference is attached unchanged to every generated shot when configured.",
                 "Reviewed receive-in and handoff-out instructions are visible in the provider prompt when configured.",
                 "A reviewed predecessor tail is the exact first frame and original identity/product/style anchors remain in force when chain handoff is configured.",
+                "A reviewed reference formula transfers only abstract viewer-state structure and never reference pixels, audio, wording, branding, or specific plot events.",
             ],
         })
 
@@ -755,6 +862,10 @@ def build_video_prompt_pack(
                 str(report.get("artifact_id") or "")
                 for report in generation_chain_handoff_reports
             ],
+            "reference_story_formula": {
+                "report_id": str((story_formula_report or {}).get("report_id") or ""),
+                "formula_name": str(((story_formula_report or {}).get("formula") or {}).get("name") or ""),
+            },
         },
         "summary": {
             "items": len(items),
@@ -767,6 +878,7 @@ def build_video_prompt_pack(
             "unique_generation_lessons": len(applied_lesson_ids),
             "sequence_handoff_boundaries": len((sequence_handoff_report or {}).get("boundaries") or []),
             "generation_chain_handoffs": len(generation_chain_handoffs),
+            "reference_story_formula_shots": len(story_formula),
             **{f"provider_{key}": value for key, value in sorted(provider_counts.items())},
         },
         "items": items,
@@ -774,6 +886,7 @@ def build_video_prompt_pack(
             "Review prompts and reference paths before submitting any generated-video job.",
             "Pass a live-verified sequence_handoff.v1 report so each adjacent shot receives and hands off an explicit edit baton.",
             "For genuinely continuous shots, pass a live-verified generation_chain_handoff.v1 report so the approved predecessor tail becomes the next exact first frame.",
+            "When adapting a reference, pass a live-verified reference_story_formula.v1 report so prompts inherit the reviewed emotional mechanism without copying source expression.",
             "Verify the generation lesson library and review every learned constraint before reusing it.",
             "Verify dated provider capability profiles against the exact UI/API surface before selecting model settings.",
             "Use Codex image_gen first for still references and character sheets.",
@@ -934,6 +1047,7 @@ def emit_markdown(pack: Mapping[str, Any]) -> str:
         f"- Shared style reference: `{style_reference_path}`",
         f"- Sequence handoff report: `{pack.get('global', {}).get('sequence_handoff', {}).get('report_id') or '-'}`",
         f"- Generation chain handoffs: {pack.get('summary', {}).get('generation_chain_handoffs', 0)}",
+        f"- Reference story formula: `{pack.get('global', {}).get('reference_story_formula', {}).get('report_id') or '-'}`",
         "",
         "## Character / Style Reference",
         "",
@@ -994,6 +1108,17 @@ def emit_markdown(pack: Mapping[str, Any]) -> str:
                 f"- `{chain.get('from_shot', '')}` → `{chain.get('to_shot', '')}` via `{chain.get('boundary_id', '')}`",
                 f"- Artifact: `{chain.get('artifact_id', '')}`",
                 f"- Approved source frame: #{chain.get('selected_frame_index', '')} at {chain.get('selected_frame_pts_seconds', '')}s",
+                "",
+            ])
+        if item.get("reference_story_formula"):
+            formula = item.get("reference_story_formula") or {}
+            lines.extend([
+                "**Reference story formula**",
+                "",
+                f"- Formula: {formula.get('formula_name', '')}",
+                f"- Beat: `{formula.get('beat_id', '')}` / `{formula.get('mechanism', '')}`",
+                f"- Content anchor: {formula.get('content_anchor', '')}",
+                f"- Viewer shift: {formula.get('viewer_shift', '')}",
                 "",
             ])
         lines.extend([
@@ -1061,6 +1186,10 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         default=[],
         help="Reviewed generation_chain_handoff.v1 report; repeat for each sequential boundary to inject an exact next-shot first frame.",
     )
+    parser.add_argument(
+        "--reference-story-formula",
+        help="Reviewed reference_story_formula.v1 report; live-verified and injected as structure-only guidance per shot.",
+    )
     parser.add_argument("--lesson-library", help="Approved generation_lessons.json to apply to generated-video prompts.")
     parser.add_argument("--lesson-model", default="", help="Exact model scope; omitted applies provider-wide lessons only.")
     parser.add_argument("--lesson-category", action="append", default=[], help="Lesson category filter; can repeat.")
@@ -1120,6 +1249,26 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         if not candidate.is_absolute():
             candidate = project_root / candidate
         generation_chain_handoff_reports.append(load_plan(str(candidate.resolve(strict=True))))
+    story_formula_report = None
+    if args.reference_story_formula:
+        verification = verify_reference_story_formula_report(
+            args.reference_story_formula,
+            project_dir=str(project_root),
+        )
+        if int((verification.get("summary") or {}).get("blocking") or 0):
+            raise ValueError(
+                "reference story formula is blocked: "
+                + "; ".join(verification.get("blockers") or [])
+            )
+        candidate = Path(args.reference_story_formula).expanduser()
+        if not candidate.is_absolute():
+            candidate = project_root / candidate
+        story_formula_report = load_plan(str(candidate.resolve(strict=True)))
+        _verify_story_formula_storyboard(
+            story_formula_report,
+            storyboard_plan=args.storyboard_plan,
+            project_dir=str(project_root),
+        )
     pack = build_video_prompt_pack(
         plan,
         provider=args.provider,
@@ -1142,6 +1291,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         max_duration=args.max_duration,
         sequence_handoff_report=sequence_handoff_report,
         generation_chain_handoff_reports=generation_chain_handoff_reports,
+        story_formula_report=story_formula_report,
     )
 
     os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)
