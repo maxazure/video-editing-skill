@@ -1,6 +1,6 @@
 ---
 name: video-editing
-description: "Xiaohongshu/RED-tuned short-form video workflow for voice-over, talking-head, tutorials, interviews, podcasts, screen recordings, chroma key, B-roll, captions, and generated assets. Covers edit routing, runtime profiles, interlace and VFR/CFR conformance, silent edge-black trimming, edit-style profiles, loop filling, multi-clip assembly and seam review, transcription, semantic review, multi-take/audio sync/stabilization/dead-air cleanup, highlights/shorts, story and source gates, enrichment and video-generation planning, timed storyboard animatics, shot handoff design, generated clip/sequence and scoped AI video-edit review, locked-EDL audio storyboards, source-bound SFX cue mixdowns, narration loudness, channel-integrity and audio-dropout QA, color/speed/J-L cuts, reversible revisions and recipes, preflight/render/QA including flash/photosensitivity and encode-quality screening, subtitles, CapCut, platform/size exports, covers, captions, publish packages, dashboards, handoff formats, and Remotion."
+description: "Xiaohongshu/RED-tuned short-form video workflow for voice-over, talking-head, tutorials, interviews, podcasts, screen recordings, chroma key, B-roll, captions, and generated assets. Covers source ingest and conformance, edit routing and runtime profiles, transcription and semantic review, multi-take sync/stabilization/dead-air cleanup, highlights/shorts, story/source/authorization gates, B-roll and generated-asset planning/review, storyboard animatics and shot handoffs, audio design/mix/loudness, captions, color/speed/J-L cuts, local upscale/interpolation review, reversible revisions, render/QA, multi-platform and size exports, publish packages, NLE handoff, and Remotion."
 metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
 ---
 
@@ -126,6 +126,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ framing_preview.py       master → 各平台 cover/contain/blur 真实帧 / 选择 / live gate
    ├─→ multi_export.py          已审画幅策略 → 小红书 3:4 / 抖音 9:16 / 视频号 ≤60s
    ├─→ hdr_sdr.py               PQ/HLG HDR → source-bound Rec.709 SDR / 完整解码 gate
+   ├─→ video_enhancement.py     Lanczos 放大 + 可选运动补帧 / 全长 A-B + 带声复核 gate
    ├─→ delivery_encode.py       source-bound 两遍 H.264/AAC / 硬大小上限 / 完整解码 gate
    ├─→ generate_caption.py      标题 + 200-500 字正文 + 3-6 tags + 发布时段
    ├─→ cover_variants.py        2-4 套封面 / feed-size 预览 / 最终选择 gate
@@ -217,6 +218,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `render_qa.py` | 渲染后 QA：尺寸/音频/黑屏/静帧/静音 + review packet | `<video.mp4>` `--platform douyin` `--json qa.json` `--review-dir verify/qa` |
 | `stream_coverage_qa.py` | final MP4 → 全量解码、首尾 PTS、A/V 与容器覆盖、视频帧数 source-bound live gate | `analyze <video> --output --markdown [--expected-duration --expected-video-frames] --strict` / `verify --report --strict` |
 | `encode_quality_qa.py` | 同时间线参考 master vs 重编码件 → 全长 SSIM/PSNR、P05、最差帧时间码与双输入 live gate | `analyze <reference> <candidate> --output --markdown --strict` / `verify --report --strict` |
+| `video_enhancement.py` | 现有视频 → 本地 Lanczos 放大、可选 `minterpolate` 补帧、全长 A/B 与带声人工复核 live gate | `plan <video> --target-short-edge|--scale [--fps] --enhanced --comparison` / `apply` / `confirm` / `verify --strict` |
 | `flash_safety_qa.py` | final/platform video → 大面积亮度/饱和红 flash、滚动 1s/5s 风险窗口与 source-bound live gate | `analyze <video> --output --markdown --strict` / `verify --report --strict` |
 | `temporal_artifact_qa.py` | final/generated video → 单帧/少数帧局部突变筛查、before/suspect/after 证据与人工决定 live gate | `analyze <video> --evidence-dir --response-template --strict` / `audit --report --response` / `verify --strict` |
 | `shot_color_qa.py` | rendered master → 镜头亮度/对比/色度/饱和度/broadcast-range 与切点跳变 gate | `<video.mp4>` `--scene-boundaries` `--output shot_color_qa.json` `--markdown` `--strict` |
@@ -510,7 +512,7 @@ python3 scripts/pipeline_manifest.py \
 
 ### Phase 0aa: Runtime Preflight（按任务核验本机能力）
 
-在打开媒体或启动渲染前，运行 [runtime_preflight.py](./scripts/runtime_preflight.py)。只转写、probe 或抽流用 `media_io`；会编码最终画面的任务用 `core_edit`，再按需要追加 `storyboard_animatic / audio_cue_mix / generation_chain_handoff / captions / qa / edge_black_trim / hdr_sdr / stabilization / interlace / remotion`：
+在打开媒体或启动渲染前，运行 [runtime_preflight.py](./scripts/runtime_preflight.py)。只转写、probe 或抽流用 `media_io`；会编码最终画面的任务用 `core_edit`，再按需要追加 `video_enhancement / storyboard_animatic / audio_cue_mix / generation_chain_handoff / captions / qa / edge_black_trim / hdr_sdr / stabilization / interlace / remotion`：
 
 ```bash
 python3 scripts/runtime_preflight.py analyze \
@@ -1276,6 +1278,13 @@ python3 scripts/render_final.py --config script/render_config.json --output medi
 - 原片看过后，用 `plan origin/handheld.mp4 --decision stabilize --reviewed-by editor --output work/video_stabilization_plan.json --markdown work/video_stabilization_plan.md` 记录源 SHA-256、profile 和人工决定；有意手持 / pan 应改用 `--decision keep`
 - `apply ... --output work/handheld-stabilized.mp4 --comparison verify/handheld-stabilization-compare.mp4` 只写新工作副本与全长左/右 A/B；随后必须 1× 看完整 comparison，再运行 `confirm --reviewed-by ... --note ...`
 - `pipeline_manifest.py` 会实时检查源片、稳定版、comparison 的 hash 与复核状态。稳定化不能修复滚动快门、运动模糊或失焦；后续用工作副本，不覆盖 `origin/`。详见 `docs/prompts/84-video-stabilization.md`
+
+**Video Enhancement 本地放大 / 补帧交付**（现有成片需要更高尺寸或帧率时运行）：
+- 先跑 `runtime_preflight.py analyze --profile video_enhancement ... --strict`，再用 `video_enhancement.py plan output/master.mp4 --target-short-edge 1080 --fps 60 --enhanced output/master-enhanced.mp4 --comparison verify/video-enhancement-ab.mp4 --output work/video_enhancement_plan.json --markdown work/video_enhancement_plan.md`
+- `--target-short-edge` 同时适配横竖屏，也可改用 `--scale 2`；只补帧时省略尺寸参数。脚本只接受放大和不低于源 cadence 的目标，源 hash、显示尺寸、目标设置、filter、输出与 review 都进入 canonical plan
+- `apply` 用 Lanczos 与可选 FFmpeg motion-compensated `minterpolate`，输出 H.264/AAC；尺寸、帧率、时长、音轨存在性和两份 MP4 的完整解码都通过后才原子提升
+- 完整正常速度看 source-left/enhanced-right A/B，再单独带声看完整增强件；`confirm` 必须逐项给 `detail / edges / motion_cadence / audio_sync` 的 `pass|fail`。任一 fail 继续阻断
+- Lanczos 只是确定性 resize，不能恢复源片不存在的细节；补帧可能在切点、遮挡、手、脸和高速运动产生 ghost/warp。需要 ML VSR 或生成式修复时另走经授权工具，并重新执行真实输出复核。详见 [docs/prompts/126-video-enhancement.md](docs/prompts/126-video-enhancement.md)
 
 **Chroma Key 绿幕 / 蓝幕抠像与换背景**（仅用于明确纯色幕布）：
 - 先运行 `chroma_key.py prepare --project-dir . --foreground origin/presenter-green.mp4 --background origin/studio.png --output-video output/presenter-studio.mp4 --preview-dir verify/chroma_key --report work/chroma_key.json --markdown work/chroma_key.md`

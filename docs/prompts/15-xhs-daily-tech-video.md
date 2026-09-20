@@ -46,7 +46,8 @@
       --output work/runtime_preflight.json \
       --markdown work/runtime_preflight.md \
       --strict
-    # 用 HDR / 防抖 / 交错素材 / Remotion 时分别追加 hdr_sdr / stabilization / interlace / remotion。
+    # 用视频放大/补帧、HDR、防抖、交错素材或 Remotion 时分别追加
+    # video_enhancement / hdr_sdr / stabilization / interlace / remotion。
     # missing 或 unknown 都停止；修好环境后重新 analyze，不手改 JSON。
     # 详见 docs/prompts/115-runtime-preflight.md
 
@@ -876,7 +877,20 @@
     # 未知 color tags 或缺少 zscale+tonemap 会在编码前阻塞；完整看完 SDR 版，再重跑 QA 和审批。
     # 详见 docs/prompts/87-hdr-sdr.md
 
-9c. # 可选：客户/平台明确限制文件大小时，对选定发布版做 source-bound 两遍交付编码：
+9c. # 可选：现有 master 需要放大或补到更高固定帧率时：
+    python3 scripts/video_enhancement.py plan output/day<NN>_master.mp4 \
+      --target-short-edge 1080 --fps 60 \
+      --enhanced output/day<NN>_master_enhanced.mp4 \
+      --comparison verify/video-enhancement-ab.mp4 \
+      --output work/video_enhancement_plan.json \
+      --markdown work/video_enhancement_plan.md
+    python3 scripts/video_enhancement.py apply work/video_enhancement_plan.json \
+      --markdown work/video_enhancement_plan.md
+    # 正常速度完整看 source-left/enhanced-right A/B，再带声完整看增强件；
+    # detail / edges / motion-cadence / audio-sync 全部 pass 后 confirm，再 verify --strict。
+    # Lanczos resize 不等于 ML 细节恢复；详见 docs/prompts/126-video-enhancement.md。
+
+9d. # 可选：客户/平台明确限制文件大小时，对选定发布版做 source-bound 两遍交付编码：
     python3 scripts/delivery_encode.py plan \
       output/day<NN>_master_douyin.mp4 \
       --delivery output/day<NN>_douyin_delivery.mp4 \
@@ -899,7 +913,7 @@
     # 完整解码和分数都不等于画质批准；看最差帧时间码并正常速度 A/B 播放完整交付版，
     # 再跑 render_qa 并纳入 approval receipt。详见 docs/prompts/107-encode-quality-qa.md。
 
-9c. # 可选：如果要交给 Premiere / FCP / Resolve 继续精修：
+9e. # 可选：如果要交给 Premiere / FCP / Resolve 继续精修：
     python3 scripts/export_edl.py \
       --config work/render_config.json \
       --output work/day<NN>_edit.edl \
@@ -1166,6 +1180,8 @@ day<NN>/
 │   ├── pipeline_manifest.md
 │   ├── hdr_sdr_plan.json # 可选：PQ/HLG → BT.709 SDR / source + output hash gate
 │   ├── hdr_sdr_plan.md
+│   ├── video_enhancement_plan.json # 可选：本地放大/补帧、输出/A-B/review live gate
+│   ├── video_enhancement_plan.md
 │   ├── delivery_encode_plan.json # 可选：目标大小交付编码 / source + output hash gate
 │   ├── delivery_encode_plan.md
 │   ├── cover_variants.json # 封面 A/B 方案 + selected_cover

@@ -166,6 +166,7 @@
 | 已规划音效 cue，想把本地或程序化 SFX 真正混进单一旁白母轨 | [123-Audio Cue Mix](123-audio-cue-mix.md) |
 | 两个生成镜头属于同一场景，想用上一条已审成片的真实末帧接力下一条 | [124-Generation Chain Handoff](124-generation-chain-handoff.md) |
 | 想借鉴参考片的情绪公式与观众心态变化，同时换掉原画面、原话、品牌和具体情节 | [125-Reference Story Formula](125-reference-story-formula.md) |
+| 想把现有视频放大、升到 1080p/4K 或补到更高帧率，并完整复核画质与同步 | [126-Video Enhancement](126-video-enhancement.md) |
 | 口播停顿太多想自动剪紧 | [21-Jump Cut](21-jump-cut.md) |
 | 只想删掉同时静音且画面静止的死区 | [88-Multimodal Dead-Air](88-multimodal-dead-air.md) |
 | 片头或片尾有黑屏，想确认没有声音再裁掉 | [119-Edge-black Trim](119-black-edge-trim.md) |

@@ -23,6 +23,7 @@ import reference_story_formula  # noqa: E402
 import sequence_handoff  # noqa: E402
 import storyboard_animatic  # noqa: E402
 import temporal_artifact_qa  # noqa: E402
+import video_enhancement  # noqa: E402
 import stream_coverage_qa  # noqa: E402
 import generated_clip_review  # noqa: E402
 import generation_chain_handoff  # noqa: E402
@@ -2772,6 +2773,46 @@ def test_video_stabilization_plan_can_be_required(tmp_path):
     )
 
     assert "video_stabilization_plan" in manifest["missing_required"]
+
+
+def test_video_enhancement_plan_is_live_verified_and_can_be_required(tmp_path, monkeypatch):
+    _publish_ready_project(tmp_path)
+    source = tmp_path / "origin" / "generated.mp4"
+    _write(source, "fake generated video")
+    media = {
+        "duration": 4.0,
+        "fps": 24.0,
+        "width": 640,
+        "height": 360,
+        "rotation": 0,
+        "has_audio": True,
+        "video_codec": "h264",
+        "audio_codec": "aac",
+        "pixel_format": "yuv420p",
+    }
+    filters = {"scale", "setsar", "fps", "hstack", "minterpolate"}
+    monkeypatch.setattr(video_enhancement, "probe_media", lambda _path: dict(media))
+    monkeypatch.setattr(video_enhancement, "_available_filters", lambda: set(filters))
+    plan = video_enhancement.build_plan(
+        str(source),
+        str(tmp_path / "output" / "enhanced.mp4"),
+        str(tmp_path / "verify" / "video_enhancement_ab.mp4"),
+        scale=2,
+        filters=filters,
+    )
+    _write(tmp_path / "work" / "video_enhancement_plan.json", plan)
+
+    current = build_manifest(
+        str(tmp_path), target_stage="publish_ready", required=["video_enhancement_plan"]
+    )
+    gate = next(g for g in current["gates"] if g["category"] == "video_enhancement_plan")
+    assert gate["status"] == "blocked"
+    assert "video_enhancement_plan" in current["blocked_gates"]
+
+    missing = build_manifest(
+        str(tmp_path / "empty"), target_stage="analysis", required=["video_enhancement_plan"]
+    )
+    assert "video_enhancement_plan" in missing["missing_required"]
 
 
 def test_chroma_key_is_live_verified_and_can_be_required(tmp_path, monkeypatch):

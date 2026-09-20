@@ -56,6 +56,23 @@ PROFILE_SPECS: Mapping[str, Mapping[str, Any]] = {
         ],
         "alternatives": [],
     },
+    "video_enhancement": {
+        "label": "Local video enhancement finishing",
+        "description": "Resize with Lanczos, optionally interpolate cadence, and render a full-length A/B review copy.",
+        "required": [
+            "runtime:python",
+            "command:ffmpeg",
+            "command:ffprobe",
+            "encoder:libx264",
+            "encoder:aac",
+            "filter:scale",
+            "filter:setsar",
+            "filter:fps",
+            "filter:hstack",
+            "filter:minterpolate",
+        ],
+        "alternatives": [],
+    },
     "storyboard_animatic": {
         "label": "Storyboard animatic",
         "description": "Normalize still panels, burn shot/time labels, attach optional guide audio, and render a timed H.264 preview.",
@@ -233,6 +250,7 @@ REMEDIES: Mapping[str, str] = {
     "filter:blackdetect": "Install an FFmpeg build with the blackdetect filter enabled.",
     "filter:silencedetect": "Install an FFmpeg build with the silencedetect filter enabled.",
     "filter:drawtext": "Install an FFmpeg build with FreeType/drawtext support.",
+    "filter:minterpolate": "Install an FFmpeg build with the minterpolate motion-interpolation filter enabled.",
 }
 
 Runner = Callable[[Sequence[str], float], Mapping[str, Any]]

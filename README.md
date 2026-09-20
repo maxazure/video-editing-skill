@@ -2,7 +2,7 @@
 
 这是一个面向 **口播、教程、访谈、播客切片、录屏演示 / facecam demo** 的 AI 视频剪辑生产线：给它原始口播音频/视频、transcript、B-roll、摄像头小窗或素材目录，它可以把“还没整理的素材”推进到 **可发布的小红书 / 抖音 / 视频号短视频**。
 
-它提供一条完整工作流：**项目启动/素材导入 → 本机工具链能力预检 → 交错/telecine 检测与逐行工作副本 → 手机/录屏 VFR 时基归一 → 静音首尾黑场裁切与边界复核 → 短素材循环填满固定时长与接缝复核 → 多源片段归一拼接与全接缝复核 → 个人/品牌剪辑风格 → 生产授权 → 手持防抖 / 绿蓝幕换背景 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → 分镜静帧时长预演 → 生成前逐镜接力与剪辑边界审核 → B-roll/生图/生成视频规划 → 图片/视频/音频生成参考素材预检与角色绑定 → 生成片有效运动窗口 → 字幕与声音设计 → BGM/SFX cue 规划与 source-bound 音效单轨混音 → BGM 卡点 / 局部 speed ramp / 关键帧 freeze-punch / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 锁定视觉 EDL 后重建最终声音分镜 → 最终旁白逐短语响度门禁 → 渲染前预检 / 真实画面字幕样式选择 / 字幕逐字符字体覆盖 → 单次编码渲染 → 质检 / 最终音视频轨覆盖 / 最终成片字幕像素复核 / 字幕与独立人声对齐 / 声道完整性 / 短促音频掉点 / 闪烁风险 / 单帧瞬态伪影筛查 / 最终成片唇形复核 → 多平台导出 / 目标大小交付编码 / 重编码画质损失门禁 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
+它提供一条完整工作流：**项目启动/素材导入 → 本机工具链能力预检 → 交错/telecine 检测与逐行工作副本 → 手机/录屏 VFR 时基归一 → 静音首尾黑场裁切与边界复核 → 短素材循环填满固定时长与接缝复核 → 多源片段归一拼接与全接缝复核 → 个人/品牌剪辑风格 → 生产授权 → 手持防抖 / 绿蓝幕换背景 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → 分镜静帧时长预演 → 生成前逐镜接力与剪辑边界审核 → B-roll/生图/生成视频规划 → 图片/视频/音频生成参考素材预检与角色绑定 → 生成片有效运动窗口 → 字幕与声音设计 → BGM/SFX cue 规划与 source-bound 音效单轨混音 → BGM 卡点 / 局部 speed ramp / 关键帧 freeze-punch / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 锁定视觉 EDL 后重建最终声音分镜 → 最终旁白逐短语响度门禁 → 渲染前预检 / 真实画面字幕样式选择 / 字幕逐字符字体覆盖 → 单次编码渲染 → 质检 / 最终音视频轨覆盖 / 最终成片字幕像素复核 / 字幕与独立人声对齐 / 声道完整性 / 短促音频掉点 / 闪烁风险 / 单帧瞬态伪影筛查 / 最终成片唇形复核 → 多平台导出 / 本地视频放大与可选补帧 / 目标大小交付编码 / 重编码画质损失门禁 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
 
 ## 适合做什么
 
@@ -11,7 +11,7 @@
 - **噪声口播可在单次编码内保守清理**：`render_final.py --speech-denoise light|medium|strong` 会在变速、压缩、响度规范化和 BGM ducking 前处理低频震动与稳态底噪；默认关闭，最大降噪限制为 12 dB。
 - **停顿删段可同时看声音和画面**：`multimodal_dead_air.py` 只有在静帧覆盖静音达到门槛时才提出候选，实际只删二者交集；源 hash、20% 删除预算、切点复盘、单次编码和完整解码都进入 gate。
 - **多机位先同步再剪辑**：`multicam_sync.py` 把两台以上相机/手机/录音设备对齐到同一参考时间线，记录每路 offset、置信度、有效音轨、公共重叠区间，并可用多窗口 probe 测量长片时钟漂移；原片不改、不重编码。
-- **开始媒体工作前先证明本机能跑**：`runtime_preflight.py` 按 `media_io / core_edit / storyboard_animatic / audio_cue_mix / generation_chain_handoff / captions / qa / edge_black_trim / hdr_sdr / stabilization / interlace / remotion` profile 检查命令版本、编码器和 FFmpeg filters；明确区分 missing 与 unknown，并让环境或报告漂移在 manifest 中失效。
+- **开始媒体工作前先证明本机能跑**：`runtime_preflight.py` 按 `media_io / core_edit / video_enhancement / storyboard_animatic / audio_cue_mix / generation_chain_handoff / captions / qa / edge_black_trim / hdr_sdr / stabilization / interlace / remotion` profile 检查命令版本、编码器和 FFmpeg filters；明确区分 missing 与 unknown，并让环境或报告漂移在 manifest 中失效。
 - **旧电视 / DV 素材先分清 telecine 和真实交错**：`interlace_conform.py` 用 FFmpeg `idet` 多段采样；疑似 3:2 pulldown 会阻断直接去交错，真实 TFF/BFF 才能经 `bwdif` 或明确的 `yadif` fallback 生成逐行工作副本，并在完整 1× A/B 确认后放行。
 - **手机和录屏 VFR 可先变成可审计 CFR 工作副本**：`frame_rate_conform.py` 读取全部解码帧 PTS 间隔，绑定精确目标有理帧率；输出必须通过恒定 cadence、帧数、音画起止、显示方向、SHA-256 和完整解码验证，原片保持不变。
 - **片头片尾黑场会先核对声音再裁切**：`black_edge_trim.py` 只接受接触源时间线两端的 `blackdetect` 区间，默认要求实际移除范围至少 95% 被静音覆盖；保留视觉 padding，生成原片边界 proof 和新的 CFR 工作副本，完整 1× 视听确认后才放行。
@@ -23,6 +23,7 @@
 - **动作落点可以定格并轻推近**：`freeze_punch.py` 用第一帧替换指定 source-time 窗口，保持总时长和原音频时间线不变；计划绑定源片、事件和输出字节，完整解码、成片漂移或尚未 apply 都会阻塞 manifest。
 - **上传大小限制变成硬门禁**：`delivery_encode.py` 依据源片时长计算两遍 H.264/AAC 码率，绑定源与输出 SHA-256；完整解码、音视频契约或硬大小上限任一失败都不会提升成交付件。
 - **压缩后“能播放”不再等于“画质够用”**：`encode_quality_qa.py` 对同时间线、同构图的 master 与重编码衍生件做全长 SSIM/PSNR 比较，保存平均值、P05 低尾部和最差帧时间码；两条视频、媒体契约、阈值或现场复测漂移都会让报告失效。
+- **现有视频可以走可审计的放大/补帧收尾**：`video_enhancement.py` 绑定源 SHA-256、目标短边或倍率、目标 FPS 和确切 FFmpeg filter；本地 Lanczos 与可选 `minterpolate` 输出只有通过尺寸/帧率/时长/音轨合同、完整解码、全长 A/B 和带声四项人工复核后才放行。它明确保留“resize 不等于 ML 细节恢复”的能力边界。
 - **专业声画错位不再靠手写 FFmpeg**：`audio_transition.py` 对明确边界规划 J-cut/L-cut，验证真实音频 handle、config/transcript/source hash 和 compiled timing；`render_final.py` 在同一次编码中完成画面硬切、音频 pre-lap/overhang、字幕、overlay 与 BGM。
 - **音效 cue 可以落成一条可审母轨**：`audio_cue_mix.py` 把 `audio_cue_sheet.v1`、最终旁白和本地/程序化 SFX 绑定后输出 48 kHz stereo 单轨；完整解码与 1× 五项试听通过前保持阻塞，输入或输出漂移会让 review 失效。
 - **连续生成可以用真实末帧接力**：`generation_chain_handoff.py` 从已审上一镜的完整片段或最后一个 approved keep range 选择确切 decoded 末帧，验证源帧/PNG 像素一致并经人工确认后，将它绑定为下一镜 exact first frame；原角色、产品和 style anchors 继续保留。
@@ -3787,6 +3788,7 @@ pytest tests/test_edit_preflight.py -v      # 渲染前结构/路径/参数预�
 pytest tests/test_edit_revision.py -v       # 文本剪辑 artifact source-bound revision / undo / redo
 pytest tests/test_edit_recipe.py -v         # 可移植 render-config recipe / typed binding / replay preflight
 pytest tests/test_video_stabilization.py -v # source-bound 后端计划 / 工作副本 / 全长 A/B / confirm gate
+pytest tests/test_video_enhancement.py -v   # 本地放大/补帧 / 完整解码 / 全长 A-B / confirm gate
 pytest tests/test_chroma_key.py -v          # 绿幕/蓝幕 composite+matte / review / render / live gate
 pytest tests/test_approval_receipt.py -v    # 最终交付件 SHA-256 审批收据 + stale gate
 pytest tests/test_publish_package.py -v     # 最终上传包 + gate 状态汇总
@@ -3794,6 +3796,24 @@ pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 pytest tests/test_review_dashboard.py -v    # 静态人工复核面板 + gate queue
 pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 gate
 ```
+
+### 2026-09-21 自动化升级记录（Source-bound Local Video Enhancement）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`0xadvait/ai-video-skill@79b1edf`](https://github.com/0xadvait/ai-video-skill/blob/79b1edf6be61b6d95cd3f03ffced5945e7d0bf34/scripts/upscale.py) | 把分辨率放大与帧率插值作为生成/组装后的独立 finish stage；本地默认用 Lanczos + motion-compensated interpolation，不依赖 API | 新增本地确定性 `plan → apply → confirm → verify`；再补上源 hash、目标合同、原子落盘、完整解码、全长 A/B 和 manifest live gate |
+| [`Sogni-AI/sogni-creative-agent-skill@8afa859`](https://github.com/Sogni-AI/sogni-creative-agent-skill/blob/8afa8592e9f82299e7d5734386bbd6da6afe7a90/SKILL.md#upscaling-vs-generative-editing) | 纯分辨率提升应走 promptless upscale，保留构图、画幅、帧与音频；只有用户明确要求生成式重绘时才切到 video-to-video | 本功能明确声明 Lanczos resize 不会重建缺失细节，也不接受提示词；ML VSR、去压缩伪影或生成式修复继续交给单独且经授权的工具 |
+| [`Gladgithub/esrgan-4k-upscale@8be27e5`](https://github.com/Gladgithub/esrgan-4k-upscale/blob/8be27e5283ab413e5ad5cfea25a6c98948bf0a21/SKILL.md) | 长耗时 upscale 先 probe 几何与执行条件；输出严格核对帧率、帧数/时长和音轨，未知参数不静默猜测，局部 patch 也不能破坏时间线 | 吸收 fail-closed 媒体合同与完整复核；本轮不引入 Real-ESRGAN/Vulkan、GPU 长任务或局部 patch，保持零新增运行依赖 |
+
+新增/调整能力：新增 [`scripts/video_enhancement.py`](scripts/video_enhancement.py)、[`tests/test_video_enhancement.py`](tests/test_video_enhancement.py) 和 [`docs/prompts/126-video-enhancement.md`](docs/prompts/126-video-enhancement.md)。`plan` 接受 `--target-short-edge` 或 `--scale`，并可用 `--fps` 启用 FFmpeg `minterpolate`；横竖屏按显示方向保持画幅，拒绝缩小、no-op、超过 4×、短边大于 4320、目标帧率低于源片或高于 120 fps。计划绑定源 SHA-256、媒体合同、确切 Lanczos/minterpolate filter、增强件与 A/B 路径。`apply` 只写 H.264/yuv420p + 可选 AAC 衍生件，尺寸、帧率、时长、音轨存在性和两份 MP4 完整解码全部通过后才原子提升。`confirm` 要求完整正常速度观看 source-left/enhanced-right A/B，再带声看完整增强件，并逐项记录 `detail / edges / motion_cadence / audio_sync`；任一 fail 继续阻断。
+
+运行时与流水线已接通：`runtime_preflight.py --profile video_enhancement` 检查 10 项 Python/FFmpeg/encoder/filter 能力；`edit_brief_plan.py` 可从中英文 upscale/4K/补帧需求推导目标短边和 FPS；`pipeline_manifest.py --require video_enhancement_plan --strict` 现场验证源、设置、输出、decode binding、review 和 canonical plan ID。README、SKILL、daily workflow 与 prompts 导航已同步。
+
+使用方式：先运行 `python3 scripts/video_enhancement.py plan output/master.mp4 --target-short-edge 1080 --fps 60 --enhanced output/master-enhanced.mp4 --comparison verify/video-enhancement-ab.mp4 --output work/video_enhancement_plan.json --markdown work/video_enhancement_plan.md`，再执行 `apply`。完整复核后运行 `confirm --detail pass --edges pass --motion-cadence pass --audio-sync pass --reviewed-by ... --note ...`，最后执行 `verify --strict` 与 manifest gate。只补帧时省略尺寸参数；只放大时省略 `--fps`。
+
+验证结果：新增 8 项核心单元测试，并扩展 runtime-preflight、edit-brief 与 pipeline-manifest 回归；关联定向 `.venv/bin/python -m pytest tests/test_video_enhancement.py tests/test_runtime_preflight.py tests/test_pipeline_manifest.py tests/test_edit_brief_plan.py -q` 通过 **194 passed in 3.94s**，全量 `.venv/bin/python -m pytest tests -q` 通过 **1311 passed in 34.25s**。真实 FFmpeg smoke 用 1.5 秒、160×90、24 fps H.264/AAC 样片执行 2× Lanczos + 48 fps 补帧，得到 320×180、48 fps、保留音轨的增强件和 2560×720 全长 A/B；两份输出完整解码，runtime profile 为 **10 capabilities / 0 blocking / 0 warnings**。未伪造完整人工播放，`verify --strict` 按预期因 pending review 退出 2。Python compileall、四组 CLI help、manifest category、Skill Creator quick validation 与 `git diff --check` 均通过。
 
 ### 2026-09-20 自动化升级记录（Source-bound Reference Story Formula）
 
@@ -5384,6 +5404,7 @@ python3 scripts/pipeline_manifest.py . --require freeze_punch_plan --strict
 | **123** | **[Audio Cue Mix](docs/prompts/123-audio-cue-mix.md)** | **cue sheet + 最终旁白 → 本地/程序化 SFX 单轨、完整试听与 live gate** |
 | **124** | **[Generation Chain Handoff](docs/prompts/124-generation-chain-handoff.md)** | **已审生成片 + 已审边界 → 精确末帧 PNG、下一镜首帧提示词与 live gate** |
 | **125** | **[Reference Story Formula](docs/prompts/125-reference-story-formula.md)** | **参考视频 + transcript + 目标分镜 → 情绪机制、content anchors、复制排除与 live gate** |
+| **126** | **[Video Enhancement](docs/prompts/126-video-enhancement.md)** | **现有视频本地放大、可选补帧、完整解码、全长 A/B 与带声 review gate** |
 | **62** | **[Hook Variants](docs/prompts/62-hook-variants.md)** | **同一视频批量生成前三秒 hook 角度** |
 | **67** | **[Speech Continuity QA](docs/prompts/67-speech-continuity-qa.md)** | **成片二次 ASR 检查复读、近重复 take 和句内口吃** |
 | **68** | **[Cover Variants](docs/prompts/68-cover-variants.md)** | **多套封面、feed-size 预览、标题协同和最终选择** |
@@ -5519,6 +5540,7 @@ scripts/
 ├── multi_export.py             三平台导出                       [V3]
 ├── hdr_sdr.py                  PQ/HLG → source-bound Rec.709 SDR / full-decode gate [V3]
 ├── delivery_encode.py          source-bound 硬大小交付编码      [V3]
+├── video_enhancement.py        本地 Lanczos 放大/可选补帧 + 全长 A-B gate [V3]
 ├── generate_caption.py         标题/正文/标签                   [V3]
 ├── approval_receipt.py         SHA-256 审批收据 + stale gate       [V3]
 ├── publish_package.py          最终上传包 + gate 状态汇总           [V3]

@@ -397,6 +397,13 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         blocks_when_present=True,
     ),
     ArtifactDef(
+        "video_enhancement_plan",
+        "Video Enhancement Plan",
+        ("**/video_enhancement_plan.json", "**/*_video_enhancement_plan.json"),
+        "Run video_enhancement.py apply, review the complete A/B and enhanced output, confirm all checks, then live-verify the plan.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "chroma_key",
         "Chroma-key Composite",
         ("**/chroma_key.json", "**/*_chroma_key.json"),
@@ -2368,6 +2375,37 @@ def evaluate_category(
             elif _int_at(verification, "summary", "warnings"):
                 status = "warn" if status != "blocked" else status
                 notes.append(f"video stabilization plan retains a reviewed backend warning: {artifact.path}")
+        return {
+            "category": definition.category,
+            "label": definition.label,
+            "status": status,
+            "artifact_count": len(artifacts),
+            "latest_path": artifacts[0].path,
+            "notes": sorted(set(notes)),
+            "next_action": definition.next_action if status in {"missing", "blocked", "warn"} else "",
+        }
+
+    if definition.category == "video_enhancement_plan":
+        from video_enhancement import verify_plan
+
+        for artifact in artifacts:
+            data = _load_json(artifact.path)
+            if data is None:
+                status = "blocked"
+                notes.append(f"unreadable video enhancement plan: {artifact.path}")
+                continue
+            verification = verify_plan(data)
+            blocking = _int_at(verification, "summary", "blocking")
+            if blocking:
+                status = "blocked"
+                notes.append(
+                    f"invalid video enhancement plan {artifact.path}: {blocking} blocking item(s)"
+                )
+            elif _int_at(verification, "summary", "warnings"):
+                status = "warn" if status != "blocked" else status
+                notes.append(
+                    f"video enhancement plan retains documented local-finishing limitations: {artifact.path}"
+                )
         return {
             "category": definition.category,
             "label": definition.label,

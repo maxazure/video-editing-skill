@@ -488,6 +488,24 @@ SIGNAL_KEYWORDS: Mapping[str, Sequence[str]] = {
         "稳定画面",
         "稳定视频",
     ),
+    "video_enhancement": (
+        "video upscale",
+        "upscale video",
+        "upscale to 4k",
+        "video enhancement",
+        "enhance video quality",
+        "frame interpolation",
+        "interpolate fps",
+        "motion interpolation",
+        "视频放大",
+        "视频超分",
+        "增强视频清晰度",
+        "视频补帧",
+        "补到60帧",
+        "补到 60 帧",
+        "升到60帧",
+        "升到 60 帧",
+    ),
     "chroma_key": (
         "chroma key",
         "chroma-key",
@@ -831,6 +849,7 @@ SIGNAL_LABELS: Mapping[str, str] = {
     "audio_design": "BGM / SFX 声音设计",
     "final_audio_storyboard": "锁定视觉 EDL 后重建最终声音分镜",
     "video_stabilization": "手持素材稳定化 / 防抖",
+    "video_enhancement": "本地视频放大 / 可选运动补帧 / 全长 A-B 复核",
     "chroma_key": "绿幕 / 蓝幕抠像与换背景",
     "scoped_video_edit": "局部 AI 视频编辑变更/保护范围复核",
     "speed_ramp": "局部 speed ramp / velocity edit",
@@ -1084,7 +1103,7 @@ def build_plan(
 
     if source_media and not Path(source_media).expanduser().exists():
         blockers.append(f"source media not found: {source_media}")
-    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy", "reference_edit_rhythm", "lip_sync_review", "subtitle_style_preview", "subtitle_render_review", "framing_preview", "flash_safety_qa", "temporal_artifact_qa", "stream_coverage_qa", "audio_channel_qa", "audio_dropout_qa", "caption_speech_qa", "multimodal_dead_air", "video_stabilization", "chroma_key", "scoped_video_edit", "speed_ramp", "freeze_punch", "generated_motion_window", "frame_rate_conform", "black_edge_trim", "loop_fill", "clip_assembly", "interlace_conform", "hdr_sdr", "delivery_encode", "encode_quality_qa", "edit_style_profile"}):
+    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy", "reference_edit_rhythm", "lip_sync_review", "subtitle_style_preview", "subtitle_render_review", "framing_preview", "flash_safety_qa", "temporal_artifact_qa", "stream_coverage_qa", "audio_channel_qa", "audio_dropout_qa", "caption_speech_qa", "multimodal_dead_air", "video_stabilization", "video_enhancement", "chroma_key", "scoped_video_edit", "speed_ramp", "freeze_punch", "generated_motion_window", "frame_rate_conform", "black_edge_trim", "loop_fill", "clip_assembly", "interlace_conform", "hdr_sdr", "delivery_encode", "encode_quality_qa", "edit_style_profile"}):
         warnings.append("source media was not provided; commands use <source_media> placeholders")
 
     if transcript and not Path(transcript).expanduser().exists():
@@ -1165,6 +1184,7 @@ def build_plan(
                     "multimodal_dead_air",
                     "cleanup_silence",
                     "video_stabilization",
+                    "video_enhancement",
                     "chroma_key",
                     "speed_ramp",
                     "freeze_punch",
@@ -1209,6 +1229,8 @@ def build_plan(
             runtime_profiles.append("hdr_sdr")
         if "video_stabilization" in ids:
             runtime_profiles.append("stabilization")
+        if "video_enhancement" in ids:
+            runtime_profiles.append("video_enhancement")
         if "interlace_conform" in ids:
             runtime_profiles.append("interlace")
         if "black_edge_trim" in ids:
@@ -2627,6 +2649,87 @@ def build_plan(
         notes.append(
             "After deciding to stabilize, regenerate the plan with --decision stabilize --reviewed-by, "
             "run apply with a full-length --comparison, watch it at 1x, then run confirm."
+        )
+
+    if "video_enhancement" in ids:
+        wants_interpolation = any(
+            _contains(normalized, term)
+            for term in (
+                "frame interpolation",
+                "interpolate fps",
+                "motion interpolation",
+                "视频补帧",
+                "补到60帧",
+                "补到 60 帧",
+                "升到60帧",
+                "升到 60 帧",
+            )
+        )
+        wants_upscale = any(
+            _contains(normalized, term)
+            for term in (
+                "video upscale",
+                "upscale video",
+                "upscale to 4k",
+                "video enhancement",
+                "enhance video quality",
+                "视频放大",
+                "视频超分",
+                "增强视频清晰度",
+            )
+        )
+        enhancement_options: List[str] = []
+        if wants_upscale:
+            if any(_contains(normalized, term) for term in ("4k", "2160p")):
+                enhancement_options.extend(["--target-short-edge", "2160"])
+            elif any(_contains(normalized, term) for term in ("1440p", "2k")):
+                enhancement_options.extend(["--target-short-edge", "1440"])
+            elif _contains(normalized, "1080p"):
+                enhancement_options.extend(["--target-short-edge", "1080"])
+            else:
+                enhancement_options.extend(["--scale", "2"])
+        if wants_interpolation:
+            fps_match = re.search(r"(?<!\d)(24|25|30|48|50|60|90|120)\s*(?:fps|帧)", normalized)
+            enhancement_options.extend(["--fps", fps_match.group(1) if fps_match else "60"])
+        _add_step(
+            steps,
+            seen,
+            _step(
+                "video_enhancement_plan",
+                phase="delivery",
+                script="video_enhancement.py",
+                label="Plan source-bound local resize and optional motion interpolation",
+                reason="The brief asks for a higher delivery resolution or synthesized output cadence.",
+                command=shell(
+                    [
+                        python_bin,
+                        "scripts/video_enhancement.py",
+                        "plan",
+                        source,
+                        *enhancement_options,
+                        "--enhanced",
+                        "output/video_enhanced.mp4",
+                        "--comparison",
+                        "verify/video_enhancement_ab.mp4",
+                        "--output",
+                        "work/video_enhancement_plan.json",
+                        "--markdown",
+                        "work/video_enhancement_plan.md",
+                    ]
+                ),
+                outputs=[
+                    "work/video_enhancement_plan.json",
+                    "work/video_enhancement_plan.md",
+                    "output/video_enhanced.mp4",
+                    "verify/video_enhancement_ab.mp4",
+                ],
+                gate_category="video_enhancement_plan",
+            ),
+        )
+        notes.append(
+            "Run video_enhancement.py apply, watch the complete source-left/enhanced-right A/B and the "
+            "enhanced output with sound, then confirm detail, edges, motion cadence, and audio sync. "
+            "Lanczos resizing does not claim ML detail reconstruction."
         )
 
     if "chroma_key" in ids:

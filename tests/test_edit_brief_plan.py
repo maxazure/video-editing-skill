@@ -765,6 +765,27 @@ def test_shaky_footage_brief_routes_stabilization_review(tmp_path):
     assert any("full-length --comparison" in note for note in plan["notes"])
 
 
+def test_video_upscale_and_interpolation_brief_routes_enhancement_gate(tmp_path):
+    source = tmp_path / "generated.mp4"
+    source.write_text("fake video", encoding="utf-8")
+
+    plan = build_plan(
+        f"把 {source} 视频放大到 4K，并补到 60 帧后做完整 A/B 复核",
+        project_dir=str(tmp_path),
+    )
+
+    step = next(step for step in plan["steps"] if step["id"] == "video_enhancement_plan")
+    assert step["script"] == "video_enhancement.py"
+    assert "--target-short-edge 2160" in step["command"]
+    assert "--fps 60" in step["command"]
+    assert "output/video_enhanced.mp4" in step["outputs"]
+    assert "verify/video_enhancement_ab.mp4" in step["outputs"]
+    assert step["gate_category"] == "video_enhancement_plan"
+    runtime = next(step for step in plan["steps"] if step["id"] == "runtime_preflight")
+    assert "--profile video_enhancement" in runtime["command"]
+    assert any("does not claim ML detail reconstruction" in note for note in plan["notes"])
+
+
 def test_green_screen_brief_routes_reviewed_chroma_key(tmp_path):
     source = tmp_path / "origin" / "presenter.mp4"
     source.parent.mkdir(parents=True)

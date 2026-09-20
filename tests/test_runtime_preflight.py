@@ -84,6 +84,16 @@ def test_storyboard_animatic_profile_requires_timing_label_and_audio_filters():
     assert "filter:apad" in report["capabilities"]
 
 
+def test_video_enhancement_profile_requires_resize_interpolation_and_ab_filters():
+    filters = {"scale", "setsar", "fps", "hstack", "minterpolate"}
+    report = build_report(["video_enhancement"], snapshot=snapshot(filters=filters))
+
+    assert report["status"] == "ready"
+    assert report["summary"]["blocking"] == 0
+    assert "filter:minterpolate" in report["capabilities"]
+    assert "filter:hstack" in report["capabilities"]
+
+
 def test_audio_cue_mix_profile_requires_synthesis_mix_and_output_capabilities():
     filters = {
         "aresample", "aformat", "atrim", "apad", "asetpts", "afade",
