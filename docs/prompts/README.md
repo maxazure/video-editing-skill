@@ -127,6 +127,8 @@
 | 123 | [Audio Cue Mix 音效 cue 单轨混音](123-audio-cue-mix.md) | audio cue sheet + 最终旁白 → 本地/程序化 SFX、48 kHz stereo 单轨、完整试听与 live gate |
 | 124 | [Generation Chain Handoff 生成片末帧接力](124-generation-chain-handoff.md) | 已审生成片 + 已审相邻边界 → 精确末帧 PNG、下一镜首帧提示词与 live gate |
 | 125 | [Reference Story Formula 参考片故事公式迁移](125-reference-story-formula.md) | 参考视频 + timecoded transcript + 目标分镜 → 情绪机制、content anchors、复制排除与 live gate |
+| 126 | [Video Enhancement 本地放大与补帧](126-video-enhancement.md) | 现有视频 → Lanczos resize、可选补帧、全长 A/B 与带声 review gate |
+| 127 | [Multicam Switch 按说话者音频生成导播草稿](127-multicam-switch.md) | ready 同步计划 + speaker-mapped 音轨 → 自动切镜、完整解码与人工 live gate |
 
 ## 快速上手
 
@@ -167,6 +169,7 @@
 | 两个生成镜头属于同一场景，想用上一条已审成片的真实末帧接力下一条 | [124-Generation Chain Handoff](124-generation-chain-handoff.md) |
 | 想借鉴参考片的情绪公式与观众心态变化，同时换掉原画面、原话、品牌和具体情节 | [125-Reference Story Formula](125-reference-story-formula.md) |
 | 想把现有视频放大、升到 1080p/4K 或补到更高帧率，并完整复核画质与同步 | [126-Video Enhancement](126-video-enhancement.md) |
+| 已同步多机位，想按当前说话者生成可完整复核的自动导播草稿 | [127-Multicam Switch](127-multicam-switch.md) |
 | 口播停顿太多想自动剪紧 | [21-Jump Cut](21-jump-cut.md) |
 | 只想删掉同时静音且画面静止的死区 | [88-Multimodal Dead-Air](88-multimodal-dead-air.md) |
 | 片头或片尾有黑屏，想确认没有声音再裁掉 | [119-Edge-black Trim](119-black-edge-trim.md) |

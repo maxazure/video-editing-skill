@@ -777,6 +777,16 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         blocks_when_present=True,
     ),
     ArtifactDef(
+        "multicam_switch_plan",
+        "Audio-guided Multicam Switch Draft",
+        (
+            "**/multicam_switch_plan.json",
+            "**/*_multicam_switch_plan.json",
+        ),
+        "Run multicam_switch.py apply, watch the complete draft at 1x with sound, confirm all four review fields, then live-verify the plan.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "chapter_markers",
         "Chapter Markers",
         ("**/chapters.json", "**/chapters-youtube.txt", "**/chapters.ffmetadata"),
@@ -2416,6 +2426,38 @@ def evaluate_category(
             "next_action": definition.next_action if status in {"missing", "blocked", "warn"} else "",
         }
 
+    if definition.category == "multicam_switch_plan":
+        from multicam_switch import verify_plan
+
+        for artifact in artifacts:
+            data = _load_json(artifact.path)
+            if data is None:
+                status = "blocked"
+                notes.append(f"unreadable multicam switch plan: {artifact.path}")
+                continue
+            verification = verify_plan(data)
+            blocking = _int_at(verification, "summary", "blocking")
+            if blocking:
+                status = "blocked"
+                notes.append(
+                    f"invalid, unapplied, or unconfirmed multicam switch plan {artifact.path}: "
+                    f"{blocking} blocking item(s)"
+                )
+            elif _int_at(verification, "summary", "warnings"):
+                status = "warn" if status != "blocked" else status
+                notes.append(
+                    f"multicam switch plan retains ambiguous/shared-audio warnings: {artifact.path}"
+                )
+        return {
+            "category": definition.category,
+            "label": definition.label,
+            "status": status,
+            "artifact_count": len(artifacts),
+            "latest_path": artifacts[0].path,
+            "notes": sorted(set(notes)),
+            "next_action": definition.next_action if status in {"missing", "blocked", "warn"} else "",
+        }
+
     if definition.category == "multimodal_dead_air_plan":
         from multimodal_dead_air import verify_plan
 
@@ -2601,6 +2643,7 @@ def evaluate_category(
             "audio_cue_sheet",
             "audio_sync",
             "multicam_sync",
+            "multicam_switch_plan",
             "audio_master_report",
             "publish_package",
             "edit_preflight",

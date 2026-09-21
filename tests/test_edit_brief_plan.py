@@ -60,6 +60,22 @@ def test_audio_design_brief_adds_audio_cue_mix_runtime_profile(tmp_path):
     assert "--profile audio_cue_mix" in runtime["command"]
 
 
+def test_active_speaker_multicam_brief_routes_switch_plan_and_runtime(tmp_path):
+    plan = build_plan(
+        "把已经同步的访谈多机位按说话人自动切镜，先生成可复核导播草稿",
+        project_dir=str(tmp_path),
+    )
+
+    assert "multicam_switch" in {signal["id"] for signal in plan["signals"]}
+    runtime = next(step for step in plan["steps"] if step["id"] == "runtime_preflight")
+    assert "--profile multicam_switch" in runtime["command"]
+    step = next(step for step in plan["steps"] if step["id"] == "multicam_switch_plan")
+    assert step["script"] == "multicam_switch.py"
+    assert "--sync-plan work/multicam_sync_plan.json" in step["command"]
+    assert step["command"].count("--speaker") == 2
+    assert step["gate_category"] == "multicam_switch_plan"
+
+
 def test_transcript_only_brief_uses_media_io_without_render_profiles(tmp_path):
     source = tmp_path / "origin" / "talk.mp4"
     source.parent.mkdir(parents=True)

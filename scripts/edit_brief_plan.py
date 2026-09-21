@@ -599,6 +599,20 @@ SIGNAL_KEYWORDS: Mapping[str, Sequence[str]] = {
         "音频交叠剪辑",
     ),
     "audio_sync": ("外录", "领夹麦", "lav", "recorder", "scratch audio", "audio sync", "对齐音频", "同步音频"),
+    "multicam_switch": (
+        "active speaker multicam",
+        "audio guided multicam",
+        "automatic multicam switching",
+        "auto multicam switching",
+        "switch cameras by speaker",
+        "speaker camera switching",
+        "多机位自动切镜",
+        "多机位自动导播",
+        "按说话人切机位",
+        "按说话人自动切镜",
+        "按发言人切镜头",
+        "自动切换说话人机位",
+    ),
     "frame_rate_conform": (
         "variable frame rate",
         "constant frame rate",
@@ -857,6 +871,7 @@ SIGNAL_LABELS: Mapping[str, str] = {
     "generated_motion_window": "生成视频有效运动窗口 / 冻结开头裁切",
     "audio_transition": "J-cut / L-cut 声画错位转场",
     "audio_sync": "外录音频对齐",
+    "multicam_switch": "同步后按说话者音频生成多机位导播草稿",
     "frame_rate_conform": "VFR 源素材检测 / CFR 工作副本",
     "loop_fill": "短素材循环填满固定时长 / 接缝复核",
     "black_edge_trim": "首尾黑场 + 静音交集裁切 / 边界复核",
@@ -1190,6 +1205,7 @@ def build_plan(
                     "freeze_punch",
                     "audio_transition",
                     "audio_sync",
+                    "multicam_switch",
                     "storyboard_animatic",
                     "generated_motion_window",
                     "screen_focus",
@@ -1231,6 +1247,8 @@ def build_plan(
             runtime_profiles.append("stabilization")
         if "video_enhancement" in ids:
             runtime_profiles.append("video_enhancement")
+        if "multicam_switch" in ids:
+            runtime_profiles.append("multicam_switch")
         if "interlace_conform" in ids:
             runtime_profiles.append("interlace")
         if "black_edge_trim" in ids:
@@ -1898,6 +1916,48 @@ def build_plan(
                 outputs=["work/audio_sync_plan.json", "work/audio_sync_plan.md"],
                 gate_category="audio_sync",
             ),
+        )
+
+    if "multicam_switch" in ids:
+        _add_step(
+            steps,
+            seen,
+            _step(
+                "multicam_switch_plan",
+                phase="edit",
+                script="multicam_switch.py",
+                label="Build a source-bound audio-guided multicam draft",
+                reason="The brief asks to switch synchronized cameras according to the current speaker.",
+                command=shell(
+                    [
+                        python_bin,
+                        "scripts/multicam_switch.py",
+                        "plan",
+                        "--sync-plan",
+                        "work/multicam_sync_plan.json",
+                        "--speaker",
+                        "<angle_id>=<speaker>",
+                        "--speaker",
+                        "<angle_id>=<speaker>",
+                        "--delivery",
+                        "output/multicam_switch_draft.mp4",
+                        "--output",
+                        "work/multicam_switch_plan.json",
+                        "--markdown",
+                        "work/multicam_switch_plan.md",
+                    ]
+                ),
+                outputs=[
+                    "work/multicam_switch_plan.json",
+                    "work/multicam_switch_plan.md",
+                    "output/multicam_switch_draft.mp4",
+                ],
+                gate_category="multicam_switch_plan",
+            ),
+        )
+        notes.append(
+            "First live-review multicam_sync_plan.json and map only video angles whose selected audio is a meaningful speaker proxy. "
+            "Then apply the switch plan, watch the complete draft at 1x with sound, and confirm speaker selection, cut timing, sync, and audio continuity."
         )
 
     if "broll" in ids:

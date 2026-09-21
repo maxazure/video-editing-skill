@@ -2,7 +2,7 @@
 
 这是一个面向 **口播、教程、访谈、播客切片、录屏演示 / facecam demo** 的 AI 视频剪辑生产线：给它原始口播音频/视频、transcript、B-roll、摄像头小窗或素材目录，它可以把“还没整理的素材”推进到 **可发布的小红书 / 抖音 / 视频号短视频**。
 
-它提供一条完整工作流：**项目启动/素材导入 → 本机工具链能力预检 → 交错/telecine 检测与逐行工作副本 → 手机/录屏 VFR 时基归一 → 静音首尾黑场裁切与边界复核 → 短素材循环填满固定时长与接缝复核 → 多源片段归一拼接与全接缝复核 → 个人/品牌剪辑风格 → 生产授权 → 手持防抖 / 绿蓝幕换背景 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → 分镜静帧时长预演 → 生成前逐镜接力与剪辑边界审核 → B-roll/生图/生成视频规划 → 图片/视频/音频生成参考素材预检与角色绑定 → 生成片有效运动窗口 → 字幕与声音设计 → BGM/SFX cue 规划与 source-bound 音效单轨混音 → BGM 卡点 / 局部 speed ramp / 关键帧 freeze-punch / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 锁定视觉 EDL 后重建最终声音分镜 → 最终旁白逐短语响度门禁 → 渲染前预检 / 真实画面字幕样式选择 / 字幕逐字符字体覆盖 → 单次编码渲染 → 质检 / 最终音视频轨覆盖 / 最终成片字幕像素复核 / 字幕与独立人声对齐 / 声道完整性 / 短促音频掉点 / 闪烁风险 / 单帧瞬态伪影筛查 / 最终成片唇形复核 → 多平台导出 / 本地视频放大与可选补帧 / 目标大小交付编码 / 重编码画质损失门禁 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
+它提供一条完整工作流：**项目启动/素材导入 → 本机工具链能力预检 → 交错/telecine 检测与逐行工作副本 → 手机/录屏 VFR 时基归一 → 静音首尾黑场裁切与边界复核 → 短素材循环填满固定时长与接缝复核 → 多源片段归一拼接与全接缝复核 → 多机位同步与按说话者音频生成导播草稿 → 个人/品牌剪辑风格 → 生产授权 → 手持防抖 / 绿蓝幕换背景 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → 分镜静帧时长预演 → 生成前逐镜接力与剪辑边界审核 → B-roll/生图/生成视频规划 → 图片/视频/音频生成参考素材预检与角色绑定 → 生成片有效运动窗口 → 字幕与声音设计 → BGM/SFX cue 规划与 source-bound 音效单轨混音 → BGM 卡点 / 局部 speed ramp / 关键帧 freeze-punch / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 锁定视觉 EDL 后重建最终声音分镜 → 最终旁白逐短语响度门禁 → 渲染前预检 / 真实画面字幕样式选择 / 字幕逐字符字体覆盖 → 单次编码渲染 → 质检 / 最终音视频轨覆盖 / 最终成片字幕像素复核 / 字幕与独立人声对齐 / 声道完整性 / 短促音频掉点 / 闪烁风险 / 单帧瞬态伪影筛查 / 最终成片唇形复核 → 多平台导出 / 本地视频放大与可选补帧 / 目标大小交付编码 / 重编码画质损失门禁 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
 
 ## 适合做什么
 
@@ -11,7 +11,8 @@
 - **噪声口播可在单次编码内保守清理**：`render_final.py --speech-denoise light|medium|strong` 会在变速、压缩、响度规范化和 BGM ducking 前处理低频震动与稳态底噪；默认关闭，最大降噪限制为 12 dB。
 - **停顿删段可同时看声音和画面**：`multimodal_dead_air.py` 只有在静帧覆盖静音达到门槛时才提出候选，实际只删二者交集；源 hash、20% 删除预算、切点复盘、单次编码和完整解码都进入 gate。
 - **多机位先同步再剪辑**：`multicam_sync.py` 把两台以上相机/手机/录音设备对齐到同一参考时间线，记录每路 offset、置信度、有效音轨、公共重叠区间，并可用多窗口 probe 测量长片时钟漂移；原片不改、不重编码。
-- **开始媒体工作前先证明本机能跑**：`runtime_preflight.py` 按 `media_io / core_edit / video_enhancement / storyboard_animatic / audio_cue_mix / generation_chain_handoff / captions / qa / edge_black_trim / hdr_sdr / stabilization / interlace / remotion` profile 检查命令版本、编码器和 FFmpeg filters；明确区分 missing 与 unknown，并让环境或报告漂移在 manifest 中失效。
+- **同步通过后可生成按说话者切换的导播草稿**：`multicam_switch.py` 绑定 ready 同步计划和全部源字节，按每路自己的噪声底/峰值归一发言能量；证据含糊时保持上一机位，高相关共享混音默认阻断。草稿完成媒体合同、全量解码和带声四项人工复核后才放行。
+- **开始媒体工作前先证明本机能跑**：`runtime_preflight.py` 按 `media_io / core_edit / multicam_switch / video_enhancement / storyboard_animatic / audio_cue_mix / generation_chain_handoff / captions / qa / edge_black_trim / hdr_sdr / stabilization / interlace / remotion` profile 检查命令版本、编码器和 FFmpeg filters；明确区分 missing 与 unknown，并让环境或报告漂移在 manifest 中失效。
 - **旧电视 / DV 素材先分清 telecine 和真实交错**：`interlace_conform.py` 用 FFmpeg `idet` 多段采样；疑似 3:2 pulldown 会阻断直接去交错，真实 TFF/BFF 才能经 `bwdif` 或明确的 `yadif` fallback 生成逐行工作副本，并在完整 1× A/B 确认后放行。
 - **手机和录屏 VFR 可先变成可审计 CFR 工作副本**：`frame_rate_conform.py` 读取全部解码帧 PTS 间隔，绑定精确目标有理帧率；输出必须通过恒定 cadence、帧数、音画起止、显示方向、SHA-256 和完整解码验证，原片保持不变。
 - **片头片尾黑场会先核对声音再裁切**：`black_edge_trim.py` 只接受接触源时间线两端的 `blackdetect` 区间，默认要求实际移除范围至少 95% 被静音覆盖；保留视觉 padding，生成原片边界 proof 和新的 CFR 工作副本，完整 1× 视听确认后才放行。
@@ -179,6 +180,8 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    │                            scratch audio + lav/recorder track → offset + gate
    ├─→ multicam_sync.py         多机位 → 同一参考时间线 / 公共重叠区间 / 对齐预览
    │                            最响音轨 / pairwise / 可选时钟漂移 / source-safe gate
+   ├─→ multicam_switch.py       ready 同步计划 → speaker-mapped 音频 / 自动导播草稿
+   │                            归一化能量 / 共享混音拦截 / 完整解码与人工 review gate
    │
    ├─→ scene_boundaries.py      fixed/adaptive 视觉切点 + 逐切点 evidence
    ├─→ visual_dedupe.py         多来源场景 → 感知哈希重复组 / 保留建议 / review gate
@@ -1797,6 +1800,28 @@ python3 scripts/multicam_sync.py \
 `--measure-clock-drift` 会在每个机位自己的可用重叠时长中默认抽取 5 个 20 秒窗口，按置信度筛 probe，再用稳健共识模型拟合 `offset(R)=intercept+slope*R`；至少需要 4 个跨越有效时段的 fit inlier。JSON/Markdown 保存每个 probe、`offset_slope_ppm`、测量/斜率分辨率、累计漂移、拟合残差和未应用的 `atempo/setpts` advisory factors；累计漂移超过 80 ms 或拟合不可靠会进入 review gate。可用 `--drift-probes`、`--drift-probe-seconds`、`--drift-search-seconds`、`--drift-threshold-ms` 调整。该能力默认关闭，只测当前选择的参考/源音轨；它不自动证明视频 PTS 或容器内其他音轨使用同一时钟，也不会自动校正。
 
 原片始终不修改；只有显式 `--apply-preview` 才会生成短网格预览。正 offset 表示该机位的 `t=0` 位于参考时间线更晚的位置，预览按 `source_local = reference_time - offset` 读取每路画面。未启用漂移测量时，30 分钟以上素材仍会警告并要求头/中/尾复核。`pipeline_manifest.py` 会发现该计划并拦截缺文件、低置信度、无公共重叠、pairwise 不一致或漂移 review。
+
+### 🎛 Multicam Switch — 按说话者音频生成导播草稿
+[`scripts/multicam_switch.py`](scripts/multicam_switch.py) · [详细文档](docs/prompts/127-multicam-switch.md)
+
+同步计划 ready 后，可以把有明确说话者近讲/独立音轨的画面映射成候选机位：
+
+```bash
+python3 scripts/multicam_switch.py plan \
+  --sync-plan work/multicam_sync_plan.json \
+  --speaker angle_00_cam-a=主持人 \
+  --speaker angle_01_cam-b=嘉宾 \
+  --program-audio angle_00_cam-a \
+  --delivery output/multicam_switch_draft.mp4 \
+  --output work/multicam_switch_plan.json \
+  --markdown work/multicam_switch_plan.md \
+  --strict
+python3 scripts/multicam_switch.py apply work/multicam_switch_plan.json
+```
+
+每路音频用自己的 P10 噪声底和 P95 语音峰值归一，只有活动分数与领先 margin 同时达标才换机位；含糊窗口保持上一机位，短于 `--min-shot` 的闪切折回相邻镜头。各路电平包络高度相关时默认阻断，因为共享混音、自动增益或强串音会让“最响机位”失去说话者含义。声音固定来自 `--program-audio`，画面切换不会来回换麦。
+
+apply 绑定同步计划、全部源 SHA-256、逐窗决策、source-time 映射和交付合同；草稿只有通过尺寸、帧率、时长、音轨与完整解码才落盘。带声完整播放后，用 `confirm` 逐项记录 `speaker_selection / cut_timing / sync / audio_continuity`，最后运行 `verify --strict` 和 `pipeline_manifest.py --require multicam_switch_plan --strict`。它输出可审草稿，不做声纹识别，也不替代人工导播判断。
 
 ### 📝 Subtitle Pack — SRT/VTT/ASS 字幕交付
 [`scripts/subtitle_pack.py`](scripts/subtitle_pack.py) · [详细文档](docs/prompts/29-subtitle-pack.md)
@@ -3778,6 +3803,7 @@ pytest tests/test_audio_cue_sheet.py -v     # BGM/SFX 音频设计清单
 pytest tests/test_audio_cue_mix.py -v       # source-bound 旁白 + SFX 单轨 / 完整试听 live gate
 pytest tests/test_final_audio_storyboard.py -v # 锁定 EDL → 最终声音分镜 / voice ledger / live gate
 pytest tests/test_multicam_sync.py -v       # 多机位 offset / 最响音轨 / pairwise / 真实预览
+pytest tests/test_multicam_switch.py -v     # speaker-mapped 音频切镜 / 渲染 / 完整解码 / 人工 gate
 pytest tests/test_loop_fill.py -v           # 固定时长重复 / 首个真实接缝 proof / 完整审片 live gate
 pytest tests/test_clip_assembly.py -v       # 多源画布/CFR/SAR/音频归一 / 全接缝 proof / live gate
 pytest tests/test_speech_denoise.py -v      # 口播降噪 preset / 顺序 / 真实 FFmpeg SNR smoke
@@ -3796,6 +3822,24 @@ pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 pytest tests/test_review_dashboard.py -v    # 静态人工复核面板 + gate queue
 pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 gate
 ```
+
+### 2026-09-22 自动化升级记录（Source-bound Audio-guided Multicam Switch）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`kajisho5/ffmpeg-skill@d46e40d` 的 multicam energy switch](https://github.com/kajisho5/ffmpeg-skill/blob/d46e40d324bf1e69c794dd2cfb23f6210c88d478/scripts/multicam.py) | 在已对齐机位上按短窗音频能量选择最响画面，合并连续 winner，并用 minimum-shot 抑制闪切；还能输出明确 cut list | 补齐同步之后的自动导播执行层；同时增加逐路噪声底/峰值归一、含糊窗口 hold、共享混音相关性阻断、显式 speaker mapping、连续节目音轨、源字节绑定、完整解码和人工 review gate |
+| [`AkariLabs/akari-video@21d3a88` skills catalog](https://github.com/AkariLabs/akari-video/blob/21d3a886b4a45623987d8e64dff17429f839c428/docs/skills.md) | 把 analysis、edit plan、render、lint/review 和 verify 拆成有明确所有权的阶段；自动结果先落成可检查 artifact，再由 approval/verification 放行 | 新能力采用 `plan → apply → confirm → verify`，分析窗口、最终 switch timeline、渲染 receipt 和 review 分开保存；manifest 调用 live verifier，不把一次自动渲染当成可发布结论 |
+| [`michaelboeding/skills@84abf02` 的 app-demo-agent](https://github.com/michaelboeding/skills/blob/84abf02d42612ab0b94a54de1a1a454ae25dd131/skills/app-demo-agent/SKILL.md) | 先按真实画面转场抽帧理解录屏，再把旁白、设备外框、音乐和组装拆成可选择步骤 | 本项目已有 `scene_boundaries.py / screen_focus.py / pip_overlay.py / audio_cue_mix.py` 覆盖其通用分析与组装优点；设备外框是录屏展示专用能力，本轮没有把它混入访谈多机位路径 |
+
+新增/调整能力：新增 [`scripts/multicam_switch.py`](scripts/multicam_switch.py)、[`tests/test_multicam_switch.py`](tests/test_multicam_switch.py) 和 [`docs/prompts/127-multicam-switch.md`](docs/prompts/127-multicam-switch.md)。`plan` 只接受 ready 的 `multicam_sync_plan.v1`，要求至少两路显式 `ANGLE_ID=说话者` 映射，并为全部同步源、上游计划、设置和交付路径记录 SHA-256/媒体合同。分析在公共参考时间线内按默认 0.5 秒读取已选择音轨，每路分别用 P10 噪声底与 P95 语音峰值归一；最高分未达到活动阈值或领先 margin 不足时保持上一机位，最终把短于 1.5 秒的闪切折回相邻镜头。包络相关性超过默认 0.985 会按共享混音/强串音风险阻断；显式 `--allow-correlated-audio` 只保留 warning，不把热麦或相同 mix 声称为可靠说话者识别。
+
+`apply` 用同步 offset 将每个参考区间映射回源机位，一次 FFmpeg filtergraph 统一画布、FPS、SAR 和像素格式后硬切输出；声音固定来自 `--program-audio`，不会随画面换麦。时长、尺寸、帧率、音轨和全量 decode 通过后才原子提升 H.264/AAC 草稿。`confirm` 要求完整带声 1× 播放并逐项记录 `speaker_selection / cut_timing / sync / audio_continuity`；`verify` 现场重读同步计划、全部源文件、输出、decode binding、review 与 canonical plan ID。`runtime_preflight.py` 新增 17 项 `multicam_switch` profile，`edit_brief_plan.py` 可识别中英文按说话者自动切镜需求，`pipeline_manifest.py --require multicam_switch_plan --strict` 接入 live gate；SKILL、daily workflow、同步文档和 prompts 导航已同步。
+
+使用方式：先完整复核 `multicam_sync.py` 的对齐预览，再运行 `python3 scripts/multicam_switch.py plan --sync-plan work/multicam_sync_plan.json --speaker angle_00_cam-a=主持人 --speaker angle_01_cam-b=嘉宾 --program-audio angle_00_cam-a --delivery output/multicam_switch_draft.mp4 --output work/multicam_switch_plan.json --markdown work/multicam_switch_plan.md --strict`。随后执行 `apply`，完整带声审片后执行 `confirm`，最后运行 `verify --strict` 与 manifest gate。节目 master 若在独立 recorder 上，应先把它纳入同步计划并作为 `--program-audio`；没有说话者区分度的广角/共享混音不要映射为 speaker candidate。
+
+验证结果：新增 7 项核心单元/真实 CLI 测试，并扩展 runtime-preflight、edit-brief 与 pipeline-manifest 各 1 项；包含含糊窗口 hold、短镜头折叠、共享混音阻断/显式 override、源漂移、review 完整性、offset filtergraph 和真实 `plan → apply → confirm → verify`。关联定向回归通过 **214 passed**，全量测试通过 **1321 passed**。真实 FFmpeg smoke 使用两条 4 秒、160×90、12 fps、H.264/AAC 红/蓝机位和交替近讲音量，计划选中两路机位，草稿满足 4 秒、160×90、12 fps、含音轨与完整解码合同，synthetic integration review 后 strict verify 为 ready。本机 runtime profile 为 **17 capabilities / 0 blocking / 0 warnings**；Python compileall、四组 CLI help、Skill Creator quick validation 与 `git diff --check` 均通过。本轮未调用生成 provider、未上传素材、未消耗 credits。
 
 ### 2026-09-21 自动化升级记录（Source-bound Local Video Enhancement）
 
@@ -5405,6 +5449,7 @@ python3 scripts/pipeline_manifest.py . --require freeze_punch_plan --strict
 | **124** | **[Generation Chain Handoff](docs/prompts/124-generation-chain-handoff.md)** | **已审生成片 + 已审边界 → 精确末帧 PNG、下一镜首帧提示词与 live gate** |
 | **125** | **[Reference Story Formula](docs/prompts/125-reference-story-formula.md)** | **参考视频 + transcript + 目标分镜 → 情绪机制、content anchors、复制排除与 live gate** |
 | **126** | **[Video Enhancement](docs/prompts/126-video-enhancement.md)** | **现有视频本地放大、可选补帧、完整解码、全长 A/B 与带声 review gate** |
+| **127** | **[Multicam Switch](docs/prompts/127-multicam-switch.md)** | **已同步机位按归一化说话者音频生成导播草稿、完整解码与带声 review gate** |
 | **62** | **[Hook Variants](docs/prompts/62-hook-variants.md)** | **同一视频批量生成前三秒 hook 角度** |
 | **67** | **[Speech Continuity QA](docs/prompts/67-speech-continuity-qa.md)** | **成片二次 ASR 检查复读、近重复 take 和句内口吃** |
 | **68** | **[Cover Variants](docs/prompts/68-cover-variants.md)** | **多套封面、feed-size 预览、标题协同和最终选择** |
@@ -5453,6 +5498,7 @@ scripts/
 ├── script_alignment.py         目标稿 → 多 take 原话候选 / choices / render_config [V3]
 ├── audio_sync.py               外录音轨自动对齐 / 替换音轨计划        [V3]
 ├── multicam_sync.py            多机位可逆同步计划 / 对齐预览          [V3]
+├── multicam_switch.py          speaker-mapped 音频自动导播草稿 / full-review live gate [V3]
 ├── video_understanding.py      抽样帧 + 可选 YOLO 检测 artifact       [V3]
 ├── highlight_picker.py         长视频精华候选 / brief 定向找片段      [V3]
 ├── audio_boundary_snap.py      词/句末/静音剪辑边界校正              [V3]

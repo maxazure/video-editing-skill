@@ -16,7 +16,7 @@
 - 每路录到的是不同内容，或其中一路是后期重新配音。
 - 素材中间暂停/重启、剪过、拼过，需要多个不连续 offset。
 - 素材中途发生跳时、掉帧、停录后重启等非线性/不连续漂移；当前只拟合单一线性时钟模型。
-- 想直接自动切换说话人机位。V1 只做同步准备，不做 active-speaker 自动剪辑。
+- 想跳过同步直接自动切换说话人机位。本脚本只做同步准备；同步计划 ready 后可继续使用 [127 — Audio-guided Multicam Switch](127-multicam-switch.md)。
 
 ## 自动对齐
 
@@ -191,4 +191,4 @@ python3 scripts/pipeline_manifest.py \
   --strict
 ```
 
-计划通过后再把 offset 接入 Resolve/Premiere/FCP、OTIO/FCPXML 或专门的多机位渲染流程；本脚本不自动选择机位，也不创建 NLE 原生 multicam clip。
+计划通过后再把 offset 接入 Resolve/Premiere/FCP、OTIO/FCPXML，或交给 `multicam_switch.py` 生成按说话者音频选择的可审草稿。本脚本本身不自动选择机位，也不创建 NLE 原生 multicam clip。

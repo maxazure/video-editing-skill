@@ -24,6 +24,7 @@ import sequence_handoff  # noqa: E402
 import storyboard_animatic  # noqa: E402
 import temporal_artifact_qa  # noqa: E402
 import video_enhancement  # noqa: E402
+import multicam_switch  # noqa: E402
 import stream_coverage_qa  # noqa: E402
 import generated_clip_review  # noqa: E402
 import generation_chain_handoff  # noqa: E402
@@ -2813,6 +2814,38 @@ def test_video_enhancement_plan_is_live_verified_and_can_be_required(tmp_path, m
         str(tmp_path / "empty"), target_stage="analysis", required=["video_enhancement_plan"]
     )
     assert "video_enhancement_plan" in missing["missing_required"]
+
+
+def test_multicam_switch_plan_is_live_verified_and_can_be_required(tmp_path, monkeypatch):
+    _publish_ready_project(tmp_path)
+    report_path = tmp_path / "work" / "multicam_switch_plan.json"
+    _write(report_path, {"version": "multicam_switch_plan.v1"})
+
+    monkeypatch.setattr(
+        multicam_switch,
+        "verify_plan",
+        lambda _plan: {"status": "ready", "summary": {"blocking": 0, "warnings": 0}},
+    )
+    current = build_manifest(
+        str(tmp_path), target_stage="publish_ready", required=["multicam_switch_plan"]
+    )
+    gate = next(g for g in current["gates"] if g["category"] == "multicam_switch_plan")
+    assert gate["status"] == "ready"
+
+    monkeypatch.setattr(
+        multicam_switch,
+        "verify_plan",
+        lambda _plan: {"status": "blocked", "summary": {"blocking": 1, "warnings": 0}},
+    )
+    stale = build_manifest(str(tmp_path), target_stage="publish_ready")
+    gate = next(g for g in stale["gates"] if g["category"] == "multicam_switch_plan")
+    assert gate["status"] == "blocked"
+    assert "multicam_switch_plan" in stale["blocked_gates"]
+
+    missing = build_manifest(
+        str(tmp_path / "empty"), target_stage="analysis", required=["multicam_switch_plan"]
+    )
+    assert "multicam_switch_plan" in missing["missing_required"]
 
 
 def test_chroma_key_is_live_verified_and_can_be_required(tmp_path, monkeypatch):

@@ -1,6 +1,6 @@
 ---
 name: video-editing
-description: "Xiaohongshu/RED-tuned short-form video workflow for voice-over, talking-head, tutorials, interviews, podcasts, screen recordings, chroma key, B-roll, captions, and generated assets. Covers source ingest and conformance, edit routing and runtime profiles, transcription and semantic review, multi-take sync/stabilization/dead-air cleanup, highlights/shorts, story/source/authorization gates, B-roll and generated-asset planning/review, storyboard animatics and shot handoffs, audio design/mix/loudness, captions, color/speed/J-L cuts, local upscale/interpolation review, reversible revisions, render/QA, multi-platform and size exports, publish packages, NLE handoff, and Remotion."
+description: "Xiaohongshu/RED-tuned short-form video workflow for voice-over, talking-head, tutorials, interviews, podcasts, screen recordings, chroma key, B-roll, captions, and generated assets. Covers source ingest and conformance, edit routing and runtime profiles, transcription and semantic review, multi-take and multicam sync/speaker switching, stabilization/dead-air cleanup, highlights/shorts, story/source/authorization gates, B-roll and generated-asset planning/review, storyboard animatics and shot handoffs, audio design/mix/loudness, captions, color/speed/J-L cuts, local upscale/interpolation review, reversible revisions, render/QA, multi-platform and size exports, publish packages, NLE handoff, and Remotion."
 metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
 ---
 
@@ -34,6 +34,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    │                            词/段边界 / 透明分数 / 歧义与缺素材 gate
    ├─→ audio_sync.py            外录音轨自动对齐 / 替换音轨计划
    ├─→ multicam_sync.py         多机位 → 参考时间线 / 时钟漂移证据 / 对齐预览 gate
+   ├─→ multicam_switch.py       已同步机位 → 归一化说话者音频 / 自动导播草稿 / 完整审片 gate
    ├─→ scene_boundaries.py      fixed/adaptive 视觉切点 + 逐切点 evidence
    ├─→ visual_dedupe.py         多来源场景 → 感知哈希重复组 / 保留建议 / review gate
    ├─→ video_understanding.py   抽样帧 + 可选 YOLO 检测 / tracks / scene_tags
@@ -161,6 +162,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `script_alignment.py` | 已审目标稿 → 多 take 词/段边界候选、人工 choices、render_config 和 gate | `--target-script` `--transcript label=...` `--media label=...` `--choices` `--render-config` `--strict` |
 | `audio_sync.py` | scratch audio + 外录音轨 → offset / 替换音轨命令 / gate | `--reference-media` `--external-audio` `--replace-output` `--apply` `--strict` |
 | `multicam_sync.py` | 多机位 → offset/coverage/音轨选择/pairwise/可选时钟漂移/对齐预览 gate | `--reference-media` `--angle` `--manual-offset` `--measure-clock-drift` `--preview-output` `--apply-preview` `--strict` |
+| `multicam_switch.py` | ready 同步计划 + speaker-mapped 机位音轨 → source-bound 自动导播草稿、完整解码与人工 live gate | `plan --sync-plan --speaker --program-audio --delivery` / `apply` / `confirm` / `verify --strict` |
 | `rough_cut.py` | transcript 粗剪：去口头禅/重复句 | `--transcript` `--cut-list` / `--input` `--output` |
 | `scene_boundaries.py` | FFmpeg fixed/adaptive scene score → 场景边界 + cut evidence | `--method adaptive` `--adaptive-threshold` `--min-scene-score` `--min-scene-duration` |
 | `visual_dedupe.py` | 多来源场景三点感知哈希 → 重复组 / 保留建议 / review gate | `--manifest` / `<videos...>` `--hamming-threshold` `--include-same-source` `--strict` |
@@ -1315,6 +1317,14 @@ python3 scripts/render_final.py --config script/render_config.json --output medi
 - 漂移证据只覆盖选择的参考/源音轨；不能据此自动断言视频 PTS 或其他音轨共享同一时钟
 - 漂移超阈值或拟合不可靠会进入 review gate；脚本不自动校正，音画必须使用同一仿射映射。未启用时，30 分钟以上仍必须复核头/中/尾
 - 详细使用与边界见 [docs/prompts/76-multicam-sync.md](docs/prompts/76-multicam-sync.md)
+
+**Audio-guided Multicam Switch 按说话者音频生成导播草稿**（同步通过后可选）：
+- 运行 `multicam_switch.py plan --sync-plan work/multicam_sync_plan.json --speaker angle_00_cam-a=主持人 --speaker angle_01_cam-b=嘉宾 --program-audio angle_00_cam-a --delivery output/multicam_switch_draft.mp4 --output work/multicam_switch_plan.json --markdown work/multicam_switch_plan.md --strict`
+- 每路音频分别按 P10 噪声底/P95 峰值归一；只有活动分数和领先 margin 同时达标才换机位，含糊窗口保持上一机位，短于 `--min-shot` 的闪切折回相邻镜头
+- 高相关音频默认按共享混音/强串音阻断；`--allow-correlated-audio` 只保留显式 override warning，不能证明 speaker detection 可靠。广角、节目 master 或没有独立说话者音轨的机位不要映射成 speaker candidate
+- `--program-audio` 指定连续节目声音，不随画面换麦。apply 统一画布/FPS/SAR 后硬切渲染，完成媒体合同与全量解码才提升输出
+- 完整带声 1× 播放后，confirm 必须逐项记录 `speaker_selection / cut_timing / sync / audio_continuity`；源、同步计划、设置、输出或 review 漂移都会使 manifest gate 失效
+- 详细使用与边界见 [docs/prompts/127-multicam-switch.md](docs/prompts/127-multicam-switch.md)
 
 **Storyboard Plan 分镜与生成路由**（生成素材前推荐）：
 - 运行 `storyboard_plan.py --transcript work/transcript.json --clean-script work/clean_script.md --output work/storyboard_plan.json --markdown work/storyboard_plan.md`

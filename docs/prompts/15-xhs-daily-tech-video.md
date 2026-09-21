@@ -140,6 +140,24 @@
     # 原片不改；30 分钟以上还要复核头/中/尾，因为 V1 不测相机 clock drift。
     # 详见 docs/prompts/76-multicam-sync.md
 
+0b2. # 可选：同步通过后，如果每位出镜者都有能代表本人发言的独立/近讲音轨，生成自动导播草稿：
+    python3 scripts/multicam_switch.py plan \
+      --sync-plan work/multicam_sync_plan.json \
+      --speaker <angle-id-a>=<speaker-a> \
+      --speaker <angle-id-b>=<speaker-b> \
+      --program-audio <mixed-master-angle-id> \
+      --delivery output/multicam_switch_draft.mp4 \
+      --output work/multicam_switch_plan.json \
+      --markdown work/multicam_switch_plan.md \
+      --strict
+    python3 scripts/multicam_switch.py apply work/multicam_switch_plan.json
+    # 带声完整播放草稿；共享混音、高相关包络、掌声/笑声/串音会误导能量选择，不能跳过人工复核。
+    python3 scripts/multicam_switch.py confirm work/multicam_switch_plan.json \
+      --reviewer "<reviewer-label>" \
+      --speaker-selection pass --cut-timing pass --sync pass --audio-continuity pass
+    python3 scripts/multicam_switch.py verify work/multicam_switch_plan.json --strict
+    # 详见 docs/prompts/127-multicam-switch.md
+
 0c. # 可选：手持素材有不想要的抖动时，先保留原片并生成稳定工作副本：
     python3 scripts/video_stabilization.py doctor
     python3 scripts/video_stabilization.py plan origin/<handheld>.mp4 \
@@ -1088,7 +1106,7 @@
 - 字幕字体走 Source Han Sans SC Heavy 或 STHeiti Medium，不要用 W3
 - 1.25x 之后必须做响度规范化（render_final 默认会做，不要 --no-loudnorm）
 - `--speech-denoise` 默认关闭；只处理稳态底噪，先用 10–20 秒样片比较 off/light，不能用它代替咳嗽、敲击、混响或多人多麦修复
-- 多机位素材先跑 `multicam_sync.py`；不能只看起点 offset，长片还要检查头/中/尾是否逐渐漂移
+- 多机位素材先跑 `multicam_sync.py`；不能只看起点 offset，长片还要检查头/中/尾是否逐渐漂移。按说话者自动切镜仅在 speaker-mapped 音轨有区分度时用 `multicam_switch.py`，完整草稿必须带声复核
 - 外部上传、侵入性重排/删除、付费生成、声音克隆、真人/IP 使用或发布前，production authorization 必须 live verify 为 `ready`；scope 或源字节变化后重做
 - 剪辑风格档案是跨项目默认值，不是项目 brief 或时间线 recipe；只在文件存在且 `verify --strict` 通过时传 `--style-profile`
 - 音乐主导内容可先跑 `beat_sync.py --generate-plan`；固定 BPM fallback 只能作为复核草稿，不能冒充真实节拍检测

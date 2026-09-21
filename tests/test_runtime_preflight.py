@@ -94,6 +94,19 @@ def test_video_enhancement_profile_requires_resize_interpolation_and_ab_filters(
     assert "filter:hstack" in report["capabilities"]
 
 
+def test_multicam_switch_profile_requires_video_and_audio_timeline_filters():
+    filters = {
+        "trim", "setpts", "scale", "pad", "setsar", "fps", "format",
+        "concat", "atrim", "asetpts", "aresample", "aformat",
+    }
+    report = build_report(["multicam_switch"], snapshot=snapshot(filters=filters))
+
+    assert report["status"] == "ready"
+    assert report["summary"]["blocking"] == 0
+    assert "filter:trim" in report["capabilities"]
+    assert "filter:aformat" in report["capabilities"]
+
+
 def test_audio_cue_mix_profile_requires_synthesis_mix_and_output_capabilities():
     filters = {
         "aresample", "aformat", "atrim", "apad", "asetpts", "afade",
