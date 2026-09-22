@@ -15,6 +15,7 @@
 |---|---|
 | `media_io` | Python、FFmpeg、FFprobe；适合 probe、抽取或只转写 |
 | `core_edit` | 在基础命令上检查 libx264/AAC，以及主渲染链使用的 scale/crop/overlay/concat/aresample/loudnorm |
+| `ping_pong_loop` | 端帧去重的正放/倒放循环；检查 H.264 与 fps/trim/setpts/split/reverse/concat/loop/setsar/format filters |
 | `storyboard_animatic` | 分镜 panel 的 scale/pad/crop、CFR、drawtext、concat、音频 trim/pad 与 H.264/AAC |
 | `captions` | FFmpeg `subtitles` / libass 烧录能力 |
 | `qa` | black/freeze/silence、EBU R128、signalstats、SSIM/PSNR 和 waveform filters |
@@ -50,7 +51,7 @@ python3 scripts/pipeline_manifest.py . \
   --strict
 ```
 
-分镜时长预演追加 `--profile storyboard_animatic`；HDR、防抖或交错任务只追加对应 profile，交错 profile 要求 `idet` 并接受 `bwdif` 或 `yadif`。Remotion 项目追加 `--profile remotion`。只做转写/抽流时选 `media_io`，避免把 libx264、字幕或 QA filters 误设为无关 blocker。
+正放/倒放循环追加 `--profile ping_pong_loop`；分镜时长预演追加 `--profile storyboard_animatic`；HDR、防抖或交错任务只追加对应 profile，交错 profile 要求 `idet` 并接受 `bwdif` 或 `yadif`。Remotion 项目追加 `--profile remotion`。只做转写/抽流时选 `media_io`，避免把 libx264、字幕或 QA filters 误设为无关 blocker。
 
 `analyze` 输出 `runtime_preflight.v1`，绑定所选 profiles、Python/命令版本、FFmpeg listing 状态、逐能力结果、profile 结果、修复建议和 canonical `report_id`。`verify` 用原 profiles 与 timeout 现场重跑；版本、组件状态或报告内容变化都会让旧报告失效。`edit_brief_plan.py` 会按任务自动选择 profile，并把本步骤排在媒体处理前。
 
@@ -63,5 +64,5 @@ python3 scripts/pipeline_manifest.py . \
 ## 可直接复制的提示词
 
 ```text
-开始剪辑前，先运行 runtime_preflight.py。按任务选择 media_io/core_edit/storyboard_animatic/captions/qa/edge_black_trim/hdr_sdr/stabilization/interlace/remotion profile，把 JSON 和 Markdown 存进 work/。missing 或 unknown 都要停止并给出修复动作；环境变化后重新 verify，再继续媒体处理。
+开始剪辑前，先运行 runtime_preflight.py。按任务选择 media_io/core_edit/ping_pong_loop/storyboard_animatic/captions/qa/edge_black_trim/hdr_sdr/stabilization/interlace/remotion profile，把 JSON 和 Markdown 存进 work/。missing 或 unknown 都要停止并给出修复动作；环境变化后重新 verify，再继续媒体处理。
 ```

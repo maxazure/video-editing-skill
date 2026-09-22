@@ -25,6 +25,7 @@ import storyboard_animatic  # noqa: E402
 import temporal_artifact_qa  # noqa: E402
 import video_enhancement  # noqa: E402
 import multicam_switch  # noqa: E402
+import ping_pong_loop  # noqa: E402
 import stream_coverage_qa  # noqa: E402
 import generated_clip_review  # noqa: E402
 import generation_chain_handoff  # noqa: E402
@@ -2846,6 +2847,39 @@ def test_multicam_switch_plan_is_live_verified_and_can_be_required(tmp_path, mon
         str(tmp_path / "empty"), target_stage="analysis", required=["multicam_switch_plan"]
     )
     assert "multicam_switch_plan" in missing["missing_required"]
+
+
+def test_ping_pong_loop_plan_is_live_verified_and_can_be_required(tmp_path, monkeypatch):
+    _publish_ready_project(tmp_path)
+    report_path = tmp_path / "work" / "ping_pong_loop_plan.json"
+    _write(report_path, {"version": "ping_pong_loop_plan.v1"})
+
+    monkeypatch.setattr(
+        ping_pong_loop,
+        "verify_plan",
+        lambda _report: {"summary": {"blocking": 0, "warnings": 0}},
+    )
+    current = build_manifest(
+        str(tmp_path), target_stage="publish_ready", required=["ping_pong_loop_plan"]
+    )
+    gate = next(g for g in current["gates"] if g["category"] == "ping_pong_loop_plan")
+    assert gate["status"] == "ready"
+
+    monkeypatch.setattr(
+        ping_pong_loop,
+        "verify_plan",
+        lambda _report: {"summary": {"blocking": 1, "warnings": 0}},
+    )
+    stale = build_manifest(str(tmp_path), target_stage="publish_ready")
+    gate = next(g for g in stale["gates"] if g["category"] == "ping_pong_loop_plan")
+    assert gate["status"] == "blocked"
+    assert "ping_pong_loop_plan" in stale["blocked_gates"]
+
+    report_path.unlink()
+    missing = build_manifest(
+        str(tmp_path), target_stage="analysis", required=["ping_pong_loop_plan"]
+    )
+    assert "ping_pong_loop_plan" in missing["missing_required"]
 
 
 def test_chroma_key_is_live_verified_and_can_be_required(tmp_path, monkeypatch):

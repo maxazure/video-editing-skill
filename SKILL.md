@@ -1,6 +1,6 @@
 ---
 name: video-editing
-description: "Xiaohongshu/RED-tuned short-form video workflow for voice-over, talking-head, tutorials, interviews, podcasts, screen recordings, chroma key, B-roll, captions, and generated assets. Covers source ingest and conformance, edit routing and runtime profiles, transcription and semantic review, multi-take and multicam sync/speaker switching, stabilization/dead-air cleanup, highlights/shorts, story/source/authorization gates, B-roll and generated-asset planning/review, storyboard animatics and shot handoffs, audio design/mix/loudness, captions, color/speed/J-L cuts, local upscale/interpolation review, reversible revisions, render/QA, multi-platform and size exports, publish packages, NLE handoff, and Remotion."
+description: "Xiaohongshu/RED-tuned short-form video workflow for voice-over, talking-head, tutorials, interviews, podcasts, screen recordings, chroma key, B-roll, captions, and generated assets. Covers source ingest and conformance, hard and ping-pong loops, edit routing and runtime profiles, transcription and semantic review, multi-take and multicam sync/speaker switching, stabilization/dead-air cleanup, highlights/shorts, story/source/authorization gates, B-roll and generated-asset planning/review, storyboard animatics and shot handoffs, audio design/mix/loudness, captions, color/speed/J-L cuts, local upscale/interpolation review, reversible revisions, render/QA, multi-platform and size exports, publish packages, NLE handoff, and Remotion."
 metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "requires": { "bins": ["ffmpeg", "python3"] }, "install": [{ "id": "ffmpeg-brew", "kind": "brew", "formula": "ffmpeg", "bins": ["ffmpeg"], "label": "Install FFmpeg (brew)" }] } }
 ---
 
@@ -20,6 +20,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ frame_rate_conform.py    手机/录屏 VFR → 全量 PTS 检测 / CFR 工作副本 / live gate
    ├─→ black_edge_trim.py       首尾黑场 + 静音覆盖 → CFR 工作副本 / 原片边界 proof + live gate
    ├─→ loop_fill.py             短片 → 次数/固定时长 hard repeat / 真实接缝 proof + 完整审片 gate
+   ├─→ ping_pong_loop.py        短动作 → 端帧去重正放/倒放 / 折返+循环双 proof / live gate
    ├─→ clip_assembly.py         多源片段 → 单次画布/CFR/SAR/音频归一 / 全接缝 proof + live gate
    ├─→ edit_style_profile.py    个人/品牌创意方向、节奏与渲染/文案默认值 → 可移植 profile
    ├─→ production_authorization.py
@@ -150,6 +151,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `frame_rate_conform.py` | 手机/录屏 VFR → decoded PTS cadence、精确 CFR 工作副本、帧数/音画起止与 live gate | `plan <source> --fps 30 --delivery` / `apply <plan>` / `verify <plan> --strict` |
 | `black_edge_trim.py` | 首尾 blackdetect + 静音覆盖 → source-bound CFR working copy、原片边界 proof 与人工 live gate | `plan --delivery --edge-proof` / `apply` / `confirm` / `verify --strict` |
 | `loop_fill.py` | progressive CFR 短素材 → 按次数/目标时长重复、首个真实接缝 1× proof、完整审片与 live gate | `plan --times|--duration --delivery --seam-proof` / `apply` / `confirm` / `verify --strict` |
+| `ping_pong_loop.py` | progressive CFR 短动作 → 端帧去重的正放/倒放周期、折返/循环双 proof、缓存上限与 live gate | `plan --start --end --cycles|--duration --delivery --turnaround-proof --loop-seam-proof` / `apply` / `confirm` / `verify --strict` |
 | `clip_assembly.py` | 多源视频 → 单次画布/CFR/SAR/时间戳/音频归一、全接缝 1× proof 与 live gate | `plan <clips...> --delivery --boundary-proof` / `apply` / `confirm` / `verify --strict` |
 | `edit_style_profile.py` | 个人/品牌创意方向、剪辑节奏、渲染/文案默认值 → 无路径可移植 profile / digest 验证 / defaults-only 合并 | `template` / `create --spec` / `verify --profile --strict` / `apply --config --receipt` |
 | `production_authorization.py` | 外部上传、侵入性剪辑、付费生成、声音克隆、真人/IP 和发布 → source-bound 授权 gate | `prepare --scope --response-template` / `audit --request --response --strict` / `verify --report --strict` |
@@ -514,7 +516,7 @@ python3 scripts/pipeline_manifest.py \
 
 ### Phase 0aa: Runtime Preflight（按任务核验本机能力）
 
-在打开媒体或启动渲染前，运行 [runtime_preflight.py](./scripts/runtime_preflight.py)。只转写、probe 或抽流用 `media_io`；会编码最终画面的任务用 `core_edit`，再按需要追加 `video_enhancement / storyboard_animatic / audio_cue_mix / generation_chain_handoff / captions / qa / edge_black_trim / hdr_sdr / stabilization / interlace / remotion`：
+在打开媒体或启动渲染前，运行 [runtime_preflight.py](./scripts/runtime_preflight.py)。只转写、probe 或抽流用 `media_io`；会编码最终画面的任务用 `core_edit`，再按需要追加 `ping_pong_loop / multicam_switch / video_enhancement / storyboard_animatic / audio_cue_mix / generation_chain_handoff / captions / qa / edge_black_trim / hdr_sdr / stabilization / interlace / remotion`：
 
 ```bash
 python3 scripts/runtime_preflight.py analyze \
@@ -592,7 +594,25 @@ python3 scripts/loop_fill.py apply work/loop_fill_plan.json
 
 正常速度看完 seam proof 与完整 delivery；确认画面接缝、运动连续性、重复闪帧、声音接缝和 slot 覆盖后运行 `confirm`，再用 `verify --strict` 或 `pipeline_manifest.py --require loop_fill_plan --strict` 放行。VFR 先跑 `frame_rate_conform.py`，HDR/BT.2020/>8-bit 先确定 `hdr_sdr.py` 色彩路径。详见 [Loop Fill](./docs/prompts/117-loop-fill.md)。
 
-### Phase 0af: Clip Assembly（多源视频安全拼接）
+### Phase 0af: Ping-pong Loop（短动作正放倒放循环）
+
+手势、产品旋转或生成视频动作的首尾不闭合，又需要往返循环时，用 `ping_pong_loop.py`。先把动作范围限制在几秒内；FFmpeg `reverse` 会缓存全部选中帧，planner 会记录保守内存估算并在超过 `--max-working-set-mib` 时提前停止。
+
+```bash
+python3 scripts/ping_pong_loop.py plan origin/gesture.mp4 \
+  --start 1.2 --end 2.05 --cycles 4 \
+  --delivery work/gesture-ping-pong.mp4 \
+  --turnaround-proof verify/gesture-turnaround.mp4 \
+  --loop-seam-proof verify/gesture-loop-seam.mp4 \
+  --project-dir . \
+  --output work/ping_pong_loop_plan.json \
+  --markdown work/ping_pong_loop_plan.md
+python3 scripts/ping_pong_loop.py apply work/ping_pong_loop_plan.json
+```
+
+周期使用 `0…N-1,N-2…1`，主动排除折返点和周期末尾的重复端帧。源音频固定丢弃，视觉批准后再接 BGM/SFX。正常速度看完 turnaround proof、loop-seam proof 和完整 delivery，对折返运动、循环运动、重复停帧、构图与创意意图全部 `pass` 后运行 `confirm`，再用 `verify --strict` 或 `pipeline_manifest.py --require ping_pong_loop_plan --strict` 放行。详见 [Ping-pong Loop](./docs/prompts/128-ping-pong-loop.md)。
+
+### Phase 0ag: Clip Assembly（多源视频安全拼接）
 
 片头、主片、生成片和片尾来自不同画布、方向、帧率、SAR、时间戳、采样率或声道数时，用 `clip_assembly.py` 代替 concat copy。按最终播放顺序传入每条唯一源片；同一片重复使用 `loop_fill.py`。
 

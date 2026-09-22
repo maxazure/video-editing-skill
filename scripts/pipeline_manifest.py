@@ -84,6 +84,13 @@ ARTIFACTS: Sequence[ArtifactDef] = (
         blocks_when_present=True,
     ),
     ArtifactDef(
+        "ping_pong_loop_plan",
+        "Ping-pong Loop Plan",
+        ("**/ping_pong_loop_plan.json", "**/*_ping_pong_loop_plan.json"),
+        "Run ping_pong_loop.py apply, review the turnaround proof, loop-seam proof, and complete silent delivery at 1x, confirm every motion check, then live-verify the plan.",
+        blocks_when_present=True,
+    ),
+    ArtifactDef(
         "interlace_conform_plan",
         "Interlace Conform Plan",
         ("**/interlace_conform_plan.json", "**/*_interlace_conform_plan.json"),
@@ -2317,6 +2324,37 @@ def evaluate_category(
             elif warnings:
                 status = "warn" if status != "blocked" else status
                 notes.append(f"loop-fill proof has {warnings} warning(s): {artifact.path}")
+        return {
+            "category": definition.category,
+            "label": definition.label,
+            "status": status,
+            "artifact_count": len(artifacts),
+            "latest_path": artifacts[0].path,
+            "notes": sorted(set(notes)),
+            "next_action": definition.next_action if status in {"missing", "blocked", "warn"} else "",
+        }
+
+    if definition.category == "ping_pong_loop_plan":
+        from ping_pong_loop import verify_plan
+
+        for artifact in artifacts:
+            data = _load_json(artifact.path)
+            if data is None:
+                status = "blocked"
+                notes.append(f"unreadable ping-pong loop plan: {artifact.path}")
+                continue
+            verification = verify_plan(data)
+            blocking = _int_at(verification, "summary", "blocking")
+            warnings = _int_at(verification, "summary", "warnings")
+            if blocking:
+                status = "blocked"
+                notes.append(
+                    f"invalid or unreviewed ping-pong loop plan {artifact.path}: "
+                    f"{blocking} blocking item(s)"
+                )
+            elif warnings:
+                status = "warn" if status != "blocked" else status
+                notes.append(f"ping-pong loop retains {warnings} documented warning(s): {artifact.path}")
         return {
             "category": definition.category,
             "label": definition.label,

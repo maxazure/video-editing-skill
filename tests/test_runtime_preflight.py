@@ -71,6 +71,17 @@ def test_core_profile_passes_with_declared_commands_encoders_and_filters():
     assert set(report["runtime"]["detections"]) == {"encoder", "filter"}
 
 
+def test_ping_pong_loop_profile_requires_reverse_loop_and_frame_filters():
+    filters = {"fps", "trim", "setpts", "split", "reverse", "concat", "loop", "setsar", "format"}
+    report = build_report(["ping_pong_loop"], snapshot=snapshot(filters=filters, encoders=("libx264",)))
+
+    assert report["status"] == "ready"
+    assert report["summary"]["blocking"] == 0
+    assert report["summary"]["capabilities"] == 13
+    assert "filter:reverse" in report["capabilities"]
+    assert "filter:loop" in report["capabilities"]
+
+
 def test_storyboard_animatic_profile_requires_timing_label_and_audio_filters():
     filters = {
         "scale", "pad", "crop", "setsar", "fps", "format", "drawtext",

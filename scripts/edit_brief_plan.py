@@ -649,6 +649,22 @@ SIGNAL_KEYWORDS: Mapping[str, Sequence[str]] = {
         "填满时长",
         "补足时长",
     ),
+    "ping_pong_loop": (
+        "ping pong loop",
+        "ping-pong loop",
+        "pingpong loop",
+        "boomerang video",
+        "boomerang loop",
+        "forward reverse loop",
+        "forward-reverse loop",
+        "play forward then backward",
+        "乒乓循环",
+        "乒乓播放",
+        "来回播放",
+        "正放倒放",
+        "正放再倒放",
+        "往返循环",
+    ),
     "black_edge_trim": (
         "trim black edges",
         "remove black intro",
@@ -874,6 +890,7 @@ SIGNAL_LABELS: Mapping[str, str] = {
     "multicam_switch": "同步后按说话者音频生成多机位导播草稿",
     "frame_rate_conform": "VFR 源素材检测 / CFR 工作副本",
     "loop_fill": "短素材循环填满固定时长 / 接缝复核",
+    "ping_pong_loop": "动作素材正放倒放乒乓循环 / 双边界复核",
     "black_edge_trim": "首尾黑场 + 静音交集裁切 / 边界复核",
     "clip_assembly": "多源片段归一拼接 / 全接缝复核",
     "interlace_conform": "交错 / telecine 检测与逐行工作副本",
@@ -1102,6 +1119,8 @@ def build_plan(
         ids.update({"generated_assets", "sequence_handoff"})
     if "reference_story_formula" in ids:
         ids.add("generated_assets")
+    if "ping_pong_loop" in ids:
+        ids.discard("loop_fill")
     primary_platform = platforms[0]
     source_input = source_media or "<source_media>"
     post_interlace_source = "work/source-progressive.mp4" if "interlace_conform" in ids else source_input
@@ -1118,7 +1137,7 @@ def build_plan(
 
     if source_media and not Path(source_media).expanduser().exists():
         blockers.append(f"source media not found: {source_media}")
-    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy", "reference_edit_rhythm", "lip_sync_review", "subtitle_style_preview", "subtitle_render_review", "framing_preview", "flash_safety_qa", "temporal_artifact_qa", "stream_coverage_qa", "audio_channel_qa", "audio_dropout_qa", "caption_speech_qa", "multimodal_dead_air", "video_stabilization", "video_enhancement", "chroma_key", "scoped_video_edit", "speed_ramp", "freeze_punch", "generated_motion_window", "frame_rate_conform", "black_edge_trim", "loop_fill", "clip_assembly", "interlace_conform", "hdr_sdr", "delivery_encode", "encode_quality_qa", "edit_style_profile"}):
+    elif not source_media and ids.intersection({"source_ingest", "transcript", "target_script", "long_to_short", "render", "publish", "review_proxy", "reference_edit_rhythm", "lip_sync_review", "subtitle_style_preview", "subtitle_render_review", "framing_preview", "flash_safety_qa", "temporal_artifact_qa", "stream_coverage_qa", "audio_channel_qa", "audio_dropout_qa", "caption_speech_qa", "multimodal_dead_air", "video_stabilization", "video_enhancement", "chroma_key", "scoped_video_edit", "speed_ramp", "freeze_punch", "generated_motion_window", "frame_rate_conform", "black_edge_trim", "loop_fill", "ping_pong_loop", "clip_assembly", "interlace_conform", "hdr_sdr", "delivery_encode", "encode_quality_qa", "edit_style_profile"}):
         warnings.append("source media was not provided; commands use <source_media> placeholders")
 
     if transcript and not Path(transcript).expanduser().exists():
@@ -1194,6 +1213,7 @@ def build_plan(
                     "frame_rate_conform",
                     "black_edge_trim",
                     "loop_fill",
+                    "ping_pong_loop",
                     "clip_assembly",
                     "interlace_conform",
                     "multimodal_dead_air",
@@ -1247,6 +1267,8 @@ def build_plan(
             runtime_profiles.append("stabilization")
         if "video_enhancement" in ids:
             runtime_profiles.append("video_enhancement")
+        if "ping_pong_loop" in ids:
+            runtime_profiles.append("ping_pong_loop")
         if "multicam_switch" in ids:
             runtime_profiles.append("multicam_switch")
         if "interlace_conform" in ids:
@@ -1471,6 +1493,60 @@ def build_plan(
             "loop_fill.py performs a hard source repeat and never labels arbitrary endpoints seamless. "
             "Run apply, watch the seam proof and full delivery at 1x, record every confirm check, then live-verify the plan. "
             "Use --audio-mode drop for decorative background video whose source audio must not repeat."
+        )
+
+    if "ping_pong_loop" in ids:
+        loop_kind, loop_value = infer_loop_target(normalized)
+        target_flag = "--cycles" if loop_kind == "times" else "--duration"
+        target_value = loop_value or ("<cycle_count>" if loop_kind == "times" else "<target_duration>")
+        _add_step(
+            steps,
+            seen,
+            _step(
+                "ping_pong_loop_plan",
+                phase="edit",
+                script="ping_pong_loop.py",
+                label="Build an endpoint-deduplicated forward/reverse loop",
+                reason="The brief asks for a boomerang or ping-pong motion effect rather than a hard source repeat.",
+                command=shell(
+                    [
+                        python_bin,
+                        "scripts/ping_pong_loop.py",
+                        "plan",
+                        source,
+                        "--start",
+                        "<gesture_start_seconds>",
+                        "--end",
+                        "<gesture_end_seconds>",
+                        target_flag,
+                        target_value,
+                        "--delivery",
+                        "work/source-ping-pong.mp4",
+                        "--turnaround-proof",
+                        "verify/source-ping-pong-turnaround.mp4",
+                        "--loop-seam-proof",
+                        "verify/source-ping-pong-loop-seam.mp4",
+                        "--project-dir",
+                        project_dir,
+                        "--output",
+                        "work/ping_pong_loop_plan.json",
+                        "--markdown",
+                        "work/ping_pong_loop_plan.md",
+                    ]
+                ),
+                outputs=[
+                    "work/ping_pong_loop_plan.json",
+                    "work/ping_pong_loop_plan.md",
+                    "work/source-ping-pong.mp4",
+                    "verify/source-ping-pong-turnaround.mp4",
+                    "verify/source-ping-pong-loop-seam.mp4",
+                ],
+                gate_category="ping_pong_loop_plan",
+            ),
+        )
+        notes.append(
+            "Choose a short gesture range before rendering: FFmpeg reverse buffers decoded frames, so the planner enforces an explicit memory estimate. "
+            "Source audio is dropped. Run apply, watch both boundary proofs and the complete delivery at 1x, then confirm and live-verify the plan."
         )
 
     if "clip_assembly" in ids:

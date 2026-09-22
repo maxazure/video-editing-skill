@@ -157,6 +157,30 @@ def test_loop_fill_brief_routes_target_duration_and_seam_gate(tmp_path):
     assert infer_loop_target("repeat this clip 4 times") == ("times", "4")
 
 
+def test_ping_pong_brief_routes_deduplicated_loop_and_specific_runtime(tmp_path):
+    source = tmp_path / "origin" / "gesture.mp4"
+    source.parent.mkdir(parents=True)
+    source.write_bytes(b"source")
+
+    plan = build_plan(
+        f"把 {source} 的手势做成 ping-pong loop，正放倒放循环 3 次",
+        project_dir=str(tmp_path),
+    )
+
+    signal_ids = {signal["id"] for signal in plan["signals"]}
+    assert "ping_pong_loop" in signal_ids
+    assert all(step["id"] != "loop_fill_plan" for step in plan["steps"])
+    runtime = next(step for step in plan["steps"] if step["id"] == "runtime_preflight")
+    assert "--profile ping_pong_loop" in runtime["command"]
+    step = next(step for step in plan["steps"] if step["id"] == "ping_pong_loop_plan")
+    assert step["script"] == "ping_pong_loop.py"
+    assert "--cycles 3" in step["command"]
+    assert "--start '<gesture_start_seconds>'" in step["command"]
+    assert "--turnaround-proof verify/source-ping-pong-turnaround.mp4" in step["command"]
+    assert "--loop-seam-proof verify/source-ping-pong-loop-seam.mp4" in step["command"]
+    assert step["gate_category"] == "ping_pong_loop_plan"
+
+
 def test_black_edge_trim_routes_silent_edge_gate_before_downstream_work(tmp_path):
     source = tmp_path / "origin" / "capture.mp4"
     source.parent.mkdir(parents=True)

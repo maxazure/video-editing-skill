@@ -2,7 +2,7 @@
 
 这是一个面向 **口播、教程、访谈、播客切片、录屏演示 / facecam demo** 的 AI 视频剪辑生产线：给它原始口播音频/视频、transcript、B-roll、摄像头小窗或素材目录，它可以把“还没整理的素材”推进到 **可发布的小红书 / 抖音 / 视频号短视频**。
 
-它提供一条完整工作流：**项目启动/素材导入 → 本机工具链能力预检 → 交错/telecine 检测与逐行工作副本 → 手机/录屏 VFR 时基归一 → 静音首尾黑场裁切与边界复核 → 短素材循环填满固定时长与接缝复核 → 多源片段归一拼接与全接缝复核 → 多机位同步与按说话者音频生成导播草稿 → 个人/品牌剪辑风格 → 生产授权 → 手持防抖 / 绿蓝幕换背景 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → 分镜静帧时长预演 → 生成前逐镜接力与剪辑边界审核 → B-roll/生图/生成视频规划 → 图片/视频/音频生成参考素材预检与角色绑定 → 生成片有效运动窗口 → 字幕与声音设计 → BGM/SFX cue 规划与 source-bound 音效单轨混音 → BGM 卡点 / 局部 speed ramp / 关键帧 freeze-punch / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 锁定视觉 EDL 后重建最终声音分镜 → 最终旁白逐短语响度门禁 → 渲染前预检 / 真实画面字幕样式选择 / 字幕逐字符字体覆盖 → 单次编码渲染 → 质检 / 最终音视频轨覆盖 / 最终成片字幕像素复核 / 字幕与独立人声对齐 / 声道完整性 / 短促音频掉点 / 闪烁风险 / 单帧瞬态伪影筛查 / 最终成片唇形复核 → 多平台导出 / 本地视频放大与可选补帧 / 目标大小交付编码 / 重编码画质损失门禁 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
+它提供一条完整工作流：**项目启动/素材导入 → 本机工具链能力预检 → 交错/telecine 检测与逐行工作副本 → 手机/录屏 VFR 时基归一 → 静音首尾黑场裁切与边界复核 → 短素材 hard repeat 或端帧去重正放/倒放循环 → 多源片段归一拼接与全接缝复核 → 多机位同步与按说话者音频生成导播草稿 → 个人/品牌剪辑风格 → 生产授权 → 手持防抖 / 绿蓝幕换背景 → 转写 → 长视频择段 → 清稿 → 去口头禅/停顿 / 多模态死区 → 重组故事 → 事实来源 proof deck → 分镜 → 分镜静帧时长预演 → 生成前逐镜接力与剪辑边界审核 → B-roll/生图/生成视频规划 → 图片/视频/音频生成参考素材预检与角色绑定 → 生成片有效运动窗口 → 字幕与声音设计 → BGM/SFX cue 规划与 source-bound 音效单轨混音 → BGM 卡点 / 局部 speed ramp / 关键帧 freeze-punch / J-cut/L-cut → 可逆剪辑修订 / 可移植剪辑配方 → 锁定视觉 EDL 后重建最终声音分镜 → 最终旁白逐短语响度门禁 → 渲染前预检 / 真实画面字幕样式选择 / 字幕逐字符字体覆盖 → 单次编码渲染 → 质检 / 最终音视频轨覆盖 / 最终成片字幕像素复核 / 字幕与独立人声对齐 / 声道完整性 / 短促音频掉点 / 闪烁风险 / 单帧瞬态伪影筛查 / 最终成片唇形复核 → 多平台导出 / 本地视频放大与可选补帧 / 目标大小交付编码 / 重编码画质损失门禁 → 标题文案 → 续跑交接**。适配 **小红书 / 抖音 / 微信视频号** 的比例、节奏、字幕、文案和常见审核风险。
 
 ## 适合做什么
 
@@ -12,11 +12,12 @@
 - **停顿删段可同时看声音和画面**：`multimodal_dead_air.py` 只有在静帧覆盖静音达到门槛时才提出候选，实际只删二者交集；源 hash、20% 删除预算、切点复盘、单次编码和完整解码都进入 gate。
 - **多机位先同步再剪辑**：`multicam_sync.py` 把两台以上相机/手机/录音设备对齐到同一参考时间线，记录每路 offset、置信度、有效音轨、公共重叠区间，并可用多窗口 probe 测量长片时钟漂移；原片不改、不重编码。
 - **同步通过后可生成按说话者切换的导播草稿**：`multicam_switch.py` 绑定 ready 同步计划和全部源字节，按每路自己的噪声底/峰值归一发言能量；证据含糊时保持上一机位，高相关共享混音默认阻断。草稿完成媒体合同、全量解码和带声四项人工复核后才放行。
-- **开始媒体工作前先证明本机能跑**：`runtime_preflight.py` 按 `media_io / core_edit / multicam_switch / video_enhancement / storyboard_animatic / audio_cue_mix / generation_chain_handoff / captions / qa / edge_black_trim / hdr_sdr / stabilization / interlace / remotion` profile 检查命令版本、编码器和 FFmpeg filters；明确区分 missing 与 unknown，并让环境或报告漂移在 manifest 中失效。
+- **开始媒体工作前先证明本机能跑**：`runtime_preflight.py` 按 `media_io / core_edit / ping_pong_loop / multicam_switch / video_enhancement / storyboard_animatic / audio_cue_mix / generation_chain_handoff / captions / qa / edge_black_trim / hdr_sdr / stabilization / interlace / remotion` profile 检查命令版本、编码器和 FFmpeg filters；明确区分 missing 与 unknown，并让环境或报告漂移在 manifest 中失效。
 - **旧电视 / DV 素材先分清 telecine 和真实交错**：`interlace_conform.py` 用 FFmpeg `idet` 多段采样；疑似 3:2 pulldown 会阻断直接去交错，真实 TFF/BFF 才能经 `bwdif` 或明确的 `yadif` fallback 生成逐行工作副本，并在完整 1× A/B 确认后放行。
 - **手机和录屏 VFR 可先变成可审计 CFR 工作副本**：`frame_rate_conform.py` 读取全部解码帧 PTS 间隔，绑定精确目标有理帧率；输出必须通过恒定 cadence、帧数、音画起止、显示方向、SHA-256 和完整解码验证，原片保持不变。
 - **片头片尾黑场会先核对声音再裁切**：`black_edge_trim.py` 只接受接触源时间线两端的 `blackdetect` 区间，默认要求实际移除范围至少 95% 被静音覆盖；保留视觉 padding，生成原片边界 proof 和新的 CFR 工作副本，完整 1× 视听确认后才放行。
 - **短背景可以按次数或固定时长安全重复**：`loop_fill.py` 只接受 progressive CFR SDR 源片，音画一起循环或显式丢弃源音频；首个真实接缝和完整交付件都要正常速度复核，源片、输出、proof、设置或人工结论漂移都会让 manifest gate 失效。
+- **不闭合的短动作可以做端帧去重乒乓循环**：`ping_pong_loop.py` 把选区编译为 `0…N-1,N-2…1`，去掉普通正放+倒放在折返点和循环点产生的重复端帧；渲染前计算 `reverse` 缓存上限，输出无声 H.264 和折返/循环两条 proof，完整 1× 复核后才放行。
 - **不同规格的视频可以安全拼成一条**：`clip_assembly.py` 按最终顺序绑定每条源片，在一次编码中统一画布、rotation、CFR、SAR、像素格式、时间戳与 48 kHz stereo；无声片段可补等长静音，交付件和全部接缝 proof 都通过完整解码与 1× 人工复核后才放行。
 - **手持防抖保留原片和 A/B 证据**：`video_stabilization.py` 把源 SHA-256、确切 FFmpeg 后端和人工决定写进计划；apply 只生成新工作副本与全长左右对照，完整 1× 复核并 confirm 后 manifest 才放行。
 - **绿幕/蓝幕换背景先看 matte 再渲染**：`chroma_key.py` 在前景早/中/晚生成 composite 与黑白 matte，人工逐项确认边缘、主体完整性、溢色和背景匹配后才允许完整 H.264/AAC 输出；源、背景、预览、filter 或成片漂移都会让旧 review 失效。
@@ -162,6 +163,7 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    ├─→ frame_rate_conform.py    手机/录屏 VFR → 全量 PTS 检测 / CFR 工作副本 / live gate
    ├─→ black_edge_trim.py       首尾黑场 + 静音覆盖 → CFR 工作副本 / 原片边界 proof + live gate
    ├─→ loop_fill.py             progressive CFR 短片 → 次数/目标时长 repeat / 接缝 proof + 完整审片 gate
+   ├─→ ping_pong_loop.py        短动作 → 端帧去重正放/倒放 / 折返+循环双 proof / live gate
    ├─→ clip_assembly.py         多源片段 → 单次画布/CFR/SAR/音频归一 / 全接缝 proof + live gate
    ├─→ edit_style_profile.py    个人/品牌创意方向、节奏与渲染/文案默认值 → 可移植 profile
    ├─→ production_authorization.py
@@ -707,7 +709,7 @@ python3 scripts/pipeline_manifest.py . \
   --require runtime_preflight --strict
 ```
 
-内置 profile 为 `media_io / core_edit / storyboard_animatic / audio_cue_mix / generation_chain_handoff / captions / qa / edge_black_trim / hdr_sdr / stabilization / interlace / remotion`。`storyboard_animatic` 额外核对 panel scale/pad/crop、CFR、drawtext、concat、音频 trim/pad 和 H.264/AAC；`audio_cue_mix` 核对本地 SFX 与合成音效所需的音频 source/filter、延迟混合、限幅和 PCM/AAC 编码能力；`generation_chain_handoff` 核对 FFprobe、PNG encoder 和逐帧 `select` 提取能力；`missing` 表示可解析清单明确缺组件；`unknown` 表示版本命令或 FFmpeg 清单失败、超时或无法解析，两者都 fail closed。防抖 profile 接受两遍 `vidstabdetect + vidstabtransform` 或明确的单遍 `deshake` fallback；交错处理要求 `idet`，并接受 `bwdif` 或 `yadif`；其他 profile 的必需项全部逐项核验。
+内置 profile 为 `media_io / core_edit / ping_pong_loop / multicam_switch / video_enhancement / storyboard_animatic / audio_cue_mix / generation_chain_handoff / captions / qa / edge_black_trim / hdr_sdr / stabilization / interlace / remotion`。`ping_pong_loop` 核对 endpoint-dedup filter graph 所需的 `fps/trim/setpts/split/reverse/concat/loop/setsar/format` 与 H.264 编码；`storyboard_animatic` 额外核对 panel scale/pad/crop、CFR、drawtext、concat、音频 trim/pad 和 H.264/AAC；`audio_cue_mix` 核对本地 SFX 与合成音效所需的音频 source/filter、延迟混合、限幅和 PCM/AAC 编码能力；`generation_chain_handoff` 核对 FFprobe、PNG encoder 和逐帧 `select` 提取能力；`missing` 表示可解析清单明确缺组件；`unknown` 表示版本命令或 FFmpeg 清单失败、超时或无法解析，两者都 fail closed。防抖 profile 接受两遍 `vidstabdetect + vidstabtransform` 或明确的单遍 `deshake` fallback；交错处理要求 `idet`，并接受 `bwdif` 或 `yadif`；其他 profile 的必需项全部逐项核验。
 
 报告绑定所选 profile、Python/FFmpeg/FFprobe/Node 相关版本、FFmpeg component listing 状态、逐能力结果、修复建议与 canonical `report_id`。`verify` 会在当前机器重跑，版本、组件或报告内容漂移后旧 artifact 立即失效。`edit_brief_plan.py` 默认把本步骤排在实际媒体工作前：只转写/抽流使用 `media_io`，渲染使用 `core_edit`，再按字幕、QA、HDR、防抖、交错、Remotion 意图追加 profile。
 
@@ -780,6 +782,32 @@ python3 scripts/black_edge_trim.py apply work/black_edge_trim_plan.json
 
 apply 对音画使用同一 source-time trim，输出 H.264/yuv420p CFR 和可选 48 kHz stereo AAC。临时交付件与原片边界 proof 通过尺寸、方向、帧率、时长、音画首尾和 `ffmpeg -xerror` 完整解码后才原子提升。完整 1× 播放 proof 与 delivery，确认首尾可见帧、内容覆盖和音频连续，再运行 `confirm` 与 `verify --strict`。黑画面里的声音也确定应删除时可显式使用 `--audio-policy allow_audible`；该模式保留 warning，不能跳过听审。`pipeline_manifest.py --require black_edge_trim_plan --strict` 会现场重跑检测并核对输出、proof 和 review。
 
+### ↔️ Ping-pong Loop — 短动作正放倒放循环
+[`scripts/ping_pong_loop.py`](scripts/ping_pong_loop.py) · [详细文档](docs/prompts/128-ping-pong-loop.md)
+
+手势、产品旋转、粒子或生成视频里的短动作首尾不闭合时，可以用往返循环替代 hard repeat：
+
+```bash
+python3 scripts/runtime_preflight.py analyze \
+  --profile ping_pong_loop \
+  --output work/runtime_preflight.json \
+  --strict
+
+python3 scripts/ping_pong_loop.py plan origin/gesture.mp4 \
+  --start 1.20 --end 2.05 --cycles 4 \
+  --delivery work/gesture-ping-pong.mp4 \
+  --turnaround-proof verify/gesture-turnaround.mp4 \
+  --loop-seam-proof verify/gesture-loop-seam.mp4 \
+  --project-dir . \
+  --output work/ping_pong_loop_plan.json \
+  --markdown work/ping_pong_loop_plan.md
+python3 scripts/ping_pong_loop.py apply work/ping_pong_loop_plan.json
+```
+
+planner 先把秒数吸附到 decoded CFR 帧网格，再用 `0…N-1,N-2…1` 组成周期；倒放分支不重复首尾端帧，因此折返点和下一周期开头不会平白停一帧。FFmpeg `reverse` 会缓存选区全部解码帧，计划按 `width × height × frames × 4 bytes` 估算工作集，默认超过 2048 MiB 就要求缩短 `--start/--end` 或显式调整上限。源音频固定丢弃，避免静默输出倒放对白或环境声；视觉批准后再进入 BGM/SFX 混音。
+
+apply 输出无声 H.264/yuv420p delivery，以及分别覆盖正→倒折返点和周期尾→周期头的两条正常速度 proof。三份文件的尺寸、帧率、精确 decoded frame count、无音轨合同与完整解码全部通过后才原子提升。完整 1× 播放两条 proof 和 delivery，对 `turnaround_motion / loop_seam_motion / duplicate_hold / framing_integrity / creative_intent` 全部 `pass` 后执行 `confirm`，最后运行 `verify --strict` 与 `pipeline_manifest.py --require ping_pong_loop_plan --strict`。`--duration` 允许末周期被截短并保留 warning；希望交付文件本身是完整循环时使用 `--cycles`。
+
 ### 🧩 Clip Assembly — 多源片段归一拼接
 [`scripts/clip_assembly.py`](scripts/clip_assembly.py) · [详细文档](docs/prompts/118-clip-assembly.md)
 
@@ -817,7 +845,7 @@ python3 scripts/edit_brief_plan.py \
   --strict
 ```
 
-它会识别 `origin/interview.mp4` 这类源素材路径、目标平台、交错/telecine、VFR/CFR 源素材归一、多源视频拼接、手持防抖、绿幕/蓝幕换背景、目标脚本对齐、多 take、长视频拆条、批量短视频、字幕、B-roll、BGM、去停顿、J-cut/L-cut、生成素材、PIP、调色、QA、发布包等信号，并把它们映射到已有脚本，例如 `interlace_conform.py`、`frame_rate_conform.py`、`clip_assembly.py`、`video_stabilization.py`、`chroma_key.py`、`script_alignment.py`、`highlight_picker.py`、`shorts_batch.py`、`jump_cut.py`、`audio_transition.py`、`auto_enrich.py`、`render_final.py`、`render_qa.py` 和 `publish_package.py`。交错路由会先生成 `work/source-progressive.mp4`；VFR 路由再把验证后的 `work/source-cfr.mp4` 传给后续步骤；拼接路由留下按最终顺序填写的多源占位符，brief 没有明确 30/60/NTSC rate 时保留 `<target_fps>`。`pipeline_manifest.py` 会发现 `edit_brief_plan.json`；当 `summary.blocking > 0`（例如 brief 为空或显式 source 缺失）时会作为 blocker，也可以用 `--require edit_brief_plan` 把需求路由作为 analysis gate。
+它会识别 `origin/interview.mp4` 这类源素材路径、目标平台、交错/telecine、VFR/CFR 源素材归一、hard repeat、正放倒放 ping-pong loop、多源视频拼接、手持防抖、绿幕/蓝幕换背景、目标脚本对齐、多 take、长视频拆条、批量短视频、字幕、B-roll、BGM、去停顿、J-cut/L-cut、生成素材、PIP、调色、QA、发布包等信号，并把它们映射到已有脚本，例如 `interlace_conform.py`、`frame_rate_conform.py`、`ping_pong_loop.py`、`clip_assembly.py`、`video_stabilization.py`、`chroma_key.py`、`script_alignment.py`、`highlight_picker.py`、`shorts_batch.py`、`jump_cut.py`、`audio_transition.py`、`auto_enrich.py`、`render_final.py`、`render_qa.py` 和 `publish_package.py`。交错路由会先生成 `work/source-progressive.mp4`；VFR 路由再把验证后的 `work/source-cfr.mp4` 传给后续步骤；ping-pong 路由保留动作区间占位符并替代普通 hard repeat；拼接路由留下按最终顺序填写的多源占位符，brief 没有明确 30/60/NTSC rate 时保留 `<target_fps>`。`pipeline_manifest.py` 会发现 `edit_brief_plan.json`；当 `summary.blocking > 0`（例如 brief 为空或显式 source 缺失）时会作为 blocker，也可以用 `--require edit_brief_plan` 把需求路由作为 analysis gate。
 
 ### 🛂 Production Authorization — 确切范围生产授权
 [`scripts/production_authorization.py`](scripts/production_authorization.py) · [详细文档](docs/prompts/97-production-authorization.md)
@@ -3805,6 +3833,7 @@ pytest tests/test_final_audio_storyboard.py -v # 锁定 EDL → 最终声音分�
 pytest tests/test_multicam_sync.py -v       # 多机位 offset / 最响音轨 / pairwise / 真实预览
 pytest tests/test_multicam_switch.py -v     # speaker-mapped 音频切镜 / 渲染 / 完整解码 / 人工 gate
 pytest tests/test_loop_fill.py -v           # 固定时长重复 / 首个真实接缝 proof / 完整审片 live gate
+pytest tests/test_ping_pong_loop.py -v      # 端帧去重正放/倒放 / 双边界 proof / 内存预检 / live gate
 pytest tests/test_clip_assembly.py -v       # 多源画布/CFR/SAR/音频归一 / 全接缝 proof / live gate
 pytest tests/test_speech_denoise.py -v      # 口播降噪 preset / 顺序 / 真实 FFmpeg SNR smoke
 pytest tests/test_bgm_ducking.py -v         # 旁白驱动 BGM sidechain + 真实 FFmpeg smoke
@@ -3822,6 +3851,24 @@ pytest tests/test_project_resume.py -v      # 续跑上下文包 + agent handoff
 pytest tests/test_review_dashboard.py -v    # 静态人工复核面板 + gate queue
 pytest tests/test_source_receipts.py -v     # 事实来源 proof deck + 发布 gate
 ```
+
+### 2026-09-23 自动化升级记录（Source-bound Endpoint-deduplicated Ping-pong Loop）
+
+本次联网研究的 GitHub 参考：
+
+| 来源 | 值得借鉴的优点 | 本项目处理 |
+|---|---|---|
+| [`videoweave-ai-video-skills@e13e38e0` 的 Reverse Clip](https://github.com/1155project/videoweave-ai-video-skills/blob/e13e38e0f07b5566d6f5743ed6480f6f1a2b6e85/skills/atomic/29_reverse_clip.md) | 把 reverse 作为独立原子操作，并明确提醒 FFmpeg 会缓存完整片段；长片应先 trim，降低内存占用 | 新增短选区与渲染前内存上限：按显示尺寸、选区 decoded frames 和每像素 4 bytes 给出保守估算，超过 `--max-working-set-mib` 直接阻断 |
+| [`carrxau/clip-studio@7a7b004` 的 beat-locked pingpong](https://github.com/carrxau/clip-studio/blob/7a7b00406f48fa83e3b01a78fe86df0cd2ed5778/clip-studio/scripts/assemble.py) | 把 `pingpong` 作为音乐卡点中的可见动作手法，适合手势、冲击点和短动作往返 | 吸收创意用途，并修正普通 `forward + reverse` 会重复两端帧的问题；周期固定为 `0…N-1,N-2…1`，另生成折返点与循环点两条 proof |
+| [`caption-title-video@85e35b3` 的逐词字幕 workflow](https://github.com/nopefallacy/caption-title-video/blob/85e35b3b9a3ac81338e61761a53039ce4230e4c6/SKILL.md) | 以源时间戳驱动逐词高亮，成片完成后做全长复核；操作步骤和验收证据分开 | 本项目已有逐词字幕、源绑定和完整审片门禁；本轮沿用 `plan → apply → confirm → verify` 证据链，没有重复增加字幕实现 |
+
+新增/调整能力：新增 [`scripts/ping_pong_loop.py`](scripts/ping_pong_loop.py)、[`tests/test_ping_pong_loop.py`](tests/test_ping_pong_loop.py) 和 [`docs/prompts/128-ping-pong-loop.md`](docs/prompts/128-ping-pong-loop.md)。`plan` 只接受 progressive CFR SDR 源片，把 `--start/--end` 吸附到真实帧网格，并在 `--cycles` 与 `--duration` 中选择一种目标；计划绑定源 SHA-256、完整 decoded cadence、选区/周期/目标帧数、reverse 内存估算、路径与 review contract。选区少于 3 帧、VFR/non-monotonic、HDR/BT.2020/>8-bit、内存超限或输出覆盖源片都会提前阻断。
+
+`apply` 在单条 FFmpeg filter graph 中完成选区归一、端帧去重倒放、循环和精确帧裁切，固定丢弃源音频，输出 CFR H.264/yuv420p 交付件、turnaround proof 与 loop-seam proof。三个文件都要满足精确帧数、尺寸、帧率、无音轨、codec/pixel format、cadence 和 `-xerror` 完整解码合同后才原子提升。`confirm` 要求三条视频全部正常速度播放完成，并记录 `turnaround_motion / loop_seam_motion / duplicate_hold / framing_integrity / creative_intent`；`verify` 现场复核源、输出、proof、设置、decode receipt、人工结论与 canonical plan ID。`runtime_preflight.py` 新增 **13 项** `ping_pong_loop` profile，`edit_brief_plan.py` 可识别中英文 ping-pong/boomerang/乒乓/正放倒放需求，`pipeline_manifest.py --require ping_pong_loop_plan --strict` 已接入 live gate；SKILL、daily workflow、runtime 文档和 prompts 导航同步更新。
+
+使用方式：先运行 `python3 scripts/runtime_preflight.py analyze --profile ping_pong_loop --output work/runtime_preflight.json --markdown work/runtime_preflight.md --strict`。随后执行 `python3 scripts/ping_pong_loop.py plan origin/gesture.mp4 --start 1.2 --end 2.05 --cycles 4 --delivery work/gesture-ping-pong.mp4 --turnaround-proof verify/gesture-turnaround.mp4 --loop-seam-proof verify/gesture-loop-seam.mp4 --project-dir . --output work/ping_pong_loop_plan.json --markdown work/ping_pong_loop_plan.md` 和 `apply`。正常速度看完两条 proof 与完整交付件，再运行 `confirm`、`verify --strict` 和 manifest gate。需要填满固定时长时改用 `--duration 8`；最后一个周期可能被截断并留下 warning。视觉批准后再接已审的 BGM/SFX。
+
+验证结果：关联定向回归通过 **198 passed in 5.42s**，全量测试通过 **1330 passed in 40.99s**。真实 FFmpeg smoke 使用 1 秒、160×90、6 fps、H.264/AAC 样片，选中 6 帧并渲染 2 个周期；交付件精确为 20 帧、3.333 秒、6 fps、无音轨，两条 proof 各 6 帧，三份文件全部完成 `-xerror` 解码。synthetic integration review 后 strict verify 为 **0 blocking / 1 warning**，唯一 warning 是源音频按合同丢弃；本轮没有把该测试记录表述为真人审片。runtime profile 为 **13 capabilities / 0 blocking / 0 warnings**；Python compileall、四个子命令 help、Skill Creator quick validation 与 `git diff --check` 均通过。
 
 ### 2026-09-22 自动化升级记录（Source-bound Audio-guided Multicam Switch）
 
@@ -5450,6 +5497,7 @@ python3 scripts/pipeline_manifest.py . --require freeze_punch_plan --strict
 | **125** | **[Reference Story Formula](docs/prompts/125-reference-story-formula.md)** | **参考视频 + transcript + 目标分镜 → 情绪机制、content anchors、复制排除与 live gate** |
 | **126** | **[Video Enhancement](docs/prompts/126-video-enhancement.md)** | **现有视频本地放大、可选补帧、完整解码、全长 A/B 与带声 review gate** |
 | **127** | **[Multicam Switch](docs/prompts/127-multicam-switch.md)** | **已同步机位按归一化说话者音频生成导播草稿、完整解码与带声 review gate** |
+| **128** | **[Ping-pong Loop](docs/prompts/128-ping-pong-loop.md)** | **短动作端帧去重正放/倒放、折返/循环双 proof 与完整审片 live gate** |
 | **62** | **[Hook Variants](docs/prompts/62-hook-variants.md)** | **同一视频批量生成前三秒 hook 角度** |
 | **67** | **[Speech Continuity QA](docs/prompts/67-speech-continuity-qa.md)** | **成片二次 ASR 检查复读、近重复 take 和句内口吃** |
 | **68** | **[Cover Variants](docs/prompts/68-cover-variants.md)** | **多套封面、feed-size 预览、标题协同和最终选择** |
@@ -5488,6 +5536,7 @@ scripts/
 ├── frame_rate_conform.py       VFR 全量 PTS 检测 + source-bound CFR 工作副本/live gate [V3]
 ├── black_edge_trim.py          首尾 black+silence 检测 / CFR working copy / source-edge proof [V3]
 ├── loop_fill.py                progressive CFR 短片 repeat / fixed-duration / seam proof live gate [V3]
+├── ping_pong_loop.py           endpoint-dedup 正放/倒放 / 双边界 proof / reverse 内存预检 [V3]
 ├── clip_assembly.py            多源视频单次归一拼接 / all-boundary proof / live gate [V3]
 ├── edit_brief_plan.py          自然语言剪辑需求 → 本地 runbook          [V3]
 ├── production_authorization.py 确切动作/provider/素材/权利依据授权 gate  [V3]

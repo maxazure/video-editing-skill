@@ -53,6 +53,7 @@ python3 scripts/edit_brief_plan.py \
 | 参考视频节奏、参考广告节奏、复刻剪辑结构 | 成片后用 `reference_edit_rhythm.py analyze` 量化 hard-cut 结构和 contact sheets；默认 WARN，明确验收时才加 `--require-match` |
 | VFR、可变帧率、固定帧率、手机/录屏音画漂移 | `frame_rate_conform.py plan` → `apply` → `verify`；工作副本会成为后续转写、切段与渲染输入 |
 | 隔行/交错扫描、梳齿、TFF/BFF、场序、telecine/3:2 pulldown | `interlace_conform.py analyze`；telecine 停止并转 IVTC，真实交错才 `plan` → `apply` → 完整 A/B `confirm` |
+| ping-pong、boomerang、乒乓循环、正放倒放 | `ping_pong_loop.py plan` → `apply` → 折返点/循环点双 proof 与完整播放 `confirm`；源音频固定丢弃 |
 | BGM、音效、声音设计 | `audio_cue_sheet.py` |
 | 左右声道、相位抵消、单声道兼容、mono fold-down | `audio_channel_qa.py analyze` → `verify` |
 | 压缩画质、重编码画质、SSIM、PSNR | `encode_quality_qa.py analyze` → `verify`；目标大小交付后自动安排 source → delivery 对照 |

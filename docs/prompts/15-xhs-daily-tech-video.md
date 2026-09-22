@@ -46,8 +46,8 @@
       --output work/runtime_preflight.json \
       --markdown work/runtime_preflight.md \
       --strict
-    # 用视频放大/补帧、HDR、防抖、交错素材或 Remotion 时分别追加
-    # video_enhancement / hdr_sdr / stabilization / interlace / remotion。
+    # 用正放倒放循环、视频放大/补帧、HDR、防抖、交错素材或 Remotion 时分别追加
+    # ping_pong_loop / video_enhancement / hdr_sdr / stabilization / interlace / remotion。
     # missing 或 unknown 都停止；修好环境后重新 analyze，不手改 JSON。
     # 详见 docs/prompts/115-runtime-preflight.md
 
@@ -84,6 +84,20 @@
     python3 scripts/loop_fill.py apply work/loop_fill_plan.json
     # 正常速度看完 seam proof 与完整 delivery，五项复核通过后 confirm，再 verify --strict。
     # hard repeat 不会自动修平首尾；VFR 先 conform，详见 docs/prompts/117-loop-fill.md
+
+0l2. # 条件 gate：手势、产品旋转或生成片动作要做正放/倒放往返循环时：
+    python3 scripts/ping_pong_loop.py plan origin/<motion-source>.mp4 \
+      --start 1.2 --end 2.05 --cycles 4 \
+      --delivery work/<source>-ping-pong.mp4 \
+      --turnaround-proof verify/<source>-turnaround.mp4 \
+      --loop-seam-proof verify/<source>-loop-seam.mp4 \
+      --project-dir . \
+      --output work/ping_pong_loop_plan.json \
+      --markdown work/ping_pong_loop_plan.md
+    python3 scripts/ping_pong_loop.py apply work/ping_pong_loop_plan.json
+    # 正常速度看完折返点、循环点和完整 delivery，五项复核通过后 confirm，再 verify --strict。
+    # 源音频固定丢弃；选区尽量短，内存预估超过上限会在渲染前停止。
+    # 详见 docs/prompts/128-ping-pong-loop.md
 
 0s. # 可选：同一个人/品牌需要跨项目维持风格时，先建可移植剪辑风格档案：
     python3 scripts/edit_style_profile.py template \
@@ -1200,6 +1214,8 @@ day<NN>/
 │   ├── hdr_sdr_plan.md
 │   ├── video_enhancement_plan.json # 可选：本地放大/补帧、输出/A-B/review live gate
 │   ├── video_enhancement_plan.md
+│   ├── ping_pong_loop_plan.json # 可选：端帧去重往返循环、双边界 proof/review live gate
+│   ├── ping_pong_loop_plan.md
 │   ├── delivery_encode_plan.json # 可选：目标大小交付编码 / source + output hash gate
 │   ├── delivery_encode_plan.md
 │   ├── cover_variants.json # 封面 A/B 方案 + selected_cover
