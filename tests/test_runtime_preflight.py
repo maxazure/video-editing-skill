@@ -82,6 +82,15 @@ def test_ping_pong_loop_profile_requires_reverse_loop_and_frame_filters():
     assert "filter:loop" in report["capabilities"]
 
 
+def test_podcast_audiogram_profile_requires_waveform_and_caption_filters():
+    filters = {"scale", "pad", "setsar", "asplit", "volume", "showwaves", "overlay", "subtitles"}
+    ready = build_report(["podcast_audiogram"], snapshot=snapshot(filters=filters))
+    assert ready["status"] == "ready"
+    missing = build_report(["podcast_audiogram"], snapshot=snapshot(filters=filters - {"subtitles"}))
+    assert missing["status"] == "blocked"
+    assert missing["capabilities"]["filter:subtitles"]["status"] == "missing"
+
+
 def test_storyboard_animatic_profile_requires_timing_label_and_audio_filters():
     filters = {
         "scale", "pad", "crop", "setsar", "fps", "format", "drawtext",

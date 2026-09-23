@@ -153,6 +153,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `loop_fill.py` | progressive CFR 短素材 → 按次数/目标时长重复、首个真实接缝 1× proof、完整审片与 live gate | `plan --times|--duration --delivery --seam-proof` / `apply` / `confirm` / `verify --strict` |
 | `ping_pong_loop.py` | progressive CFR 短动作 → 端帧去重的正放/倒放周期、折返/循环双 proof、缓存上限与 live gate | `plan --start --end --cycles|--duration --delivery --turnaround-proof --loop-seam-proof` / `apply` / `confirm` / `verify --strict` |
 | `clip_assembly.py` | 多源视频 → 单次画布/CFR/SAR/时间戳/音频归一、全接缝 1× proof 与 live gate | `plan <clips...> --delivery --boundary-proof` / `apply` / `confirm` / `verify --strict` |
+| `podcast_audiogram.py` | 纯音频摘录 + 静帧封面 + 相对摘录时间的 SRT → 带辅助波形的竖版 MP4 与源绑定收据 | `render <audio> <cover> <captions.srt> --start --duration --output --receipt` / `verify <receipt>` |
 | `edit_style_profile.py` | 个人/品牌创意方向、剪辑节奏、渲染/文案默认值 → 无路径可移植 profile / digest 验证 / defaults-only 合并 | `template` / `create --spec` / `verify --profile --strict` / `apply --config --receipt` |
 | `production_authorization.py` | 外部上传、侵入性剪辑、付费生成、声音克隆、真人/IP 和发布 → source-bound 授权 gate | `prepare --scope --response-template` / `audit --request --response --strict` / `verify --report --strict` |
 | `transcript_review.py` | transcript → 文本或本地同步媒体 HTML 校稿 → reviewed transcript | `export` / `html --video --max-cps` / `apply --review --output` |
@@ -516,7 +517,7 @@ python3 scripts/pipeline_manifest.py \
 
 ### Phase 0aa: Runtime Preflight（按任务核验本机能力）
 
-在打开媒体或启动渲染前，运行 [runtime_preflight.py](./scripts/runtime_preflight.py)。只转写、probe 或抽流用 `media_io`；会编码最终画面的任务用 `core_edit`，再按需要追加 `ping_pong_loop / multicam_switch / video_enhancement / storyboard_animatic / audio_cue_mix / generation_chain_handoff / captions / qa / edge_black_trim / hdr_sdr / stabilization / interlace / remotion`：
+在打开媒体或启动渲染前，运行 [runtime_preflight.py](./scripts/runtime_preflight.py)。只转写、probe 或抽流用 `media_io`；会编码最终画面的任务用 `core_edit`，再按需要追加 `podcast_audiogram / ping_pong_loop / multicam_switch / video_enhancement / storyboard_animatic / audio_cue_mix / generation_chain_handoff / captions / qa / edge_black_trim / hdr_sdr / stabilization / interlace / remotion`：
 
 ```bash
 python3 scripts/runtime_preflight.py analyze \
@@ -2804,3 +2805,9 @@ ffmpeg -i broll_concat.mp4 -t $audio_dur -c copy broll_trimmed.mp4
 # 3. 再拼接封面 + 裁切后的 B-roll + 结尾卡片
 ```
 **原则**：拼接前确保每个部分的时长是精确已知的，不要依赖 `-t` 来事后截断。
+
+## 纯音频播客竖版 Audiogram
+
+只有音频和封面、需要发短视频时，选出有完整语义的短段，准备与该摘录从 0 秒开始对齐的 SRT。若有原生视频，优先剪真实说话画面。需要新封面时优先用 Codex 内置 `image_gen`（GPT Image 2）；已有封面直接使用。
+
+运行 `runtime_preflight.py analyze --profile podcast_audiogram --output work/runtime_preflight.json --strict`，再运行 `podcast_audiogram.py render origin/episode.wav origin/cover.png work/excerpt.srt --start 32 --duration 28 --output output/audiogram.mp4 --receipt verify/podcast_audiogram.json`。脚本把音频、封面、字幕、设置和成片绑定，输出 720×1280 H.264/AAC、辅助声波和烧录字幕；单条最长 600 秒。`podcast_audiogram.py verify verify/podcast_audiogram.json` 会重查哈希、媒体规格和完整解码。`ready_for_human_review` 只表示技术检查通过，交付前仍须以 1× 带声看完，核对字幕与语音、封面权利与辨识度、波形位置和末尾裁切。修改任一输入后重新渲染并复核。

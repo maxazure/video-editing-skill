@@ -56,6 +56,17 @@ PROFILE_SPECS: Mapping[str, Mapping[str, Any]] = {
         ],
         "alternatives": [],
     },
+    "podcast_audiogram": {
+        "label": "Captioned podcast audiogram",
+        "description": "Render a still cover, audio-driven waveform, and SRT captions to H.264/AAC MP4.",
+        "required": [
+            "runtime:python", "command:ffmpeg", "command:ffprobe",
+            "encoder:libx264", "encoder:aac", "filter:scale", "filter:pad",
+            "filter:setsar", "filter:asplit", "filter:volume", "filter:showwaves",
+            "filter:overlay", "filter:subtitles",
+        ],
+        "alternatives": [],
+    },
     "ping_pong_loop": {
         "label": "Endpoint-deduplicated ping-pong loop",
         "description": "Buffer a short CFR gesture, render forward/reverse cycles without repeated endpoints, and create both boundary proofs.",

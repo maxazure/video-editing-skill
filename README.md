@@ -12,7 +12,8 @@
 - **停顿删段可同时看声音和画面**：`multimodal_dead_air.py` 只有在静帧覆盖静音达到门槛时才提出候选，实际只删二者交集；源 hash、20% 删除预算、切点复盘、单次编码和完整解码都进入 gate。
 - **多机位先同步再剪辑**：`multicam_sync.py` 把两台以上相机/手机/录音设备对齐到同一参考时间线，记录每路 offset、置信度、有效音轨、公共重叠区间，并可用多窗口 probe 测量长片时钟漂移；原片不改、不重编码。
 - **同步通过后可生成按说话者切换的导播草稿**：`multicam_switch.py` 绑定 ready 同步计划和全部源字节，按每路自己的噪声底/峰值归一发言能量；证据含糊时保持上一机位，高相关共享混音默认阻断。草稿完成媒体合同、全量解码和带声四项人工复核后才放行。
-- **开始媒体工作前先证明本机能跑**：`runtime_preflight.py` 按 `media_io / core_edit / ping_pong_loop / multicam_switch / video_enhancement / storyboard_animatic / audio_cue_mix / generation_chain_handoff / captions / qa / edge_black_trim / hdr_sdr / stabilization / interlace / remotion` profile 检查命令版本、编码器和 FFmpeg filters；明确区分 missing 与 unknown，并让环境或报告漂移在 manifest 中失效。
+- **只有播客音频也能产出竖版短片**：`podcast_audiogram.py` 将指定音频摘录、静帧封面和逐句 SRT 合成字幕优先的 H.264/AAC MP4，声波只作辅助；源文件、字幕、设置与交付件绑定在可现场验证的收据中。
+- **开始媒体工作前先证明本机能跑**：`runtime_preflight.py` 按 `media_io / core_edit / podcast_audiogram / ping_pong_loop / multicam_switch / video_enhancement / storyboard_animatic / audio_cue_mix / generation_chain_handoff / captions / qa / edge_black_trim / hdr_sdr / stabilization / interlace / remotion` profile 检查命令版本、编码器和 FFmpeg filters；明确区分 missing 与 unknown，并让环境或报告漂移在 manifest 中失效。
 - **旧电视 / DV 素材先分清 telecine 和真实交错**：`interlace_conform.py` 用 FFmpeg `idet` 多段采样；疑似 3:2 pulldown 会阻断直接去交错，真实 TFF/BFF 才能经 `bwdif` 或明确的 `yadif` fallback 生成逐行工作副本，并在完整 1× A/B 确认后放行。
 - **手机和录屏 VFR 可先变成可审计 CFR 工作副本**：`frame_rate_conform.py` 读取全部解码帧 PTS 间隔，绑定精确目标有理帧率；输出必须通过恒定 cadence、帧数、音画起止、显示方向、SHA-256 和完整解码验证，原片保持不变。
 - **片头片尾黑场会先核对声音再裁切**：`black_edge_trim.py` 只接受接触源时间线两端的 `blackdetect` 区间，默认要求实际移除范围至少 95% 被静音覆盖；保留视觉 padding，生成原片边界 proof 和新的 CFR 工作副本，完整 1× 视听确认后才放行。
@@ -5697,6 +5698,23 @@ V3 已完成：Phase 1-5 + imagegen 集成（[#9](https://github.com/maxazure/vi
 PR 欢迎。新功能必须带测试，每个新脚本至少 5 个测试，全套应保持在轻量本地运行范围内。
 
 ---
+
+## 自动化更新：2026-09-24（播客 Audiogram）
+
+本次研究了 GitHub 上的 [`social-media-skills/skills` 播客与 audiogram 技能](https://github.com/social-media-skills/skills/blob/main/skills/podcast-and-audiograms/SKILL.md)、[`EverythingAI-Pro/ai-video-editor`](https://github.com/EverythingAI-Pro/ai-video-editor) 和 [`andriidrok1/autobroll`](https://github.com/andriidrok1/autobroll)。前者强调纯音频片段使用封面、字幕与辅助波形；后两者提供逐步 FFmpeg 输出与逐句字幕编辑思路。本项目已有播客选片、字幕包和 QA 波形图，但缺少纯音频直接生成可发布竖版视频的入口。
+
+新增 [`scripts/podcast_audiogram.py`](scripts/podcast_audiogram.py)：从音频摘录、PNG/JPEG/WebP 静帧和相对摘录起点的 SRT 一次编码为默认 720×1280、30 fps 的 H.264/AAC MP4。SRT 必须有非空文本、时间递增且落在摘录内；单条上限 600 秒。渲染前检查输入及目标路径，渲染后核对时长、画布、帧率、编码并完整解码，再写入绑定三份输入和输出 SHA-256 的 JSON 收据。`verify` 可重新检查文件漂移。新增 `podcast_audiogram` 本地运行能力 profile，检查波形、字幕、编码器和 FFmpeg 命令。
+
+```bash
+python3 scripts/runtime_preflight.py analyze --profile podcast_audiogram --output work/runtime_preflight.json --strict
+python3 scripts/podcast_audiogram.py render origin/episode.wav origin/cover.png work/excerpt.srt \
+  --start 32 --duration 28 --output output/audiogram.mp4 --receipt verify/podcast_audiogram.json
+python3 scripts/podcast_audiogram.py verify verify/podcast_audiogram.json
+```
+
+字幕时间从这 28 秒摘录的 0 秒起算。`ready_for_human_review` 仅说明技术检查通过；交付前以 1× 带声看完整片，确认字幕对词、封面可读、波形不挡字、结尾无截词，并确认封面和录音使用权。源音频、封面、字幕或成片变化后需要重做收据和人工复核。
+
+验证：`tests/test_podcast_audiogram.py` 的 5 项新测试覆盖真实 FFmpeg 渲染/现场验证/输入漂移、SRT 交叠和越界、源文件路径与硬链接保护；runtime profile 另增 1 项测试。定向测试 `24 passed`，全套 `1336 passed in 43.20s`。真实 2 秒 320×568、24 fps 烟测产出带两条字幕和波形的 MP4，完整解码和 `verify` 通过，并抽帧目视检查字幕与波形。`compileall`、Skill Creator 校验和 `git diff --check` 通过。未在真实播客长片或不同字体环境验证；人工全片听审仍需在具体交付时完成。
 
 ## License
 
