@@ -67,6 +67,15 @@ PROFILE_SPECS: Mapping[str, Mapping[str, Any]] = {
         ],
         "alternatives": [],
     },
+    "gif_preview": {
+        "label": "Palette-optimized GIF preview",
+        "description": "Render a short muted video excerpt as a palette-optimized animated GIF.",
+        "required": [
+            "runtime:python", "command:ffmpeg", "command:ffprobe", "encoder:gif",
+            "filter:fps", "filter:scale", "filter:split", "filter:palettegen", "filter:paletteuse",
+        ],
+        "alternatives": [],
+    },
     "ping_pong_loop": {
         "label": "Endpoint-deduplicated ping-pong loop",
         "description": "Buffer a short CFR gesture, render forward/reverse cycles without repeated endpoints, and create both boundary proofs.",

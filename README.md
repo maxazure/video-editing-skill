@@ -13,6 +13,7 @@
 - **多机位先同步再剪辑**：`multicam_sync.py` 把两台以上相机/手机/录音设备对齐到同一参考时间线，记录每路 offset、置信度、有效音轨、公共重叠区间，并可用多窗口 probe 测量长片时钟漂移；原片不改、不重编码。
 - **同步通过后可生成按说话者切换的导播草稿**：`multicam_switch.py` 绑定 ready 同步计划和全部源字节，按每路自己的噪声底/峰值归一发言能量；证据含糊时保持上一机位，高相关共享混音默认阻断。草稿完成媒体合同、全量解码和带声四项人工复核后才放行。
 - **只有播客音频也能产出竖版短片**：`podcast_audiogram.py` 将指定音频摘录、静帧封面和逐句 SRT 合成字幕优先的 H.264/AAC MP4，声波只作辅助；源文件、字幕、设置与交付件绑定在可现场验证的收据中。
+- **已审视频可导出轻量动图预览**：`gif_preview.py` 从指定短摘录生成无声、调色板优化的 GIF，限制时长、尺寸、帧率和文件大小，并用收据绑定源片与导出件，适合在聊天或文档中预览动作。
 - **开始媒体工作前先证明本机能跑**：`runtime_preflight.py` 按 `media_io / core_edit / podcast_audiogram / ping_pong_loop / multicam_switch / video_enhancement / storyboard_animatic / audio_cue_mix / generation_chain_handoff / captions / qa / edge_black_trim / hdr_sdr / stabilization / interlace / remotion` profile 检查命令版本、编码器和 FFmpeg filters；明确区分 missing 与 unknown，并让环境或报告漂移在 manifest 中失效。
 - **旧电视 / DV 素材先分清 telecine 和真实交错**：`interlace_conform.py` 用 FFmpeg `idet` 多段采样；疑似 3:2 pulldown 会阻断直接去交错，真实 TFF/BFF 才能经 `bwdif` 或明确的 `yadif` fallback 生成逐行工作副本，并在完整 1× A/B 确认后放行。
 - **手机和录屏 VFR 可先变成可审计 CFR 工作副本**：`frame_rate_conform.py` 读取全部解码帧 PTS 间隔，绑定精确目标有理帧率；输出必须通过恒定 cadence、帧数、音画起止、显示方向、SHA-256 和完整解码验证，原片保持不变。
@@ -5715,6 +5716,23 @@ python3 scripts/podcast_audiogram.py verify verify/podcast_audiogram.json
 字幕时间从这 28 秒摘录的 0 秒起算。`ready_for_human_review` 仅说明技术检查通过；交付前以 1× 带声看完整片，确认字幕对词、封面可读、波形不挡字、结尾无截词，并确认封面和录音使用权。源音频、封面、字幕或成片变化后需要重做收据和人工复核。
 
 验证：`tests/test_podcast_audiogram.py` 的 5 项新测试覆盖真实 FFmpeg 渲染/现场验证/输入漂移、SRT 交叠和越界、源文件路径与硬链接保护；runtime profile 另增 1 项测试。定向测试 `24 passed`，全套 `1336 passed in 43.20s`。真实 2 秒 320×568、24 fps 烟测产出带两条字幕和波形的 MP4，完整解码和 `verify` 通过，并抽帧目视检查字幕与波形。`compileall`、Skill Creator 校验和 `git diff --check` 通过。未在真实播客长片或不同字体环境验证；人工全片听审仍需在具体交付时完成。
+
+## 自动化更新：2026-09-25（GIF 动图预览）
+
+本次联网查看了 GitHub 上的 [`ElSalvatore-sys/video-editor-plugin`](https://github.com/ElSalvatore-sys/video-editor-plugin)（独立 `/gif` 命令）、[`bryanwhl/ffmpeg-video-editor`](https://github.com/bryanwhl/ffmpeg-video-editor/blob/main/SKILL.md)（先探测媒体再选择 FFmpeg 操作）和 [`htekdev/copilot-home-assistant` 的 FFmpeg 剪辑技能](https://github.com/htekdev/copilot-home-assistant/blob/main/.github/skills/ffmpeg-video-editing/SKILL.md)（明确把媒体检查、剪切、字幕等操作拆开）。本项目已有 MP4 多平台导出、静帧和 contact sheet，缺少可独立交付的短动图预览。
+
+新增 [`scripts/gif_preview.py`](scripts/gif_preview.py)：从视频选取最多 10 秒片段，以 `fps → Lanczos scale → palettegen/paletteuse` 生成无声 GIF；宽度 64–640 偶数像素、帧率 5–20 fps、文件上限 20 MiB。渲染前检查源时长与输出路径，渲染后核对 GIF 编码、尺寸、帧数、时长及完整解码，写入源片/GIF SHA-256 收据；`verify` 可现场检查文件漂移。新增 `gif_preview` 运行能力 profile，检查 GIF 编码器和调色板滤镜。
+
+```bash
+python3 scripts/runtime_preflight.py analyze --profile gif_preview --output work/runtime_preflight.json --strict
+python3 scripts/gif_preview.py render output/master.mp4 --start 5 --duration 3 \
+  --width 480 --fps 12 --output output/preview.gif --receipt verify/gif_preview.json
+python3 scripts/gif_preview.py verify verify/gif_preview.json
+```
+
+`ready_for_human_review` 表示文件与技术合同通过。分享前按实际展示尺寸看完 GIF 循环，检查首尾动作、色带和字幕可读性；GIF 无音轨，正式视频交付仍用已审 MP4。源片或 GIF 修改后重新渲染、验证并复核。
+
+验证：真实 3 秒、160×90、20 fps H.264 样片截取 1.5 秒，以 120px、10 fps 导出 15 帧 GIF；完整解码和 live verify 通过，源片/GIF 漂移、输出碰撞、超长摘录及 symlink/hardlink 输入保护均有测试覆盖。`gif_preview` runtime preflight 在本机 9 项能力 ready、零 blocker/warning。全套 `1339 passed in 38.45s`；本次小幅源文件竞态防护改动后定向测试、Skill Creator 校验、`compileall` 与 `git diff --check` 均通过。
 
 ## License
 

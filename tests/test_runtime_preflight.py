@@ -91,6 +91,15 @@ def test_podcast_audiogram_profile_requires_waveform_and_caption_filters():
     assert missing["capabilities"]["filter:subtitles"]["status"] == "missing"
 
 
+def test_gif_preview_profile_requires_palette_filters_and_encoder():
+    filters = {"fps", "scale", "split", "palettegen", "paletteuse"}
+    ready = build_report(["gif_preview"], snapshot=snapshot(filters=filters, encoders=("gif",)))
+    assert ready["status"] == "ready"
+    missing = build_report(["gif_preview"], snapshot=snapshot(filters=filters - {"paletteuse"}, encoders=("gif",)))
+    assert missing["status"] == "blocked"
+    assert missing["capabilities"]["filter:paletteuse"]["status"] == "missing"
+
+
 def test_storyboard_animatic_profile_requires_timing_label_and_audio_filters():
     filters = {
         "scale", "pad", "crop", "setsar", "fps", "format", "drawtext",
