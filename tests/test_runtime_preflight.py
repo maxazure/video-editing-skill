@@ -100,6 +100,14 @@ def test_gif_preview_profile_requires_palette_filters_and_encoder():
     assert missing["capabilities"]["filter:paletteuse"]["status"] == "missing"
 
 
+def test_soft_subtitles_profile_requires_mov_text_encoder():
+    ready = build_report(["soft_subtitles"], snapshot=snapshot(encoders=("mov_text",)))
+    assert ready["status"] == "ready"
+    missing = build_report(["soft_subtitles"], snapshot=snapshot(encoders=()))
+    assert missing["status"] == "blocked"
+    assert missing["capabilities"]["encoder:mov_text"]["status"] == "missing"
+
+
 def test_storyboard_animatic_profile_requires_timing_label_and_audio_filters():
     filters = {
         "scale", "pad", "crop", "setsar", "fps", "format", "drawtext",

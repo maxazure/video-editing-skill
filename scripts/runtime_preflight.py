@@ -76,6 +76,12 @@ PROFILE_SPECS: Mapping[str, Mapping[str, Any]] = {
         ],
         "alternatives": [],
     },
+    "soft_subtitles": {
+        "label": "Switchable MP4 subtitles",
+        "description": "Mux reviewed SRT into MP4 while copying the existing audio/video streams.",
+        "required": ["runtime:python", "command:ffmpeg", "command:ffprobe", "encoder:mov_text"],
+        "alternatives": [],
+    },
     "ping_pong_loop": {
         "label": "Endpoint-deduplicated ping-pong loop",
         "description": "Buffer a short CFR gesture, render forward/reverse cycles without repeated endpoints, and create both boundary proofs.",

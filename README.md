@@ -14,6 +14,7 @@
 - **同步通过后可生成按说话者切换的导播草稿**：`multicam_switch.py` 绑定 ready 同步计划和全部源字节，按每路自己的噪声底/峰值归一发言能量；证据含糊时保持上一机位，高相关共享混音默认阻断。草稿完成媒体合同、全量解码和带声四项人工复核后才放行。
 - **只有播客音频也能产出竖版短片**：`podcast_audiogram.py` 将指定音频摘录、静帧封面和逐句 SRT 合成字幕优先的 H.264/AAC MP4，声波只作辅助；源文件、字幕、设置与交付件绑定在可现场验证的收据中。
 - **已审视频可导出轻量动图预览**：`gif_preview.py` 从指定短摘录生成无声、调色板优化的 GIF，限制时长、尺寸、帧率和文件大小，并用收据绑定源片与导出件，适合在聊天或文档中预览动作。
+- **已审 SRT 可封装成可开关的 MP4 字幕轨**：`soft_subtitles.py` 复制原视频/音频流，加入 `mov_text` 字幕，核对字幕往返、音视频流哈希与完整解码，并生成可现场验证的收据；适合支持软字幕的播放器交付。
 - **开始媒体工作前先证明本机能跑**：`runtime_preflight.py` 按 `media_io / core_edit / podcast_audiogram / ping_pong_loop / multicam_switch / video_enhancement / storyboard_animatic / audio_cue_mix / generation_chain_handoff / captions / qa / edge_black_trim / hdr_sdr / stabilization / interlace / remotion` profile 检查命令版本、编码器和 FFmpeg filters；明确区分 missing 与 unknown，并让环境或报告漂移在 manifest 中失效。
 - **旧电视 / DV 素材先分清 telecine 和真实交错**：`interlace_conform.py` 用 FFmpeg `idet` 多段采样；疑似 3:2 pulldown 会阻断直接去交错，真实 TFF/BFF 才能经 `bwdif` 或明确的 `yadif` fallback 生成逐行工作副本，并在完整 1× A/B 确认后放行。
 - **手机和录屏 VFR 可先变成可审计 CFR 工作副本**：`frame_rate_conform.py` 读取全部解码帧 PTS 间隔，绑定精确目标有理帧率；输出必须通过恒定 cadence、帧数、音画起止、显示方向、SHA-256 和完整解码验证，原片保持不变。
@@ -5733,6 +5734,23 @@ python3 scripts/gif_preview.py verify verify/gif_preview.json
 `ready_for_human_review` 表示文件与技术合同通过。分享前按实际展示尺寸看完 GIF 循环，检查首尾动作、色带和字幕可读性；GIF 无音轨，正式视频交付仍用已审 MP4。源片或 GIF 修改后重新渲染、验证并复核。
 
 验证：真实 3 秒、160×90、20 fps H.264 样片截取 1.5 秒，以 120px、10 fps 导出 15 帧 GIF；完整解码和 live verify 通过，源片/GIF 漂移、输出碰撞、超长摘录及 symlink/hardlink 输入保护均有测试覆盖。`gif_preview` runtime preflight 在本机 9 项能力 ready、零 blocker/warning。全套 `1339 passed in 38.45s`；本次小幅源文件竞态防护改动后定向测试、Skill Creator 校验、`compileall` 与 `git diff --check` 均通过。
+
+## 自动化更新：2026-09-26（可开关 MP4 字幕轨）
+
+本次联网比较了 GitHub 上的 [`dawn-cut`](https://github.com/kwakseongjae/dawn-cut)（示例交付同时包含可开关字幕轨与 SRT）、[`kajisho5/ffmpeg-skill`](https://github.com/kajisho5/ffmpeg-skill)（强调本地 FFmpeg 探测与交付检查）和 [`natyang1234/auto-edit-video-skill`](https://github.com/natyang1234/auto-edit-video-skill)（字幕需经审查后进入交付）。本项目已有 SRT/VTT/ASS sidecar 与烧录字幕流程，缺少把已审 SRT 封装为可开关 MP4 字幕轨的入口。
+
+新增 [`scripts/soft_subtitles.py`](scripts/soft_subtitles.py)：`mux` 接受单视频、最多单音频、无其他流的 MP4 与 UTF-8 SRT。SRT 须有连续编号、非空文本、递增且不越过成片的时间码。脚本以流复制保留音视频，新增一条 `mov_text` 字幕轨；随后比较源与成片的音视频流 SHA-256，把字幕抽回成 SRT 核对文本与时间码，完整解码并写入绑定三份文件字节的 JSON 收据。`verify` 会现场重查。新增 `soft_subtitles` 运行能力 profile，检查 FFmpeg、FFprobe 和 `mov_text` 编码器。
+
+```bash
+python3 scripts/runtime_preflight.py analyze --profile soft_subtitles --output work/runtime_preflight.json --strict
+python3 scripts/soft_subtitles.py mux output/master.mp4 output/subtitles/final_master.srt \
+  --language zho --output output/master-soft.mp4 --receipt verify/soft_subtitles.json
+python3 scripts/soft_subtitles.py verify verify/soft_subtitles.json
+```
+
+SRT 时间码须与传入 MP4 的最终时间线对齐。建议在 `subtitle_pack.py` 产出后先审字词与时点；封装后在目标播放器完整带声播放，检查字幕开关、中文显示和同步。若输入画面已有烧录字幕，输出仍会保留画面文字，需检查双层字幕。`ready_for_human_review` 表示技术验证通过，播放器兼容性和审片需在具体交付时确认。
+
+验证：`tests/test_soft_subtitles.py` 的 11 项测试覆盖真实 FFmpeg 带声/无声封装、字幕往返、源/SRT/成片漂移、收据篡改、非法 SRT、输出碰撞与已有字幕轨拒绝；runtime profile 另增 1 项测试。定向 `33 passed`，全套 `1351 passed in 40.12s`。本机 runtime preflight 4 项能力 ready，零 blocker/warning；Skill Creator 校验、`compileall` 和 `git diff --check` 通过。未在真实长片和所有目标播放器上验证显示效果。
 
 ## License
 
