@@ -70,6 +70,21 @@ def test_create_renders_three_exact_ass_style_variants(tmp_path, monkeypatch):
     assert preview.verify_report(report)["summary"]["blocking"] == 0
 
 
+def test_pop_in_preview_uses_renderer_animation_contract(tmp_path, monkeypatch):
+    report = _create(
+        tmp_path, monkeypatch, styles=["pop_in"], selected_style="pop_in",
+    )
+
+    assert report["status"] == "ready"
+    ass = preview.build_preview_ass(
+        style="pop_in", text="Preview", font_name="Test Sans",
+        font_size=48, width=1080, height=1920,
+    )
+    assert "\\fscx80\\fscy80" in ass
+    assert "\\t(120,220,\\fscx100\\fscy100)" in ass
+    assert preview.verify_report(report)["status"] == "ready"
+
+
 def test_selection_gate_and_post_review_selection(tmp_path, monkeypatch):
     report = _create(tmp_path, monkeypatch, require_selection=True)
 

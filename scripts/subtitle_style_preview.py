@@ -36,6 +36,7 @@ STYLE_LABELS = {
     "normal": "Recommended / high-contrast",
     "minimal": "Clean / narrative",
     "bold_pop": "Bold / social",
+    "pop_in": "Pop-in / animated entrance",
     "neon": "Neon / tech",
     "yellow_pop": "Yellow / high visibility",
     "karaoke": "Karaoke / word highlight",

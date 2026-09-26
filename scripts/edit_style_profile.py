@@ -52,7 +52,7 @@ CAPTION_KEYS = {"preferred_windows", "force_spelling"}
 APPROVAL_KEYS = {"basis", "approved_by", "approved_at", "note"}
 EVIDENCE_KEYS = {"label", "role", "sha256", "note"}
 
-SUBTITLE_STYLES = {"normal", "karaoke", "bold_pop", "neon", "minimal", "yellow_pop"}
+SUBTITLE_STYLES = {"normal", "karaoke", "bold_pop", "pop_in", "neon", "minimal", "yellow_pop"}
 COVER_STYLES = {"bold", "news", "frame", "gradient", "minimal", "white", "techcard"}
 COLOR_GRADES = {"natural", "warm", "cool", "punchy", "soft", "cinematic", "screen"}
 SPEECH_DENOISE = {"off", "light", "medium", "strong"}

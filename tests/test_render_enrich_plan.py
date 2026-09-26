@@ -86,6 +86,35 @@ def test_text_badges_render_in_normal_and_karaoke_ass():
     assert "Dialogue: 1" in karaoke_ass and "KEY" in karaoke_ass
 
 
+def test_pop_in_subtitles_scale_per_cue_and_preserve_short_text():
+    clips = [
+        {"start": 0.0, "end": 1.0, "text": "First"},
+        {"start": 1.0, "end": 1.2, "text": "Short"},
+        {"start": 1.2, "end": 2.2, "text": "Third"},
+    ]
+    ass, duration, _ = build_merged_ass(
+        clips, "Arial", 48, 1080, 1920,
+        speed=2.0, cover_duration=0.5, subtitle_style="pop_in",
+    )
+    cues = [line for line in ass.splitlines() if line.startswith("Dialogue: 0,")]
+
+    assert duration == 1.6
+    assert len(cues) == 3
+    assert cues[0].startswith("Dialogue: 0,0:00:00.50,0:00:01.00,")
+    assert "\\fscx80\\fscy80\\t(0,120,\\fscx108\\fscy108)" in cues[0]
+    assert "\\t(120,220,\\fscx100\\fscy100)" in cues[0]
+    assert "\\t(" not in cues[1] and cues[1].endswith("Short")
+    assert "\\t(0,120," in cues[2]
+
+
+def test_existing_bold_pop_style_remains_static():
+    ass, _, _ = build_merged_ass(
+        [{"start": 0.0, "end": 1.0, "text": "Static"}],
+        "Arial", 48, 1080, 1920, subtitle_style="bold_pop",
+    )
+    assert "\\t(" not in ass
+
+
 def test_enrich_plan_is_guarded_before_render_work(tmp_path):
     cfg = tmp_path / "render_config.json"
     plan = tmp_path / "enrich_plan.json"

@@ -2208,7 +2208,7 @@ python3 scripts/edit_recipe.py replay \
 | 受众档位预设（节奏/字幕密度/BGM 增益） | `--profile tech_pro` |
 | 内部 token 拦截 | 自动；任何 `1.25x`/`mlx-whisper`/`loudnorm` 出现在画面文本字段都退出 |
 | 平台 lint | 自动；`--no-content-guard` 关 |
-| 字幕风格 | `--subtitle-style normal/karaoke/bold_pop/neon/minimal/yellow_pop` |
+| 字幕风格 | `--subtitle-style normal/karaoke/bold_pop/pop_in/neon/minimal/yellow_pop` |
 | 自动丰富接入 | `--enrich-plan work/enrich_plan.json`，可重复传入 |
 | 点击聚焦 | `--enrich-plan work/screen_focus_plan.json`，读取 `focus_events[]` |
 | 调色接入 | `--color-grade work/color_grade.json` 或 config `"color_grade": "screen"` |
@@ -5751,6 +5751,21 @@ python3 scripts/soft_subtitles.py verify verify/soft_subtitles.json
 SRT 时间码须与传入 MP4 的最终时间线对齐。建议在 `subtitle_pack.py` 产出后先审字词与时点；封装后在目标播放器完整带声播放，检查字幕开关、中文显示和同步。若输入画面已有烧录字幕，输出仍会保留画面文字，需检查双层字幕。`ready_for_human_review` 表示技术验证通过，播放器兼容性和审片需在具体交付时确认。
 
 验证：`tests/test_soft_subtitles.py` 的 11 项测试覆盖真实 FFmpeg 带声/无声封装、字幕往返、源/SRT/成片漂移、收据篡改、非法 SRT、输出碰撞与已有字幕轨拒绝；runtime profile 另增 1 项测试。定向 `33 passed`，全套 `1351 passed in 40.12s`。本机 runtime preflight 4 项能力 ready，零 blocker/warning；Skill Creator 校验、`compileall` 和 `git diff --check` 通过。未在真实长片和所有目标播放器上验证显示效果。
+
+## 自动化更新：2026-09-27（逐条弹入字幕）
+
+本次参考 GitHub 上 [`kajisho5/ffmpeg-skill`](https://github.com/kajisho5/ffmpeg-skill/blob/main/scripts/caption.py) 的 `--animate pop` 字幕能力，以及 [`nyosegawa/skills` 的 Remotion 视频技能](https://github.com/nyosegawa/skills/blob/main/skills/remotion-promo-video-factory/SKILL.md) 对字幕动效和逐帧检查的做法。项目原有 `bold_pop` 只有静态粗描边，缺少逐条字幕的入场动效。
+
+新增 `pop_in` 样式：每条字幕在其自身时间窗口内由 80% 放大至 108%，再回到 100%；动画时间随最终播放速度缩放。短于 0.3 秒的字幕保持静态，避免短词在显示期间难以阅读。`bold_pop` 仍保持静态；样式可用于 render config、CLI 和 edit style profile。`subtitle_style_preview.py` 也接受 `--styles pop_in`，其 JPEG 只能显示回弹后的最终字形、位置和对比度，动画需审看成片。
+
+```bash
+python3 scripts/render_final.py --config render_config.json --output final.mp4 --subtitle-style pop_in
+# 或在 render_config.json 中设置 "subtitle_style": "pop_in"
+python3 scripts/subtitle_style_preview.py create --project-dir . --video origin/talking.mp4 \
+  --platform xhs --text "开场重点" --styles normal pop_in --output work/subtitle_style_preview.json
+```
+
+验证：相关测试 `27 passed`，全套 `1354 passed in 37.15s`；真实 FFmpeg/libass 50fps 样片完整渲染和解码通过，三个时点的亮像素数分别为 `2333 / 3889 / 3355`，确认字幕先放大再回弹。`compileall`、CLI help、Skill Creator 校验和 `git diff --check` 通过。正式交付仍需按正常速度审看整片的字幕节奏及平台安全区。
 
 ## License
 

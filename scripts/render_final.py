@@ -53,6 +53,10 @@ CAPTION_PRESETS = {
         "primary": "&H00FFFFFF", "outline": "&H00000000",
         "outline_w": 6, "shadow": 3, "bold": 1,
     },
+    "pop_in": {
+        "primary": "&H00FFFFFF", "outline": "&H00000000",
+        "outline_w": 6, "shadow": 3, "bold": 1,
+    },
     "neon": {
         "primary": "&H00FFFF00", "outline": "&H00FF00FF",
         "outline_w": 4, "shadow": 0, "bold": 1,
@@ -591,7 +595,7 @@ def build_merged_ass(clips, font_name, font_size, video_width, video_height,
     Args:
         cover_duration: Seconds of cover at the start; subtitles begin after this.
         end_cards: List of {"text": str, "duration": float} for ending cards.
-        subtitle_style: Caption preset name (normal/bold_pop/neon/minimal/yellow_pop).
+        subtitle_style: Caption preset name (normal/bold_pop/pop_in/neon/minimal/yellow_pop).
     """
     margin_lr = 60
     usable_width = video_width - 2 * margin_lr
@@ -646,6 +650,17 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         scaled_dur = dur / speed
         start_t = fmt_time(offset)
         end_t = fmt_time(offset + scaled_dur)
+        # ASS transform times are relative to each cue, after speed scaling.
+        # Very short cues stay full-size so their text is readable throughout.
+        if subtitle_style == "pop_in" and scaled_dur >= 0.3:
+            pop_end = min(120, round(scaled_dur * 350))
+            settle_end = min(220, round(scaled_dur * 700))
+            escaped = (
+                "{\\fscx80\\fscy80"
+                f"\\t(0,{pop_end},\\fscx108\\fscy108)"
+                f"\\t({pop_end},{settle_end},\\fscx100\\fscy100)"
+                "}" + escaped
+            )
         dialogues.append(f"Dialogue: 0,{start_t},{end_t},Default,,0,0,0,,{escaped}")
         offset += scaled_dur
 
@@ -1282,7 +1297,7 @@ def main():
     )
     parser.set_defaults(bgm_ducking=None)
     parser.add_argument("--subtitle-style", default=None,
-                        choices=["normal", "karaoke", "bold_pop", "neon", "minimal", "yellow_pop"],
+                        choices=["normal", "karaoke", "bold_pop", "pop_in", "neon", "minimal", "yellow_pop"],
                         help="Subtitle style (default: from config or 'normal')")
     parser.add_argument("--formats", nargs="*",
                         choices=list(OUTPUT_FORMATS.keys()),

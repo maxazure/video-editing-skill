@@ -36,6 +36,8 @@ python3 scripts/subtitle_style_preview.py create \
 4. 风格是否与内容语气和品牌一致；
 5. `karaoke` 的高亮/底色是否足够明显。
 
+`pop_in` 的静帧只能检查回弹后的字形、位置与对比度；入场缩放须看最终视频。
+
 选择后不必重渲染预览：
 
 ```bash

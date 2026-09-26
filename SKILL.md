@@ -1504,6 +1504,7 @@ python3 scripts/render_final.py --config script/render_config.json --output medi
 | `normal` | 白字黑描边（默认） | 适合所有场景 |
 | `karaoke` | 逐词高亮 | 音乐/节奏感内容 |
 | `bold_pop` | 粗描边高对比 | MrBeast/Hormozi 风格 |
+| `pop_in` | 每条字幕入场缩放后回弹 | 节奏较快的短视频；短于 0.3 秒的字幕保持静态 |
 | `neon` | 霓虹灯青紫色 | 科技/潮流内容 |
 | `minimal` | 极简无描边 | 文艺/安静内容 |
 | `yellow_pop` | 黄字黑描边 | 高可见度，户外/嘈杂画面 |
@@ -1523,6 +1524,8 @@ python3 scripts/render_final.py --config script/render_config.json --output medi
   # 2. 渲染时选择 karaoke 字幕风格
   python3 scripts/render_final.py --config render_config.json --output final.mp4 --subtitle-style karaoke
   ```
+
+**逐条弹入字幕**（`subtitle_style: "pop_in"`）：用 `render_final.py --subtitle-style pop_in`，或在 render config 中设 `"subtitle_style": "pop_in"`。每条字幕按成片速度后的时长独立做 80% → 108% → 100% 缩放；短于 0.3 秒的字幕直接全尺寸显示。`subtitle_style_preview.py --styles pop_in` 的静帧只能检查最终字形、位置和对比度，须在最终 MP4 中按正常速度检查入场动画及安全区。
 
 **音频源替代（M4A/独立音频）**：
 - 如果有独立录制的音频文件（M4A 等），可先用 ffmpeg 转为带黑屏视频轨的 MP4：
