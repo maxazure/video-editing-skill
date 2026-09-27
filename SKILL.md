@@ -157,6 +157,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `clip_assembly.py` | 多源视频 → 单次画布/CFR/SAR/时间戳/音频归一、全接缝 1× proof 与 live gate | `plan <clips...> --delivery --boundary-proof` / `apply` / `confirm` / `verify --strict` |
 | `podcast_audiogram.py` | 纯音频摘录 + 静帧封面 + 相对摘录时间的 SRT → 带辅助波形的竖版 MP4 与源绑定收据 | `render <audio> <cover> <captions.srt> --start --duration --output --receipt` / `verify <receipt>` |
 | `gif_preview.py` | 视频短摘录 → 无声、调色板优化 GIF 和源绑定收据 | `render <video> --start --duration --output --receipt` / `verify <receipt>` |
+| `frame_grid.py` | 精确 decoded-frame 网格或单帧 PNG，附帧号/PTS 对照与源文件收据 | `grid <video> --start-frame --step --count --output --receipt` / `frame <video> --start-frame --output --receipt` / `verify <receipt>` |
 | `edit_style_profile.py` | 个人/品牌创意方向、剪辑节奏、渲染/文案默认值 → 无路径可移植 profile / digest 验证 / defaults-only 合并 | `template` / `create --spec` / `verify --profile --strict` / `apply --config --receipt` |
 | `production_authorization.py` | 外部上传、侵入性剪辑、付费生成、声音克隆、真人/IP 和发布 → source-bound 授权 gate | `prepare --scope --response-template` / `audit --request --response --strict` / `verify --report --strict` |
 | `transcript_review.py` | transcript → 文本或本地同步媒体 HTML 校稿 → reviewed transcript | `export` / `html --video --max-cps` / `apply --review --output` |
@@ -852,6 +853,8 @@ python3 scripts/transcribe.py "<audio_path>" --model auto --language zh --detect
 ### Phase 2a: Video Keyframe Extraction（视频关键帧提取）
 
 对于口播类视频（尤其是在户外行走中拍摄的、带有环境音的素材），仅靠音频转录无法了解视频的视觉内容。使用 [extract_keyframes.py](./scripts/extract_keyframes.py) 提取视频关键帧并生成时序图，以便全面理解视频内容：
+
+需要找准确切点或核对 B-frame/VFR 片段中的某一帧时，运行 `frame_grid.py grid origin/clip.mp4 --start-frame 240 --step 2 --count 16 --output verify/grid.png --receipt verify/grid.json`。网格按行优先排列，JSON 把每个格子映射到解码帧序号和实际 PTS；找到目标帧后运行 `frame_grid.py frame origin/clip.mp4 --start-frame 250 --output verify/frame.png --receipt verify/frame.json` 导出确切帧。交接前用 `verify <receipt>` 核对源片、PNG 和映射收据。它从头顺序解码到目标帧，长片深处查询会耗时；网格最多 36 格，格图不能代替正常速度播放。
 
 ```bash
 python3 scripts/extract_keyframes.py "<video_path>"

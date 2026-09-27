@@ -14,6 +14,7 @@
 - **同步通过后可生成按说话者切换的导播草稿**：`multicam_switch.py` 绑定 ready 同步计划和全部源字节，按每路自己的噪声底/峰值归一发言能量；证据含糊时保持上一机位，高相关共享混音默认阻断。草稿完成媒体合同、全量解码和带声四项人工复核后才放行。
 - **只有播客音频也能产出竖版短片**：`podcast_audiogram.py` 将指定音频摘录、静帧封面和逐句 SRT 合成字幕优先的 H.264/AAC MP4，声波只作辅助；源文件、字幕、设置与交付件绑定在可现场验证的收据中。
 - **已审视频可导出轻量动图预览**：`gif_preview.py` 从指定短摘录生成无声、调色板优化的 GIF，限制时长、尺寸、帧率和文件大小，并用收据绑定源片与导出件，适合在聊天或文档中预览动作。
+- **切点附近可精确逐帧找画面**：`frame_grid.py` 顺序解码并生成最多 36 格的 PNG 网格；JSON 记录每格的真实解码帧号和 PTS，可进一步导出单帧并验证源片、PNG 与映射收据。
 - **已审 SRT 可封装成可开关的 MP4 字幕轨**：`soft_subtitles.py` 复制原视频/音频流，加入 `mov_text` 字幕，核对字幕往返、音视频流哈希与完整解码，并生成可现场验证的收据；适合支持软字幕的播放器交付。
 - **开始媒体工作前先证明本机能跑**：`runtime_preflight.py` 按 `media_io / core_edit / podcast_audiogram / ping_pong_loop / multicam_switch / video_enhancement / storyboard_animatic / audio_cue_mix / generation_chain_handoff / captions / qa / edge_black_trim / hdr_sdr / stabilization / interlace / remotion` profile 检查命令版本、编码器和 FFmpeg filters；明确区分 missing 与 unknown，并让环境或报告漂移在 manifest 中失效。
 - **旧电视 / DV 素材先分清 telecine 和真实交错**：`interlace_conform.py` 用 FFmpeg `idet` 多段采样；疑似 3:2 pulldown 会阻断直接去交错，真实 TFF/BFF 才能经 `bwdif` 或明确的 `yadif` fallback 生成逐行工作副本，并在完整 1× A/B 确认后放行。
@@ -5766,6 +5767,24 @@ python3 scripts/subtitle_style_preview.py create --project-dir . --video origin/
 ```
 
 验证：相关测试 `27 passed`，全套 `1354 passed in 37.15s`；真实 FFmpeg/libass 50fps 样片完整渲染和解码通过，三个时点的亮像素数分别为 `2333 / 3889 / 3355`，确认字幕先放大再回弹。`compileall`、CLI help、Skill Creator 校验和 `git diff --check` 通过。正式交付仍需按正常速度审看整片的字幕节奏及平台安全区。
+
+## 自动化更新：2026-09-28（精确帧网格与单帧导出）
+
+本次联网研究了 GitHub 上的 [`agamm/video-agent`](https://github.com/agamm/video-agent)（带确切帧映射的逐级画面网格）、[`hajoeun/skills`](https://github.com/hajoeun/skills)（先粗看再提高采样密度定位短暂画面问题）和 [`muhammaddadu/ffmpeg-skill`](https://github.com/muhammaddadu/ffmpeg-skill)（可复用的本地 FFmpeg 编辑流程）。现有 `extract_keyframes.py` 适合概览，但按场景/时间抽样，输出时间点经过取整，无法从格图确定某一格对应的原始解码帧。
+
+新增 [`scripts/frame_grid.py`](scripts/frame_grid.py)：`grid` 从源片开头顺序解码，用帧号选择最多 36 帧，再输出按行优先排列的 PNG 网格及 JSON 映射；映射记录每格的解码帧序号和实际 PTS 秒数。`frame` 从同一帧号单独导出 PNG。两种模式都记录源片和 PNG 的 SHA-256，并通过 `verify` 检查文件及映射收据漂移。输出不会覆盖源片；已有输出需显式 `--force`。使用时可以先大步长扫片段，再缩小步长找动作或切点，最后导出目标单帧。
+
+```bash
+python3 scripts/frame_grid.py grid origin/clip.mp4 --start-frame 240 --step 4 --count 16 \
+  --columns 4 --output verify/frame-grid.png --receipt verify/frame-grid.json
+python3 scripts/frame_grid.py frame origin/clip.mp4 --start-frame 252 \
+  --output verify/frame-252.png --receipt verify/frame-252.json
+python3 scripts/frame_grid.py verify verify/frame-grid.json
+```
+
+网格 JSON 中 `cell` 从 1 开始，`row`/`column` 也从 1 开始；`decoded_frame` 从 0 开始。`pts_seconds` 是解码后的真实显示时间，VFR 源不应按固定 fps 倒推。脚本为取得准确帧号从头顺序解码到目标帧，长片深处定位会耗时。格图和单帧用于定位与证据，剪辑决定仍需带声正常速度播放对应区间。
+
+验证：新增 `tests/test_frame_grid.py` 8 项，覆盖 B-frame H.264 实际帧号/PTS、单帧导出、越界、源片/图片/收据漂移、输出路径保护及 CLI 往返；真实 160×90、12 fps、2 秒样片的网格 6 格映射到帧 `3/5/7/9/11/13`，PTS 为 `0.25/0.416667/0.583333/0.75/0.916667/1.083333` 秒，网格与单帧 `verify` 均通过。定向测试 **8 passed**；全套测试 **1362 passed**。`compileall`、CLI help、Skill Creator 校验和 `git diff --check` 通过。尚未用真实长片或 VFR 手机素材做人工画面审查。
 
 ## License
 
