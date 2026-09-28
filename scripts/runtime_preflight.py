@@ -82,6 +82,15 @@ PROFILE_SPECS: Mapping[str, Mapping[str, Any]] = {
         "required": ["runtime:python", "command:ffmpeg", "command:ffprobe", "encoder:mov_text"],
         "alternatives": [],
     },
+    "logo_overlay": {
+        "label": "PNG logo overlay",
+        "description": "Burn a scaled and opacity-adjusted PNG logo into a reviewed MP4.",
+        "required": [
+            "runtime:python", "command:ffmpeg", "command:ffprobe", "encoder:libx264",
+            "filter:format", "filter:scale", "filter:colorchannelmixer", "filter:overlay",
+        ],
+        "alternatives": [],
+    },
     "ping_pong_loop": {
         "label": "Endpoint-deduplicated ping-pong loop",
         "description": "Buffer a short CFR gesture, render forward/reverse cycles without repeated endpoints, and create both boundary proofs.",

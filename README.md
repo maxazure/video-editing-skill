@@ -14,6 +14,7 @@
 - **同步通过后可生成按说话者切换的导播草稿**：`multicam_switch.py` 绑定 ready 同步计划和全部源字节，按每路自己的噪声底/峰值归一发言能量；证据含糊时保持上一机位，高相关共享混音默认阻断。草稿完成媒体合同、全量解码和带声四项人工复核后才放行。
 - **只有播客音频也能产出竖版短片**：`podcast_audiogram.py` 将指定音频摘录、静帧封面和逐句 SRT 合成字幕优先的 H.264/AAC MP4，声波只作辅助；源文件、字幕、设置与交付件绑定在可现场验证的收据中。
 - **已审视频可导出轻量动图预览**：`gif_preview.py` 从指定短摘录生成无声、调色板优化的 GIF，限制时长、尺寸、帧率和文件大小，并用收据绑定源片与导出件，适合在聊天或文档中预览动作。
+- **已审成片可加品牌 Logo**：`logo_overlay.py` 把 PNG 按指定四角、相对宽度、透明度和边距叠到 MP4；复制原音轨、完整解码成片，并用收据绑定原片、Logo 与输出。
 - **切点附近可精确逐帧找画面**：`frame_grid.py` 顺序解码并生成最多 36 格的 PNG 网格；JSON 记录每格的真实解码帧号和 PTS，可进一步导出单帧并验证源片、PNG 与映射收据。
 - **已审 SRT 可封装成可开关的 MP4 字幕轨**：`soft_subtitles.py` 复制原视频/音频流，加入 `mov_text` 字幕，核对字幕往返、音视频流哈希与完整解码，并生成可现场验证的收据；适合支持软字幕的播放器交付。
 - **开始媒体工作前先证明本机能跑**：`runtime_preflight.py` 按 `media_io / core_edit / podcast_audiogram / ping_pong_loop / multicam_switch / video_enhancement / storyboard_animatic / audio_cue_mix / generation_chain_handoff / captions / qa / edge_black_trim / hdr_sdr / stabilization / interlace / remotion` profile 检查命令版本、编码器和 FFmpeg filters；明确区分 missing 与 unknown，并让环境或报告漂移在 manifest 中失效。
@@ -5785,6 +5786,24 @@ python3 scripts/frame_grid.py verify verify/frame-grid.json
 网格 JSON 中 `cell` 从 1 开始，`row`/`column` 也从 1 开始；`decoded_frame` 从 0 开始。`pts_seconds` 是解码后的真实显示时间，VFR 源不应按固定 fps 倒推。脚本为取得准确帧号从头顺序解码到目标帧，长片深处定位会耗时。格图和单帧用于定位与证据，剪辑决定仍需带声正常速度播放对应区间。
 
 验证：新增 `tests/test_frame_grid.py` 8 项，覆盖 B-frame H.264 实际帧号/PTS、单帧导出、越界、源片/图片/收据漂移、输出路径保护及 CLI 往返；真实 160×90、12 fps、2 秒样片的网格 6 格映射到帧 `3/5/7/9/11/13`，PTS 为 `0.25/0.416667/0.583333/0.75/0.916667/1.083333` 秒，网格与单帧 `verify` 均通过。定向测试 **8 passed**；全套测试 **1362 passed**。`compileall`、CLI help、Skill Creator 校验和 `git diff --check` 通过。尚未用真实长片或 VFR 手机素材做人工画面审查。
+
+## 自动化更新：2026-09-29（品牌 Logo 叠加）
+
+本次查看了 GitHub 上的 [`kajisho5/ffmpeg-skill`](https://github.com/kajisho5/ffmpeg-skill/blob/main/SKILL.md)（Logo 叠加作为独立剪辑操作）和 [`damionrashford/media-os` 的 FFmpeg 视频滤镜技能](https://github.com/damionrashford/media-os/blob/main/skills/ffmpeg-video-filter/SKILL.md)（缩放 PNG、显式映射音视频流，并在输出后探测规格）。本项目能登记水印和品牌 Logo 素材，但此前没有可直接把它叠到已审成片的入口。
+
+新增 [`scripts/logo_overlay.py`](scripts/logo_overlay.py)：接受单视频、最多单音频的 MP4 和 PNG，把 Logo 缩放到画面宽度的 5%–40%，以可选透明度和像素边距固定在四角之一。脚本重新编码 H.264/yuv420p 视频，复制原音轨；输出前检查 Logo 是否完整落在画面内，输出后核对帧数、画布、时长、音轨和完整解码。JSON 收据用 SHA-256 绑定原片、Logo、输出及设置，`verify` 会现场重查。`logo_overlay` runtime profile 检查需要的编码器与滤镜。
+
+```bash
+python3 scripts/runtime_preflight.py analyze --profile logo_overlay --output work/runtime_preflight.json --strict
+python3 scripts/logo_overlay.py render output/master.mp4 media/assets/logo.png \
+  --corner bottom-right --width-fraction 0.15 --opacity 0.7 --margin 24 \
+  --output output/master-logo.mp4 --receipt verify/logo_overlay.json
+python3 scripts/logo_overlay.py verify verify/logo_overlay.json
+```
+
+源 MP4 的其他流会被拒绝，已有目标文件需要显式 `--force`；源片、Logo 与收据/输出不能互相覆盖。`ready_for_human_review` 只表示技术检查通过。交付前仍需带声完整播放，确认 Logo 与字幕、平台 UI 不重叠，透明度合适，音画同步。修改任何绑定文件后重新渲染和复核。
+
+验证：`tests/test_logo_overlay.py` 的 6 项测试覆盖真实 H.264/AAC 叠加像素、无声输入、参数边界、目标碰撞、文件漂移、收据篡改及软/硬链接保护；runtime profile 另增 1 项测试。相关测试 **29 passed**，全套 **1369 passed in 41.98s**。本机 `logo_overlay` 预检 8 项能力 ready，零 blocker/warning；`compileall`、CLI help、Skill Creator 校验与 `git diff --check` 通过。尚未在真实长片或各发布平台播放器做完整人工审看。
 
 ## License
 

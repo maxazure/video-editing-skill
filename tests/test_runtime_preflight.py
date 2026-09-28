@@ -108,6 +108,15 @@ def test_soft_subtitles_profile_requires_mov_text_encoder():
     assert missing["capabilities"]["encoder:mov_text"]["status"] == "missing"
 
 
+def test_logo_overlay_profile_requires_alpha_and_overlay_filters():
+    filters = {"format", "scale", "colorchannelmixer", "overlay"}
+    ready = build_report(["logo_overlay"], snapshot=snapshot(filters=filters, encoders=("libx264",)))
+    assert ready["status"] == "ready"
+    missing = build_report(["logo_overlay"], snapshot=snapshot(filters=filters - {"colorchannelmixer"}, encoders=("libx264",)))
+    assert missing["status"] == "blocked"
+    assert missing["capabilities"]["filter:colorchannelmixer"]["status"] == "missing"
+
+
 def test_storyboard_animatic_profile_requires_timing_label_and_audio_filters():
     filters = {
         "scale", "pad", "crop", "setsar", "fps", "format", "drawtext",
