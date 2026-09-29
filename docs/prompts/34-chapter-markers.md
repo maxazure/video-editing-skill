@@ -60,17 +60,15 @@ python3 scripts/chapter_markers.py \
 
 ## 写入视频 metadata
 
-生成 `chapters.ffmetadata` 后，可用 FFmpeg 复制音视频流并写入章节：
+人工复核 `chapters.json` 后，用可现场验证的封装脚本复制音视频流并写入章节：
 
 ```bash
-ffmpeg -i output/master.mp4 \
-  -i output/chapters/chapters.ffmetadata \
-  -map_metadata 1 \
-  -codec copy \
-  output/master_with_chapters.mp4
+python3 scripts/chapter_mux.py mux output/master.mp4 output/chapters/chapters.json \
+  --output output/master_with_chapters.mp4 --receipt verify/chapter_mux.json
+python3 scripts/chapter_mux.py verify verify/chapter_mux.json
 ```
 
-这一步不会重编码音视频，但不同平台是否读取 MP4 chapter metadata 取决于平台；上传平台通常仍建议同时把 `chapters-youtube.txt` 贴进简介。
+`chapter_mux.py` 要求首章从 0 秒开始、章节连续且末章结束时间与源 MP4 相差不超过 0.1 秒；若 transcript 推算的时长不等于最终成片，重新运行 `chapter_markers.py --duration <成片秒数>` 并复核。它不重编码音视频，会核对输出章节、音视频流哈希、完整解码及输入/输出文件字节。输入限未带章节的单视频、最多单音频 MP4；已有软字幕等额外轨的文件要另行处理。不同平台是否读取 MP4 chapter metadata 取决于平台，仍建议把 `chapters-youtube.txt` 贴进长视频简介，并在目标播放器检查跳转。
 
 ## 严格模式
 

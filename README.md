@@ -17,6 +17,7 @@
 - **已审成片可加品牌 Logo**：`logo_overlay.py` 把 PNG 按指定四角、相对宽度、透明度和边距叠到 MP4；复制原音轨、完整解码成片，并用收据绑定原片、Logo 与输出。
 - **切点附近可精确逐帧找画面**：`frame_grid.py` 顺序解码并生成最多 36 格的 PNG 网格；JSON 记录每格的真实解码帧号和 PTS，可进一步导出单帧并验证源片、PNG 与映射收据。
 - **已审 SRT 可封装成可开关的 MP4 字幕轨**：`soft_subtitles.py` 复制原视频/音频流，加入 `mov_text` 字幕，核对字幕往返、音视频流哈希与完整解码，并生成可现场验证的收据；适合支持软字幕的播放器交付。
+- **长视频章节可封装进 MP4**：`chapter_mux.py` 读取已审 `chapter_markers.py` JSON，在不重编码音视频的情况下写入可跳转章节，核对每章时间/标题、音视频流哈希与完整解码，并生成可现场验证的收据。
 - **开始媒体工作前先证明本机能跑**：`runtime_preflight.py` 按 `media_io / core_edit / podcast_audiogram / ping_pong_loop / multicam_switch / video_enhancement / storyboard_animatic / audio_cue_mix / generation_chain_handoff / captions / qa / edge_black_trim / hdr_sdr / stabilization / interlace / remotion` profile 检查命令版本、编码器和 FFmpeg filters；明确区分 missing 与 unknown，并让环境或报告漂移在 manifest 中失效。
 - **旧电视 / DV 素材先分清 telecine 和真实交错**：`interlace_conform.py` 用 FFmpeg `idet` 多段采样；疑似 3:2 pulldown 会阻断直接去交错，真实 TFF/BFF 才能经 `bwdif` 或明确的 `yadif` fallback 生成逐行工作副本，并在完整 1× A/B 确认后放行。
 - **手机和录屏 VFR 可先变成可审计 CFR 工作副本**：`frame_rate_conform.py` 读取全部解码帧 PTS 间隔，绑定精确目标有理帧率；输出必须通过恒定 cadence、帧数、音画起止、显示方向、SHA-256 和完整解码验证，原片保持不变。
@@ -5804,6 +5805,24 @@ python3 scripts/logo_overlay.py verify verify/logo_overlay.json
 源 MP4 的其他流会被拒绝，已有目标文件需要显式 `--force`；源片、Logo 与收据/输出不能互相覆盖。`ready_for_human_review` 只表示技术检查通过。交付前仍需带声完整播放，确认 Logo 与字幕、平台 UI 不重叠，透明度合适，音画同步。修改任何绑定文件后重新渲染和复核。
 
 验证：`tests/test_logo_overlay.py` 的 6 项测试覆盖真实 H.264/AAC 叠加像素、无声输入、参数边界、目标碰撞、文件漂移、收据篡改及软/硬链接保护；runtime profile 另增 1 项测试。相关测试 **29 passed**，全套 **1369 passed in 41.98s**。本机 `logo_overlay` 预检 8 项能力 ready，零 blocker/warning；`compileall`、CLI help、Skill Creator 校验与 `git diff --check` 通过。尚未在真实长片或各发布平台播放器做完整人工审看。
+
+## 自动化更新：2026-09-30（MP4 内嵌章节封装与核验）
+
+本次联网研究了 GitHub 上 [`kajisho5/ffmpeg-skill`](https://github.com/kajisho5/ffmpeg-skill/blob/main/SKILL.md) 的章节元数据封装入口，以及 [`ravexina/ffmpeg-metadata-chapter-generator`](https://github.com/ravexina/ffmpeg-metadata-chapter-generator) 的 FFmetadata 章节格式。本项目原有 `chapter_markers.py` 会生成 `chapters.json`、FFmetadata 和平台时间戳，但把章节写进 MP4 只有一条手动 FFmpeg 命令，没有回读、流复制或文件漂移验证。
+
+新增 [`scripts/chapter_mux.py`](scripts/chapter_mux.py)：从人工核对过的 `chapter_markers.v1` JSON 生成 FFmetadata，复制原 MP4 音视频流并写入章节。它要求首章从 0 秒开始、章节无间断且末章结束与源片时长相差不超过 0.1 秒。封装后用 FFprobe 回读全部标题和起止时间，比较源/输出音视频流 SHA-256，完整解码输出，再用收据绑定源片、章节 JSON 和成片字节。`verify` 会现场重查这些条件。
+
+```bash
+python3 scripts/chapter_markers.py --chapters work/chapters_draft.json \
+  --duration 720 --output-dir output/chapters --strict
+python3 scripts/chapter_mux.py mux output/master.mp4 output/chapters/chapters.json \
+  --output output/master-chapters.mp4 --receipt verify/chapter_mux.json
+python3 scripts/chapter_mux.py verify verify/chapter_mux.json
+```
+
+传给 `--duration` 的是**最终 MP4** 时长；源片限未带章节的单视频、最多单音频 MP4。已有软字幕等额外轨的文件需另行处理。MP4 章节支持因播放器和上传平台而异，仍需在目标播放器试跳转；长视频简介可同时使用 `chapters-youtube.txt`。
+
+验证：`tests/test_chapter_mux.py` 的 **8 项测试通过**，覆盖真实带声/无声 H.264 MP4、中文及保留符号标题回读、音视频流哈希、非法章节、源/章节/输出漂移、收据篡改与硬链接输出保护。全套 **1377 passed in 42.49s**；`compileall`、CLI help、Skill Creator 校验和 `git diff --check` 通过。未在真实长片或各目标播放器上测试章节跳转。
 
 ## License
 
