@@ -5824,6 +5824,23 @@ python3 scripts/chapter_mux.py verify verify/chapter_mux.json
 
 验证：`tests/test_chapter_mux.py` 的 **8 项测试通过**，覆盖真实带声/无声 H.264 MP4、中文及保留符号标题回读、音视频流哈希、非法章节、源/章节/输出漂移、收据篡改与硬链接输出保护。全套 **1377 passed in 42.49s**；`compileall`、CLI help、Skill Creator 校验和 `git diff --check` 通过。未在真实长片或各目标播放器上测试章节跳转。
 
+## 自动化更新：2026-10-01（单码率 HLS 点播包）
+
+本次联网对比了 GitHub 上 [`0xDarkMatter/claude-mods` 的 HLS 参考](https://github.com/0xDarkMatter/claude-mods/blob/main/skills/ffmpeg-ops/references/streaming-hls.md) 和 [`TerminalSkills/skills` 的 FFmpeg 技能](https://github.com/TerminalSkills/skills/blob/main/skills/ffmpeg/SKILL.md)，并核对 [FFmpeg HLS muxer 文档](https://ffmpeg.org/ffmpeg-formats.html)。前者强调按分片间隔安排关键帧，后者把流媒体封装列为媒体处理用途。本项目已有 MP4、GIF、软字幕和章节交付，但没有能直接部署的 HLS VOD 文件组及其现场验证。
+
+新增 [`scripts/hls_vod.py`](scripts/hls_vod.py)：将已审 H.264/yuv420p SDR、恒定帧率 MP4 转为单码率 `index.m3u8` 和 MPEG-TS 分片。输入可无声或带一条 AAC 音轨；拒绝 HDR/BT.2020、旋转元数据、额外流、超 4 小时素材及非法帧率。分片间隔为 2–10 秒，默认 6 秒；编码时强制分片关键帧，输出目录和 JSON 收据必须是新路径。生成后核对 VOD/独立分片标记、连续本地 URI、每片首视频包关键帧、播放列表总时长、源与输出解码帧数、音视频格式及全长解码。收据用 SHA-256 绑定源片、播放列表和每个分片；`verify` 现场重新检查。
+
+```bash
+python3 scripts/runtime_preflight.py analyze --profile hls_vod --output work/runtime_preflight.json --strict
+python3 scripts/hls_vod.py package output/master.mp4 \
+  --output-dir output/hls --receipt verify/hls_vod.json --segment-seconds 6
+python3 scripts/hls_vod.py verify verify/hls_vod.json
+```
+
+将 `output/hls/` 整个目录一起上传并配置 `.m3u8` 为 `application/vnd.apple.mpegurl`、`.ts` 为 `video/mp2t`。此入口只产单码率点播文件，不含 ABR、多语言字幕或发布服务。转码可能改变画质；交付前对照已审 MP4 播放整片，并在目标播放器检查起播、拖动、结尾和音画同步。
+
+验证：新增 `tests/test_hls_vod.py` 5 项，覆盖真实带声/无声 FFmpeg 分片、源和分片漂移、收据篡改、异常 URI、路径冲突；runtime profile 另增 1 项测试。定向 **29 passed**，最终全套 **1383 passed in 43.31s**。`compileall`、Skill Creator 校验和 `git diff --check` 通过；本机 `hls_vod` 预检 5 项能力 ready、零 blocker/warning。尚未在真实长片、Web 服务器或目标播放器验证。
+
 ## License
 
 MIT.

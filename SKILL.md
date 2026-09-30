@@ -117,6 +117,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ subtitle_pack.py         SRT/VTT/ASS/JSON 字幕交付包（speed/offset 对齐）
    ├─→ soft_subtitles.py        已审 SRT → MP4 可开关字幕轨 / 无损复制音视频 / live 收据
    ├─→ chapter_mux.py           已审章节 JSON → MP4 可跳转章节 / 无损复制音视频 / live 收据
+   ├─→ hls_vod.py               已审 SDR MP4 → 单码率 HLS 点播目录 / 分片+收据 live verify
    ├─→ subtitle_readability_qa.py
    │                            最终字幕 CPS / 时长 / 行长 / 重叠 / 媒体越界 gate
    ├─→ import_capcut_subtitles.py
@@ -250,6 +251,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `subtitle_pack.py` | transcript/render_config → SRT/VTT/ASS/JSON 字幕包 | `--transcript work/transcript.json --output-dir output/subtitles` / `--config render_config.json --speed 1.25 --offset 2.0` |
 | `soft_subtitles.py` | 已审、与成片时间线对齐的 SRT → 可开关 `mov_text` MP4 字幕轨；复制原视频/音频流并验证内容与时间码 | `mux final.mp4 final.srt --language zho --output final-soft.mp4 --receipt soft-subtitles.json` / `verify soft-subtitles.json` |
 | `chapter_mux.py` | `chapter_markers.py` 的已审 JSON → MP4 内嵌章节；复制音视频流，核对章节标题/时间与流哈希 | `mux final.mp4 chapters.json --output final-chapters.mp4 --receipt chapter-mux.json` / `verify chapter-mux.json` |
+| `hls_vod.py` | 已审 H.264/AAC SDR MP4 → 单码率 VOD `index.m3u8` + TS 分片；核对独立关键帧、帧数、完整解码及文件哈希 | `package final.mp4 --output-dir output/hls --receipt verify/hls_vod.json` / `verify verify/hls_vod.json` |
 | `subtitle_readability_qa.py` | output-aligned 字幕 → CPS、时长、行长、重叠和媒体越界 gate | `<subtitle_pack.json>` `--media final.mp4` `--output subtitle_readability_qa.json` `--strict` |
 | `import_capcut_subtitles.py` | 剪映/CapCut 自动字幕或 SRT → transcript + gap cut list | `--draft <draft_dir>` / `--srt captions.srt` `--transcript work/capcut_transcript.json` `--cut-list work/capcut_gap_cut.json` |
 | `srt_edit_plan.py` | SRT + 人工/agent keep/drop 指令 → edit plan / render_config / cut list | `--srt captions.srt --guide edit_guide.md --source-media origin/talking.mp4 --render-config work/render_config.json --strict` |
@@ -526,7 +528,7 @@ python3 scripts/pipeline_manifest.py \
 
 ### Phase 0aa: Runtime Preflight（按任务核验本机能力）
 
-在打开媒体或启动渲染前，运行 [runtime_preflight.py](./scripts/runtime_preflight.py)。只转写、probe 或抽流用 `media_io`；会编码最终画面的任务用 `core_edit`，再按需要追加 `soft_subtitles / gif_preview / logo_overlay / podcast_audiogram / ping_pong_loop / multicam_switch / video_enhancement / storyboard_animatic / audio_cue_mix / generation_chain_handoff / captions / qa / edge_black_trim / hdr_sdr / stabilization / interlace / remotion`：
+在打开媒体或启动渲染前，运行 [runtime_preflight.py](./scripts/runtime_preflight.py)。只转写、probe 或抽流用 `media_io`；会编码最终画面的任务用 `core_edit`，再按需要追加 `hls_vod / soft_subtitles / gif_preview / logo_overlay / podcast_audiogram / ping_pong_loop / multicam_switch / video_enhancement / storyboard_animatic / audio_cue_mix / generation_chain_handoff / captions / qa / edge_black_trim / hdr_sdr / stabilization / interlace / remotion`：
 
 ```bash
 python3 scripts/runtime_preflight.py analyze \
@@ -2837,3 +2839,9 @@ ffmpeg -i broll_concat.mp4 -t $audio_dur -c copy broll_trimmed.mp4
 ## 已审成片叠加品牌 Logo
 
 需要给已审 MP4 加固定 PNG Logo 时，运行 `runtime_preflight.py analyze --profile logo_overlay --output work/runtime_preflight.json --strict`，再运行 `logo_overlay.py render output/master.mp4 media/assets/logo.png --corner bottom-right --width-fraction 0.15 --opacity 0.7 --margin 24 --output output/master-logo.mp4 --receipt verify/logo_overlay.json`。宽度占画面 5%–40%，可选四角；margin 是输出像素，Logo 须完整落在画面内。脚本重新编码 H.264/yuv420p 视频、复制可选单音轨，验证帧数、时长、画布、完整解码，并用 SHA-256 绑定原片、Logo 与输出。`logo_overlay.py verify verify/logo_overlay.json` 现场复查；改动任何文件后重新渲染与审看。交付前以 1× 带声看完整片，检查 Logo 位置、透明度、字幕/平台 UI 遮挡和音画同步。
+
+## 已审成片打包 HLS 点播
+
+网站需要静态 HLS 点播文件时，先确认最终 MP4 已完成带声审片、音频和画质 QA。运行 `runtime_preflight.py analyze --profile hls_vod --output work/runtime_preflight.json --strict`，再运行 `hls_vod.py package output/master.mp4 --output-dir output/hls --receipt verify/hls_vod.json --segment-seconds 6`。输入限单视频、最多单 AAC 音轨、H.264/yuv420p、SDR、CFR MP4；HDR、VFR、旋转元数据和额外字幕/章节流先制作合适的 SDR/CFR master。输出目录及收据须为新路径，脚本不覆盖现有文件。
+
+脚本按分片间隔强制关键帧并输出 `index.m3u8` 与 TS，`hls_vod.py verify verify/hls_vod.json` 现场核对每个分片首视频包是关键帧、源/输出视频帧数、播放列表时长、所有文件 SHA-256 和整条播放列表解码。它只生成单码率 VOD，未实现自适应码率或上传。部署时连同整个目录上传，配置 `.m3u8` 与 `.ts` MIME，并在目标播放器完整带声测试拖动、起止、字幕和同步；转码画质需与已审 MP4 人工 A/B。

@@ -82,6 +82,13 @@ PROFILE_SPECS: Mapping[str, Mapping[str, Any]] = {
         "required": ["runtime:python", "command:ffmpeg", "command:ffprobe", "encoder:mov_text"],
         "alternatives": [],
     },
+    "hls_vod": {
+        "label": "Single-rendition HLS VOD",
+        "description": "Package a reviewed SDR MP4 as a keyframe-aligned HLS playlist and TS segments.",
+        "required": ["runtime:python", "command:ffmpeg", "command:ffprobe",
+                     "encoder:libx264", "encoder:aac"],
+        "alternatives": [],
+    },
     "logo_overlay": {
         "label": "PNG logo overlay",
         "description": "Burn a scaled and opacity-adjusted PNG logo into a reviewed MP4.",
