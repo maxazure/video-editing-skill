@@ -11,11 +11,13 @@ Outputs:
   - chapters.md
   - chapters.ffmetadata
   - chapters-youtube.txt
+  - chapters.vtt (HTML video chapter track)
 """
 from __future__ import annotations
 
 import argparse
 import dataclasses
+import html
 import json
 import math
 import os
@@ -433,6 +435,37 @@ def chapters_to_ffmetadata(chapters: Sequence[ChapterMarker]) -> str:
     return "\n".join(lines)
 
 
+def format_webvtt_timestamp(seconds: float) -> str:
+    if not math.isfinite(seconds) or seconds < 0:
+        raise ValueError("WebVTT chapter time must be finite and nonnegative")
+    milliseconds = round(seconds * 1000)
+    hours, remainder = divmod(milliseconds, 3_600_000)
+    minutes, remainder = divmod(remainder, 60_000)
+    whole_seconds, milliseconds = divmod(remainder, 1000)
+    return f"{hours:02d}:{minutes:02d}:{whole_seconds:02d}.{milliseconds:03d}"
+
+
+def chapters_to_webvtt(chapters: Sequence[ChapterMarker]) -> str:
+    lines = ["WEBVTT", ""]
+    previous_end = None
+    for chapter in chapters:
+        start_time = format_webvtt_timestamp(chapter.start)
+        end_time = format_webvtt_timestamp(chapter.end)
+        start_ms, end_ms = round(chapter.start * 1000), round(chapter.end * 1000)
+        if end_ms <= start_ms or (previous_end is not None and start_ms < previous_end):
+            raise ValueError("WebVTT chapters must have positive, nonoverlapping time ranges")
+        title = html.escape(chapter.title, quote=False)
+        if not title.strip() or "\n" in title or "\r" in title:
+            raise ValueError("WebVTT chapter titles must be nonempty and single-line")
+        lines.extend([
+            f"{start_time} --> {end_time}",
+            title,
+            "",
+        ])
+        previous_end = end_ms
+    return "\n".join(lines)
+
+
 def write_outputs(
     chapters: Sequence[ChapterMarker],
     *,
@@ -445,6 +478,9 @@ def write_outputs(
     md_path = os.path.join(output_dir, f"{basename}.md")
     ffmetadata_path = os.path.join(output_dir, f"{basename}.ffmetadata")
     youtube_path = os.path.join(output_dir, f"{basename}-youtube.txt")
+    webvtt_path = os.path.join(output_dir, f"{basename}.vtt")
+
+    webvtt = chapters_to_webvtt(chapters)
 
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump(chapters_to_json(chapters, warnings=warnings), f, ensure_ascii=False, indent=2)
@@ -455,11 +491,14 @@ def write_outputs(
         f.write(chapters_to_ffmetadata(chapters))
     with open(youtube_path, "w", encoding="utf-8") as f:
         f.write(chapters_to_youtube(chapters))
+    with open(webvtt_path, "w", encoding="utf-8") as f:
+        f.write(webvtt)
     return {
         "json": json_path,
         "markdown": md_path,
         "ffmetadata": ffmetadata_path,
         "youtube": youtube_path,
+        "webvtt": webvtt_path,
     }
 
 
@@ -509,14 +548,18 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print("chapter_markers: no chapters generated", file=sys.stderr)
         return 1
 
-    paths = write_outputs(
-        chapters,
-        output_dir=args.output_dir,
-        basename=args.basename,
-        warnings=warnings,
-    )
+    try:
+        paths = write_outputs(
+            chapters,
+            output_dir=args.output_dir,
+            basename=args.basename,
+            warnings=warnings,
+        )
+    except ValueError as exc:
+        print(f"chapter_markers: {exc}", file=sys.stderr)
+        return 1
     print(f"chapter markers: {len(chapters)} -> {args.output_dir}")
-    for key in ("json", "markdown", "ffmetadata", "youtube"):
+    for key in ("json", "markdown", "ffmetadata", "youtube", "webvtt"):
         print(f"{key}: {paths[key]}")
     for warning in warnings:
         print(f"warning: {warning}", file=sys.stderr)

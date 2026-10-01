@@ -250,6 +250,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `edit_compare.py` | 原片连续时钟 vs 最终像素双栏视频；删段置黑并验证映射 | `<source.mp4> <final.mp4>` `--cut-list` `--output-speed` `--output-offset` `--output` |
 | `subtitle_pack.py` | transcript/render_config → SRT/VTT/ASS/JSON 字幕包 | `--transcript work/transcript.json --output-dir output/subtitles` / `--config render_config.json --speed 1.25 --offset 2.0` |
 | `soft_subtitles.py` | 已审、与成片时间线对齐的 SRT → 可开关 `mov_text` MP4 字幕轨；复制原视频/音频流并验证内容与时间码 | `mux final.mp4 final.srt --language zho --output final-soft.mp4 --receipt soft-subtitles.json` / `verify soft-subtitles.json` |
+| `chapter_markers.py` | 已审章节 → JSON、FFmetadata、平台时间戳及浏览器 `kind="chapters"` WebVTT | `--chapters draft.json --duration 720 --output-dir output/chapters --strict` |
 | `chapter_mux.py` | `chapter_markers.py` 的已审 JSON → MP4 内嵌章节；复制音视频流，核对章节标题/时间与流哈希 | `mux final.mp4 chapters.json --output final-chapters.mp4 --receipt chapter-mux.json` / `verify chapter-mux.json` |
 | `hls_vod.py` | 已审 H.264/AAC SDR MP4 → 单码率 VOD `index.m3u8` + TS 分片；核对独立关键帧、帧数、完整解码及文件哈希 | `package final.mp4 --output-dir output/hls --receipt verify/hls_vod.json` / `verify verify/hls_vod.json` |
 | `subtitle_readability_qa.py` | output-aligned 字幕 → CPS、时长、行长、重叠和媒体越界 gate | `<subtitle_pack.json>` `--media final.mp4` `--output subtitle_readability_qa.json` `--strict` |
@@ -2166,6 +2167,8 @@ python3 scripts/subtitle_pack.py \
 播放器需要可开关字幕时，用已审、与最终 MP4 对齐的 SRT 运行 `soft_subtitles.py mux final.mp4 output/subtitles/final_master.srt --language zho --output output/final-soft.mp4 --receipt verify/soft_subtitles.json`，再运行 `soft_subtitles.py verify verify/soft_subtitles.json`。脚本仅接受单视频、最多单音频、无其他轨的源片；复制音视频流，加入一条 `mov_text` 字幕轨，检查 SRT 时间、抽回的字幕内容、源/成片流哈希、完整解码和文件漂移。`ready_for_human_review` 后仍要在目标播放器以 1× 带声看完，确认字幕开关、中文显示和音画同步。已有烧录字幕的画面不会被此命令移除，交付前应确认是否会出现双层字幕。
 
 长视频需要播放器内可跳转章节时，先用 `chapter_markers.py` 生成并人工核对 `chapters.json`，确保末章结束时间与最终 MP4 一致；再运行 `chapter_mux.py mux output/master.mp4 output/chapters/chapters.json --output output/master-chapters.mp4 --receipt verify/chapter_mux.json` 和 `chapter_mux.py verify verify/chapter_mux.json`。脚本接受未带章节的单视频、最多单音频 MP4，复制音视频流并核对每章标题/时间、流哈希和完整解码。最终仍需在目标播放器检查章节跳转；上传平台若不读取 MP4 内嵌章节，另交付 `chapters-youtube.txt`。
+
+网页播放器可将同次导出的 `chapters.vtt` 作为 `<track kind="chapters" src="chapters.vtt" srclang="zh">` 加到与章节时间线一致的 `<video>`；VTT 使用无重叠章节、毫秒时间码和纯文本标题。浏览器是否呈现章节菜单取决于播放器实现，交付时实际试跳转；片头或重新剪辑改变时间线后需按最终视频时长重新导出。
 
 生成 JSON 后，对最终字幕执行只读发布门禁：
 

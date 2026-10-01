@@ -12,7 +12,9 @@ from chapter_markers import (  # noqa: E402
     TranscriptSegment,
     build_chapter_markers,
     chapters_to_ffmetadata,
+    chapters_to_webvtt,
     chapters_to_youtube,
+    format_webvtt_timestamp,
     format_youtube_timestamp,
     parse_chapter_headings,
     parse_timecode,
@@ -86,6 +88,30 @@ def test_youtube_timestamps_start_at_zero():
     assert text.splitlines() == ["0:00 Intro", "1:30 Deep Dive"]
 
 
+def test_webvtt_chapter_timing_and_plain_text():
+    assert format_webvtt_timestamp(3599.9996) == "01:00:00.000"
+    text = chapters_to_webvtt([
+        ChapterMarker("ch01", "开场 & <目标> --> Demo", 0, 60.125, 60.125),
+        ChapterMarker("ch02", "第二章", 60.125, 3661.5, 3601.375),
+    ])
+    assert text == ("WEBVTT\n\n"
+                    "00:00:00.000 --> 00:01:00.125\n"
+                    "开场 &amp; &lt;目标&gt; --&gt; Demo\n\n"
+                    "00:01:00.125 --> 01:01:01.500\n第二章\n")
+
+
+def test_webvtt_rejects_invalid_chapter_ranges():
+    import pytest
+
+    with pytest.raises(ValueError, match="positive, nonoverlapping"):
+        chapters_to_webvtt([ChapterMarker("ch01", "Zero", 0, 0, 0)])
+    with pytest.raises(ValueError, match="positive, nonoverlapping"):
+        chapters_to_webvtt([
+            ChapterMarker("ch01", "A", 0, 10, 10),
+            ChapterMarker("ch02", "B", 9, 20, 11),
+        ])
+
+
 def test_cli_writes_all_chapter_marker_formats(tmp_path):
     transcript = tmp_path / "transcript.json"
     transcript.write_text(json.dumps({
@@ -121,3 +147,7 @@ def test_cli_writes_all_chapter_marker_formats(tmp_path):
     assert (out_dir / "chapters.md").read_text(encoding="utf-8").startswith("# Chapters")
     assert "[CHAPTER]" in (out_dir / "chapters.ffmetadata").read_text(encoding="utf-8")
     assert (out_dir / "chapters-youtube.txt").read_text(encoding="utf-8").splitlines()[0].startswith("0:00")
+    webvtt = (out_dir / "chapters.vtt").read_text(encoding="utf-8")
+    assert webvtt.startswith("WEBVTT\n\n00:00:00.000 --> ")
+    assert "接下来讲工作流" not in webvtt  # reviewed heading, not transcript excerpt
+    assert "工作流" in webvtt

@@ -18,6 +18,7 @@
 - **切点附近可精确逐帧找画面**：`frame_grid.py` 顺序解码并生成最多 36 格的 PNG 网格；JSON 记录每格的真实解码帧号和 PTS，可进一步导出单帧并验证源片、PNG 与映射收据。
 - **已审 SRT 可封装成可开关的 MP4 字幕轨**：`soft_subtitles.py` 复制原视频/音频流，加入 `mov_text` 字幕，核对字幕往返、音视频流哈希与完整解码，并生成可现场验证的收据；适合支持软字幕的播放器交付。
 - **长视频章节可封装进 MP4**：`chapter_mux.py` 读取已审 `chapter_markers.py` JSON，在不重编码音视频的情况下写入可跳转章节，核对每章时间/标题、音视频流哈希与完整解码，并生成可现场验证的收据。
+- **网页视频可使用独立章节轨**：`chapter_markers.py` 同时导出 `chapters.vtt`，保留毫秒时间码、中文标题及无重叠章节区间，可作为 HTML 视频的 `kind="chapters"` 文本轨。
 - **开始媒体工作前先证明本机能跑**：`runtime_preflight.py` 按 `media_io / core_edit / podcast_audiogram / ping_pong_loop / multicam_switch / video_enhancement / storyboard_animatic / audio_cue_mix / generation_chain_handoff / captions / qa / edge_black_trim / hdr_sdr / stabilization / interlace / remotion` profile 检查命令版本、编码器和 FFmpeg filters；明确区分 missing 与 unknown，并让环境或报告漂移在 manifest 中失效。
 - **旧电视 / DV 素材先分清 telecine 和真实交错**：`interlace_conform.py` 用 FFmpeg `idet` 多段采样；疑似 3:2 pulldown 会阻断直接去交错，真实 TFF/BFF 才能经 `bwdif` 或明确的 `yadif` fallback 生成逐行工作副本，并在完整 1× A/B 确认后放行。
 - **手机和录屏 VFR 可先变成可审计 CFR 工作副本**：`frame_rate_conform.py` 读取全部解码帧 PTS 间隔，绑定精确目标有理帧率；输出必须通过恒定 cadence、帧数、音画起止、显示方向、SHA-256 和完整解码验证，原片保持不变。
@@ -5840,6 +5841,21 @@ python3 scripts/hls_vod.py verify verify/hls_vod.json
 将 `output/hls/` 整个目录一起上传并配置 `.m3u8` 为 `application/vnd.apple.mpegurl`、`.ts` 为 `video/mp2t`。此入口只产单码率点播文件，不含 ABR、多语言字幕或发布服务。转码可能改变画质；交付前对照已审 MP4 播放整片，并在目标播放器检查起播、拖动、结尾和音画同步。
 
 验证：新增 `tests/test_hls_vod.py` 5 项，覆盖真实带声/无声 FFmpeg 分片、源和分片漂移、收据篡改、异常 URI、路径冲突；runtime profile 另增 1 项测试。定向 **29 passed**，最终全套 **1383 passed in 43.31s**。`compileall`、Skill Creator 校验和 `git diff --check` 通过；本机 `hls_vod` 预检 5 项能力 ready、零 blocker/warning。尚未在真实长片、Web 服务器或目标播放器验证。
+
+## 自动化更新：2026-10-02（浏览器 WebVTT 章节轨）
+
+本次联网查看了 GitHub 上 [`driegert/vedit`](https://github.com/driegert/vedit) 从内嵌章节生成网页播放器章节轨的做法，以及 [`kajisho5/ffmpeg-skill`](https://github.com/kajisho5/ffmpeg-skill) 的章节交付与媒体检查。本项目已有 `chapter_markers.py` 的 JSON、FFmetadata、平台时间戳和 `chapter_mux.py` 的 MP4 内嵌章节，缺少 HTML 视频能直接加载的章节文本轨。[MDN 的 `<track>` 文档](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/track) 给出了 `kind="chapters"` + WebVTT 的用法。
+
+`chapter_markers.py` 现会随其他 sidecar 一起输出 `chapters.vtt`。每条 cue 使用 `HH:MM:SS.mmm` 起止时间和单行纯文本标题；导出前拒绝零时长、重叠、非有限时间及多行标题，并转义 `&`、`<`、`>` 等可能被 WebVTT 解释为标记的字符。`pipeline_manifest.py` 也识别该文件。使用最终视频时长生成并人工核对章节：
+
+```bash
+python3 scripts/chapter_markers.py --chapters work/chapters_draft.json \
+  --duration 720 --output-dir output/chapters --strict
+```
+
+网页可在对应视频元素里加入 `<track kind="chapters" src="chapters.vtt" srclang="zh">`，并将 VTT 与视频一起部署。片头插入、变速或重新剪辑后，按最终时间线重新生成；浏览器或播放器是否显示章节菜单需在目标环境试跳转，文本轨本身不会修改 MP4，也不能替代完整审片。
+
+验证：新增 2 项 WebVTT 测试，覆盖跨小时进位、毫秒时间码、中文和特殊字符、非法区间；既有 CLI 测试增加了新文件检查。章节/封装/manifest 定向测试 **125 passed**，全套测试 **1385 passed**。真实两章中文示例由 FFprobe 解析出 `0–60.125s` 和 `60.125–120s` 两个 packet；`compileall` 和 `git diff --check` 通过。尚未在目标网页播放器或真实长片上验证章节菜单。
 
 ## License
 

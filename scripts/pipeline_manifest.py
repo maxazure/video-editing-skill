@@ -796,8 +796,8 @@ ARTIFACTS: Sequence[ArtifactDef] = (
     ArtifactDef(
         "chapter_markers",
         "Chapter Markers",
-        ("**/chapters.json", "**/chapters-youtube.txt", "**/chapters.ffmetadata"),
-        "Run chapter_markers.py for long-form or YouTube/Bilibili chapter sidecars.",
+        ("**/chapters.json", "**/chapters-youtube.txt", "**/chapters.ffmetadata", "**/chapters.vtt"),
+        "Run chapter_markers.py for long-form, platform, or browser chapter sidecars.",
     ),
     ArtifactDef(
         "caption",
