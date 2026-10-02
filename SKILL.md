@@ -117,6 +117,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ subtitle_pack.py         SRT/VTT/ASS/JSON 字幕交付包（speed/offset 对齐）
    ├─→ soft_subtitles.py        已审 SRT → MP4 可开关字幕轨 / 无损复制音视频 / live 收据
    ├─→ chapter_mux.py           已审章节 JSON → MP4 可跳转章节 / 无损复制音视频 / live 收据
+   ├─→ metadata_scrub.py       分享前清除 MP4 容器标签/章节/额外轨，保留音视频流
    ├─→ hls_vod.py               已审 SDR MP4 → 单码率 HLS 点播目录 / 分片+收据 live verify
    ├─→ subtitle_readability_qa.py
    │                            最终字幕 CPS / 时长 / 行长 / 重叠 / 媒体越界 gate
@@ -252,6 +253,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `soft_subtitles.py` | 已审、与成片时间线对齐的 SRT → 可开关 `mov_text` MP4 字幕轨；复制原视频/音频流并验证内容与时间码 | `mux final.mp4 final.srt --language zho --output final-soft.mp4 --receipt soft-subtitles.json` / `verify soft-subtitles.json` |
 | `chapter_markers.py` | 已审章节 → JSON、FFmetadata、平台时间戳及浏览器 `kind="chapters"` WebVTT | `--chapters draft.json --duration 720 --output-dir output/chapters --strict` |
 | `chapter_mux.py` | `chapter_markers.py` 的已审 JSON → MP4 内嵌章节；复制音视频流，核对章节标题/时间与流哈希 | `mux final.mp4 chapters.json --output final-chapters.mp4 --receipt chapter-mux.json` / `verify chapter-mux.json` |
+| `metadata_scrub.py` | 分享版 MP4 清除容器和流标签、章节、额外轨；复制并核对音视频流 | `scrub final.mp4 --output share.mp4 --receipt metadata-scrub.json` / `verify metadata-scrub.json` |
 | `hls_vod.py` | 已审 H.264/AAC SDR MP4 → 单码率 VOD `index.m3u8` + TS 分片；核对独立关键帧、帧数、完整解码及文件哈希 | `package final.mp4 --output-dir output/hls --receipt verify/hls_vod.json` / `verify verify/hls_vod.json` |
 | `subtitle_readability_qa.py` | output-aligned 字幕 → CPS、时长、行长、重叠和媒体越界 gate | `<subtitle_pack.json>` `--media final.mp4` `--output subtitle_readability_qa.json` `--strict` |
 | `import_capcut_subtitles.py` | 剪映/CapCut 自动字幕或 SRT → transcript + gap cut list | `--draft <draft_dir>` / `--srt captions.srt` `--transcript work/capcut_transcript.json` `--cut-list work/capcut_gap_cut.json` |
@@ -2169,6 +2171,8 @@ python3 scripts/subtitle_pack.py \
 长视频需要播放器内可跳转章节时，先用 `chapter_markers.py` 生成并人工核对 `chapters.json`，确保末章结束时间与最终 MP4 一致；再运行 `chapter_mux.py mux output/master.mp4 output/chapters/chapters.json --output output/master-chapters.mp4 --receipt verify/chapter_mux.json` 和 `chapter_mux.py verify verify/chapter_mux.json`。脚本接受未带章节的单视频、最多单音频 MP4，复制音视频流并核对每章标题/时间、流哈希和完整解码。最终仍需在目标播放器检查章节跳转；上传平台若不读取 MP4 内嵌章节，另交付 `chapters-youtube.txt`。
 
 网页播放器可将同次导出的 `chapters.vtt` 作为 `<track kind="chapters" src="chapters.vtt" srclang="zh">` 加到与章节时间线一致的 `<video>`；VTT 使用无重叠章节、毫秒时间码和纯文本标题。浏览器是否呈现章节菜单取决于播放器实现，交付时实际试跳转；片头或重新剪辑改变时间线后需按最终视频时长重新导出。
+
+公开分享 MP4 前可运行 `metadata_scrub.py scrub output/master.mp4 --output output/share.mp4 --receipt verify/metadata_scrub.json`，再运行 `metadata_scrub.py verify verify/metadata_scrub.json`。它只保留第一条视频和可选第一条音频，移除容器/流的非结构性标签、章节和字幕/数据等额外轨；核对音视频编码流 SHA-256、时长、完整解码和输出标签。分享版若需要章节或软字幕，应在清理后明确重新封装并复核。该工具只检查 FFprobe 可见的容器/流标签，不扫描画面、音频内容或编码流内部可能携带的信息；仍需正常速度审看分享版。
 
 生成 JSON 后，对最终字幕执行只读发布门禁：
 

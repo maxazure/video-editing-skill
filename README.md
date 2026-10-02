@@ -19,6 +19,7 @@
 - **已审 SRT 可封装成可开关的 MP4 字幕轨**：`soft_subtitles.py` 复制原视频/音频流，加入 `mov_text` 字幕，核对字幕往返、音视频流哈希与完整解码，并生成可现场验证的收据；适合支持软字幕的播放器交付。
 - **长视频章节可封装进 MP4**：`chapter_mux.py` 读取已审 `chapter_markers.py` JSON，在不重编码音视频的情况下写入可跳转章节，核对每章时间/标题、音视频流哈希与完整解码，并生成可现场验证的收据。
 - **网页视频可使用独立章节轨**：`chapter_markers.py` 同时导出 `chapters.vtt`，保留毫秒时间码、中文标题及无重叠章节区间，可作为 HTML 视频的 `kind="chapters"` 文本轨。
+- **公开分享前可清除 MP4 容器标签**：`metadata_scrub.py` 无损复制已审视频/可选音频，移除位置、拍摄时间等非结构性标签、章节及额外轨，再核对流哈希、时长、完整解码与现场文件收据。
 - **开始媒体工作前先证明本机能跑**：`runtime_preflight.py` 按 `media_io / core_edit / podcast_audiogram / ping_pong_loop / multicam_switch / video_enhancement / storyboard_animatic / audio_cue_mix / generation_chain_handoff / captions / qa / edge_black_trim / hdr_sdr / stabilization / interlace / remotion` profile 检查命令版本、编码器和 FFmpeg filters；明确区分 missing 与 unknown，并让环境或报告漂移在 manifest 中失效。
 - **旧电视 / DV 素材先分清 telecine 和真实交错**：`interlace_conform.py` 用 FFmpeg `idet` 多段采样；疑似 3:2 pulldown 会阻断直接去交错，真实 TFF/BFF 才能经 `bwdif` 或明确的 `yadif` fallback 生成逐行工作副本，并在完整 1× A/B 确认后放行。
 - **手机和录屏 VFR 可先变成可审计 CFR 工作副本**：`frame_rate_conform.py` 读取全部解码帧 PTS 间隔，绑定精确目标有理帧率；输出必须通过恒定 cadence、帧数、音画起止、显示方向、SHA-256 和完整解码验证，原片保持不变。
@@ -5856,6 +5857,22 @@ python3 scripts/chapter_markers.py --chapters work/chapters_draft.json \
 网页可在对应视频元素里加入 `<track kind="chapters" src="chapters.vtt" srclang="zh">`，并将 VTT 与视频一起部署。片头插入、变速或重新剪辑后，按最终时间线重新生成；浏览器或播放器是否显示章节菜单需在目标环境试跳转，文本轨本身不会修改 MP4，也不能替代完整审片。
 
 验证：新增 2 项 WebVTT 测试，覆盖跨小时进位、毫秒时间码、中文和特殊字符、非法区间；既有 CLI 测试增加了新文件检查。章节/封装/manifest 定向测试 **125 passed**，全套测试 **1385 passed**。真实两章中文示例由 FFprobe 解析出 `0–60.125s` 和 `60.125–120s` 两个 packet；`compileall` 和 `git diff --check` 通过。尚未在目标网页播放器或真实长片上验证章节菜单。
+
+## 自动化更新：2026-10-03（MP4 分享版元数据清理）
+
+本次联网查看了 GitHub 上 [`twoliness/ffmpeg-webcli` 的元数据清理功能](https://github.com/twoliness/ffmpeg-webcli) 和 [`kajisho5/ffmpeg-skill` 的媒体交付流程](https://github.com/kajisho5/ffmpeg-skill/blob/main/SKILL.md)，并核对 [FFmpeg 的 metadata/chapter 映射文档](https://www.ffmpeg.org/ffmpeg.html)。本项目已有画面隐私遮挡及成片 QA，但没有在交付分享版时清除 MP4 容器位置、日期和设备标签的可验证入口。
+
+新增 [`scripts/metadata_scrub.py`](scripts/metadata_scrub.py)：只接受单视频、最多单音频的 MP4，复制这两条编码流，移除容器/流的非结构性标签、章节和字幕/数据等额外轨。工具会检查输出只剩结构性标签、源/输出音视频流 SHA-256 相同、时长误差不超过 0.1 秒，并完整解码输出。JSON 收据绑定输入和输出字节，`verify` 会现场重查；原片不会被覆盖。
+
+```bash
+python3 scripts/metadata_scrub.py scrub output/master.mp4 \
+  --output output/share.mp4 --receipt verify/metadata_scrub.json
+python3 scripts/metadata_scrub.py verify verify/metadata_scrub.json
+```
+
+分享版需要章节或可开关字幕时，应在清理后按交付需求重新封装并复核。清理范围是 FFprobe 可见的容器/流标签及额外轨；画面、对白和编码流内部信息仍需另行检查。`ready_for_human_review` 表示技术核验通过，交付前仍要完整播放分享版。
+
+验证：`tests/test_metadata_scrub.py` 的 **5 项真实 FFmpeg 测试通过**，覆盖带声/无声 MP4、位置/日期/设备标签、章节清理、源/输出漂移、目标文件与硬链接保护。全套 **1390 passed**；`compileall`、CLI help 与 `git diff --check` 通过。尚未在真实客户长片及目标上传平台验证。
 
 ## License
 
