@@ -41,6 +41,7 @@
 - **高影响动作先绑定确切授权范围**：`production_authorization.py` 把外部上传、侵入性重排/删除、付费生成、声音克隆、真人/未成年人/公众人物/品牌/IP 权利和发布决定绑定到具体素材 SHA-256、用途与 provider/surface；scope 或源字节变化会让旧授权失效。
 - **最终审批绑定到具体文件字节**：`approval_receipt.py` 为人工看过的视频、封面、文案、字幕和 QA 报告记录 SHA-256；任何重渲染、替换、删除或 symlink 漂移都会让旧审批过期并阻塞发布。
 - **ASR 语义校稿不再只看单句**：`semantic_transcript_review.py` 为每条字幕附带全篇前后文，验证完整覆盖、源 transcript hash 和最小字符补丁；模型只能提建议，独立人工 choices 才能写 reviewed transcript。
+- **长片原话可以直接定位**：`transcript_lookup.py` 在带时间戳的 transcript 中查确切措辞或读取指定时间窗口，返回有限条源段 ID、时间码、上下文和源文件 SHA-256；无需把整份转写塞进对话。
 - **上游剪辑配置可以安全撤销/重做**：`edit_revision.py` 把 `render_config` / `enrich_plan` 等文本 artifact 的完整改动绑定到基础和依赖 SHA-256；独立审批后成组写入，外部漂移时拒绝 undo/redo 并阻塞 manifest。
 - **已审时间线可以换素材复用**：`edit_recipe.py` 把 `render_config.json` 的全部本地文件路径替换成类型化槽位，生成 content-addressed 可移植配方；回放必须完整绑定新素材、记录 SHA-256 并重新通过 `edit_preflight.py`。
 - **个人/品牌剪辑偏好可跨项目复用**：`edit_style_profile.py` 把创意方向、节奏、受控渲染默认值、封面风格、标题拼写与发布时段存成无本地路径的 profile；`render_final.py` / `generate_caption.py` / `cover_variants.py` 直接消费它，项目 config 和 CLI 始终优先。
@@ -177,6 +178,7 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    ├─→ production_authorization.py
    │                            确切素材/动作/provider/权利依据 → 显式授权 + live gate
    ├─→ transcribe.py            转写 + 词级时间戳 + 口误标记
+   ├─→ transcript_lookup.py     原话检索 / 时间窗口读取 → 有界时间码结果
    │                            (mlx-whisper / faster-whisper / openai-whisper)
    ├─→ semantic_transcript_review.py
    │                            全篇前后文审校包 / 最小补丁验证 / 人工 choices gate
@@ -5873,6 +5875,21 @@ python3 scripts/metadata_scrub.py verify verify/metadata_scrub.json
 分享版需要章节或可开关字幕时，应在清理后按交付需求重新封装并复核。清理范围是 FFprobe 可见的容器/流标签及额外轨；画面、对白和编码流内部信息仍需另行检查。`ready_for_human_review` 表示技术核验通过，交付前仍要完整播放分享版。
 
 验证：`tests/test_metadata_scrub.py` 的 **5 项真实 FFmpeg 测试通过**，覆盖带声/无声 MP4、位置/日期/设备标签、章节清理、源/输出漂移、目标文件与硬链接保护。全套 **1390 passed**；`compileall`、CLI help 与 `git diff --check` 通过。尚未在真实客户长片及目标上传平台验证。
+
+## 自动化更新：2026-10-04（有界转写原话检索）
+
+本次联网对比了 GitHub 上 [`craftled/openklip`](https://github.com/craftled/openklip) 的 transcript `grep` / `span` / `phrase` 入口及 [`notque/vexjoy-agent` 的视频剪辑技能](https://github.com/notque/vexjoy-agent/blob/main/skills/content/video-editing/SKILL.md) 对 timestamped EDL 的使用。本项目已有 `highlight_picker.py` 的主题评分和 `takes_pack.py` 的多 take 阅读视图，缺少按**确切原话**或指定时间范围取得少量源段的命令。
+
+新增 [`scripts/transcript_lookup.py`](scripts/transcript_lookup.py)。`search` 对字母数字做 Unicode NFKC、大小写、空格和标点归一，可匹配间隔不超过 2 秒的相邻 transcript 段；跨长静音或明显重叠的段不会拼成一句。`span` 返回与指定源时间窗口相交的段。两种命令都输出 JSON，含段 ID、源时间码、transcript SHA-256、命中总数及是否截断；默认最多 20 条，最高 50 条。`search` 的上下文默认各 1 段，最高各 3 段；单段文字最多返回 300 字符。脚本只读，不修改 transcript 或媒体。
+
+```bash
+python3 scripts/transcript_lookup.py work/interview_transcript.json search "新品什么时候发布" --limit 10
+python3 scripts/transcript_lookup.py work/interview_transcript.json span --start 90 --end 120 --limit 20
+```
+
+命中时间码按 transcript 段给出，段内词级时间戳未细化；ASR 错字、同义表达和纯视觉镜头不会被确切措辞检索找到。剪辑前仍应回看原片并校稿。结果中的 SHA-256 可用于确认查询时读取的转写版本。
+
+验证：新增 `tests/test_transcript_lookup.py` **5 项通过**，覆盖跨段中文匹配、标点/英文归一、长间隔阻断、输出截断、时间窗口重叠、非法时间码和 CLI JSON；最终全套 **1395 passed in 52.63s**。`compileall`、CLI help、Skill Creator quick validation 通过。尚未在真实客户长片上测试查询速度及 ASR 噪声下的命中率。
 
 ## License
 

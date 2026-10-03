@@ -26,6 +26,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ production_authorization.py
    │                            确切素材/动作/provider/权利依据 → 显式授权 + live gate
    ├─→ transcribe.py            转写 + 词级时间戳 + 口误标记
+   ├─→ transcript_lookup.py     原话检索 / 时间窗口读取 → 少量带源时间码的结果
    ├─→ semantic_transcript_review.py
    │                            全篇前后文审校包 / 最小补丁验证 / 人工 choices gate
    ├─→ transcript_review.py     本地同步媒体 HTML 校稿 / CPS 提示 / review.txt 回写
@@ -166,6 +167,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `edit_style_profile.py` | 个人/品牌创意方向、剪辑节奏、渲染/文案默认值 → 无路径可移植 profile / digest 验证 / defaults-only 合并 | `template` / `create --spec` / `verify --profile --strict` / `apply --config --receipt` |
 | `production_authorization.py` | 外部上传、侵入性剪辑、付费生成、声音克隆、真人/IP 和发布 → source-bound 授权 gate | `prepare --scope --response-template` / `audit --request --response --strict` / `verify --report --strict` |
 | `transcript_review.py` | transcript → 文本或本地同步媒体 HTML 校稿 → reviewed transcript | `export` / `html --video --max-cps` / `apply --review --output` |
+| `transcript_lookup.py` | 只读原话检索或时间窗口读取，返回有界 JSON、源段 ID/时间码与 transcript SHA-256 | `<transcript.json> search <phrase> --limit` / `<transcript.json> span --start --end` |
 | `semantic_transcript_review.py` | transcript → 前后文审校包 / 最小补丁审计 / 人工 choices / reviewed transcript | `prepare` / `audit --strict` / `apply --choices` |
 | `_internal_text_guard.py` | 拦截内部 token 进画面 | 内部模块，render_final 自动调 |
 | `content_guard.py` | 平台雷区 lint | `--script` `--title` `--caption` `--strict` |
@@ -858,6 +860,8 @@ python3 scripts/transcribe.py "<audio_path>" --model auto --language zh --detect
 ```
 
 **静音检测**：transcribe.py 会自动分析相邻语音片段之间的间隙。超过阈值（默认 1 秒）的间隙会被标记为静音并输出到 `silences` 字段中。这些静音通常是说话人的停顿、卡壳或口误，在构建 render_config.json 选片时应注意避开这些区域。
+
+长 transcript 需要找某句原话时，用 `python3 scripts/transcript_lookup.py work/transcript.json search "产品发布时间" --limit 10`；要看源片某段文字，用 `python3 scripts/transcript_lookup.py work/transcript.json span --start 90 --end 120`。输出是有界 JSON，含源段 ID、源时间码和 transcript SHA-256；搜索忽略大小写、空格与标点，可跨间隔不超过 2 秒的相邻段。它只定位原话，不推断语义相似内容；切点和措辞仍需回看原媒体并校稿。
 
 ### Phase 2a: Video Keyframe Extraction（视频关键帧提取）
 
