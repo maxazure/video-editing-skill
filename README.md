@@ -5891,6 +5891,24 @@ python3 scripts/transcript_lookup.py work/interview_transcript.json span --start
 
 验证：新增 `tests/test_transcript_lookup.py` **5 项通过**，覆盖跨段中文匹配、标点/英文归一、长间隔阻断、输出截断、时间窗口重叠、非法时间码和 CLI JSON；最终全套 **1395 passed in 52.63s**。`compileall`、CLI help、Skill Creator quick validation 通过。尚未在真实客户长片上测试查询速度及 ASR 噪声下的命中率。
 
+## 自动化更新：2026-10-05（画面与原话对齐索引）
+
+本次联网查看了 GitHub 上 [`calflint/vid-to-skill`](https://github.com/calflint/vid-to-skill) 将时间戳画面与同期转写并排阅读的方式，以及 [`YizhouWang777/agentic-video-editor`](https://github.com/YizhouWang777/agentic-video-editor) 的 contact sheet / transcript pack 工作流。本项目已有 `extract_keyframes.py`、`transcript_lookup.py` 和视觉时序图，但缺少一份可复查的逐帧原话对照索引。
+
+新增 [`scripts/visual_transcript_index.py`](scripts/visual_transcript_index.py)：读取现有 `*_keyframes.json` 与 `segments[]` 转写，给每帧列出前后指定秒数内相交的原话、段 ID 和源时间码，输出 JSON 与 Markdown。默认窗口为前后 3 秒，每帧最多显示 8 段，超出时标明总数和截断。索引记录视频、关键帧元数据、转写、每张帧图及 Markdown 的 SHA-256；`verify` 从当前源文件重算索引并检查 Markdown 字节，发现替换或手改即失败。只读输入，不重新抽帧或转写。
+
+```bash
+python3 scripts/extract_keyframes.py origin/interview.mp4 --max-frames 16
+python3 scripts/visual_transcript_index.py build origin/interview_keyframes.json work/interview_transcript.json \
+  --radius 3 --max-segments 8 \
+  --output work/visual_transcript_index.json --markdown work/visual_transcript_index.md
+python3 scripts/visual_transcript_index.py verify work/visual_transcript_index.json
+```
+
+画面是采样帧，文字来自附近时间窗口，两者同时出现不证明文字所述物体出现在该帧。索引适合定位需要复核的时段；剪辑决策仍要播放原片并核对语音。单次最多读取 64 帧，窗口可设 0.1–30 秒，每帧最多显示 12 段原话。
+
+验证：`tests/test_visual_transcript_index.py` 新增 6 项，覆盖时间窗配对、上限与截断、输入/报告/Markdown 漂移、输出保护以及 Markdown 转义；全套 **1401 passed in 52.29s**。另用真实 FFmpeg 生成 6 秒样片，经现有抽帧脚本得到 4 帧，再完成 `build → verify`；`compileall`、CLI help 与 `git diff --check` 通过。尚未在真实客户长片上测试索引的人工检索效率。
+
 ## License
 
 MIT.

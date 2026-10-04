@@ -27,6 +27,8 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    │                            确切素材/动作/provider/权利依据 → 显式授权 + live gate
    ├─→ transcribe.py            转写 + 词级时间戳 + 口误标记
    ├─→ transcript_lookup.py     原话检索 / 时间窗口读取 → 少量带源时间码的结果
+   ├─→ visual_transcript_index.py
+   │                            现有关键帧 + 附近原话 → 带源哈希的 JSON/Markdown 复核索引
    ├─→ semantic_transcript_review.py
    │                            全篇前后文审校包 / 最小补丁验证 / 人工 choices gate
    ├─→ transcript_review.py     本地同步媒体 HTML 校稿 / CPS 提示 / review.txt 回写
@@ -168,6 +170,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `production_authorization.py` | 外部上传、侵入性剪辑、付费生成、声音克隆、真人/IP 和发布 → source-bound 授权 gate | `prepare --scope --response-template` / `audit --request --response --strict` / `verify --report --strict` |
 | `transcript_review.py` | transcript → 文本或本地同步媒体 HTML 校稿 → reviewed transcript | `export` / `html --video --max-cps` / `apply --review --output` |
 | `transcript_lookup.py` | 只读原话检索或时间窗口读取，返回有界 JSON、源段 ID/时间码与 transcript SHA-256 | `<transcript.json> search <phrase> --limit` / `<transcript.json> span --start --end` |
+| `visual_transcript_index.py` | 现有关键帧与附近转写段配对，生成可核验的 JSON/Markdown 索引 | `build <keyframes.json> <transcript.json> --output --markdown` / `verify <index.json>` |
 | `semantic_transcript_review.py` | transcript → 前后文审校包 / 最小补丁审计 / 人工 choices / reviewed transcript | `prepare` / `audit --strict` / `apply --choices` |
 | `_internal_text_guard.py` | 拦截内部 token 进画面 | 内部模块，render_final 自动调 |
 | `content_guard.py` | 平台雷区 lint | `--script` `--title` `--caption` `--strict` |
@@ -900,11 +903,13 @@ python3 scripts/transcribe.py video_audio.wav --model auto --language zh --detec
 # 2. 提取关键帧生成时序图
 python3 scripts/extract_keyframes.py video.mp4
 
-# 3. AI 结合 transcript + storyboard 进行综合分析
-# → 查看 video_storyboard.png 了解视频画面内容
-# → 对照 video_transcript.json 了解语音内容
-# → 综合判断哪些片段最适合保留
+# 3. 把每帧与前后 3 秒内的原话对齐，查看索引并核验来源
+python3 scripts/visual_transcript_index.py build video_keyframes.json video_transcript.json \
+  --output work/visual_transcript_index.json --markdown work/visual_transcript_index.md
+python3 scripts/visual_transcript_index.py verify work/visual_transcript_index.json
 ```
+
+索引每帧最多展示 8 段原话，并标明截断；`--radius` 可设 0.1–30 秒，`--max-segments` 可设 1–12。画面是抽样帧，原话是附近时间窗口，不能据此断言画面中出现了某件事，也不能代替原片完整播放。源视频、关键帧元数据、图片、转写或 Markdown 改动后需重新构建索引。
 
 **AI Agent 综合分析要点**：
 - 将关键帧时序图与转录文本对照，标注每个时间段的「说了什么 + 画面是什么」
