@@ -15,7 +15,7 @@
 - **只有播客音频也能产出竖版短片**：`podcast_audiogram.py` 将指定音频摘录、静帧封面和逐句 SRT 合成字幕优先的 H.264/AAC MP4，声波只作辅助；源文件、字幕、设置与交付件绑定在可现场验证的收据中。
 - **已审视频可导出轻量动图预览**：`gif_preview.py` 从指定短摘录生成无声、调色板优化的 GIF，限制时长、尺寸、帧率和文件大小，并用收据绑定源片与导出件，适合在聊天或文档中预览动作。
 - **已审成片可加品牌 Logo**：`logo_overlay.py` 把 PNG 按指定四角、相对宽度、透明度和边距叠到 MP4；复制原音轨、完整解码成片，并用收据绑定原片、Logo 与输出。
-- **切点附近可精确逐帧找画面**：`frame_grid.py` 顺序解码并生成最多 36 格的 PNG 网格；JSON 记录每格的真实解码帧号和 PTS，可进一步导出单帧并验证源片、PNG 与映射收据。
+- **切点附近可精确逐帧找画面**：`frame_grid.py locate` 从秒级时间码找到最近解码帧；PNG 网格直接标出 `CELL 1` 等格号，JSON 记录每格的真实帧号和 PTS，可进一步导出单帧并验证源片、PNG 与映射收据。
 - **已审 SRT 可封装成可开关的 MP4 字幕轨**：`soft_subtitles.py` 复制原视频/音频流，加入 `mov_text` 字幕，核对字幕往返、音视频流哈希与完整解码，并生成可现场验证的收据；适合支持软字幕的播放器交付。
 - **长视频章节可封装进 MP4**：`chapter_mux.py` 读取已审 `chapter_markers.py` JSON，在不重编码音视频的情况下写入可跳转章节，核对每章时间/标题、音视频流哈希与完整解码，并生成可现场验证的收据。
 - **网页视频可使用独立章节轨**：`chapter_markers.py` 同时导出 `chapters.vtt`，保留毫秒时间码、中文标题及无重叠章节区间，可作为 HTML 视频的 `kind="chapters"` 文本轨。
@@ -5908,6 +5908,26 @@ python3 scripts/visual_transcript_index.py verify work/visual_transcript_index.j
 画面是采样帧，文字来自附近时间窗口，两者同时出现不证明文字所述物体出现在该帧。索引适合定位需要复核的时段；剪辑决策仍要播放原片并核对语音。单次最多读取 64 帧，窗口可设 0.1–30 秒，每帧最多显示 12 段原话。
 
 验证：`tests/test_visual_transcript_index.py` 新增 6 项，覆盖时间窗配对、上限与截断、输入/报告/Markdown 漂移、输出保护以及 Markdown 转义；全套 **1401 passed in 52.29s**。另用真实 FFmpeg 生成 6 秒样片，经现有抽帧脚本得到 4 帧，再完成 `build → verify`；`compileall`、CLI help 与 `git diff --check` 通过。尚未在真实客户长片上测试索引的人工检索效率。
+
+## 自动化更新：2026-10-06（秒级时间码定位与可见格号）
+
+本次联网复查了 GitHub 上 [`agamm/video-agent`](https://github.com/agamm/video-agent) 的逐级画面检索和精确帧映射，以及 [`filipenevola/fable-video-edit`](https://github.com/filipenevola/fable-video-edit/blob/main/SKILL.md) 对可复核剪辑步骤的要求。仓库已有 `frame_grid.py`，但场景检测或字幕给出的秒级时间码不能直接转成解码帧号，格图本身也没有标出与 JSON 对应的格号。
+
+现有 [`scripts/frame_grid.py`](scripts/frame_grid.py) 新增 `locate`：从头顺序解码到指定源视频 PTS，返回前后相邻帧、最近的解码帧号、实际 PTS 和时间差。它按实际时间戳选择，适用于 B-frame 和 VFR 视频；同距离时选较早帧。`grid` 生成的 PNG 现在直接烧入 `CELL 1`、`CELL 2` 等标记，与收据中的 1 起始 `cell` 对应。既有 `grid`、`frame`、`verify` 参数和收据格式保持不变。
+
+```bash
+python3 scripts/frame_grid.py locate origin/clip.mp4 --at-seconds 20.4
+# 读取输出的 nearest.decoded_frame，选择附近起点继续缩小范围；以下帧号仅为示例
+python3 scripts/frame_grid.py grid origin/clip.mp4 --start-frame 240 --step 2 --count 16 \
+  --columns 4 --output verify/grid.png --receipt verify/grid.json
+python3 scripts/frame_grid.py frame origin/clip.mp4 --start-frame 250 \
+  --output verify/frame.png --receipt verify/frame.json
+python3 scripts/frame_grid.py verify verify/grid.json
+```
+
+`locate` 输出只写标准输出，包含查询时的源文件 SHA-256；需保存证据时可把 JSON 重定向到项目目录。时间码必须落在可解码帧范围内，脚本不会按平均帧率推算 VFR 帧号。定位仍需从头解码到目标时间，长片深处查询会耗时；找到帧后应正常速度播放对应片段，确认动作与声音。
+
+验证：`tests/test_frame_grid.py` 增至 **11 项通过**，覆盖真实 FFmpeg H.264 B-frame 最近帧、刻意制造的 VFR 非均匀 PTS、时间越界、黑色视频上格号的实际亮像素、CLI 往返和原有收据检查。全套 **1404 passed in 56.51s**；`compileall`、CLI help、Skill Creator 校验与 `git diff --check` 通过。尚未在真实客户长片上测试深处时间码的检索耗时及人工可读性。
 
 ## License
 

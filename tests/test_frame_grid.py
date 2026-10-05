@@ -8,7 +8,7 @@ import pytest
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(REPO, "scripts"))
 
-from frame_grid import create, parse_showinfo, verify  # noqa: E402
+from frame_grid import create, locate, parse_showinfo, verify  # noqa: E402
 
 
 @pytest.fixture
@@ -42,6 +42,46 @@ def test_single_frame_export(source, tmp_path):
                     receipt=str(tmp_path / "frame.json"), start_frame=5, grid=False)
     assert result["frames"][0]["decoded_frame"] == 5
     assert result["frames"][0]["pts_seconds"] == pytest.approx(5 / 12, abs=0.00001)
+
+
+def test_locate_chooses_nearest_decoded_frame_with_b_frames(source):
+    result = locate(str(source), 0.44)
+    assert result["nearest"]["decoded_frame"] == 5
+    assert result["neighbors"] == [
+        {"decoded_frame": 5, "pts_seconds": pytest.approx(5 / 12, abs=0.00001)},
+        {"decoded_frame": 6, "pts_seconds": 0.5},
+    ]
+    assert locate(str(source), 0.46)["nearest"]["decoded_frame"] == 6
+    assert locate(str(source), 0)["nearest"]["decoded_frame"] == 0
+    with pytest.raises(ValueError, match="after the last"):
+        locate(str(source), 3)
+    with pytest.raises(ValueError, match="finite"):
+        locate(str(source), float("nan"))
+
+
+def test_locate_uses_pts_on_variable_frame_rate_source(tmp_path):
+    source = tmp_path / "vfr.mp4"
+    subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "lavfi",
+                    "-i", "testsrc2=s=160x90:r=8:d=1", "-vf",
+                    "setpts='if(gte(N,4),N+4,N)/(8*TB)'", "-fps_mode", "vfr",
+                    "-c:v", "libx264", "-y", str(source)], check=True)
+    result = locate(str(source), 0.55)
+    assert result["nearest"] == {"decoded_frame": 3, "pts_seconds": 0.375}
+    assert result["neighbors"][-1] == {"decoded_frame": 4, "pts_seconds": 1.0}
+
+
+def test_grid_burns_cell_numbers_into_black_video(tmp_path):
+    source = tmp_path / "black.mp4"
+    subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "lavfi",
+                    "-i", "color=c=black:s=160x90:r=4:d=1", "-c:v", "libx264",
+                    "-y", str(source)], check=True)
+    image = tmp_path / "grid.png"
+    create(source=str(source), output=str(image), receipt=str(tmp_path / "grid.json"),
+           start_frame=0, count=2, columns=2, width=160)
+    pixels = subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-i", str(image),
+                             "-vf", "crop=100:30:6:6,format=gray", "-frames:v", "1",
+                             "-f", "rawvideo", "-"], capture_output=True, check=True).stdout
+    assert max(pixels) > 100
 
 
 def test_out_of_range_does_not_publish_image(source, tmp_path):
@@ -94,3 +134,7 @@ def test_cli_round_trip(source, tmp_path):
                            capture_output=True, text=True)
     assert check.returncode == 0, check.stderr
     assert json.loads(check.stdout)["frames"] == 4
+    found = subprocess.run([sys.executable, script, "locate", str(source), "--at-seconds", "0.46"],
+                           capture_output=True, text=True)
+    assert found.returncode == 0, found.stderr
+    assert json.loads(found.stdout)["nearest"]["decoded_frame"] == 6

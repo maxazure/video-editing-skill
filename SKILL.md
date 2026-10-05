@@ -165,7 +165,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `podcast_audiogram.py` | 纯音频摘录 + 静帧封面 + 相对摘录时间的 SRT → 带辅助波形的竖版 MP4 与源绑定收据 | `render <audio> <cover> <captions.srt> --start --duration --output --receipt` / `verify <receipt>` |
 | `gif_preview.py` | 视频短摘录 → 无声、调色板优化 GIF 和源绑定收据 | `render <video> --start --duration --output --receipt` / `verify <receipt>` |
 | `logo_overlay.py` | 已审 MP4 + PNG Logo → 指定四角/宽度/透明度叠加，保留音轨并现场验证 | `render <video> <logo.png> --corner --width-fraction --opacity --margin --output --receipt` / `verify <receipt>` |
-| `frame_grid.py` | 精确 decoded-frame 网格或单帧 PNG，附帧号/PTS 对照与源文件收据 | `grid <video> --start-frame --step --count --output --receipt` / `frame <video> --start-frame --output --receipt` / `verify <receipt>` |
+| `frame_grid.py` | 秒级时间码定位最近解码帧；带可见格号的精确帧网格或单帧 PNG，附帧号/PTS 与源文件收据 | `locate <video> --at-seconds` / `grid <video> --start-frame --step --count --output --receipt` / `frame <video> --start-frame --output --receipt` / `verify <receipt>` |
 | `edit_style_profile.py` | 个人/品牌创意方向、剪辑节奏、渲染/文案默认值 → 无路径可移植 profile / digest 验证 / defaults-only 合并 | `template` / `create --spec` / `verify --profile --strict` / `apply --config --receipt` |
 | `production_authorization.py` | 外部上传、侵入性剪辑、付费生成、声音克隆、真人/IP 和发布 → source-bound 授权 gate | `prepare --scope --response-template` / `audit --request --response --strict` / `verify --report --strict` |
 | `transcript_review.py` | transcript → 文本或本地同步媒体 HTML 校稿 → reviewed transcript | `export` / `html --video --max-cps` / `apply --review --output` |
@@ -870,7 +870,7 @@ python3 scripts/transcribe.py "<audio_path>" --model auto --language zh --detect
 
 对于口播类视频（尤其是在户外行走中拍摄的、带有环境音的素材），仅靠音频转录无法了解视频的视觉内容。使用 [extract_keyframes.py](./scripts/extract_keyframes.py) 提取视频关键帧并生成时序图，以便全面理解视频内容：
 
-需要找准确切点或核对 B-frame/VFR 片段中的某一帧时，运行 `frame_grid.py grid origin/clip.mp4 --start-frame 240 --step 2 --count 16 --output verify/grid.png --receipt verify/grid.json`。网格按行优先排列，JSON 把每个格子映射到解码帧序号和实际 PTS；找到目标帧后运行 `frame_grid.py frame origin/clip.mp4 --start-frame 250 --output verify/frame.png --receipt verify/frame.json` 导出确切帧。交接前用 `verify <receipt>` 核对源片、PNG 和映射收据。它从头顺序解码到目标帧，长片深处查询会耗时；网格最多 36 格，格图不能代替正常速度播放。
+拿到场景检测、字幕或审片时间码时，先运行 `frame_grid.py locate origin/clip.mp4 --at-seconds 20.4`，读取 `nearest.decoded_frame` 和相邻两帧的真实 PTS。再以该帧附近为 `--start-frame` 运行 `frame_grid.py grid origin/clip.mp4 --start-frame 240 --step 2 --count 16 --output verify/grid.png --receipt verify/grid.json`。PNG 中的 `CELL 1` 等标记与 JSON 的 `cell` 对应；找到目标后运行 `frame_grid.py frame origin/clip.mp4 --start-frame 250 --output verify/frame.png --receipt verify/frame.json` 导出确切帧。交接前用 `verify <receipt>` 核对源片、PNG 和映射收据。定位和抽帧都从头顺序解码，长片深处查询会耗时；网格最多 36 格，格图不能代替正常速度播放。
 
 ```bash
 python3 scripts/extract_keyframes.py "<video_path>"

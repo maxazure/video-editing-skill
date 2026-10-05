@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from collections import deque
 import hashlib
 import json
 import math
@@ -15,6 +16,8 @@ from pathlib import Path
 
 SCHEMA = "frame_grid.v1"
 SHOWINFO = re.compile(r"\[Parsed_showinfo_\d+[^\n]*?\bn:\s*(\d+)\s+pts:\s*\S+\s+pts_time:\s*([+-]?[\d.]+)")
+LOOKUP_SOURCE = re.compile(r"\[Parsed_showinfo_0[^\n]*?\bn:\s*(\d+)\s+pts:\s*\S+\s+pts_time:\s*([+-]?[\d.]+)")
+LOOKUP_SELECTED = re.compile(r"\[Parsed_showinfo_2[^\n]*?\bn:\s*\d+\s+pts:\s*\S+\s+pts_time:\s*([+-]?[\d.]+)")
 
 
 def sha256(path: Path) -> str:
@@ -60,7 +63,10 @@ def build_filter(start: int, step: int, count: int, columns: int, width: int, gr
     chain = f"{select},showinfo,scale={width}:-2:flags=lanczos,setsar=1"
     if grid:
         rows = math.ceil(count / columns)
-        chain += f",pad={width}:ih+4:0:0:black,tile=layout={columns}x{rows}:nb_frames={count}:padding=4:margin=4:color=black"
+        chain += (",drawtext=text='CELL %{n}':start_number=1:fontsize=18:fontcolor=white:"
+                  "borderw=2:bordercolor=black:x=8:y=8"
+                  f",pad={width}:ih+4:0:0:black,tile=layout={columns}x{rows}:"
+                  f"nb_frames={count}:padding=4:margin=4:color=black")
     return chain
 
 
@@ -69,6 +75,43 @@ def parse_showinfo(stderr: str) -> list[float]:
     if any(index != expected or not math.isfinite(pts) for expected, (index, pts) in enumerate(hits)):
         raise ValueError("could not verify decoded frame order or PTS")
     return [pts for _, pts in hits]
+
+
+def locate(source: str, at_seconds: float) -> dict:
+    """Decode from the start and find the source frame nearest a presentation timestamp."""
+    if not math.isfinite(at_seconds) or at_seconds < 0:
+        raise ValueError("at-seconds must be a finite, nonnegative number")
+    source_path = checked_input(source)
+    before = file_record(source_path)
+    command = ["ffmpeg", "-hide_banner", "-nostdin", "-nostats", "-loglevel", "info",
+               "-filter_threads", "1", "-i", str(source_path), "-map", "0:v:0",
+               "-vf", f"showinfo,select='gte(t,{at_seconds:.9f})',showinfo",
+               "-an", "-vsync", "0", "-frames:v", "1", "-f", "null", "-"]
+    neighbors = deque(maxlen=2)
+    selected = None
+    with subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                          text=True, errors="replace") as process:
+        assert process.stderr is not None
+        for line in process.stderr:
+            match = LOOKUP_SOURCE.search(line)
+            if match and selected is None:
+                frame, pts = int(match.group(1)), float(match.group(2))
+                if not math.isfinite(pts):
+                    raise ValueError("source has a nonfinite frame PTS")
+                neighbors.append({"decoded_frame": frame, "pts_seconds": pts})
+            match = LOOKUP_SELECTED.search(line)
+            if match and selected is None:
+                selected = float(match.group(1))
+        if process.wait() != 0:
+            raise RuntimeError("FFmpeg could not decode the requested timestamp")
+    if selected is None or not neighbors or neighbors[-1]["pts_seconds"] != selected:
+        raise ValueError("timestamp is after the last decoded frame")
+    nearest = min(neighbors, key=lambda row: (abs(row["pts_seconds"] - at_seconds), row["decoded_frame"]))
+    if file_record(source_path) != before:
+        raise ValueError("source changed during frame lookup")
+    return {"version": SCHEMA, "source": before, "at_seconds": at_seconds,
+            "nearest": nearest, "delta_seconds": round(nearest["pts_seconds"] - at_seconds, 9),
+            "neighbors": list(neighbors)}
 
 
 def create(*, source: str, output: str, receipt: str, start_frame: int,
@@ -150,10 +193,15 @@ def main() -> int:
         item.add_argument("--force", action="store_true")
     check = sub.add_parser("verify", help="Check the source, image and mapping receipt")
     check.add_argument("receipt")
+    lookup = sub.add_parser("locate", help="Find the nearest decoded frame to a source PTS in seconds")
+    lookup.add_argument("source")
+    lookup.add_argument("--at-seconds", type=float, required=True)
     args = parser.parse_args()
     try:
         if args.command == "verify":
             print(json.dumps(verify(args.receipt), ensure_ascii=False))
+        elif args.command == "locate":
+            print(json.dumps(locate(args.source, args.at_seconds), ensure_ascii=False))
         else:
             grid = args.command == "grid"
             data = create(source=args.source, output=args.output, receipt=args.receipt,
