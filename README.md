@@ -24,6 +24,7 @@
 - **旧电视 / DV 素材先分清 telecine 和真实交错**：`interlace_conform.py` 用 FFmpeg `idet` 多段采样；疑似 3:2 pulldown 会阻断直接去交错，真实 TFF/BFF 才能经 `bwdif` 或明确的 `yadif` fallback 生成逐行工作副本，并在完整 1× A/B 确认后放行。
 - **手机和录屏 VFR 可先变成可审计 CFR 工作副本**：`frame_rate_conform.py` 读取全部解码帧 PTS 间隔，绑定精确目标有理帧率；输出必须通过恒定 cadence、帧数、音画起止、显示方向、SHA-256 和完整解码验证，原片保持不变。
 - **片头片尾黑场会先核对声音再裁切**：`black_edge_trim.py` 只接受接触源时间线两端的 `blackdetect` 区间，默认要求实际移除范围至少 95% 被静音覆盖；保留视觉 padding，生成原片边界 proof 和新的 CFR 工作副本，完整 1× 视听确认后才放行。
+- **画面内持续黑边可先检测再决定构图**：`border_crop.py` 每秒采样多帧并记录 FFmpeg `cropdetect` 的实际矩形；只有全片与前中后三段结果一致，且黑边达到像素门槛，才给出 `crop=w:h:x:y` 建议。报告可从源片重新检测验证，不直接改视频。
 - **短背景可以按次数或固定时长安全重复**：`loop_fill.py` 只接受 progressive CFR SDR 源片，音画一起循环或显式丢弃源音频；首个真实接缝和完整交付件都要正常速度复核，源片、输出、proof、设置或人工结论漂移都会让 manifest gate 失效。
 - **不闭合的短动作可以做端帧去重乒乓循环**：`ping_pong_loop.py` 把选区编译为 `0…N-1,N-2…1`，去掉普通正放+倒放在折返点和循环点产生的重复端帧；渲染前计算 `reverse` 缓存上限，输出无声 H.264 和折返/循环两条 proof，完整 1× 复核后才放行。
 - **不同规格的视频可以安全拼成一条**：`clip_assembly.py` 按最终顺序绑定每条源片，在一次编码中统一画布、rotation、CFR、SAR、像素格式、时间戳与 48 kHz stereo；无声片段可补等长静音，交付件和全部接缝 proof 都通过完整解码与 1× 人工复核后才放行。
@@ -5928,6 +5929,23 @@ python3 scripts/frame_grid.py verify verify/grid.json
 `locate` 输出只写标准输出，包含查询时的源文件 SHA-256；需保存证据时可把 JSON 重定向到项目目录。时间码必须落在可解码帧范围内，脚本不会按平均帧率推算 VFR 帧号。定位仍需从头解码到目标时间，长片深处查询会耗时；找到帧后应正常速度播放对应片段，确认动作与声音。
 
 验证：`tests/test_frame_grid.py` 增至 **11 项通过**，覆盖真实 FFmpeg H.264 B-frame 最近帧、刻意制造的 VFR 非均匀 PTS、时间越界、黑色视频上格号的实际亮像素、CLI 往返和原有收据检查。全套 **1404 passed in 56.51s**；`compileall`、CLI help、Skill Creator 校验与 `git diff --check` 通过。尚未在真实客户长片上测试深处时间码的检索耗时及人工可读性。
+
+## 自动化更新：2026-10-07（画面内持续黑边检测）
+
+本次联网对照了 GitHub 上 [`kajisho5/ffmpeg-skill` 的 `cropdetect` 工具](https://github.com/kajisho5/ffmpeg-skill/blob/main/SKILL.md) 和 [`driegert/vedit` 的素材调查步骤](https://github.com/driegert/vedit)。本项目已有 `black_edge_trim.py` 处理片头片尾黑场，但素材画面内部长期存在的上下或左右黑边尚无独立检测入口。[FFmpeg 官方文档](https://www.ffmpeg.org/ffmpeg-filters.html) 说明了 `cropdetect` 的 `limit`、`round`、`reset` 和 `skip` 参数；这里逐采样帧重置检测范围，避免某一帧的内容决定整片裁切。
+
+新增 [`scripts/border_crop.py`](scripts/border_crop.py)：`analyze` 在整个视频按默认 2 fps 采样，报告逐帧时间码与 `crop=w:h:x:y`、全片及前中后三段的一致率、四侧边距、源文件 SHA-256。只有至少 3 帧、全片和每段均达到默认 80% 一致率，并有至少一侧黑边达到 8 px 时，状态才是 `ready` 并给出滤镜建议。其余情况标为 `no_crop` 或 `review`，不提供可直接使用的滤镜。`verify` 会重新扫描源片并逐字段比对报告，识别源片或报告改动。脚本只做诊断，不自动裁掉画面。
+
+```bash
+python3 scripts/border_crop.py analyze origin/clip.mp4 --output work/border_crop.json
+python3 scripts/border_crop.py verify work/border_crop.json
+# 人工看过前、中、后代表帧后，如确实只有黑边，再把报告中的 filter 用于工作副本：
+ffmpeg -i origin/clip.mp4 -vf 'crop=160:90:0:16' -c:v libx264 -c:a copy work/cropped.mp4
+```
+
+示例 `crop` 数值只来自测试片；实际素材应使用报告里的 `decision.filter`。黑色内容、片中比例变化、字幕或图形压在黑边上的情况要人工逐段复核，不能只看多数投票。长片需要扫描全片，会花费解码时间；裁切后需检查声画、字幕与最终构图。
+
+验证：`tests/test_border_crop.py` 的真实 FFmpeg 样片和逻辑测试覆盖上下与左右稳定黑边、完整画面、不稳定黑边、非法矩形、报告及源片漂移、CLI 往返；定向测试 **6 passed**。最终全套 **1410 passed in 52.85s**；`compileall`、三个 CLI help、Skill Creator quick validation 与 `git diff --check` 通过。全套复跑中曾有一项既有降噪 SNR 测试以 2.9 dB 略低于 3.0 dB 门槛失败，该项单独重跑和最终全套均通过。尚未用真实客户长片人工检查动态比例、字幕压边与裁切后构图。
 
 ## License
 

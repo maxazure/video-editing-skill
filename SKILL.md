@@ -19,6 +19,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ interlace_conform.py     交错/telecine 采样 → progressive 工作副本 / 全长 A/B gate
    ├─→ frame_rate_conform.py    手机/录屏 VFR → 全量 PTS 检测 / CFR 工作副本 / live gate
    ├─→ black_edge_trim.py       首尾黑场 + 静音覆盖 → CFR 工作副本 / 原片边界 proof + live gate
+   ├─→ border_crop.py           画面内持续黑边 → 逐时点 cropdetect 证据 / 保守裁切建议
    ├─→ loop_fill.py             短片 → 次数/固定时长 hard repeat / 真实接缝 proof + 完整审片 gate
    ├─→ ping_pong_loop.py        短动作 → 端帧去重正放/倒放 / 折返+循环双 proof / live gate
    ├─→ clip_assembly.py         多源片段 → 单次画布/CFR/SAR/音频归一 / 全接缝 proof + live gate
@@ -166,6 +167,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `gif_preview.py` | 视频短摘录 → 无声、调色板优化 GIF 和源绑定收据 | `render <video> --start --duration --output --receipt` / `verify <receipt>` |
 | `logo_overlay.py` | 已审 MP4 + PNG Logo → 指定四角/宽度/透明度叠加，保留音轨并现场验证 | `render <video> <logo.png> --corner --width-fraction --opacity --margin --output --receipt` / `verify <receipt>` |
 | `frame_grid.py` | 秒级时间码定位最近解码帧；带可见格号的精确帧网格或单帧 PNG，附帧号/PTS 与源文件收据 | `locate <video> --at-seconds` / `grid <video> --start-frame --step --count --output --receipt` / `frame <video> --start-frame --output --receipt` / `verify <receipt>` |
+| `border_crop.py` | 对画面内上下/左右黑边逐时点采样；仅在全片及三段一致时建议裁切 | `analyze <video> --output <report.json>` / `verify <report.json>` |
 | `edit_style_profile.py` | 个人/品牌创意方向、剪辑节奏、渲染/文案默认值 → 无路径可移植 profile / digest 验证 / defaults-only 合并 | `template` / `create --spec` / `verify --profile --strict` / `apply --config --receipt` |
 | `production_authorization.py` | 外部上传、侵入性剪辑、付费生成、声音克隆、真人/IP 和发布 → source-bound 授权 gate | `prepare --scope --response-template` / `audit --request --response --strict` / `verify --report --strict` |
 | `transcript_review.py` | transcript → 文本或本地同步媒体 HTML 校稿 → reviewed transcript | `export` / `html --video --max-cps` / `apply --review --output` |
