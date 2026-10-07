@@ -19,6 +19,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ interlace_conform.py     交错/telecine 采样 → progressive 工作副本 / 全长 A/B gate
    ├─→ frame_rate_conform.py    手机/录屏 VFR → 全量 PTS 检测 / CFR 工作副本 / live gate
    ├─→ black_edge_trim.py       首尾黑场 + 静音覆盖 → CFR 工作副本 / 原片边界 proof + live gate
+   ├─→ program_breaks.py        内部黑场与全音轨静音重叠 → 只读分段候选 / 复核时间点
    ├─→ border_crop.py           画面内持续黑边 → 逐时点 cropdetect 证据 / 保守裁切建议
    ├─→ loop_fill.py             短片 → 次数/固定时长 hard repeat / 真实接缝 proof + 完整审片 gate
    ├─→ ping_pong_loop.py        短动作 → 端帧去重正放/倒放 / 折返+循环双 proof / live gate
@@ -160,6 +161,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `interlace_conform.py` | 交错/telecine 多段检测 → bwdif/yadif progressive 工作副本、全长 A/B 人工确认与 live gate | `analyze` / `plan --mode frame|field --parity` / `apply` / `confirm` / `verify --strict` |
 | `frame_rate_conform.py` | 手机/录屏 VFR → decoded PTS cadence、精确 CFR 工作副本、帧数/音画起止与 live gate | `plan <source> --fps 30 --delivery` / `apply <plan>` / `verify <plan> --strict` |
 | `black_edge_trim.py` | 首尾 blackdetect + 静音覆盖 → source-bound CFR working copy、原片边界 proof 与人工 live gate | `plan --delivery --edge-proof` / `apply` / `confirm` / `verify --strict` |
+| `program_breaks.py` | 内部黑场与全部音轨静音的重叠 → 源绑定分段候选 JSON/Markdown；不自动切片 | `analyze <video> --output <report.json>` / `verify <report.json>` |
 | `loop_fill.py` | progressive CFR 短素材 → 按次数/目标时长重复、首个真实接缝 1× proof、完整审片与 live gate | `plan --times|--duration --delivery --seam-proof` / `apply` / `confirm` / `verify --strict` |
 | `ping_pong_loop.py` | progressive CFR 短动作 → 端帧去重的正放/倒放周期、折返/循环双 proof、缓存上限与 live gate | `plan --start --end --cycles|--duration --delivery --turnaround-proof --loop-seam-proof` / `apply` / `confirm` / `verify --strict` |
 | `clip_assembly.py` | 多源视频 → 单次画布/CFR/SAR/时间戳/音频归一、全接缝 1× proof 与 live gate | `plan <clips...> --delivery --boundary-proof` / `apply` / `confirm` / `verify --strict` |
@@ -597,6 +599,8 @@ python3 scripts/black_edge_trim.py apply work/black_edge_trim_plan.json
 ```
 
 脚本保留默认 0.08 秒视觉 padding，对音画执行相同 source-time trim，输出 H.264/yuv420p CFR 与可选 48 kHz AAC；媒体合同和完整解码通过后才原子提升。edge proof 来自原片，包含拟议删除区与紧邻内容。完整 1× 看完 proof 和 delivery，确认首尾帧、内容覆盖与声音连续后运行 `confirm`，再执行 `verify --strict`。确知黑画面里的声音也应删除时可显式使用 `--audio-policy allow_audible`，该 override 保留 warning。详见 [Edge-black Trim](./docs/prompts/119-black-edge-trim.md)。
+
+长节目或录制母版需要找内部段落边界时，运行 `program_breaks.py analyze <video> --output work/program_breaks.json`；它只标出内部 `blackdetect` 与**每条音轨** `silencedetect` 同时成立的重叠区间，默认取重叠中点作复核时间。用 `verify <report.json>` 重扫源片并核对 JSON/Markdown。候选不是已批准的切点；逐处正常速度看听后再决定分段，尤其要检查淡入淡出、黑底字幕和有声过场。无音轨素材无法证明静音，会明确拒绝。
 
 ### Phase 0ae: Loop Fill（短背景 / 环境片填满固定时长）
 

@@ -24,6 +24,7 @@
 - **旧电视 / DV 素材先分清 telecine 和真实交错**：`interlace_conform.py` 用 FFmpeg `idet` 多段采样；疑似 3:2 pulldown 会阻断直接去交错，真实 TFF/BFF 才能经 `bwdif` 或明确的 `yadif` fallback 生成逐行工作副本，并在完整 1× A/B 确认后放行。
 - **手机和录屏 VFR 可先变成可审计 CFR 工作副本**：`frame_rate_conform.py` 读取全部解码帧 PTS 间隔，绑定精确目标有理帧率；输出必须通过恒定 cadence、帧数、音画起止、显示方向、SHA-256 和完整解码验证，原片保持不变。
 - **片头片尾黑场会先核对声音再裁切**：`black_edge_trim.py` 只接受接触源时间线两端的 `blackdetect` 区间，默认要求实际移除范围至少 95% 被静音覆盖；保留视觉 padding，生成原片边界 proof 和新的 CFR 工作副本，完整 1× 视听确认后才放行。
+- **长片内部可找结构性分段候选**：`program_breaks.py` 找内部黑场与所有音轨静音的重叠，给出候选时间点及 JSON/Markdown 证据；只供看听复核，不自动切片或命名节目。
 - **画面内持续黑边可先检测再决定构图**：`border_crop.py` 每秒采样多帧并记录 FFmpeg `cropdetect` 的实际矩形；只有全片与前中后三段结果一致，且黑边达到像素门槛，才给出 `crop=w:h:x:y` 建议。报告可从源片重新检测验证，不直接改视频。
 - **短背景可以按次数或固定时长安全重复**：`loop_fill.py` 只接受 progressive CFR SDR 源片，音画一起循环或显式丢弃源音频；首个真实接缝和完整交付件都要正常速度复核，源片、输出、proof、设置或人工结论漂移都会让 manifest gate 失效。
 - **不闭合的短动作可以做端帧去重乒乓循环**：`ping_pong_loop.py` 把选区编译为 `0…N-1,N-2…1`，去掉普通正放+倒放在折返点和循环点产生的重复端帧；渲染前计算 `reverse` 缓存上限，输出无声 H.264 和折返/循环两条 proof，完整 1× 复核后才放行。
@@ -172,6 +173,7 @@ python3 scripts/video_understanding.py origin/talking.mp4 \
    ├─→ interlace_conform.py     交错/telecine 采样 → progressive 工作副本 / 全长 A/B gate
    ├─→ frame_rate_conform.py    手机/录屏 VFR → 全量 PTS 检测 / CFR 工作副本 / live gate
    ├─→ black_edge_trim.py       首尾黑场 + 静音覆盖 → CFR 工作副本 / 原片边界 proof + live gate
+   ├─→ program_breaks.py        内部黑场 + 全音轨静音 → 分段候选 / 人工看听复核
    ├─→ loop_fill.py             progressive CFR 短片 → 次数/目标时长 repeat / 接缝 proof + 完整审片 gate
    ├─→ ping_pong_loop.py        短动作 → 端帧去重正放/倒放 / 折返+循环双 proof / live gate
    ├─→ clip_assembly.py         多源片段 → 单次画布/CFR/SAR/音频归一 / 全接缝 proof + live gate
@@ -792,6 +794,18 @@ python3 scripts/black_edge_trim.py apply work/black_edge_trim_plan.json
 计划用 FFmpeg `blackdetect` 找首尾区间，并在有音轨时用 `silencedetect` 计算确切移除范围的静音覆盖。默认只接受接触源时间线两端的黑场，要求至少 95% 静音，并在内容边界内保留 0.08 秒视觉 padding；中间黑场完整保留。检测结果、source SHA-256、完整 decoded cadence、精确 trim、proof windows 和参数都写进 canonical plan。
 
 apply 对音画使用同一 source-time trim，输出 H.264/yuv420p CFR 和可选 48 kHz stereo AAC。临时交付件与原片边界 proof 通过尺寸、方向、帧率、时长、音画首尾和 `ffmpeg -xerror` 完整解码后才原子提升。完整 1× 播放 proof 与 delivery，确认首尾可见帧、内容覆盖和音频连续，再运行 `confirm` 与 `verify --strict`。黑画面里的声音也确定应删除时可显式使用 `--audio-policy allow_audible`；该模式保留 warning，不能跳过听审。`pipeline_manifest.py --require black_edge_trim_plan --strict` 会现场重跑检测并核对输出、proof 和 review。
+
+### 🎬 Program Breaks — 长片内部结构断点候选
+
+[`scripts/program_breaks.py`](scripts/program_breaks.py) 对长节目或录制母版中的内部黑场运行 `blackdetect`，对每条音轨运行 `silencedetect`，仅把黑场与**所有音轨静音**的重叠区间列为候选。默认排除距首尾小于 0.5 秒的黑场，重叠至少 0.2 秒；候选点取重叠中点。报告保存原片 SHA-256、每条音轨的静音区间、黑场区间、重叠证据和 Markdown 复核表。
+
+```bash
+python3 scripts/program_breaks.py analyze origin/master.mp4 \
+  --output work/program_breaks.json --markdown work/program_breaks.md
+python3 scripts/program_breaks.py verify work/program_breaks.json
+```
+
+可用 `--black-min`、`--silence-min`、`--min-overlap`、`--edge-guard`、`--pix-threshold`、`--picture-ratio`、`--silence-noise` 调整检测阈值。脚本只读源片，不剪切或命名节目；无音轨素材会拒绝。`verify` 重跑检测并核对源片、JSON 和 Markdown。候选时间点需逐处正常速度看听，淡入淡出、黑底字幕及有声过场尤其需要人工判断。
 
 ### ↔️ Ping-pong Loop — 短动作正放倒放循环
 [`scripts/ping_pong_loop.py`](scripts/ping_pong_loop.py) · [详细文档](docs/prompts/128-ping-pong-loop.md)
@@ -5946,6 +5960,22 @@ ffmpeg -i origin/clip.mp4 -vf 'crop=160:90:0:16' -c:v libx264 -c:a copy work/cro
 示例 `crop` 数值只来自测试片；实际素材应使用报告里的 `decision.filter`。黑色内容、片中比例变化、字幕或图形压在黑边上的情况要人工逐段复核，不能只看多数投票。长片需要扫描全片，会花费解码时间；裁切后需检查声画、字幕与最终构图。
 
 验证：`tests/test_border_crop.py` 的真实 FFmpeg 样片和逻辑测试覆盖上下与左右稳定黑边、完整画面、不稳定黑边、非法矩形、报告及源片漂移、CLI 往返；定向测试 **6 passed**。最终全套 **1410 passed in 52.85s**；`compileall`、三个 CLI help、Skill Creator quick validation 与 `git diff --check` 通过。全套复跑中曾有一项既有降噪 SNR 测试以 2.9 dB 略低于 3.0 dB 门槛失败，该项单独重跑和最终全套均通过。尚未用真实客户长片人工检查动态比例、字幕压边与裁切后构图。
+
+## 自动化更新：2026-10-08（内部黑场与静音分段候选）
+
+本次联网研究了 GitHub [`timelapsetech/mediaskills` 的 `program-master`](https://github.com/timelapsetech/mediaskills/blob/master/skills/program-master/SKILL.md)：它把节目母版中的黑场与静音交集作为结构性间隔，再结合淡变边界、标签和可视化报告。本项目已有首尾黑场裁切和成片黑屏/静音质检，却没有独立列出**片中**两种信号同时成立的分段候选。这里先补入与短视频、访谈和长录制素材直接相关的只读候选分析，保留后续看听判断。
+
+新增 [`scripts/program_breaks.py`](scripts/program_breaks.py)。它对视频运行 FFmpeg `blackdetect`，分别扫描每条音轨的 `silencedetect`，只有所有音轨静音与内部黑场重叠至少 0.2 秒时才给候选。JSON 保存源文件 SHA-256、实际时长、检测参数、逐音轨静音区间、黑场区间、交集和候选秒数；Markdown 汇总复核时间点。`verify` 现场重跑分析，并检查源片、JSON 和 Markdown 漂移。音视频流起点相差超过 0.05 秒或没有音轨时会拒绝，避免误把错位音频当成静音证据。
+
+```bash
+python3 scripts/program_breaks.py analyze origin/master.mp4 \
+  --output work/program_breaks.json --markdown work/program_breaks.md
+python3 scripts/program_breaks.py verify work/program_breaks.json
+```
+
+候选时间取重叠区间中点，供回看和手动设置章节或切点；脚本不裁片。淡入淡出、黑底文字、录制故障或有声过场仍要正常速度看听，完整母版分析需要解码视频和每条音轨。
+
+验证：`tests/test_program_breaks.py` 的合成 FFmpeg 样片与逻辑测试覆盖内部候选、黑场但有声、第二音轨阻断、无音轨拒绝、非法阈值、CLI 往返及报告/Markdown/源文件漂移；定向测试 **6 passed**，最终全套 **1416 passed in 59.69s**。`compileall`、CLI help、Skill Creator quick validation 与 `git diff --check` 均通过。尚未在真实长节目母版上人工核对淡变边界、延迟音轨和候选有效率。
 
 ## License
 
