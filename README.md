@@ -26,6 +26,7 @@
 - **片头片尾黑场会先核对声音再裁切**：`black_edge_trim.py` 只接受接触源时间线两端的 `blackdetect` 区间，默认要求实际移除范围至少 95% 被静音覆盖；保留视觉 padding，生成原片边界 proof 和新的 CFR 工作副本，完整 1× 视听确认后才放行。
 - **长片内部可找结构性分段候选**：`program_breaks.py` 找内部黑场与所有音轨静音的重叠，给出候选时间点及 JSON/Markdown 证据；只供看听复核，不自动切片或命名节目。
 - **画面内持续黑边可先检测再决定构图**：`border_crop.py` 每秒采样多帧并记录 FFmpeg `cropdetect` 的实际矩形；只有全片与前中后三段结果一致，且黑边达到像素门槛，才给出 `crop=w:h:x:y` 建议。报告可从源片重新检测验证，不直接改视频。
+- **无检测模型时也可查看运动落点**：`motion_center.py` 比较缩小后的相邻画面，逐时点报告局部像素运动中心；静止画面和大范围变化不提供焦点。结果用于回看和人工构图，不直接驱动裁切。
 - **短背景可以按次数或固定时长安全重复**：`loop_fill.py` 只接受 progressive CFR SDR 源片，音画一起循环或显式丢弃源音频；首个真实接缝和完整交付件都要正常速度复核，源片、输出、proof、设置或人工结论漂移都会让 manifest gate 失效。
 - **不闭合的短动作可以做端帧去重乒乓循环**：`ping_pong_loop.py` 把选区编译为 `0…N-1,N-2…1`，去掉普通正放+倒放在折返点和循环点产生的重复端帧；渲染前计算 `reverse` 缓存上限，输出无声 H.264 和折返/循环两条 proof，完整 1× 复核后才放行。
 - **不同规格的视频可以安全拼成一条**：`clip_assembly.py` 按最终顺序绑定每条源片，在一次编码中统一画布、rotation、CFR、SAR、像素格式、时间戳与 48 kHz stereo；无声片段可补等长静音，交付件和全部接缝 proof 都通过完整解码与 1× 人工复核后才放行。
@@ -5976,6 +5977,21 @@ python3 scripts/program_breaks.py verify work/program_breaks.json
 候选时间取重叠区间中点，供回看和手动设置章节或切点；脚本不裁片。淡入淡出、黑底文字、录制故障或有声过场仍要正常速度看听，完整母版分析需要解码视频和每条音轨。
 
 验证：`tests/test_program_breaks.py` 的合成 FFmpeg 样片与逻辑测试覆盖内部候选、黑场但有声、第二音轨阻断、无音轨拒绝、非法阈值、CLI 往返及报告/Markdown/源文件漂移；定向测试 **6 passed**，最终全套 **1416 passed in 59.69s**。`compileall`、CLI help、Skill Creator quick validation 与 `git diff --check` 均通过。尚未在真实长节目母版上人工核对淡变边界、延迟音轨和候选有效率。
+
+## 自动化更新：2026-10-09（局部运动中心证据）
+
+本次联网对照了 GitHub [`kajisho5/ffmpeg-skill` 的逐秒 motion-centre 报告](https://github.com/kajisho5/ffmpeg-skill/blob/main/SKILL.md) 和 [`QwenLM/Qwen-MM-Plugins` 的视频剪辑技能](https://github.com/QwenLM/Qwen-MM-Plugins/blob/main/src/capabilities/video-edit/skill/SKILL.md)。本项目已有 `smart_reframe.py` 的主体检测裁切计划；没有检测模型时，还缺少一份可直接回看、帮助判断画面运动位置的轻量证据。
+
+新增 [`scripts/motion_center.py`](scripts/motion_center.py)。`analyze` 用 FFmpeg 默认每秒采样 2 帧，缩成 96×54 灰度图，比较相邻帧并给每个时点标记 `local_motion`、`static` 或 `global_change`。只有局部变化提供 0–1 归一化运动中心；大范围变化（含常见硬切、运镜或整体亮度变化）不给裁切焦点。JSON 记录源文件 SHA-256、参数、逐时点变化像素和覆盖率；`verify` 会重扫原片并逐字段检查。它不改视频，也不把运动像素当作人物检测结果直接送入 `smart_reframe.py`。
+
+```bash
+python3 scripts/motion_center.py analyze origin/clip.mp4 --output work/motion_center.json
+python3 scripts/motion_center.py verify work/motion_center.json
+```
+
+画面中的背景、字幕、屏幕光标或运镜都可能产生局部运动。根据 `samples[].time_seconds` 回看原片，并结合主体检测或人工判断选择裁切位置。`--sample-fps` 可设 0.5–4；`--threshold`、`--min-pixels` 和 `--max-coverage` 可调检测敏感度。长片会解码全片，耗时随片长增长。
+
+验证：`tests/test_motion_center.py` 的灰度帧和真实 FFmpeg 合成移动素材覆盖局部运动中心、静止、大范围变化、参数错误、CLI 往返、源片与报告漂移；定向 **5 passed**，全套 **1421 passed in 58.67s**。`.venv/bin/python -m compileall -q scripts tests`、CLI help、Skill Creator 校验及 `git diff --check` 通过。尚未在真实客户长片上人工评估运动中心对构图的帮助。
 
 ## License
 
