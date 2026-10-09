@@ -94,6 +94,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ screen_focus.py          录屏点击/热点 → 自动聚焦计划
    ├─→ pip_overlay.py           录屏 + facecam → PIP 小窗计划
    ├─→ color_grade.py           bounded 调色 plan / render_final 单次编码接入
+   ├─→ lut_grade.py             外部 .cube LUT 校验 / SHA-256 绑定 / 单次编码接入
    ├─→ jump_cut.py              自适应去停顿 + 20% 删除预算 + 可审计 cut list + 30ms 防爆音 fade
    ├─→ multimodal_dead_air.py   静音 AND 静帧 → source-bound 保守删段 / 单次编码 / live gate
    ├─→ audio_transition.py      显式 J-cut/L-cut → source handle / hash / 1× 试听 gate
@@ -230,6 +231,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `screen_focus.py` | 录屏点击/热点 → 聚焦 zoom enrich plan | `--events` `--event` `--screen-width` `--output` |
 | `pip_overlay.py` | 录屏 + facecam → PIP 摄像头小窗 enrich plan | `--camera` `--segment` `--sync-offset` `--output` |
 | `color_grade.py` | bounded 调色 plan + FFmpeg filter + 可选现有 master 复版 | `--preset` `--output` `--markdown` `--render-output` `--strict` |
+| `lut_grade.py` | 本地 `.cube` LUT → FFmpeg 实测可加载、文件 SHA-256 绑定的调色计划；渲染时现场复核 | `plan <look.cube> --output <plan.json>` / `verify <plan.json>`；`render_final.py --color-grade <plan.json>` |
 | `jump_cut.py` | 自适应静音检测 → 去停顿计划 / 删除预算 gate / 成片 + 切点音频 fade | `<input.mp4>` `--dry-run` `--cut-list cuts.json` `--strict` / `--output jumpcut.mp4` `--max-removal-ratio 0.20` `--allow-over-budget` |
 | `multimodal_dead_air.py` | 静音 + 静帧交集 → source-bound 死区计划 / live verify / 单次编码工作副本 | `plan --delivery --output --markdown --strict` / `verify --strict` / `apply --markdown` |
 | `audio_transition.py` | render_config → 显式 J-cut/L-cut source handle / hash / 单次编码 apply / receipt | `plan --transition AFTER_CLIP,TYPE,DURATION` / `apply --output` / `verify --receipt --strict` |

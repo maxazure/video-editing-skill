@@ -295,6 +295,10 @@ def color_grade_filter_from_value(value: Any, *, base_dir: Optional[str] = None)
     if not isinstance(value, Mapping):
         raise ValueError("color_grade must be a preset, plan path, filter, or object")
 
+    if value.get("version") == "lut_grade.v1":
+        from lut_grade import filter_from_plan
+        return filter_from_plan(dict(value))
+
     if value.get("version") == VERSION and isinstance(value.get("ffmpeg"), Mapping):
         vf = str(value["ffmpeg"].get("vf") or "")
         return validate_filter_chain(vf)

@@ -27,6 +27,7 @@
 - **长片内部可找结构性分段候选**：`program_breaks.py` 找内部黑场与所有音轨静音的重叠，给出候选时间点及 JSON/Markdown 证据；只供看听复核，不自动切片或命名节目。
 - **画面内持续黑边可先检测再决定构图**：`border_crop.py` 每秒采样多帧并记录 FFmpeg `cropdetect` 的实际矩形；只有全片与前中后三段结果一致，且黑边达到像素门槛，才给出 `crop=w:h:x:y` 建议。报告可从源片重新检测验证，不直接改视频。
 - **无检测模型时也可查看运动落点**：`motion_center.py` 比较缩小后的相邻画面，逐时点报告局部像素运动中心；静止画面和大范围变化不提供焦点。结果用于回看和人工构图，不直接驱动裁切。
+- **现成 `.cube` LUT 可在最终单次编码中使用**：`lut_grade.py` 先让 FFmpeg 实测加载 LUT，再把文件 SHA-256 和插值模式写入计划；`render_final.py --color-grade` 在渲染前重验计划与 LUT，文件变化会阻断。
 - **短背景可以按次数或固定时长安全重复**：`loop_fill.py` 只接受 progressive CFR SDR 源片，音画一起循环或显式丢弃源音频；首个真实接缝和完整交付件都要正常速度复核，源片、输出、proof、设置或人工结论漂移都会让 manifest gate 失效。
 - **不闭合的短动作可以做端帧去重乒乓循环**：`ping_pong_loop.py` 把选区编译为 `0…N-1,N-2…1`，去掉普通正放+倒放在折返点和循环点产生的重复端帧；渲染前计算 `reverse` 缓存上限，输出无声 H.264 和折返/循环两条 proof，完整 1× 复核后才放行。
 - **不同规格的视频可以安全拼成一条**：`clip_assembly.py` 按最终顺序绑定每条源片，在一次编码中统一画布、rotation、CFR、SAR、像素格式、时间戳与 48 kHz stereo；无声片段可补等长静音，交付件和全部接缝 proof 都通过完整解码与 1× 人工复核后才放行。
@@ -1071,6 +1072,17 @@ python3 scripts/render_final.py \
 ```
 
 内置 `natural`、`warm`、`cool`、`punchy`、`soft`、`cinematic`、`screen` 七个 preset；自定义 `brightness`、`contrast`、`saturation`、`gamma`、`temperature`、`tint`、`sharpness` 会被限制在保守范围内，`--strict` 在参数被 clamp 时返回 2。若主片已经渲染完，也可以用 `color_grade.py --input output/master.mp4 --render-output output/master_grade.mp4` 做单独复版；日常推荐仍是在 `render_final.py` 里一次编码完成。
+
+已有 `.cube` 调色文件可用 [`scripts/lut_grade.py`](scripts/lut_grade.py) 验证并接入同一个 `--color-grade` 入口：
+
+```bash
+python3 scripts/lut_grade.py plan assets/look.cube --output work/lut_grade.json
+python3 scripts/lut_grade.py verify work/lut_grade.json
+python3 scripts/render_final.py --config work/render_config.json \
+  --color-grade work/lut_grade.json --output output/master.mp4
+```
+
+计划记录 LUT 绝对路径、大小、SHA-256 和插值方式（默认 `tetrahedral`，可用 `--interpolation` 调整）；创建计划和渲染前都会用 FFmpeg 实测可加载性。文件或计划改动后需重新规划。为了避免 FFmpeg filtergraph 路径歧义，LUT 路径不能含冒号、逗号、分号、引号、反斜杠或方括号；先复制到路径简单的项目素材目录。LUT 改色需要人工看肤色、品牌色和过曝区域，并在最终成片运行 `shot_color_qa.py`。
 
 ### 🔬 Shot Color QA — 成片镜头色彩 / 曝光门禁
 [`scripts/shot_color_qa.py`](scripts/shot_color_qa.py) · [详细文档](docs/prompts/81-shot-color-qa.md)
@@ -5992,6 +6004,21 @@ python3 scripts/motion_center.py verify work/motion_center.json
 画面中的背景、字幕、屏幕光标或运镜都可能产生局部运动。根据 `samples[].time_seconds` 回看原片，并结合主体检测或人工判断选择裁切位置。`--sample-fps` 可设 0.5–4；`--threshold`、`--min-pixels` 和 `--max-coverage` 可调检测敏感度。长片会解码全片，耗时随片长增长。
 
 验证：`tests/test_motion_center.py` 的灰度帧和真实 FFmpeg 合成移动素材覆盖局部运动中心、静止、大范围变化、参数错误、CLI 往返、源片与报告漂移；定向 **5 passed**，全套 **1421 passed in 58.67s**。`.venv/bin/python -m compileall -q scripts tests`、CLI help、Skill Creator 校验及 `git diff --check` 通过。尚未在真实客户长片上人工评估运动中心对构图的帮助。
+
+## 自动化更新：2026-10-10（外部 LUT 调色）
+
+本次联网参考了 GitHub [`jploaiza/ffmpeg-skill`](https://github.com/jploaiza/ffmpeg-skill) 的 LUT 调色覆盖、[`bryanwhl/ffmpeg-video-editor`](https://github.com/bryanwhl/ffmpeg-video-editor/blob/main/SKILL.md) 的调色工作流，并核对了 [FFmpeg `lut3d` 官方说明](https://ffmpeg.org/ffmpeg-filters.html#lut3d)。项目原有参数式 `color_grade.py`，但外部 LUT 缺少可复核的文件绑定和渲染接入。
+
+新增 [`scripts/lut_grade.py`](scripts/lut_grade.py) 和 [`tests/test_lut_grade.py`](tests/test_lut_grade.py)；`plan` 只接受本地常规 `.cube` 文件，记录路径、大小、SHA-256 与插值方式，先用 FFmpeg 实测文件可加载。`verify` 与 `render_final.py --color-grade` 会现场重新读取并核对完整计划；文件或计划变更会阻断渲染。LUT 放在已有单次编码调色阶段，字幕和 HUD 在其后叠加。
+
+```bash
+python3 scripts/lut_grade.py plan assets/look.cube --output work/lut_grade.json
+python3 scripts/lut_grade.py verify work/lut_grade.json
+python3 scripts/render_final.py --config work/render_config.json \
+  --color-grade work/lut_grade.json --output output/master.mp4
+```
+
+验证：定向 `tests/test_lut_grade.py tests/test_color_grade.py` **11 passed**，覆盖反相 LUT 真实像素变化、损坏文件、路径约束、CLI 往返及文件/计划漂移；全套 `tests` **1425 passed in 66.80s**。`compileall`、CLI help、Skill Creator 校验及 `git diff --check` 通过。尚未在客户实拍片上人工判断肤色、品牌色和曝光效果；使用时仍需看完整成片并运行 `shot_color_qa.py`。
 
 ## License
 
