@@ -28,6 +28,7 @@
 - **画面内持续黑边可先检测再决定构图**：`border_crop.py` 每秒采样多帧并记录 FFmpeg `cropdetect` 的实际矩形；只有全片与前中后三段结果一致，且黑边达到像素门槛，才给出 `crop=w:h:x:y` 建议。报告可从源片重新检测验证，不直接改视频。
 - **无检测模型时也可查看运动落点**：`motion_center.py` 比较缩小后的相邻画面，逐时点报告局部像素运动中心；静止画面和大范围变化不提供焦点。结果用于回看和人工构图，不直接驱动裁切。
 - **现成 `.cube` LUT 可在最终单次编码中使用**：`lut_grade.py` 先让 FFmpeg 实测加载 LUT，再把文件 SHA-256 和插值模式写入计划；`render_final.py --color-grade` 在渲染前重验计划与 LUT，文件变化会阻断。
+- **原始转写可筛查静音里的可疑文字**：`transcript_silence_qa.py` 将逐段时间码与音轨实测静音交叉检查，标记需要回听的段落；报告绑定音频与转写文件，复核时会重新测量，不自动删除文字。
 - **短背景可以按次数或固定时长安全重复**：`loop_fill.py` 只接受 progressive CFR SDR 源片，音画一起循环或显式丢弃源音频；首个真实接缝和完整交付件都要正常速度复核，源片、输出、proof、设置或人工结论漂移都会让 manifest gate 失效。
 - **不闭合的短动作可以做端帧去重乒乓循环**：`ping_pong_loop.py` 把选区编译为 `0…N-1,N-2…1`，去掉普通正放+倒放在折返点和循环点产生的重复端帧；渲染前计算 `reverse` 缓存上限，输出无声 H.264 和折返/循环两条 proof，完整 1× 复核后才放行。
 - **不同规格的视频可以安全拼成一条**：`clip_assembly.py` 按最终顺序绑定每条源片，在一次编码中统一画布、rotation、CFR、SAR、像素格式、时间戳与 48 kHz stereo；无声片段可补等长静音，交付件和全部接缝 proof 都通过完整解码与 1× 人工复核后才放行。
@@ -6019,6 +6020,22 @@ python3 scripts/render_final.py --config work/render_config.json \
 ```
 
 验证：定向 `tests/test_lut_grade.py tests/test_color_grade.py` **11 passed**，覆盖反相 LUT 真实像素变化、损坏文件、路径约束、CLI 往返及文件/计划漂移；全套 `tests` **1425 passed in 66.80s**。`compileall`、CLI help、Skill Creator 校验及 `git diff --check` 通过。尚未在客户实拍片上人工判断肤色、品牌色和曝光效果；使用时仍需看完整成片并运行 `shot_color_qa.py`。
+
+## 自动化更新：2026-10-11（原始转写静音复核）
+
+本次查看了 GitHub 上 [`znyupup/ai-video-editing-skill`](https://github.com/znyupup/ai-video-editing-skill/blob/main/SKILL.md) 的素材分析和 Whisper 幻觉排查：它建议用音量阈值检查纯音乐、环境音里的疑似转写。项目已有 `caption_speech_qa.py` 检查最终字幕与独立人声轨，但原始转写在进入清稿和选片前缺少对应的时间码复核入口。
+
+新增 [`scripts/transcript_silence_qa.py`](scripts/transcript_silence_qa.py)。`analyze` 对原始音频运行 FFmpeg `silencedetect`，逐段计算转写文字落在静音里的秒数和比例；默认以 `-40 dBFS`、至少 `0.15s` 的静音为证据，段落静音占比达到 `80%` 时标为 `review`。报告保存音频和转写的 SHA-256、媒体规格、测量结果与阈值；`verify` 重新测量并检查文件或报告漂移。它只提示回听，不自动删改转写。
+
+```bash
+python3 scripts/transcript_silence_qa.py analyze origin/talking_audio.wav \
+  origin/talking_transcript.json --output verify/transcript_silence_qa.json
+python3 scripts/transcript_silence_qa.py verify verify/transcript_silence_qa.json
+```
+
+在报告 `segments[]` 中按 `status=review` 的时间码回听，再用既有转写审校流程修正。安静的人声会产生误报；音乐、风声等响声会让静音阈值漏掉幻觉。输入应是独立口播音轨或无持续背景声的人声主导音轨，检查结果不代表已确认语音内容。
+
+验证：真实 FFmpeg 合成音频的定向测试覆盖有声段、静音内文字、CLI 往返、报告篡改、源转写漂移和非法时间码；定向 **3 passed**，全套 **1428 passed in 87.62s**（项目 Python 3.12 虚拟环境）。`compileall`、CLI help、Skill Creator 校验与 `git diff --check` 通过。系统 Python 3.9 在既有 `rewrite_script.py` 类型注解处停止收集，全套使用项目虚拟环境完成。尚未在真实口播录音上评估误报率。
 
 ## License
 

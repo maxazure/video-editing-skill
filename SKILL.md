@@ -29,6 +29,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ production_authorization.py
    │                            确切素材/动作/provider/权利依据 → 显式授权 + live gate
    ├─→ transcribe.py            转写 + 词级时间戳 + 口误标记
+   ├─→ transcript_silence_qa.py 原始转写 vs 实测静音 → 幻觉疑点供回听
    ├─→ transcript_lookup.py     原话检索 / 时间窗口读取 → 少量带源时间码的结果
    ├─→ visual_transcript_index.py
    │                            现有关键帧 + 附近原话 → 带源哈希的 JSON/Markdown 复核索引
@@ -873,6 +874,16 @@ python3 scripts/transcribe.py "<audio_path>" --model auto --language zh --detect
 ```
 
 **静音检测**：transcribe.py 会自动分析相邻语音片段之间的间隙。超过阈值（默认 1 秒）的间隙会被标记为静音并输出到 `silences` 字段中。这些静音通常是说话人的停顿、卡壳或口误，在构建 render_config.json 选片时应注意避开这些区域。
+
+对独立人声或没有持续音乐的口播音轨，再运行原始转写静音核对：
+
+```bash
+python3 scripts/transcript_silence_qa.py analyze origin/talking_audio.wav \
+  origin/talking_transcript.json --output verify/transcript_silence_qa.json
+python3 scripts/transcript_silence_qa.py verify verify/transcript_silence_qa.json
+```
+
+报告逐段记录实际静音秒数、占比及源文件哈希；默认 `-40 dBFS`、最短静音 `0.15s`，静音占比达到 `0.8` 标为 `review`。按标记时间码回听，再在转写审校中更正。它不会自动删字或改时间码；安静的人声可能被误标，音乐、环境声可能掩盖幻觉。`verify` 会重新测量并拒绝报告或输入漂移。
 
 长 transcript 需要找某句原话时，用 `python3 scripts/transcript_lookup.py work/transcript.json search "产品发布时间" --limit 10`；要看源片某段文字，用 `python3 scripts/transcript_lookup.py work/transcript.json span --start 90 --end 120`。输出是有界 JSON，含源段 ID、源时间码和 transcript SHA-256；搜索忽略大小写、空格与标点，可跨间隔不超过 2 秒的相邻段。它只定位原话，不推断语义相似内容；切点和措辞仍需回看原媒体并校稿。
 
