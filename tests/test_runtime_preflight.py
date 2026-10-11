@@ -100,6 +100,16 @@ def test_gif_preview_profile_requires_palette_filters_and_encoder():
     assert missing["capabilities"]["filter:paletteuse"]["status"] == "missing"
 
 
+def test_photo_montage_profile_requires_zoom_and_transition_filters():
+    filters = {"scale", "crop", "setsar", "zoompan", "trim", "setpts", "format",
+               "xfade", "fade", "atrim", "asetpts", "afade"}
+    ready = build_report(["photo_montage"], snapshot=snapshot(filters=filters))
+    assert ready["status"] == "ready"
+    missing = build_report(["photo_montage"], snapshot=snapshot(filters=filters - {"xfade"}))
+    assert missing["status"] == "blocked"
+    assert missing["capabilities"]["filter:xfade"]["status"] == "missing"
+
+
 def test_soft_subtitles_profile_requires_mov_text_encoder():
     ready = build_report(["soft_subtitles"], snapshot=snapshot(encoders=("mov_text",)))
     assert ready["status"] == "ready"

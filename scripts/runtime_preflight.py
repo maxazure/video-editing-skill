@@ -76,6 +76,18 @@ PROFILE_SPECS: Mapping[str, Mapping[str, Any]] = {
         ],
         "alternatives": [],
     },
+    "photo_montage": {
+        "label": "Photo montage",
+        "description": "Render ordered still photos with zoom, transitions, and optional music.",
+        "required": [
+            "runtime:python", "command:ffmpeg", "command:ffprobe",
+            "encoder:libx264", "encoder:aac", "filter:scale", "filter:crop",
+            "filter:setsar", "filter:zoompan", "filter:trim", "filter:setpts",
+            "filter:format", "filter:xfade", "filter:fade", "filter:atrim",
+            "filter:asetpts", "filter:afade",
+        ],
+        "alternatives": [],
+    },
     "soft_subtitles": {
         "label": "Switchable MP4 subtitles",
         "description": "Mux reviewed SRT into MP4 while copying the existing audio/video streams.",

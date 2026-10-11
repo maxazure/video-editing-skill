@@ -14,6 +14,7 @@
 - **同步通过后可生成按说话者切换的导播草稿**：`multicam_switch.py` 绑定 ready 同步计划和全部源字节，按每路自己的噪声底/峰值归一发言能量；证据含糊时保持上一机位，高相关共享混音默认阻断。草稿完成媒体合同、全量解码和带声四项人工复核后才放行。
 - **只有播客音频也能产出竖版短片**：`podcast_audiogram.py` 将指定音频摘录、静帧封面和逐句 SRT 合成字幕优先的 H.264/AAC MP4，声波只作辅助；源文件、字幕、设置与交付件绑定在可现场验证的收据中。
 - **已审视频可导出轻量动图预览**：`gif_preview.py` 从指定短摘录生成无声、调色板优化的 GIF，限制时长、尺寸、帧率和文件大小，并用收据绑定源片与导出件，适合在聊天或文档中预览动作。
+- **照片可直接剪成带音乐的短片**：`photo_montage.py` 按给定顺序导出轻微缩放、叠化和首尾淡变的 H.264 MP4，可选闪白叠化与配乐；收据绑定照片、音乐及成片字节，并核对实际帧数、时长和完整解码。
 - **已审成片可加品牌 Logo**：`logo_overlay.py` 把 PNG 按指定四角、相对宽度、透明度和边距叠到 MP4；复制原音轨、完整解码成片，并用收据绑定原片、Logo 与输出。
 - **切点附近可精确逐帧找画面**：`frame_grid.py locate` 从秒级时间码找到最近解码帧；PNG 网格直接标出 `CELL 1` 等格号，JSON 记录每格的真实帧号和 PTS，可进一步导出单帧并验证源片、PNG 与映射收据。
 - **已审 SRT 可封装成可开关的 MP4 字幕轨**：`soft_subtitles.py` 复制原视频/音频流，加入 `mov_text` 字幕，核对字幕往返、音视频流哈希与完整解码，并生成可现场验证的收据；适合支持软字幕的播放器交付。
@@ -6036,6 +6037,26 @@ python3 scripts/transcript_silence_qa.py verify verify/transcript_silence_qa.jso
 在报告 `segments[]` 中按 `status=review` 的时间码回听，再用既有转写审校流程修正。安静的人声会产生误报；音乐、风声等响声会让静音阈值漏掉幻觉。输入应是独立口播音轨或无持续背景声的人声主导音轨，检查结果不代表已确认语音内容。
 
 验证：真实 FFmpeg 合成音频的定向测试覆盖有声段、静音内文字、CLI 往返、报告篡改、源转写漂移和非法时间码；定向 **3 passed**，全套 **1428 passed in 87.62s**（项目 Python 3.12 虚拟环境）。`compileall`、CLI help、Skill Creator 校验与 `git diff --check` 通过。系统 Python 3.9 在既有 `rewrite_script.py` 类型注解处停止收集，全套使用项目虚拟环境完成。尚未在真实口播录音上评估误报率。
+
+## 自动化更新：2026-10-12（有序照片快闪成片）
+
+本次查看了 GitHub 上 [`atticusjzr/dilin-ai-video-edit-skills` 的 `memory-flash-edit`](https://github.com/atticusjzr/dilin-ai-video-edit-skills/blob/main/memory-flash-edit/skills/memory-flash-edit/SKILL.md)：逐张照片轻微缩放、接缝叠化、首尾淡变与配乐能组合成明确的回忆快闪节奏。项目原有 `storyboard_animatic.py` 用静帧预演分镜，但缺少直接面向有序照片的成片导出。[FFmpeg `zoompan` / `xfade` 文档](https://ffmpeg.org/ffmpeg-filters.html) 提供本地实现所需滤镜。
+
+新增 [`scripts/photo_montage.py`](scripts/photo_montage.py)。输入 2–100 张 JPG/PNG/WebP 照片，命令行顺序就是播放顺序；每张默认间隔 1 秒，从 1.08 倍轻微缩回原大小，照片间默认普通叠化，也可显式选择 `fadewhite` 闪白叠化。首尾各做短淡变；可选本地音乐，在尾部 1 秒淡出。输出 H.264 MP4，默认 1080×1920/30 fps，最多 180 秒。照片等比铺满后居中裁切，边缘文字和人物要先检查构图。新增 `photo_montage` 运行预检 profile，检查 `zoompan`、`xfade`、编码器等能力。
+
+```bash
+python3 scripts/runtime_preflight.py analyze --profile photo_montage \
+  --output work/runtime_preflight.json --strict
+python3 scripts/photo_montage.py render assets/01.jpg assets/02.jpg assets/03.jpg \
+  --music assets/music.wav --each 1 --transition 0.3 --zoom 1.08 \
+  --output output/montage.mp4 --receipt verify/photo_montage.json
+python3 scripts/photo_montage.py verify verify/photo_montage.json
+# 只有明确需要闪白叠化时，render 可加 --effect fadewhite
+```
+
+收据绑定所有照片的**顺序和字节**、音乐、参数、成片字节；`verify` 重新核对编码、画幅、帧率、精确帧数、时长、音轨覆盖和完整解码。状态 `ready_for_human_review` 仍需正常速度看听全片；使用闪白转场时，再运行 `flash_safety_qa.py` 检查闪烁风险。脚本不会在最终照片上自动加字幕，也不会自动判断人脸或画面边缘是否被裁掉。
+
+验证：真实 FFmpeg 三色照片与配乐的定向测试覆盖普通/闪白叠化、实际播放顺序、36 帧和 1.5 秒时间线、音轨、收据/素材漂移、无效参数与输入覆盖；`runtime_preflight` 测试覆盖滤镜缺失阻断。定向 **29 passed**，全套 **1433 passed in 51.23s**；实际运行预检为 `ready`（17 项能力、0 阻断），`compileall`、CLI help、Skill Creator 校验及 `git diff --check` 均通过。尚未用真实旅行照片和客户配乐做人工观感复核。
 
 ## License
 

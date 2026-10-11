@@ -65,6 +65,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
    ├─→ audio_cue_mix.py         cue sheet + 最终旁白 → 本地/程序化 SFX 单轨 / 1× review gate
    ├─→ storyboard_plan.py       分镜 shot cards / 生成路由 / 连续性锚点
    ├─→ storyboard_animatic.py   每镜静帧 + 可选旁白 → timed MP4 / 1× review / live gate
+   ├─→ photo_montage.py         有序照片 → 轻微缩放/叠化/可选配乐 MP4 + 源绑定收据
    ├─→ sequence_handoff.py      相邻镜头 receive/handoff / edit type / 轴线方向 / live gate
    ├─→ reference_story_formula.py
    │                            参考片时间码情绪机制 → 目标分镜 content anchors / live gate
@@ -170,6 +171,7 @@ metadata: { "openclaw": { "emoji": "🎬", "os": ["darwin", "linux", "win32"], "
 | `clip_assembly.py` | 多源视频 → 单次画布/CFR/SAR/时间戳/音频归一、全接缝 1× proof 与 live gate | `plan <clips...> --delivery --boundary-proof` / `apply` / `confirm` / `verify --strict` |
 | `podcast_audiogram.py` | 纯音频摘录 + 静帧封面 + 相对摘录时间的 SRT → 带辅助波形的竖版 MP4 与源绑定收据 | `render <audio> <cover> <captions.srt> --start --duration --output --receipt` / `verify <receipt>` |
 | `gif_preview.py` | 视频短摘录 → 无声、调色板优化 GIF 和源绑定收据 | `render <video> --start --duration --output --receipt` / `verify <receipt>` |
+| `photo_montage.py` | 2–100 张照片 → 固定节奏、轻微缩放、叠化和可选配乐的 H.264 MP4；核验源照片、音乐与成片 | `render <photos...> --output --receipt [--music]` / `verify <receipt>` |
 | `logo_overlay.py` | 已审 MP4 + PNG Logo → 指定四角/宽度/透明度叠加，保留音轨并现场验证 | `render <video> <logo.png> --corner --width-fraction --opacity --margin --output --receipt` / `verify <receipt>` |
 | `frame_grid.py` | 秒级时间码定位最近解码帧；带可见格号的精确帧网格或单帧 PNG，附帧号/PTS 与源文件收据 | `locate <video> --at-seconds` / `grid <video> --start-frame --step --count --output --receipt` / `frame <video> --start-frame --output --receipt` / `verify <receipt>` |
 | `border_crop.py` | 对画面内上下/左右黑边逐时点采样；仅在全片及三段一致时建议裁切 | `analyze <video> --output <report.json>` / `verify <report.json>` |
@@ -2874,6 +2876,8 @@ ffmpeg -i broll_concat.mp4 -t $audio_dur -c copy broll_trimmed.mp4
 ## 短动图预览 GIF
 
 需要在聊天或文档中展示已审视频的短动作时，运行 `runtime_preflight.py analyze --profile gif_preview --output work/runtime_preflight.json --strict`，再运行 `gif_preview.py render output/master.mp4 --start 5 --duration 3 --width 480 --fps 12 --output output/preview.gif --receipt verify/gif_preview.json`。摘录限 10 秒、宽度 64–640 偶数像素、5–20 fps 和 20 MiB；FFmpeg 在同次任务中生成全片调色板并导出无声 GIF。`gif_preview.py verify verify/gif_preview.json` 重查源片/GIF 哈希、帧数、尺寸、时长和完整解码。交付前按真实展示尺寸看完整循环，确认动作起止、字幕可读性和色带；GIF 不含声音，视频正式发布仍用已审 MP4。
+
+用户提供有序照片要制作回忆、旅行或产品图集短片时，先运行 `runtime_preflight.py analyze --profile photo_montage --output work/runtime_preflight.json --strict`，再运行 `photo_montage.py render assets/01.jpg assets/02.jpg assets/03.jpg --music assets/music.wav --each 1 --transition 0.3 --zoom 1.08 --output output/montage.mp4 --receipt verify/photo_montage.json`，最后运行 `photo_montage.py verify verify/photo_montage.json`。传入路径顺序就是播放顺序；默认普通叠化，明确需要闪白效果时加 `--effect fadewhite`。脚本将照片等比放大铺满画布并居中裁切，默认 1080×1920/30 fps；细节、文字或人物靠边的照片应先逐张检查构图。收据核对照片、音乐、输出哈希、精确帧数、时长和完整解码；`ready_for_human_review` 表示仍需正常速度看听全片，闪白效果还需运行 `flash_safety_qa.py` 复核。素材若由内置生图工具生成，按图像与视频工作流先处理最终位图，再用于此脚本。
 
 ## 已审成片叠加品牌 Logo
 
